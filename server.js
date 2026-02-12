@@ -88,28 +88,16 @@ app.post("/chat", async (req, res) => {
 
       if (course) {
 
-        if (
-          normalizedMessage.includes("مده") ||
-          normalizedMessage.includes("مدتها")
-        ) {
-          return res.json({
-            reply: `مدة الدورة هي ${course.duration}.`,
-          });
+        if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
+          return res.json({ reply: `مدة الدورة هي ${course.duration}.` });
         }
 
         if (normalizedMessage.includes("سعر")) {
-          return res.json({
-            reply: `سعر الدورة هو ${course.price}.`,
-          });
+          return res.json({ reply: `سعر الدورة هو ${course.price}.` });
         }
 
-        if (
-          normalizedMessage.includes("رابط") ||
-          normalizedMessage.includes("لينك")
-        ) {
-          return res.json({
-            reply: `رابط التسجيل:\n${course.url}`,
-          });
+        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
+          return res.json({ reply: `رابط التسجيل:\n${course.url}` });
         }
       }
     }
@@ -137,6 +125,13 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
+    // ✅ جلب بيانات الكورس من جدول courses
+    const { data: selectedCourse } = await supabase
+      .from("courses")
+      .select("*")
+      .eq("document_id", selectedDocument.id)
+      .single();
+
     const contextText = `
 العنوان: ${selectedDocument.title}
 المحتوى: ${selectedDocument.content}
@@ -154,7 +149,29 @@ app.post("/chat", async (req, res) => {
       ],
     });
 
-    const reply = completion.choices[0].message.content;
+    let reply = completion.choices[0].message.content;
+
+    // ✅ Recommendation Engine
+    let recommendationsText = "";
+
+    if (selectedCourse && selectedCourse.category) {
+      const { data: relatedCourses } = await supabase
+        .from("courses")
+        .select("title, url")
+        .eq("category", selectedCourse.category)
+        .neq("document_id", selectedDocument.id)
+        .limit(2);
+
+      if (relatedCourses && relatedCourses.length > 0) {
+        recommendationsText =
+          "\n\nقد يعجبك أيضًا:\n" +
+          relatedCourses
+            .map((c) => `• ${c.title}\n${c.url}`)
+            .join("\n\n");
+      }
+    }
+
+    reply = reply + recommendationsText;
 
     // ✅ تخزين الرد مع document_id
     if (session_id) {
