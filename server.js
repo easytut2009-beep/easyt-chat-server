@@ -84,38 +84,25 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ Query Expansion
-    const expansion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "حوّل سؤال المستخدم إلى كلمات بحث واضحة داخل منصة دورات. اكتب كلمات مفتاحية فقط.",
-        },
-        { role: "user", content: normalizedMessage },
-      ],
-    });
-
-    const expandedQuery = expansion.choices[0].message.content;
-
-    // ✅ Embedding
+    // ✅ Embedding مباشر بدون expansion
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-large",
-      input: expandedQuery,
+      input: normalizedMessage,
     });
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // ✅ Hybrid Search (معدل هنا 👇)
+    // ✅ Hybrid Search
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      query_text: expandedQuery,
-      match_threshold: 0.05,   // ✅ مهم جدًا
+      query_text: normalizedMessage,
+      match_threshold: 0.05,
       match_count: 5,
     });
 
     if (error) console.error(error);
+
+    console.log("Search Results:", data);
 
     if (!data || data.length === 0) {
       return res.json({
