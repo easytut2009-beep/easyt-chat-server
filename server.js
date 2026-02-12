@@ -131,6 +131,7 @@ new_question
     }
 
     let contextText = "";
+    let selectedCourse = null;
 
     /* ✅ لو سؤال جديد → اعمل بحث */
     if (intentType === "new_question") {
@@ -198,6 +199,9 @@ new_question
         });
       }
 
+      /* ✅ حفظ أقوى كورس */
+      selectedCourse = finalResults[0];
+
       contextText = finalResults
         .map(
           (doc, index) =>
@@ -228,10 +232,18 @@ ${contextText}
 
     const reply = completion.choices[0].message.content;
 
-    /* ✅ تخزين الرد */
+    /* ✅ تخزين الرد مع course_id */
     if (session_id) {
       await supabase.from("chat_messages").insert([
-        { session_id, role: "assistant", message: reply },
+        {
+          session_id,
+          role: "assistant",
+          message: reply,
+          course_id:
+            intentType === "new_question" && selectedCourse
+              ? selectedCourse.id
+              : null,
+        },
       ]);
     }
 
