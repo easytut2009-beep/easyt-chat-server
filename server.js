@@ -24,12 +24,6 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Session Memory
-================================ */
-
-const sessionMemory = new Map();
-
-/* ===============================
    ✅ Normalize Arabic
 ================================ */
 
@@ -46,17 +40,17 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Detect Course Question
+   ✅ Detect Direct Course Question
 ================================ */
 
 function isCourseQuestion(message) {
   const keywords = [
-    "دورة",
+    "دوره",
     "كورس",
     "السعر",
     "سعر",
-    "مدة",
     "مده",
+    "مدة",
     "محاضر",
     "التسجيل",
     "الرابط",
@@ -100,30 +94,48 @@ app.post("/chat", async (req, res) => {
     const directCourseQuestion = isCourseQuestion(normalizedMessage);
 
     let selectedCourse = null;
+    let similarityScore = 0;
 
-    /* ✅ نبحث عن دورة مطابقة فقط لو فيه احتمالية ارتباط */
+    /* ✅ نعمل بحث Embedding */
     const embedding = await createEmbedding(message);
 
-    const { data: results } = await supabase.rpc("match_documents", {
+    const { data: results, error } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
       query_text: message,
-      match_threshold: 0.01,
+      match_threshold: 0.75,   // ✅ رفعنا الحد
       match_count: 1,
     });
 
-    if (results && results.length > 0) {
-      const { data: course } = await supabase
-        .from("courses")
-        .select("*")
-        .eq("document_id", results[0].id)
-        .maybeSingle();
+    if (!error && results && results.length > 0) {
 
-      if (course) {
-        selectedCourse = course;
+      similarityScore = results[0].similarity || 0;
+
+      if (similarityScore >= 0.75) {
+
+        const { data: course } = await supabase
+          .from("courses")
+          .select("*")
+          .eq("document_id", results[0].id)
+          .maybeSingle();
+
+        if (course) {
+
+          // ✅ فلترة إضافية تمنع ربط برنامج ببرنامج مختلف
+          const normalizedTitle = normalizeArabic(course.title);
+          if (
+            normalizedMessage.includes(normalizedTitle) ||
+            normalizedTitle.includes(normalizedMessage) ||
+            directCourseQuestion
+          ) {
+            selectedCourse = course;
+          }
+        }
       }
     }
 
-    /* ✅ GPT Answer */
+    /* ===============================
+       ✅ GPT Answer
+    ============================== */
 
     let systemPrompt;
 
@@ -134,7 +146,8 @@ app.post("/chat", async (req, res) => {
 `;
     } else {
       systemPrompt = `
-أجب كخبير وابدأ بشرح المفهوم أو الإجابة بشكل تعليمي واضح ومفيد.
+أجب كخبير وقدم شرحاً تعليمياً واضحاً ومفيداً.
+إذا كانت هناك دورة مرتبطة بالسؤال سيتم عرضها لاحقاً.
 لا تضع أي روابط داخل الرد.
 `;
     }
@@ -164,11 +177,14 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ إزالة أي روابط لو GPT كتبها
+    // ✅ إزالة أي روابط
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    // ✅ لو فيه دورة مرتبطة نضيف جملة ترويج ذكية
-    if (selectedCourse) {
+    /* ===============================
+       ✅ Add Promotion Smartly
+    ============================== */
+
+    if (selectedCourse && similarityScore >= 0.75) {
       reply += `
 <br><br>
 <a href="${selectedCourse.url}" target="_blank" style="color:#ffcc00;font-weight:bold;text-decoration:none;">
