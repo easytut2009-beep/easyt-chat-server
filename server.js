@@ -1,5 +1,3 @@
-// ⚠️ IMPORTANT: Must match the model used when storing embeddings (1536 dims)
-
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -9,18 +7,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ✅ Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ✅ Arabic Normalization
 function normalizeArabic(text) {
   return text
     .replace(/[إأآا]/g, "ا")
@@ -32,7 +27,6 @@ function normalizeArabic(text) {
     .toLowerCase();
 }
 
-// ✅ Levenshtein
 function levenshtein(a, b) {
   const matrix = Array.from({ length: b.length + 1 }, () =>
     new Array(a.length + 1).fill(0)
@@ -58,7 +52,6 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-// ✅ Smart Correction
 function smartKeywordCorrection(text) {
   const keywords = ["اليستريتور", "illustrator", "فوتوشوب", "photoshop"];
   const words = text.split(" ");
@@ -75,10 +68,10 @@ function smartKeywordCorrection(text) {
     .join(" ");
 }
 
-// ✅ Chat Endpoint
 app.post("/chat", async (req, res) => {
   try {
     const { message } = req.body;
+
     if (!message) {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
@@ -86,7 +79,6 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ ✅ Multi‑Query Generation
     const expansion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -103,43 +95,47 @@ app.post("/chat", async (req, res) => {
 
     const queries = expansion.choices[0].message.content
       .split("\n")
-      .map(q => q.trim())
-      .filter(q => q.length > 0);
+      .map((q) => q.trim())
+      .filter((q) => q.length > 0);
 
-    let allResults = [];
+    const thresholds = [0.2, 0.12, 0.08, 0.05, 0.03];
 
-    // ✅ Search each generated query
-    for (let q of queries) {
-      const embeddingResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small", // ✅ MUST stay small (1536)
-        input: q,
-      });
+    let finalResults = [];
 
-      const queryEmbedding = embeddingResponse.data[0].embedding;
+    for (let threshold of thresholds) {
+      let allResults = [];
 
-      const { data, error } = await supabase.rpc("match_documents", {
-        query_embedding: queryEmbedding,
-        query_text: q,
-        match_threshold: 0.05,
-        match_count: 5,
-      });
+      for (let q of queries) {
+        const embeddingResponse = await openai.embeddings.create({
+          model: "text-embedding-3-small",
+          input: q,
+        });
 
-      if (error) console.error(error);
+        const queryEmbedding = embeddingResponse.data[0].embedding;
 
-      if (data) {
-        allResults.push(...data);
+        const { data } = await supabase.rpc("match_documents", {
+          query_embedding: queryEmbedding,
+          query_text: q,
+          match_threshold: threshold,
+          match_count: 5,
+        });
+
+        if (data && data.length > 0) {
+          allResults.push(...data);
+        }
+      }
+
+      const uniqueResults = Array.from(
+        new Map(allResults.map((item) => [item.id, item])).values()
+      );
+
+      uniqueResults.sort((a, b) => b.similarity - a.similarity);
+
+      if (uniqueResults.length > 0) {
+        finalResults = uniqueResults.slice(0, 5);
+        break;
       }
     }
-
-    // ✅ Remove duplicate documents
-    const uniqueResults = Array.from(
-      new Map(allResults.map(item => [item.id, item])).values()
-    );
-
-    // ✅ Sort by similarity
-    uniqueResults.sort((a, b) => b.similarity - a.similarity);
-
-    const finalResults = uniqueResults.slice(0, 5);
 
     if (finalResults.length === 0) {
       return res.json({
@@ -157,7 +153,6 @@ app.post("/chat", async (req, res) => {
       )
       .join("\n\n");
 
-    // ✅ Re‑Ranking / Response Generation
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -182,7 +177,6 @@ ${contextText}
     res.json({
       reply: completion.choices[0].message.content,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "حدث خطأ في السيرفر" });
@@ -191,5 +185,5 @@ ${contextText}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Server running on port " + PORT);
+  console.log("Server running on port " + PORT);
 });
