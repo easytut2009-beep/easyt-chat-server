@@ -61,10 +61,10 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Embedding Retry
+   ✅ Safe Embedding (NO CRASH)
 ================================ */
 
-async function createEmbeddingWithRetry(text, retries = 2) {
+async function createEmbeddingSafe(text) {
   try {
     console.log("🟡 Creating embedding...");
 
@@ -73,7 +73,7 @@ async function createEmbeddingWithRetry(text, retries = 2) {
         model: "text-embedding-3-small",
         input: text,
       }),
-      15000,
+      12000,
       "Embedding"
     );
 
@@ -82,15 +82,10 @@ async function createEmbeddingWithRetry(text, retries = 2) {
     return response.data[0].embedding;
 
   } catch (error) {
-    console.error("❌ Embedding error:", error.message);
+    console.error("❌ Embedding failed:", error.message);
 
-    if (retries > 0) {
-      console.log("🔁 Retrying embedding...");
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      return createEmbeddingWithRetry(text, retries - 1);
-    }
-
-    throw error;
+    // ✅ بدل ما نكراش السيرفر
+    return null;
   }
 }
 
@@ -123,12 +118,18 @@ app.post("/chat", async (req, res) => {
       supabase.from("chat_messages").insert([
         { session_id, role: "user", message }
       ]),
-      10000,
+      8000,
       "Insert message"
     );
 
     /* ✅ Embedding */
-    const queryEmbedding = await createEmbeddingWithRetry(normalizedMessage);
+    const queryEmbedding = await createEmbeddingSafe(normalizedMessage);
+
+    if (!queryEmbedding) {
+      return res.json({
+        reply: "⚠️ الخدمة بطيئة حالياً، حاول مرة أخرى بعد لحظات."
+      });
+    }
 
     /* ✅ Supabase Search */
     console.log("🟡 Searching Supabase...");
@@ -140,7 +141,7 @@ app.post("/chat", async (req, res) => {
         match_threshold: 0.05,
         match_count: 5,
       }),
-      15000,
+      12000,
       "Supabase RPC"
     );
 
@@ -150,8 +151,6 @@ app.post("/chat", async (req, res) => {
         reply: "حدث خطأ أثناء البحث في قاعدة البيانات."
       });
     }
-
-    console.log("✅ Supabase returned results");
 
     if (!results || results.length === 0) {
       return res.json({
@@ -167,7 +166,7 @@ app.post("/chat", async (req, res) => {
         .select("*")
         .eq("document_id", selectedDocument.id)
         .maybeSingle(),
-      10000,
+      8000,
       "Fetch course"
     );
 
@@ -202,8 +201,8 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
 
     console.error("🔥 SERVER ERROR FULL:", error.message);
 
-    return res.status(500).json({
-      reply: "حدث خطأ في السيرفر."
+    return res.json({
+      reply: "⚠️ حدث خطأ مؤقت، حاول مرة أخرى."
     });
   }
 });
