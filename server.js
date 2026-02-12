@@ -48,6 +48,33 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
+   ✅ Embedding Retry Function
+================================ */
+
+async function createEmbeddingWithRetry(text, retries = 2) {
+  try {
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+
+    return response.data[0].embedding;
+
+  } catch (error) {
+
+    console.error("❌ Embedding error:", error.message);
+
+    if (retries > 0) {
+      console.log("🔁 Retrying embedding...");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return createEmbeddingWithRetry(text, retries - 1);
+    }
+
+    throw error;
+  }
+}
+
+/* ===============================
    ✅ Chat Route
 ================================ */
 
@@ -81,16 +108,20 @@ app.post("/chat", async (req, res) => {
 
     let activeCourseId = null;
 
-    const { data: lastCourse } = await supabase
-      .from("chat_messages")
-      .select("course_id")
-      .eq("session_id", session_id)
-      .not("course_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1);
+    try {
+      const { data: lastCourse } = await supabase
+        .from("chat_messages")
+        .select("course_id")
+        .eq("session_id", session_id)
+        .not("course_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    if (lastCourse && lastCourse.length > 0) {
-      activeCourseId = lastCourse[0].course_id;
+      if (lastCourse && lastCourse.length > 0) {
+        activeCourseId = lastCourse[0].course_id;
+      }
+    } catch (err) {
+      console.error("❌ Error fetching last course:", err.message);
     }
 
     /* ===============================
@@ -98,41 +129,42 @@ app.post("/chat", async (req, res) => {
     ================================ */
 
     if (activeCourseId) {
-      const { data: course } = await supabase
-        .from("courses")
-        .select("*")
-        .eq("document_id", activeCourseId)
-        .maybeSingle();
+      try {
+        const { data: course } = await supabase
+          .from("courses")
+          .select("*")
+          .eq("document_id", activeCourseId)
+          .maybeSingle();
 
-      if (course) {
+        if (course) {
 
-        // ✅ السعر
-        if (normalizedMessage.includes("سعر")) {
-          return res.json({
-            reply: `💰 سعر الدورة هو ${course.price || "غير محدد حالياً"}.`
-          });
+          if (normalizedMessage.includes("سعر")) {
+            return res.json({
+              reply: `💰 سعر الدورة هو ${course.price || "غير محدد حالياً"}.`
+            });
+          }
+
+          if (
+            normalizedMessage.includes("مده") ||
+            normalizedMessage.includes("المدة")
+          ) {
+            return res.json({
+              reply: `⏳ مدة الدورة هي ${course.duration || "غير محددة حالياً"}.`
+            });
+          }
+
+          if (
+            normalizedMessage.includes("تسجيل") ||
+            normalizedMessage.includes("رابط") ||
+            normalizedMessage.includes("الاشتراك")
+          ) {
+            return res.json({
+              reply: `✅ يمكنك التسجيل من هنا:\n${course.url || "الرابط غير متوفر حالياً"}`
+            });
+          }
         }
-
-        // ✅ المدة
-        if (
-          normalizedMessage.includes("مده") ||
-          normalizedMessage.includes("المدة")
-        ) {
-          return res.json({
-            reply: `⏳ مدة الدورة هي ${course.duration || "غير محددة حالياً"}.`
-          });
-        }
-
-        // ✅ التسجيل أو الرابط
-        if (
-          normalizedMessage.includes("تسجيل") ||
-          normalizedMessage.includes("رابط") ||
-          normalizedMessage.includes("الاشتراك")
-        ) {
-          return res.json({
-            reply: `✅ يمكنك التسجيل من هنا:\n${course.url || "الرابط غير متوفر حالياً"}`
-          });
-        }
+      } catch (err) {
+        console.error("❌ Follow-up error:", err.message);
       }
     }
 
@@ -140,12 +172,7 @@ app.post("/chat", async (req, res) => {
        ✅ New Embedding Search
     ================================ */
 
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: normalizedMessage,
-    });
-
-    const queryEmbedding = embeddingResponse.data[0].embedding;
+    const queryEmbedding = await createEmbeddingWithRetry(normalizedMessage);
 
     const { data: results } = await supabase.rpc(
       "match_documents",
@@ -202,7 +229,7 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("🔥 SERVER ERROR:", error);
+    console.error("🔥 SERVER ERROR FULL:", error);
     return res.status(500).json({
       reply: "حدث خطأ في السيرفر."
     });
