@@ -55,7 +55,6 @@ function levenshtein(a, b) {
 function smartKeywordCorrection(text) {
   const keywords = ["اليستريتور", "illustrator", "فوتوشوب", "photoshop"];
   const words = text.split(" ");
-
   return words
     .map((word) => {
       for (let keyword of keywords) {
@@ -79,16 +78,15 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    /* ✅ تخزين رسالة المستخدم */
+    // ✅ تخزين رسالة المستخدم
     if (session_id) {
       await supabase.from("chat_messages").insert([
         { session_id, role: "user", message },
       ]);
     }
 
-    /* ✅ استرجاع آخر 5 رسائل */
+    // ✅ استرجاع آخر 5 رسائل
     let memoryMessages = [];
-
     if (session_id) {
       const { data } = await supabase
         .from("chat_messages")
@@ -105,7 +103,7 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    /* ✅ Intent Detection */
+    // ✅ Intent Detection
     let intentType = "new_question";
 
     if (memoryMessages.length > 0) {
@@ -133,7 +131,40 @@ new_question
     let contextText = "";
     let selectedCourse = null;
 
-    /* ✅ لو سؤال جديد → اعمل بحث */
+    // ✅ لو متابعة → استرجاع آخر course_id بدون بحث
+    let activeCourseId = null;
+
+    if (intentType === "follow_up" && session_id) {
+      const { data: lastCourse } = await supabase
+        .from("chat_messages")
+        .select("course_id")
+        .eq("session_id", session_id)
+        .not("course_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (lastCourse && lastCourse.length > 0) {
+        activeCourseId = lastCourse[0].course_id;
+      }
+
+      if (activeCourseId) {
+        const { data: courseData } = await supabase
+          .from("documents")
+          .select("*")
+          .eq("id", activeCourseId)
+          .single();
+
+        if (courseData) {
+          contextText = `
+العنوان: ${courseData.title}
+الرابط: ${courseData.url}
+المحتوى: ${courseData.content}
+`;
+        }
+      }
+    }
+
+    // ✅ لو سؤال جديد → اعمل البحث
     if (intentType === "new_question") {
       const expansion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -199,7 +230,6 @@ new_question
         });
       }
 
-      /* ✅ حفظ أقوى كورس */
       selectedCourse = finalResults[0];
 
       contextText = finalResults
@@ -213,7 +243,7 @@ new_question
         .join("\n\n");
     }
 
-    /* ✅ الرد النهائي */
+    // ✅ الرد النهائي
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -232,7 +262,7 @@ ${contextText}
 
     const reply = completion.choices[0].message.content;
 
-    /* ✅ تخزين الرد مع course_id */
+    // ✅ تخزين الرد مع course_id
     if (session_id) {
       await supabase.from("chat_messages").insert([
         {
@@ -242,7 +272,7 @@ ${contextText}
           course_id:
             intentType === "new_question" && selectedCourse
               ? selectedCourse.id
-              : null,
+              : activeCourseId || null,
         },
       ]);
     }
