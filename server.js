@@ -79,112 +79,137 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    /* ✅ 1. تخزين رسالة المستخدم */
+    /* ✅ تخزين رسالة المستخدم */
     if (session_id) {
       await supabase.from("chat_messages").insert([
-        {
-          session_id,
-          role: "user",
-          message,
-        },
+        { session_id, role: "user", message },
       ]);
     }
 
-    /* ✅ 2. استرجاع آخر 5 رسائل */
+    /* ✅ استرجاع آخر 5 رسائل */
     let memoryMessages = [];
 
     if (session_id) {
-      const { data: previousMessages } = await supabase
+      const { data } = await supabase
         .from("chat_messages")
         .select("role, message")
         .eq("session_id", session_id)
         .order("created_at", { ascending: false })
         .limit(5);
 
-      if (previousMessages) {
-        memoryMessages = previousMessages.reverse().map((m) => ({
+      if (data) {
+        memoryMessages = data.reverse().map((m) => ({
           role: m.role,
           content: m.message,
         }));
       }
     }
 
-    /* ✅ 3. Multi‑Query + Dynamic Threshold */
-    const expansion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `
+    /* ✅ Intent Detection */
+    let intentType = "new_question";
+
+    if (memoryMessages.length > 0) {
+      const intentCheck = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
+حدد هل السؤال متابعة لسؤال سابق أم سؤال جديد.
+أجب بكلمة واحدة فقط:
+follow_up
+or
+new_question
+`,
+          },
+          ...memoryMessages,
+          { role: "user", content: message },
+        ],
+      });
+
+      intentType = intentCheck.choices[0].message.content.trim();
+    }
+
+    let contextText = "";
+
+    /* ✅ لو سؤال جديد → اعمل بحث */
+    if (intentType === "new_question") {
+      const expansion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
 حوّل سؤال المستخدم إلى 3 صيغ بحث مختلفة.
 أعدهم كسطر منفصل لكل صيغة بدون ترقيم.
 `,
-        },
-        { role: "user", content: normalizedMessage },
-      ],
-    });
+          },
+          { role: "user", content: normalizedMessage },
+        ],
+      });
 
-    const queries = expansion.choices[0].message.content
-      .split("\n")
-      .map((q) => q.trim())
-      .filter((q) => q.length > 0);
+      const queries = expansion.choices[0].message.content
+        .split("\n")
+        .map((q) => q.trim())
+        .filter((q) => q.length > 0);
 
-    const thresholds = [0.2, 0.12, 0.08, 0.05, 0.03];
+      const thresholds = [0.2, 0.12, 0.08, 0.05, 0.03];
 
-    let finalResults = [];
+      let finalResults = [];
 
-    for (let threshold of thresholds) {
-      let allResults = [];
+      for (let threshold of thresholds) {
+        let allResults = [];
 
-      for (let q of queries) {
-        const embeddingResponse = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: q,
-        });
+        for (let q of queries) {
+          const embeddingResponse = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: q,
+          });
 
-        const queryEmbedding = embeddingResponse.data[0].embedding;
+          const queryEmbedding = embeddingResponse.data[0].embedding;
 
-        const { data } = await supabase.rpc("match_documents", {
-          query_embedding: queryEmbedding,
-          query_text: q,
-          match_threshold: threshold,
-          match_count: 5,
-        });
+          const { data } = await supabase.rpc("match_documents", {
+            query_embedding: queryEmbedding,
+            query_text: q,
+            match_threshold: threshold,
+            match_count: 5,
+          });
 
-        if (data && data.length > 0) {
-          allResults.push(...data);
+          if (data && data.length > 0) {
+            allResults.push(...data);
+          }
+        }
+
+        const uniqueResults = Array.from(
+          new Map(allResults.map((item) => [item.id, item])).values()
+        );
+
+        uniqueResults.sort((a, b) => b.similarity - a.similarity);
+
+        if (uniqueResults.length > 0) {
+          finalResults = uniqueResults.slice(0, 5);
+          break;
         }
       }
 
-      const uniqueResults = Array.from(
-        new Map(allResults.map((item) => [item.id, item])).values()
-      );
-
-      uniqueResults.sort((a, b) => b.similarity - a.similarity);
-
-      if (uniqueResults.length > 0) {
-        finalResults = uniqueResults.slice(0, 5);
-        break;
+      if (finalResults.length === 0) {
+        return res.json({
+          reply: "عذرًا، المحتوى غير متوفر حاليًا.",
+        });
       }
-    }
 
-    if (finalResults.length === 0) {
-      return res.json({
-        reply: "عذرًا، المحتوى غير متوفر حاليًا.",
-      });
-    }
-
-    const contextText = finalResults
-      .map(
-        (doc, index) =>
-          `#${index + 1}
+      contextText = finalResults
+        .map(
+          (doc, index) =>
+            `#${index + 1}
 العنوان: ${doc.title}
 الرابط: ${doc.url}
 المحتوى: ${doc.content}`
-      )
-      .join("\n\n");
+        )
+        .join("\n\n");
+    }
 
-    /* ✅ 4. الرد مع الذاكرة */
+    /* ✅ الرد النهائي */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -192,8 +217,7 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت زيكو، مساعد منصة easyT.
-اعتمد على نتائج البحث والسياق السابق في المحادثة.
-
+اعتمد على السياق السابق.
 ${contextText}
 `,
         },
@@ -204,14 +228,10 @@ ${contextText}
 
     const reply = completion.choices[0].message.content;
 
-    /* ✅ 5. تخزين رد زيكو */
+    /* ✅ تخزين الرد */
     if (session_id) {
       await supabase.from("chat_messages").insert([
-        {
-          session_id,
-          role: "assistant",
-          message: reply,
-        },
+        { session_id, role: "assistant", message: reply },
       ]);
     }
 
