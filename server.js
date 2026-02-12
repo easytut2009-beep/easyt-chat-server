@@ -61,7 +61,7 @@ app.post("/chat", async (req, res) => {
       ]);
     }
 
-    // ✅ جلب آخر document_id
+    // ✅ جلب آخر كورس نشط
     let activeDocumentId = null;
 
     if (session_id) {
@@ -78,7 +78,7 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // ✅ Structured Follow‑up (بدون GPT)
+    // ✅ Structured Follow‑up + Analytics
     if (activeDocumentId) {
       const { data: course } = await supabase
         .from("courses")
@@ -88,20 +88,45 @@ app.post("/chat", async (req, res) => {
 
       if (course) {
 
+        // مدة
         if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
           return res.json({
             reply: `مدة الدورة هي ${course.duration}.`,
           });
         }
 
+        // سعر
         if (normalizedMessage.includes("سعر")) {
+
+          if (session_id) {
+            await supabase.from("chat_events").insert([
+              {
+                session_id,
+                event_type: "price_view",
+                course_id: activeDocumentId,
+              },
+            ]);
+          }
+
           return res.json({
             reply:
               `سعر الدورة هو ${course.price}.\n\n🎯 هل تحب التسجيل الآن؟ يمكنني إرسال رابط التسجيل فورًا.`,
           });
         }
 
+        // رابط
         if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
+
+          if (session_id) {
+            await supabase.from("chat_events").insert([
+              {
+                session_id,
+                event_type: "link_click",
+                course_id: activeDocumentId,
+              },
+            ]);
+          }
+
           return res.json({
             reply:
               `رابط التسجيل:\n${course.url}\n\n✅ المقاعد محدودة، ننصح بالتسجيل الآن لضمان مكانك.`,
@@ -133,6 +158,18 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
+    // ✅ تسجيل عرض الكورس (Analytics)
+    if (session_id) {
+      await supabase.from("chat_events").insert([
+        {
+          session_id,
+          event_type: "course_view",
+          course_id: selectedDocument.id,
+        },
+      ]);
+    }
+
+    // ✅ جلب بيانات الكورس
     const { data: selectedCourse } = await supabase
       .from("courses")
       .select("*")
@@ -158,7 +195,7 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ CTA بعد عرض الكورس
+    // ✅ CTA
     reply += "\n\n🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟";
 
     // ✅ Recommendation Engine
