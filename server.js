@@ -25,10 +25,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-/* ===============================
-   ✅ Conversation Memory
-================================ */
-
 const conversationMemory = new Map();
 
 /* ===============================
@@ -82,7 +78,7 @@ async function createEmbedding(text) {
 }
 
 /* ===============================
-   ✅ Chat Route (Smart RAG)
+   ✅ Chat Route (Hierarchy Smart RAG)
 ================================ */
 
 app.post("/chat", async (req, res) => {
@@ -106,6 +102,7 @@ app.post("/chat", async (req, res) => {
     let chatHistory = sessionData.history;
 
     const correctedMessage = await correctUserIntent(message);
+    const normalizedMessage = normalizeArabic(correctedMessage);
 
     /* ✅ Embedding Search */
     const embedding = await createEmbedding(correctedMessage);
@@ -122,27 +119,50 @@ app.post("/chat", async (req, res) => {
 
     if (results && results.length > 0) {
 
-      // ✅ أفضل نتيجة
-      bestMatch = results[0];
-
-      // ✅ ناخد أفضل 5 للسياق
       contextText = results
         .slice(0, 5)
-        .map(r => `عنوان: ${r.title}\nرابط: ${r.url}\nمحتوى: ${r.content.slice(0,1000)}`)
+        .map(r => `عنوان: ${r.title}\nمحتوى: ${r.content.slice(0,1000)}`)
         .join("\n\n");
+
+      /* =========================================
+         ✅ Smart Hierarchy Logic
+      ========================================= */
+
+      // 1️⃣ هل السؤال عن دورة محددة؟
+      const possibleCourseMatch = results.find(r =>
+        normalizeArabic(r.title).includes(normalizedMessage)
+      );
+
+      if (possibleCourseMatch) {
+
+        // 2️⃣ هل توجد دبلومة تحتوي هذه الدورة؟
+        const diplomaContainingCourse = results.find(r =>
+          r.title.includes("دبلومة") &&
+          normalizeArabic(r.content).includes(normalizedMessage)
+        );
+
+        if (diplomaContainingCourse) {
+          bestMatch = diplomaContainingCourse;
+        } else {
+          bestMatch = possibleCourseMatch;
+        }
+
+      } else {
+
+        // 3️⃣ سؤال عام → أفضل نتيجة
+        bestMatch = results[0];
+      }
     }
 
-    /* ✅ System Prompt احترافي */
+    /* ✅ System Prompt */
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 
 القواعد:
 - استخدم فقط المعلومات الموجودة في "السياق".
-- إذا وُجد أكثر من نتيجة مناسبة، اختر الأنسب واذكرها.
-- إذا لم توجد دبلومة، اقترح دورة قريبة من نفس المجال.
-- في نهاية الرد اقترح الخيار الأنسب بوضوح.
+- إذا كان السؤال عن دورة داخل دبلومة، وضّح أنها ضمن الدبلومة.
 - لا تخترع معلومات.
-- لا تضع روابط داخل النص (سيتم إضافتها تلقائياً).
+- لا تضع روابط داخل النص.
 - اكتب بأسلوب واضح ومختصر.
 `;
 
@@ -166,10 +186,9 @@ ${correctedMessage}
     });
 
     let reply = completion.choices[0].message.content.trim();
-
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    /* ✅ إضافة اقتراح مباشر في النهاية */
+    /* ✅ إضافة الاقتراح النهائي الصحيح */
     if (bestMatch) {
       reply += `
 <br><br>
