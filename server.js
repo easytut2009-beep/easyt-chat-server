@@ -54,14 +54,15 @@ app.post("/chat", async (req, res) => {
       normalizeArabic(message)
     );
 
+    // ✅ تخزين رسالة المستخدم
     if (session_id) {
       await supabase.from("chat_messages").insert([
         { session_id, role: "user", message },
       ]);
     }
 
-    // ✅ جلب آخر course_id
-    let activeCourseId = null;
+    // ✅ جلب آخر document_id
+    let activeDocumentId = null;
 
     if (session_id) {
       const { data } = await supabase
@@ -73,35 +74,47 @@ app.post("/chat", async (req, res) => {
         .limit(1);
 
       if (data && data.length > 0) {
-        activeCourseId = data[0].course_id;
+        activeDocumentId = data[0].course_id;
       }
     }
 
-    // ✅ لو متابعة ولدينا كورس نشط
-    if (activeCourseId) {
+    // ✅ Structured Follow-up من جدول courses
+    if (activeDocumentId) {
       const { data: course } = await supabase
-        .from("documents")
+        .from("courses")
         .select("*")
-        .eq("id", activeCourseId)
+        .eq("document_id", activeDocumentId)
         .single();
 
       if (course) {
-        // 🔥 Structured Responses
-        if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
-          return res.json({ reply: `مدة الدورة هي ${course.duration || "غير متوفرة"}.` });
+
+        if (
+          normalizedMessage.includes("مده") ||
+          normalizedMessage.includes("مدتها")
+        ) {
+          return res.json({
+            reply: `مدة الدورة هي ${course.duration}.`,
+          });
         }
 
         if (normalizedMessage.includes("سعر")) {
-          return res.json({ reply: `سعر الدورة هو ${course.price || "غير متوفر"}.` });
+          return res.json({
+            reply: `سعر الدورة هو ${course.price}.`,
+          });
         }
 
-        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
-          return res.json({ reply: `رابط الدورة هو:\n${course.url}` });
+        if (
+          normalizedMessage.includes("رابط") ||
+          normalizedMessage.includes("لينك")
+        ) {
+          return res.json({
+            reply: `رابط التسجيل:\n${course.url}`,
+          });
         }
       }
     }
 
-    // ✅ لو سؤال جديد → بحث عادي
+    // ✅ سؤال جديد → بحث
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: normalizedMessage,
@@ -122,11 +135,11 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const selectedCourse = results[0];
+    const selectedDocument = results[0];
 
     const contextText = `
-العنوان: ${selectedCourse.title}
-المحتوى: ${selectedCourse.content}
+العنوان: ${selectedDocument.title}
+المحتوى: ${selectedDocument.content}
 `;
 
     const completion = await openai.chat.completions.create({
@@ -134,10 +147,8 @@ app.post("/chat", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `
-أنت زيكو، مساعد منصة easyT.
-اعرض اسم الدورة ووصف مختصر فقط.
-`,
+          content:
+            "أنت زيكو، مساعد منصة easyT. اعرض اسم الدورة ووصف مختصر فقط.",
         },
         { role: "user", content: contextText },
       ],
@@ -145,13 +156,14 @@ app.post("/chat", async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
+    // ✅ تخزين الرد مع document_id
     if (session_id) {
       await supabase.from("chat_messages").insert([
         {
           session_id,
           role: "assistant",
           message: reply,
-          course_id: selectedCourse.id,
+          course_id: selectedDocument.id,
         },
       ]);
     }
