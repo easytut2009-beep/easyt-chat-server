@@ -16,6 +16,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+// ✅ Normalize Arabic
 function normalizeArabic(text) {
   return text
     .replace(/[إأآا]/g, "ا")
@@ -27,42 +28,22 @@ function normalizeArabic(text) {
     .toLowerCase();
 }
 
-function smartKeywordCorrection(text) {
-  const keywords = ["اليستريتور", "illustrator", "فوتوشوب", "photoshop"];
-  const words = text.split(" ");
-  return words
-    .map((word) => {
-      for (let keyword of keywords) {
-        if (keyword.includes(word) || word.includes(keyword)) {
-          return keyword;
-        }
-      }
-      return word;
-    })
-    .join(" ");
-}
-
 app.post("/chat", async (req, res) => {
   try {
     const { message, session_id } = req.body;
 
-    console.log("Incoming message:", message);
-    console.log("Session:", session_id);
-
     if (!message || !session_id) {
-      return res.status(400).json({ error: "Missing message or session_id" });
+      return res.status(400).json({
+        reply: "حدث خطأ في الجلسة، أعد تحميل الصفحة."
+      });
     }
 
-    const normalizedMessage = smartKeywordCorrection(
-      normalizeArabic(message)
-    );
+    const normalizedMessage = normalizeArabic(message);
 
-    // ✅ تخزين رسالة المستخدم
-    await supabase.from("chat_messages").insert([
-      { session_id, role: "user", message },
-    ]);
+    console.log("Message:", normalizedMessage);
+    console.log("Session:", session_id);
 
-    // ✅ جلب آخر كورس نشط
+    // ✅ 1️⃣ جيب آخر course_id الأول
     let activeDocumentId = null;
 
     const { data: lastCourse } = await supabase
@@ -77,10 +58,16 @@ app.post("/chat", async (req, res) => {
       activeDocumentId = lastCourse[0].course_id;
     }
 
-    console.log("Active course:", activeDocumentId);
+    console.log("Active Course:", activeDocumentId);
+
+    // ✅ 2️⃣ خزّن رسالة المستخدم بعد ما جبنا آخر كورس
+    await supabase.from("chat_messages").insert([
+      { session_id, role: "user", message }
+    ]);
 
     // ✅ Structured Follow‑up
     if (activeDocumentId) {
+
       const { data: course } = await supabase
         .from("courses")
         .select("*")
@@ -90,58 +77,47 @@ app.post("/chat", async (req, res) => {
       if (course) {
 
         // ✅ مدة
-        if (
-          normalizedMessage.includes("مده") ||
-          normalizedMessage.includes("مدتها") ||
-          normalizedMessage.includes("المده") ||
-          normalizedMessage.includes("المدة")
-        ) {
+        if (normalizedMessage.includes("مده") || normalizedMessage.includes("المده") || normalizedMessage.includes("المدة")) {
           return res.json({
-            reply: `مدة الدورة هي ${course.duration}.`,
+            reply: `مدة الدورة هي ${course.duration}.`
           });
         }
 
         // ✅ سعر
-        if (
-          normalizedMessage.includes("سعر") ||
-          normalizedMessage.includes("السعر")
-        ) {
+        if (normalizedMessage.includes("سعر") || normalizedMessage.includes("السعر")) {
 
           await supabase.from("chat_events").insert([
             {
               session_id,
               event_type: "price_view",
-              course_id: activeDocumentId,
-            },
+              course_id: activeDocumentId
+            }
           ]);
 
           return res.json({
-            reply: `سعر الدورة هو ${course.price}.`,
+            reply: `سعر الدورة هو ${course.price}.`
           });
         }
 
         // ✅ رابط
-        if (
-          normalizedMessage.includes("رابط") ||
-          normalizedMessage.includes("لينك")
-        ) {
+        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
 
           await supabase.from("chat_events").insert([
             {
               session_id,
               event_type: "link_click",
-              course_id: activeDocumentId,
-            },
+              course_id: activeDocumentId
+            }
           ]);
 
           return res.json({
-            reply: `رابط التسجيل:\n${course.url}`,
+            reply: `رابط التسجيل:\n${course.url}`
           });
         }
       }
     }
 
-    // ✅ لو مش Follow‑up → نعمل بحث جديد
+    // ✅ 3️⃣ لو مش Follow‑up → بحث جديد
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: normalizedMessage,
@@ -158,7 +134,7 @@ app.post("/chat", async (req, res) => {
 
     if (!results || results.length === 0) {
       return res.json({
-        reply: "عذرًا، المحتوى غير متوفر حاليًا.",
+        reply: "عذرًا، لم أجد دورة مطابقة."
       });
     }
 
@@ -170,47 +146,40 @@ app.post("/chat", async (req, res) => {
       .eq("document_id", selectedDocument.id)
       .single();
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "أنت زيكو، مساعد منصة easyT. اعرض اسم الدورة ووصف مختصر فقط.",
-        },
-        {
-          role: "user",
-          content: `
-العنوان: ${selectedDocument.title}
-المحتوى: ${selectedDocument.content}
-          `,
-        },
-      ],
-    });
+    if (!selectedCourse) {
+      return res.json({
+        reply: "حدث خطأ في تحميل بيانات الدورة."
+      });
+    }
 
-    let reply = completion.choices[0].message.content;
+    // ✅ رد مختصر بدون GPT (أسرع وأضمن)
+    const reply = `**اسم الدورة:** ${selectedCourse.title}
 
-    reply += "\n\n🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟";
+**الوصف:** ${selectedCourse.description}
 
-    // ✅ تخزين الرد مع course_id
+🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟`;
+
+    // ✅ خزّن الرد مع course_id
     await supabase.from("chat_messages").insert([
       {
         session_id,
         role: "assistant",
         message: reply,
-        course_id: selectedDocument.id,
-      },
+        course_id: selectedDocument.id
+      }
     ]);
 
     res.json({ reply });
 
   } catch (error) {
-    console.error("ERROR:", error);
-    res.status(500).json({ error: "حدث خطأ في السيرفر" });
+    console.error("SERVER ERROR:", error);
+    res.status(500).json({
+      reply: "حدث خطأ في السيرفر."
+    });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("✅ Server running on port " + PORT);
 });
