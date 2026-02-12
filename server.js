@@ -78,7 +78,7 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // ✅ Structured Follow-up من جدول courses
+    // ✅ Structured Follow‑up (بدون GPT)
     if (activeDocumentId) {
       const { data: course } = await supabase
         .from("courses")
@@ -89,15 +89,23 @@ app.post("/chat", async (req, res) => {
       if (course) {
 
         if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
-          return res.json({ reply: `مدة الدورة هي ${course.duration}.` });
+          return res.json({
+            reply: `مدة الدورة هي ${course.duration}.`,
+          });
         }
 
         if (normalizedMessage.includes("سعر")) {
-          return res.json({ reply: `سعر الدورة هو ${course.price}.` });
+          return res.json({
+            reply:
+              `سعر الدورة هو ${course.price}.\n\n🎯 هل تحب التسجيل الآن؟ يمكنني إرسال رابط التسجيل فورًا.`,
+          });
         }
 
         if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
-          return res.json({ reply: `رابط التسجيل:\n${course.url}` });
+          return res.json({
+            reply:
+              `رابط التسجيل:\n${course.url}\n\n✅ المقاعد محدودة، ننصح بالتسجيل الآن لضمان مكانك.`,
+          });
         }
       }
     }
@@ -125,7 +133,6 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
-    // ✅ جلب بيانات الكورس من جدول courses
     const { data: selectedCourse } = await supabase
       .from("courses")
       .select("*")
@@ -151,9 +158,10 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ Recommendation Engine
-    let recommendationsText = "";
+    // ✅ CTA بعد عرض الكورس
+    reply += "\n\n🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟";
 
+    // ✅ Recommendation Engine
     if (selectedCourse && selectedCourse.category) {
       const { data: relatedCourses } = await supabase
         .from("courses")
@@ -163,7 +171,7 @@ app.post("/chat", async (req, res) => {
         .limit(2);
 
       if (relatedCourses && relatedCourses.length > 0) {
-        recommendationsText =
+        reply +=
           "\n\nقد يعجبك أيضًا:\n" +
           relatedCourses
             .map((c) => `• ${c.title}\n${c.url}`)
@@ -171,9 +179,7 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    reply = reply + recommendationsText;
-
-    // ✅ تخزين الرد مع document_id
+    // ✅ تخزين الرد
     if (session_id) {
       await supabase.from("chat_messages").insert([
         {
