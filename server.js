@@ -1,113 +1,22 @@
 import express from "express";
 import cors from "cors";
-import OpenAI from "openai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 app.post("/chat", async (req, res) => {
-  try {
-    const { message } = req.body;
+  const { message } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: "لا يوجد سؤال" });
-    }
+  console.log("✅ Message received:", message);
 
-    // ✅ رد مباشر لليستريتور
-    if (/اليستريتور|illustrator/i.test(message)) {
-      return res.json({
-        reply: `
-✅ قوة الذكاء الاصطناعي داخل اليستريتور
-💰 السعر: 9.99$
-⏱ المدة: 4 ساعات و30 دقيقة
-🔗 الرابط:
-https://easyt.online/p/illustrator-ai
-
-يمكنك التسجيل الآن والبدء فورًا 🚀
-`
-      });
-    }
-
-    // ✅ رد مباشر لفوتوشوب
-    if (/فوتوشوب|photoshop/i.test(message)) {
-      return res.json({
-        reply: `
-✅ قوة الذكاء الاصطناعي داخل فوتوشوب
-💰 السعر: 9.99$
-⏱ المدة: 4 ساعات و30 دقيقة
-🔗 الرابط:
-https://easyt.online/p/photoshop-ai
-
-يمكنك التسجيل الآن والبدء فورًا 🚀
-`
-      });
-    }
-
-    // ✅ رد مباشر لدبلومة المشاريع
-    if (/دبلومة|المشاريع الإلكترونية|freelance/i.test(message)) {
-      return res.json({
-        reply: `
-✅ دبلومة المشاريع الإلكترونية والعمل الحر
-💰 السعر: 29.99$
-⏱ أكثر من 21 ساعة تدريب عملي
-🔗 الرابط:
-https://easyt.online/p/e-projects-and-freeance
-
-ابدأ مسارك في العمل الحر الآن 🚀
-`
-      });
-    }
-
-    // ✅ رد مباشر لمكتبة الأمن السيبراني
-    if (/الأمن السيبراني|cyber/i.test(message)) {
-      return res.json({
-        reply: `
-✅ مكتبة الأمن السيبراني
-💰 السعر: 9.99$
-📚 تشمل جميع كتب الأمن السيبراني الحالية مع تحديثات مستقبلية
-🔗 الرابط:
-https://easyt.online/p/cyber-lib
-
-احصل على المكتبة كاملة الآن 🔐
-`
-      });
-    }
-
-    // ✅ لو السؤال عام نستخدم GPT
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `
-أنت زيكو، مساعد منصة easyT.
-تحدث بالعربية وبأسلوب مختصر واحترافي.
-`
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ],
-    });
-
-    res.json({
-      reply: completion.choices[0].message.content
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "حدث خطأ في السيرفر" });
-  }
+  return res.json({
+    reply: "✅✅ النسخة الجديدة من السيرفر شغالة فعليًا ✅✅"
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("✅ Server running on port " + PORT);
 });
