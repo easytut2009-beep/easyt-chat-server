@@ -80,9 +80,8 @@ async function correctUserIntent(message) {
       {
         role: "system",
         content: `
-صحح أي خطأ إملائي في أسماء البرامج.
-إذا كان المستخدم يقصد برنامج مثل Photoshop أو Illustrator صححه.
-أعد النص المصحح فقط.
+صحح أي خطأ إملائي في أسماء البرامج فقط.
+أعد النص المصحح بدون أي شرح.
 `
       },
       { role: "user", content: message }
@@ -106,7 +105,7 @@ async function createEmbedding(text) {
 }
 
 /* ===============================
-   ✅ Chat Route
+   ✅ Chat Route (RAG ENABLED)
 ================================ */
 
 app.post("/chat", async (req, res) => {
@@ -133,100 +132,79 @@ app.post("/chat", async (req, res) => {
     const sessionData = conversationMemory.get(session_id);
     let chatHistory = sessionData.history;
 
-    /* ✅ Correct & Detect */
+    /* ✅ Correct & Normalize */
     const correctedMessage = await correctUserIntent(message);
     const normalizedMessage = normalizeArabic(correctedMessage);
     const directCourseQuestion = isCourseQuestion(normalizedMessage);
-
-    let selectedCourse = sessionData.currentCourse;
-    let similarityScore = 0;
 
     /* ✅ Embedding Search */
     const embedding = await createEmbedding(correctedMessage);
 
     const { data: results } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
-      query_text: correctedMessage,
-      match_threshold: 0.75,
-      match_count: 1,
+      match_count: 3
     });
 
+    let contextText = "";
+    let selectedCourse = null;
+
     if (results && results.length > 0) {
-      similarityScore = results[0].similarity || 0;
+      contextText = results
+        .map(r => r.content?.slice(0, 1500) || "")
+        .join("\n\n");
 
-      if (similarityScore >= 0.75) {
-        const { data: course } = await supabase
-          .from("courses")
-          .select("*")
-          .eq("document_id", results[0].id)
-          .maybeSingle();
+      const topDocumentId = results[0].id;
 
-        if (course) {
-          selectedCourse = course;
-          sessionData.currentCourse = course;
-        }
-      }
-    }
-
-    /* ✅ Fallback Search لو مفيش نتيجة قوية */
-    if (!selectedCourse) {
-      const { data: fallbackCourses } = await supabase
+      const { data: course } = await supabase
         .from("courses")
         .select("*")
-        .ilike("title", `%${correctedMessage}%`)
-        .limit(1);
+        .eq("document_id", topDocumentId)
+        .maybeSingle();
 
-      if (fallbackCourses && fallbackCourses.length > 0) {
-        selectedCourse = fallbackCourses[0];
-        sessionData.currentCourse = fallbackCourses[0];
+      if (course) {
+        selectedCourse = course;
+        sessionData.currentCourse = course;
       }
     }
 
-    /* ===============================
-       ✅ GPT Response
-    ============================== */
-
+    /* ✅ System Prompt */
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
-- اشرح المفاهيم بوضوح.
-- افهم الأسئلة المتابعة.
+
+- استخدم فقط المعلومات الموجودة في "السياق".
+- إذا لم تجد إجابة واضحة في السياق قل: المعلومة غير متوفرة حالياً.
+- لا تخترع معلومات.
 - لا تضع روابط داخل الرد.
 `;
 
-    chatHistory.push({ role: "user", content: correctedMessage });
-
-    if (chatHistory.length > 10) {
-      chatHistory = chatHistory.slice(-10);
-    }
-
+    /* ✅ GPT Call (RAG) */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.5,
+      temperature: 0.3,
       max_tokens: 400,
       messages: [
         { role: "system", content: systemPrompt },
-        ...chatHistory
+        {
+          role: "user",
+          content: `
+السياق:
+${contextText}
+
+السؤال:
+${correctedMessage}
+`
+        }
       ]
     });
 
     let reply = completion.choices[0].message.content.trim();
 
-    /* ✅ Remove links */
+    /* ✅ Clean Response */
     reply = reply.replace(/https?:\/\/\S+/g, "");
-
-    /* ✅ Convert Markdown Bold to HTML */
     reply = reply.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
     /* ✅ Smart Promotion */
-    const shouldPromote =
-      selectedCourse &&
-      (
-        similarityScore >= 0.75 ||
-        directCourseQuestion ||
-        sessionData.currentCourse !== null
-      );
-
-    if (shouldPromote) {
+    if (selectedCourse) {
       reply += `
 <br>
 <a href="${selectedCourse.url}" target="_blank"
@@ -235,8 +213,14 @@ style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-d
 </a>`;
     }
 
-    /* ✅ Save Reply */
+    /* ✅ Save Memory */
+    chatHistory.push({ role: "user", content: correctedMessage });
     chatHistory.push({ role: "assistant", content: reply });
+
+    if (chatHistory.length > 10) {
+      chatHistory = chatHistory.slice(-10);
+    }
+
     sessionData.history = chatHistory;
     conversationMemory.set(session_id, sessionData);
 
@@ -257,5 +241,5 @@ style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-d
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("✅ Server running on port " + PORT);
 });
