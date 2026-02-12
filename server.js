@@ -70,7 +70,7 @@ function smartKeywordCorrection(text) {
 
 app.post("/chat", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, session_id } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "لا يوجد سؤال" });
@@ -79,6 +79,37 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
+    /* ✅ 1. تخزين رسالة المستخدم */
+    if (session_id) {
+      await supabase.from("chat_messages").insert([
+        {
+          session_id,
+          role: "user",
+          message,
+        },
+      ]);
+    }
+
+    /* ✅ 2. استرجاع آخر 5 رسائل */
+    let memoryMessages = [];
+
+    if (session_id) {
+      const { data: previousMessages } = await supabase
+        .from("chat_messages")
+        .select("role, message")
+        .eq("session_id", session_id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (previousMessages) {
+        memoryMessages = previousMessages.reverse().map((m) => ({
+          role: m.role,
+          content: m.message,
+        }));
+      }
+    }
+
+    /* ✅ 3. Multi‑Query + Dynamic Threshold */
     const expansion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -153,6 +184,7 @@ app.post("/chat", async (req, res) => {
       )
       .join("\n\n");
 
+    /* ✅ 4. الرد مع الذاكرة */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -160,23 +192,31 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت زيكو، مساعد منصة easyT.
-اختر أفضل نتيجة من النتائج التالية:
-${contextText}
+اعتمد على نتائج البحث والسياق السابق في المحادثة.
 
-اعرض:
-• اسم الدورة
-• وصف مختصر
-• الرابط
-• دعوة للتسجيل
+${contextText}
 `,
         },
+        ...memoryMessages,
         { role: "user", content: message },
       ],
     });
 
-    res.json({
-      reply: completion.choices[0].message.content,
-    });
+    const reply = completion.choices[0].message.content;
+
+    /* ✅ 5. تخزين رد زيكو */
+    if (session_id) {
+      await supabase.from("chat_messages").insert([
+        {
+          session_id,
+          role: "assistant",
+          message: reply,
+        },
+      ]);
+    }
+
+    res.json({ reply });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "حدث خطأ في السيرفر" });
