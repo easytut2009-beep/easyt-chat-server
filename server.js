@@ -1,14 +1,22 @@
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ✅ OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// ✅ Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 app.post("/chat", async (req, res) => {
   try {
@@ -18,67 +26,37 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    // ✅ Illustrator
-    if (/اليستريتور|illustrator/i.test(message)) {
-      return res.json({
-        reply: `
-✅ قوة الذكاء الاصطناعي داخل اليستريتور
-💰 السعر: 9.99$
-⏱ المدة: 4 ساعات و30 دقيقة
-🔗 الرابط:
-https://easyt.online/p/illustrator-ai
+    // ✅ نحول السؤال إلى embedding
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: message,
+    });
 
-يمكنك التسجيل الآن والبدء فورًا 🚀
-`
-      });
+    const queryEmbedding = embeddingResponse.data[0].embedding;
+
+    // ✅ نبحث في Supabase
+    const { data, error } = await supabase.rpc("match_documents", {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.7,
+      match_count: 5,
+    });
+
+    if (error) {
+      console.error(error);
     }
 
-    // ✅ Photoshop
-    if (/فوتوشوب|photoshop/i.test(message)) {
-      return res.json({
-        reply: `
-✅ قوة الذكاء الاصطناعي داخل فوتوشوب
-💰 السعر: 9.99$
-⏱ المدة: 4 ساعات و30 دقيقة
-🔗 الرابط:
-https://easyt.online/p/photoshop-ai
+    let contextText = "";
 
-يمكنك التسجيل الآن والبدء فورًا 🚀
-`
-      });
+    if (data && data.length > 0) {
+      contextText = data
+        .map(
+          (doc) =>
+            `العنوان: ${doc.title}\nالرابط: ${doc.url}\nالمحتوى: ${doc.content}`
+        )
+        .join("\n\n");
     }
 
-    // ✅ Diploma
-    if (/دبلومة|المشاريع الإلكترونية|freelance/i.test(message)) {
-      return res.json({
-        reply: `
-✅ دبلومة المشاريع الإلكترونية والعمل الحر
-💰 السعر: 29.99$
-⏱ أكثر من 21 ساعة تدريب عملي
-🔗 الرابط:
-https://easyt.online/p/e-projects-and-freeance
-
-ابدأ مسارك في العمل الحر الآن 🚀
-`
-      });
-    }
-
-    // ✅ Cyber Library
-    if (/الأمن السيبراني|cyber/i.test(message)) {
-      return res.json({
-        reply: `
-✅ مكتبة الأمن السيبراني
-💰 السعر: 9.99$
-📚 تشمل جميع كتب الأمن السيبراني الحالية مع تحديثات مستقبلية
-🔗 الرابط:
-https://easyt.online/p/cyber-lib
-
-احصل على المكتبة كاملة الآن 🔐
-`
-      });
-    }
-
-    // ✅ الأسئلة العامة
+    // ✅ نرسل النتائج لـ GPT
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -86,6 +64,11 @@ https://easyt.online/p/cyber-lib
           role: "system",
           content: `
 أنت زيكو، مساعد منصة easyT.
+استخدم فقط المعلومات التالية من المنصة عند الإجابة عن الدورات:
+
+${contextText}
+
+إذا لم تجد محتوى مناسب، قل أنه غير متوفر حاليًا داخل المنصة.
 تحدث بالعربية وبأسلوب مختصر واحترافي.
 `
         },
@@ -109,5 +92,5 @@ https://easyt.online/p/cyber-lib
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("✅ Server running on port " + PORT);
 });
