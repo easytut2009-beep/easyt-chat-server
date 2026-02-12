@@ -18,8 +18,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-
-
 // ✅ Arabic Normalization
 function normalizeArabic(text) {
   return text
@@ -32,9 +30,7 @@ function normalizeArabic(text) {
     .toLowerCase();
 }
 
-
-
-// ✅ Levenshtein Distance
+// ✅ Levenshtein
 function levenshtein(a, b) {
   const matrix = Array.from({ length: b.length + 1 }, () =>
     new Array(a.length + 1).fill(0)
@@ -60,71 +56,24 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-
-
-// ✅ Smart Keyword Correction (لكل كلمة منفصلة)
+// ✅ Smart Correction
 function smartKeywordCorrection(text) {
-  const keywords = [
-    "اليستريتور",
-    "illustrator",
-    "فوتوشوب",
-    "photoshop"
-  ];
-
+  const keywords = ["اليستريتور", "illustrator", "فوتوشوب", "photoshop"];
   const words = text.split(" ");
 
-  const correctedWords = words.map((word) => {
-    for (let keyword of keywords) {
-      const distance = levenshtein(word, keyword);
-      if (distance <= 2) {
-        return keyword;
+  return words
+    .map((word) => {
+      for (let keyword of keywords) {
+        if (levenshtein(word, keyword) <= 2) {
+          return keyword;
+        }
       }
-    }
-    return word;
-  });
-
-  return correctedWords.join(" ");
+      return word;
+    })
+    .join(" ");
 }
 
-
-
-// ✅ إضافة كورس تجريبي
-app.get("/add-test-course", async (req, res) => {
-  try {
-    const title = "قوة الذكاء الاصطناعي داخل اليستريتور";
-
-    const content = `
-دورة قوة الذكاء الاصطناعي داخل اليستريتور.
-تعلم استخدام أدوات الذكاء الاصطناعي داخل برنامج اليستريتور Adobe Illustrator.
-تشمل Firefly Vector و GPT Image و Ideogram.
-مدة الدورة 4 ساعات و30 دقيقة.
-السعر 9.99 دولار.
-`;
-
-    const url = "https://easyt.online/p/illustrator-ai";
-
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-large",
-      input: content,
-    });
-
-    const embedding = embeddingResponse.data[0].embedding;
-
-    await supabase.from("documents").insert([
-      { title, content, url, embedding },
-    ]);
-
-    res.json({ message: "✅ تم إضافة الكورس بنجاح" });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "خطأ أثناء الإدخال" });
-  }
-});
-
-
-
-// ✅ الشات الاحترافي الكامل
+// ✅ Chat Endpoint
 app.post("/chat", async (req, res) => {
   try {
     const { message } = req.body;
@@ -132,30 +81,25 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    // ✅ 1️⃣ تنظيف
     let normalizedMessage = normalizeArabic(message);
-
-    // ✅ 2️⃣ تصحيح إملائي
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ 3️⃣ GPT Query Expansion (يفهم المعنى)
+    // ✅ Query Expansion
     const expansion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: `
-حوّل سؤال المستخدم إلى كلمات بحث واضحة داخل منصة دورات.
-اكتب كلمات مفتاحية فقط.
-`
+          content:
+            "حوّل سؤال المستخدم إلى كلمات بحث واضحة داخل منصة دورات. اكتب كلمات مفتاحية فقط.",
         },
-        { role: "user", content: normalizedMessage }
+        { role: "user", content: normalizedMessage },
       ],
     });
 
     const expandedQuery = expansion.choices[0].message.content;
 
-    // ✅ 4️⃣ Embedding قوي
+    // ✅ Embedding
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-large",
       input: expandedQuery,
@@ -163,32 +107,33 @@ app.post("/chat", async (req, res) => {
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // ✅ 5️⃣ Hybrid Search
+    // ✅ Hybrid Search (معدل هنا 👇)
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
       query_text: expandedQuery,
-      match_threshold: 0.25,
-      match_count: 10,
+      match_threshold: 0.05,   // ✅ مهم جدًا
+      match_count: 5,
     });
 
     if (error) console.error(error);
 
-    let contextText = "";
-
-    if (data && data.length > 0) {
-      contextText = data
-        .map(
-          (doc, index) =>
-            `#${index + 1}
-العنوان: ${doc.title}
-الرابط: ${doc.url}
-المحتوى: ${doc.content}
-`
-        )
-        .join("\n\n");
+    if (!data || data.length === 0) {
+      return res.json({
+        reply: "عذرًا، المحتوى غير متوفر حاليًا.",
+      });
     }
 
-    // ✅ 6️⃣ GPT Re-ranking
+    const contextText = data
+      .map(
+        (doc, index) =>
+          `#${index + 1}
+العنوان: ${doc.title}
+الرابط: ${doc.url}
+المحتوى: ${doc.content}`
+      )
+      .join("\n\n");
+
+    // ✅ Re-ranking
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -196,36 +141,30 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت زيكو، مساعد منصة easyT.
-
 اختر أفضل نتيجة من النتائج التالية:
 ${contextText}
 
-إذا لم توجد نتيجة مناسبة قل أن المحتوى غير متوفر.
 اعرض:
 • اسم الدورة
 • وصف مختصر
 • الرابط
 • دعوة للتسجيل
-`
+`,
         },
-        { role: "user", content: message }
+        { role: "user", content: message },
       ],
     });
 
     res.json({
       reply: completion.choices[0].message.content,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "حدث خطأ في السيرفر" });
   }
 });
 
-
-
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log("✅ Server running on port " + PORT);
 });
