@@ -7,16 +7,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ تأكيد وجود env variables
+/* =========================================================
+   ✅ Environment Variables Check
+========================================================= */
+
 if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY missing");
+  console.error("❌ OPENAI_API_KEY is missing");
   process.exit(1);
 }
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-  console.error("❌ Supabase environment variables missing");
+  console.error("❌ Supabase environment variables are missing");
   process.exit(1);
 }
+
+/* =========================================================
+   ✅ Clients Initialization
+========================================================= */
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,7 +34,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ✅ Normalize Arabic
+/* =========================================================
+   ✅ Arabic Normalization
+========================================================= */
+
 function normalizeArabic(text) {
   return text
     .replace(/[إأآا]/g, "ا")
@@ -38,6 +48,10 @@ function normalizeArabic(text) {
     .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
     .toLowerCase();
 }
+
+/* =========================================================
+   ✅ Chat Endpoint
+========================================================= */
 
 app.post("/chat", async (req, res) => {
   try {
@@ -51,10 +65,13 @@ app.post("/chat", async (req, res) => {
 
     const normalizedMessage = normalizeArabic(message);
 
-    console.log("Message:", normalizedMessage);
-    console.log("Session:", session_id);
+    console.log("📩 Message:", normalizedMessage);
+    console.log("🆔 Session:", session_id);
 
-    // ✅ 1️⃣ جلب آخر course_id
+    /* =====================================================
+       ✅ 1️⃣ Get Last Active Course
+    ===================================================== */
+
     let activeDocumentId = null;
 
     const { data: lastCourse, error: lastCourseError } = await supabase
@@ -73,35 +90,56 @@ app.post("/chat", async (req, res) => {
       activeDocumentId = lastCourse[0].course_id;
     }
 
-    console.log("Active Course:", activeDocumentId);
+    console.log("🎯 Active Course:", activeDocumentId);
 
-    // ✅ تخزين رسالة المستخدم
-    await supabase.from("chat_messages").insert([
-      { session_id, role: "user", message }
-    ]);
+    /* =====================================================
+       ✅ 2️⃣ Save User Message
+    ===================================================== */
 
-    // ✅ Structured Follow‑up
+    const { error: insertUserError } = await supabase
+      .from("chat_messages")
+      .insert([
+        { session_id, role: "user", message }
+      ]);
+
+    if (insertUserError) {
+      console.error("Supabase error (insert user message):", insertUserError);
+    }
+
+    /* =====================================================
+       ✅ 3️⃣ Structured Follow‑up
+    ===================================================== */
+
     if (activeDocumentId) {
 
       const { data: course, error: courseError } = await supabase
         .from("courses")
         .select("*")
         .eq("document_id", activeDocumentId)
-        .maybeSingle(); // ✅ بدل single()
+        .maybeSingle();
 
       if (courseError) {
-        console.error("Supabase error (course):", courseError);
+        console.error("Supabase error (course fetch):", courseError);
       }
 
       if (course) {
 
-        if (normalizedMessage.includes("مده") || normalizedMessage.includes("المده") || normalizedMessage.includes("المدة")) {
+        // ✅ Duration
+        if (
+          normalizedMessage.includes("مده") ||
+          normalizedMessage.includes("المده") ||
+          normalizedMessage.includes("المدة")
+        ) {
           return res.json({
             reply: `مدة الدورة هي ${course.duration}.`
           });
         }
 
-        if (normalizedMessage.includes("سعر") || normalizedMessage.includes("السعر")) {
+        // ✅ Price
+        if (
+          normalizedMessage.includes("سعر") ||
+          normalizedMessage.includes("السعر")
+        ) {
 
           await supabase.from("chat_events").insert([
             {
@@ -116,7 +154,11 @@ app.post("/chat", async (req, res) => {
           });
         }
 
-        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
+        // ✅ Link
+        if (
+          normalizedMessage.includes("رابط") ||
+          normalizedMessage.includes("لينك")
+        ) {
 
           await supabase.from("chat_events").insert([
             {
@@ -133,7 +175,10 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // ✅ بحث جديد
+    /* =====================================================
+       ✅ 4️⃣ New Search Using Embeddings
+    ===================================================== */
+
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: normalizedMessage,
@@ -141,12 +186,15 @@ app.post("/chat", async (req, res) => {
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    const { data: results, error: matchError } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
-      query_text: normalizedMessage,
-      match_threshold: 0.05,
-      match_count: 5,
-    });
+    const { data: results, error: matchError } = await supabase.rpc(
+      "match_documents",
+      {
+        query_embedding: queryEmbedding,
+        query_text: normalizedMessage,
+        match_threshold: 0.05,
+        match_count: 5,
+      }
+    );
 
     if (matchError) {
       console.error("Supabase RPC error:", matchError);
@@ -160,14 +208,15 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
-    const { data: selectedCourse, error: selectedError } = await supabase
-      .from("courses")
-      .select("*")
-      .eq("document_id", selectedDocument.id)
-      .maybeSingle();
+    const { data: selectedCourse, error: selectedCourseError } =
+      await supabase
+        .from("courses")
+        .select("*")
+        .eq("document_id", selectedDocument.id)
+        .maybeSingle();
 
-    if (selectedError) {
-      console.error("Supabase error (selectedCourse):", selectedError);
+    if (selectedCourseError) {
+      console.error("Supabase error (selectedCourse):", selectedCourseError);
     }
 
     if (!selectedCourse) {
@@ -182,26 +231,41 @@ app.post("/chat", async (req, res) => {
 
 🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟`;
 
-    await supabase.from("chat_messages").insert([
-      {
-        session_id,
-        role: "assistant",
-        message: reply,
-        course_id: selectedDocument.id
-      }
-    ]);
+    /* =====================================================
+       ✅ 5️⃣ Save Assistant Reply
+    ===================================================== */
 
-    res.json({ reply });
+    const { error: insertAssistantError } = await supabase
+      .from("chat_messages")
+      .insert([
+        {
+          session_id,
+          role: "assistant",
+          message: reply,
+          course_id: selectedDocument.id
+        }
+      ]);
+
+    if (insertAssistantError) {
+      console.error("Supabase error (insert assistant message):", insertAssistantError);
+    }
+
+    return res.json({ reply });
 
   } catch (error) {
-    console.error("SERVER ERROR:", error);
-    res.status(500).json({
+    console.error("🔥 SERVER ERROR:", error);
+    return res.status(500).json({
       reply: "حدث خطأ في السيرفر."
     });
   }
 });
 
+/* =========================================================
+   ✅ Start Server
+========================================================= */
+
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log("✅ Server running on port " + PORT);
 });
