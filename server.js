@@ -33,6 +33,19 @@ const supabase = createClient(
 );
 
 /* ===============================
+   ✅ Helper: Promise Timeout
+================================ */
+
+function withTimeout(promise, ms, label = "Operation") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout`)), ms)
+    ),
+  ]);
+}
+
+/* ===============================
    ✅ Normalize Arabic
 ================================ */
 
@@ -48,20 +61,27 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Embedding Retry Function
+   ✅ Embedding Retry
 ================================ */
 
 async function createEmbeddingWithRetry(text, retries = 2) {
   try {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-    });
+    console.log("🟡 Creating embedding...");
+
+    const response = await withTimeout(
+      openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: text,
+      }),
+      15000,
+      "Embedding"
+    );
+
+    console.log("✅ Embedding created");
 
     return response.data[0].embedding;
 
   } catch (error) {
-
     console.error("❌ Embedding error:", error.message);
 
     if (retries > 0) {
@@ -80,19 +100,11 @@ async function createEmbeddingWithRetry(text, retries = 2) {
 
 app.post("/chat", async (req, res) => {
 
-  const timeout = setTimeout(() => {
-    console.log("⏰ Request Timeout");
-    return res.json({
-      reply: "⏳ السيرفر يستغرق وقت أطول من المعتاد، حاول مرة أخرى."
-    });
-  }, 25000); // 25 ثانية حماية
-
   try {
 
     let { message, session_id } = req.body;
 
     if (!message) {
-      clearTimeout(timeout);
       return res.status(400).json({
         reply: "لم يتم إرسال رسالة."
       });
@@ -104,101 +116,44 @@ app.post("/chat", async (req, res) => {
 
     const normalizedMessage = normalizeArabic(message);
 
-    /* ===============================
-       ✅ Save User Message
-    ================================ */
+    console.log("📩 New message:", normalizedMessage);
 
-    await supabase.from("chat_messages").insert([
-      { session_id, role: "user", message }
-    ]);
+    /* ✅ Save User Message */
+    await withTimeout(
+      supabase.from("chat_messages").insert([
+        { session_id, role: "user", message }
+      ]),
+      10000,
+      "Insert message"
+    );
 
-    /* ===============================
-       ✅ Get Last Active Course
-    ================================ */
-
-    let activeCourseId = null;
-
-    try {
-      const { data: lastCourse } = await supabase
-        .from("chat_messages")
-        .select("course_id")
-        .eq("session_id", session_id)
-        .not("course_id", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (lastCourse && lastCourse.length > 0) {
-        activeCourseId = lastCourse[0].course_id;
-      }
-    } catch (err) {
-      console.error("❌ Error fetching last course:", err.message);
-    }
-
-    /* ===============================
-       ✅ Follow-up Logic
-    ================================ */
-
-    if (activeCourseId) {
-      try {
-        const { data: course } = await supabase
-          .from("courses")
-          .select("*")
-          .eq("document_id", activeCourseId)
-          .maybeSingle();
-
-        if (course) {
-
-          if (normalizedMessage.includes("سعر")) {
-            clearTimeout(timeout);
-            return res.json({
-              reply: `💰 سعر الدورة هو ${course.price || "غير محدد حالياً"}.`
-            });
-          }
-
-          if (
-            normalizedMessage.includes("مده") ||
-            normalizedMessage.includes("المدة")
-          ) {
-            clearTimeout(timeout);
-            return res.json({
-              reply: `⏳ مدة الدورة هي ${course.duration || "غير محددة حالياً"}.`
-            });
-          }
-
-          if (
-            normalizedMessage.includes("تسجيل") ||
-            normalizedMessage.includes("رابط") ||
-            normalizedMessage.includes("الاشتراك")
-          ) {
-            clearTimeout(timeout);
-            return res.json({
-              reply: `✅ يمكنك التسجيل من هنا:\n${course.url || "الرابط غير متوفر حالياً"}`
-            });
-          }
-        }
-      } catch (err) {
-        console.error("❌ Follow-up error:", err.message);
-      }
-    }
-
-    /* ===============================
-       ✅ New Embedding Search
-    ================================ */
-
+    /* ✅ Embedding */
     const queryEmbedding = await createEmbeddingWithRetry(normalizedMessage);
 
-    const { data: results } = await supabase.rpc(
-      "match_documents",
-      {
+    /* ✅ Supabase Search */
+    console.log("🟡 Searching Supabase...");
+
+    const { data: results, error: rpcError } = await withTimeout(
+      supabase.rpc("match_documents", {
         query_embedding: queryEmbedding,
         query_text: normalizedMessage,
         match_threshold: 0.05,
         match_count: 5,
-      }
+      }),
+      15000,
+      "Supabase RPC"
     );
 
+    if (rpcError) {
+      console.error("❌ RPC Error:", rpcError.message);
+      return res.json({
+        reply: "حدث خطأ أثناء البحث في قاعدة البيانات."
+      });
+    }
+
+    console.log("✅ Supabase returned results");
+
     if (!results || results.length === 0) {
-      clearTimeout(timeout);
       return res.json({
         reply: "عذرًا، لم أجد دورة مطابقة."
       });
@@ -206,14 +161,18 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
-    const { data: selectedCourse } = await supabase
-      .from("courses")
-      .select("*")
-      .eq("document_id", selectedDocument.id)
-      .maybeSingle();
+    const { data: selectedCourse, error: courseError } = await withTimeout(
+      supabase
+        .from("courses")
+        .select("*")
+        .eq("document_id", selectedDocument.id)
+        .maybeSingle(),
+      10000,
+      "Fetch course"
+    );
 
-    if (!selectedCourse) {
-      clearTimeout(timeout);
+    if (courseError || !selectedCourse) {
+      console.error("❌ Course fetch error:", courseError?.message);
       return res.json({
         reply: "حدث خطأ في تحميل بيانات الدورة."
       });
@@ -237,19 +196,24 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
       }
     ]);
 
-    clearTimeout(timeout);
     return res.json({ reply, session_id });
 
   } catch (error) {
 
-    console.error("🔥 SERVER ERROR FULL:", error);
-
-    clearTimeout(timeout);
+    console.error("🔥 SERVER ERROR FULL:", error.message);
 
     return res.status(500).json({
       reply: "حدث خطأ في السيرفر."
     });
   }
+});
+
+/* ===============================
+   ✅ Health Check
+================================ */
+
+app.get("/", (req, res) => {
+  res.send("✅ Server is alive");
 });
 
 /* ===============================
