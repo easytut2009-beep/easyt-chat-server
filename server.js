@@ -20,115 +20,130 @@ const supabase = createClient(
 
 
 
-// ✅ إضافة أول كورس تجريبي (تشغيل مرة واحدة فقط)
+// ✅ Arabic Normalization (ذكاء لغوي)
+function normalizeArabic(text) {
+  return text
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
+    .toLowerCase();
+}
+
+
+
+// ✅ إضافة كورس تجريبي
 app.get("/add-test-course", async (req, res) => {
   try {
     const title = "قوة الذكاء الاصطناعي داخل اليستريتور";
+
     const content = `
-دورة عملية لتعلم استخدام أدوات الذكاء الاصطناعي داخل Adobe Illustrator.
+دورة قوة الذكاء الاصطناعي داخل اليستريتور.
+تعلم استخدام أدوات الذكاء الاصطناعي داخل برنامج اليستريتور Adobe Illustrator.
 تشمل Firefly Vector و GPT Image و Ideogram.
 مدة الدورة 4 ساعات و30 دقيقة.
 السعر 9.99 دولار.
 `;
+
     const url = "https://easyt.online/p/illustrator-ai";
 
-    // ✅ إنشاء embedding
     const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
+      model: "text-embedding-3-large",
       input: content,
     });
 
     const embedding = embeddingResponse.data[0].embedding;
 
-    // ✅ إدخال البيانات في Supabase
-    const { error } = await supabase.from("documents").insert([
-      {
-        title,
-        content,
-        url,
-        embedding,
-      },
+    await supabase.from("documents").insert([
+      { title, content, url, embedding },
     ]);
-
-    if (error) {
-      console.error(error);
-      return res.status(500).json({ error: "خطأ أثناء الإدخال" });
-    }
 
     res.json({ message: "✅ تم إضافة الكورس بنجاح" });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "حدث خطأ في السيرفر" });
+    res.status(500).json({ error: "خطأ أثناء الإدخال" });
   }
 });
 
 
 
-// ✅ الشات الذكي بالبحث في Vector DB
+// ✅ الشات الذكي جدًا
 app.post("/chat", async (req, res) => {
   try {
     const { message } = req.body;
-
     if (!message) {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    // ✅ نحول السؤال إلى embedding
+    // ✅ تنظيف السؤال
+    const normalizedMessage = normalizeArabic(message);
+
+    // ✅ Embedding قوي
     const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: message,
+      model: "text-embedding-3-large",
+      input: normalizedMessage,
     });
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // ✅ نبحث في Supabase
+    // ✅ Vector Search
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.6,
-      match_count: 5,
+      match_threshold: 0.35,
+      match_count: 8,
     });
 
-    if (error) {
-      console.error(error);
-    }
+    if (error) console.error(error);
 
     let contextText = "";
 
     if (data && data.length > 0) {
       contextText = data
         .map(
-          (doc) =>
-            `العنوان: ${doc.title}\nالرابط: ${doc.url}\nالمحتوى: ${doc.content}`
+          (doc, index) =>
+            `#${index + 1}
+العنوان: ${doc.title}
+الرابط: ${doc.url}
+المحتوى: ${doc.content}
+`
         )
         .join("\n\n");
     }
 
-    // ✅ إرسال النتائج لـ GPT
+    // ✅ GPT Re-ranking + توليد رد ذكي
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content: `
-أنت زيكو، مساعد منصة easyT.
-استخدم فقط المعلومات التالية من المنصة عند الإجابة عن الدورات:
+أنت زيكو، مساعد منصة easyT الذكي جدًا.
 
+لديك النتائج التالية من قاعدة البيانات:
 ${contextText}
 
-إذا لم تجد محتوى مناسب، قل أنه غير متوفر حاليًا داخل المنصة.
-تحدث بالعربية وبأسلوب مختصر واحترافي.
+المطلوب:
+- اختر أفضل نتيجة تناسب سؤال المستخدم.
+- إذا كان هناك أكثر من نتيجة قريبة، اختر الأنسب فقط.
+- إذا لم توجد نتائج مناسبة، قل أن المحتوى غير متوفر حاليًا داخل المنصة.
+- أظهر:
+  • اسم الدورة
+  • وصف مختصر
+  • الرابط
+  • دعوة للتسجيل
+
+تحدث بالعربية وبأسلوب احترافي مقنع.
 `
         },
-        {
-          role: "user",
-          content: message
-        }
+        { role: "user", content: message }
       ],
     });
 
     res.json({
-      reply: completion.choices[0].message.content
+      reply: completion.choices[0].message.content,
     });
 
   } catch (error) {
