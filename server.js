@@ -9,10 +9,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ===============================
-   ✅ ENV CHECK
-================================ */
-
 if (!process.env.OPENAI_API_KEY) {
   console.error("❌ OPENAI_API_KEY missing");
   process.exit(1);
@@ -42,11 +38,9 @@ function normalizeArabic(text) {
     .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
     .toLowerCase();
 }
+
 app.post("/chat", async (req, res) => {
   try {
-
-    console.log("📦 FULL BODY:", req.body);
-
     let { message, session_id } = req.body;
 
     if (!message) {
@@ -55,28 +49,68 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // ✅ لو session_id مش موجود نولده تلقائي
     if (!session_id) {
       session_id = crypto.randomUUID();
-      console.log("⚠️ Generated new session:", session_id);
     }
 
     const normalizedMessage = normalizeArabic(message);
 
-    console.log("📩 Message:", normalizedMessage);
-    console.log("🆔 Session:", session_id);
+    let activeCourseId = null;
 
-    /* ===============================
-       ✅ Save User Message
-    ================================ */
+    const { data: lastCourse } = await supabase
+      .from("chat_messages")
+      .select("course_id")
+      .eq("session_id", session_id)
+      .not("course_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (lastCourse && lastCourse.length > 0) {
+      activeCourseId = lastCourse[0].course_id;
+    }
+
+    if (
+      activeCourseId &&
+      (
+        normalizedMessage.includes("سعر") ||
+        normalizedMessage.includes("السعر") ||
+        normalizedMessage.includes("مده") ||
+        normalizedMessage.includes("المده") ||
+        normalizedMessage.includes("المدة")
+      )
+    ) {
+
+      const { data: course } = await supabase
+        .from("courses")
+        .select("*")
+        .eq("document_id", activeCourseId)
+        .maybeSingle();
+
+      if (!course) {
+        return res.json({
+          reply: "حدث خطأ في تحميل بيانات الدورة."
+        });
+      }
+
+      if (normalizedMessage.includes("سعر")) {
+        return res.json({
+          reply: `سعر الدورة هو ${course.price}.`
+        });
+      }
+
+      if (
+        normalizedMessage.includes("مده") ||
+        normalizedMessage.includes("المدة")
+      ) {
+        return res.json({
+          reply: `مدة الدورة هي ${course.duration}.`
+        });
+      }
+    }
 
     await supabase.from("chat_messages").insert([
       { session_id, role: "user", message }
     ]);
-
-    /* ===============================
-       ✅ Embedding Search
-    ================================ */
 
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
@@ -117,9 +151,7 @@ app.post("/chat", async (req, res) => {
 
     const reply = `اسم الدورة: ${selectedCourse.title}
 
-الوصف: ${selectedCourse.description}
-
-🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟`;
+🚀 هل ترغب في معرفة السعر أو المدة أو التسجيل الآن؟`;
 
     await supabase.from("chat_messages").insert([
       {
@@ -133,16 +165,12 @@ app.post("/chat", async (req, res) => {
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("🔥 SERVER ERROR:", error);
+    console.error("SERVER ERROR:", error);
     return res.status(500).json({
       reply: "حدث خطأ في السيرفر."
     });
   }
 });
-
-/* ===============================
-   ✅ Start Server
-================================ */
 
 const PORT = process.env.PORT || 3000;
 
