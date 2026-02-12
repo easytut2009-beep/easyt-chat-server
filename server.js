@@ -123,7 +123,7 @@ app.post("/chat", async (req, res) => {
     }
 
     /* ===============================
-       ✅ Setup Conversation Memory
+       ✅ Setup Memory
     ============================== */
 
     if (!conversationMemory.has(session_id)) {
@@ -148,7 +148,7 @@ app.post("/chat", async (req, res) => {
     let similarityScore = 0;
 
     /* ===============================
-       ✅ Search Course (only if needed)
+       ✅ Search Course
     ============================== */
 
     const embedding = await createEmbedding(correctedMessage);
@@ -165,7 +165,6 @@ app.post("/chat", async (req, res) => {
       similarityScore = results[0].similarity || 0;
 
       if (similarityScore >= 0.75) {
-
         const { data: course } = await supabase
           .from("courses")
           .select("*")
@@ -174,7 +173,7 @@ app.post("/chat", async (req, res) => {
 
         if (course) {
           selectedCourse = course;
-          sessionData.currentCourse = course; // ✅ حفظ الدورة في السياق
+          sessionData.currentCourse = course;
         }
       }
     }
@@ -186,14 +185,12 @@ app.post("/chat", async (req, res) => {
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 - قدم شرحاً واضحاً ومفيداً.
-- إذا كان السؤال متابعة مثل "السعر كام؟" افهم أنه متعلق بالسياق السابق.
+- افهم الأسئلة المتابعة مثل "السعر كام؟".
 - لا تضع روابط داخل الرد.
-- لا تذكر أي دورة إلا إذا كانت مرتبطة بالسؤال.
 `;
 
     chatHistory.push({ role: "user", content: correctedMessage });
 
-    // ✅ احتفظ بآخر 10 رسائل فقط
     if (chatHistory.length > 10) {
       chatHistory = chatHistory.slice(-10);
     }
@@ -210,14 +207,22 @@ app.post("/chat", async (req, res) => {
       messages: messagesForGPT
     });
 
-    let reply = completion.choices[0].message.content;
-    reply = reply.replace(/https?:\/\/\S+/g, "").trim();
+    let reply = completion.choices[0].message.content.trim();
+    reply = reply.replace(/https?:\/\/\S+/g, "");
 
     /* ===============================
-       ✅ Smart Promotion
+       ✅ Smart Promotion (FIXED)
     ============================== */
 
-    if (selectedCourse && similarityScore >= 0.75) {
+    const shouldPromote =
+      selectedCourse &&
+      (
+        similarityScore >= 0.75 ||
+        directCourseQuestion ||
+        sessionData.currentCourse !== null
+      );
+
+    if (shouldPromote) {
       reply += `
 <br>
 <a href="${selectedCourse.url}" target="_blank"
@@ -226,7 +231,7 @@ style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-d
 </a>`;
     }
 
-    /* ✅ حفظ رد البوت في الذاكرة */
+    /* ✅ Save Assistant Reply */
     chatHistory.push({ role: "assistant", content: reply });
     sessionData.history = chatHistory;
     conversationMemory.set(session_id, sessionData);
