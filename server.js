@@ -5,7 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -13,19 +12,11 @@ app.use(express.json());
    ✅ ENV CHECK
 ================================ */
 
-if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY missing");
-  process.exit(1);
-}
+if (!process.env.OPENAI_API_KEY) process.exit(1);
+if (!process.env.SUPABASE_URL) process.exit(1);
+if (!process.env.SUPABASE_SERVICE_KEY) process.exit(1);
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-  console.error("❌ Supabase ENV missing");
-  process.exit(1);
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -33,17 +24,10 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Helper Timeout (Supabase only)
+   ✅ Session Memory (Ultra Fast)
 ================================ */
 
-function withTimeout(promise, ms, label = "Operation") {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timeout`)), ms)
-    ),
-  ]);
-}
+const sessionMemory = new Map();
 
 /* ===============================
    ✅ Normalize Arabic
@@ -61,28 +45,34 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Embedding with Retry
+   ✅ Embedding
 ================================ */
 
-async function createEmbeddingSafe(text, retries = 2) {
-  try {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-    });
+async function createEmbedding(text) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: text,
+  });
 
-    return response.data[0].embedding;
+  return response.data[0].embedding;
+}
 
-  } catch (error) {
+/* ===============================
+   ✅ Detect Follow-up Question
+================================ */
 
-    if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      return createEmbeddingSafe(text, retries - 1);
-    }
+function isFollowUp(message) {
+  const shortQuestions = [
+    "السعر",
+    "مده",
+    "مدة",
+    "المحاضر",
+    "الرابط",
+    "التسجيل",
+    "المحتوى",
+  ];
 
-    console.error("❌ Embedding failed:", error.message);
-    return null;
-  }
+  return shortQuestions.some(word => message.includes(word));
 }
 
 /* ===============================
@@ -90,15 +80,12 @@ async function createEmbeddingSafe(text, retries = 2) {
 ================================ */
 
 app.post("/chat", async (req, res) => {
-
   try {
 
     let { message, session_id } = req.body;
 
     if (!message) {
-      return res.status(400).json({
-        reply: "لم يتم إرسال رسالة."
-      });
+      return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
 
     if (!session_id) {
@@ -107,49 +94,49 @@ app.post("/chat", async (req, res) => {
 
     const normalizedMessage = normalizeArabic(message);
 
-    /* ✅ Save user message */
-    await supabase.from("chat_messages").insert([
-      { session_id, role: "user", message }
-    ]);
+    let selectedCourse;
 
-    /* ✅ Create embedding */
-    const queryEmbedding = await createEmbeddingSafe(normalizedMessage);
-
-    if (!queryEmbedding) {
-      return res.json({
-        reply: "⚠️ حدث خطأ مؤقت، حاول مرة أخرى."
-      });
+    /* ✅ لو فيه كورس محفوظ في الجلسة والسؤال متابعة */
+    if (
+      sessionMemory.has(session_id) &&
+      isFollowUp(normalizedMessage)
+    ) {
+      selectedCourse = sessionMemory.get(session_id);
     }
 
-    /* ✅ Search course */
-    const { data: results } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
-      query_text: normalizedMessage,
-      match_threshold: 0.05,
-      match_count: 3,
-    });
-
-    if (!results || results.length === 0) {
-      return res.json({
-        reply: "عذرًا، لم أجد دورة مطابقة."
-      });
-    }
-
-    const selectedDocument = results[0];
-
-    const { data: selectedCourse } = await supabase
-      .from("courses")
-      .select("*")
-      .eq("document_id", selectedDocument.id)
-      .maybeSingle();
-
+    /* ✅ غير كده نعمل بحث */
     if (!selectedCourse) {
-      return res.json({
-        reply: "حدث خطأ في تحميل بيانات الدورة."
+
+      const embedding = await createEmbedding(normalizedMessage);
+
+      const { data: results } = await supabase.rpc("match_documents", {
+        query_embedding: embedding,
+        query_text: normalizedMessage,
+        match_threshold: 0.05,
+        match_count: 1,
       });
+
+      if (!results || results.length === 0) {
+        return res.json({ reply: "لم أجد دورة مطابقة." });
+      }
+
+      const { data: course } = await supabase
+        .from("courses")
+        .select("*")
+        .eq("document_id", results[0].id)
+        .maybeSingle();
+
+      if (!course) {
+        return res.json({ reply: "حدث خطأ في تحميل الدورة." });
+      }
+
+      selectedCourse = course;
+
+      /* ✅ نخزن الكورس في الجلسة */
+      sessionMemory.set(session_id, course);
     }
 
-    /* ✅ هنا الذكاء الحقيقي */
+    /* ✅ GPT Smart Answer */
 
     const courseContext = `
 اسم الدورة: ${selectedCourse.title}
@@ -158,7 +145,7 @@ app.post("/chat", async (req, res) => {
 السعر: ${selectedCourse.price || "غير محدد"}
 المدة: ${selectedCourse.duration || "غير محددة"}
 المحاضر: ${selectedCourse.instructor || "غير محدد"}
-رابط الدورة: ${selectedCourse.url || "غير متوفر"}
+الرابط: ${selectedCourse.url || "غير متوفر"}
 `;
 
     const completion = await openai.chat.completions.create({
@@ -166,58 +153,27 @@ app.post("/chat", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `
-أنت مساعد ذكي لدورات تدريبية.
-جاوب فقط بناءً على بيانات الدورة المقدمة لك.
-إذا سأل المستخدم عن السعر أو المدة أو المحاضر أو المحتوى أو أي تفصيل،
-جاوب بدقة من البيانات.
-لو طلب رابط اجعله واضح ويمكن نسخه.
-لا تخترع معلومات غير موجودة.
-`
+          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط."
         },
         {
           role: "user",
-          content: `
-بيانات الدورة:
-${courseContext}
-
-سؤال المستخدم:
-${message}
-`
+          content: `بيانات الدورة:\n${courseContext}\n\nسؤال:\n${message}`
         }
       ],
-      temperature: 0.3
+      temperature: 0.2,
+      max_tokens: 300
     });
 
     const reply = completion.choices[0].message.content;
 
-    await supabase.from("chat_messages").insert([
-      {
-        session_id,
-        role: "assistant",
-        message: reply,
-        course_id: selectedDocument.id
-      }
-    ]);
-
     return res.json({ reply, session_id });
 
   } catch (error) {
-
-    console.error("🔥 SERVER ERROR:", error.message);
-
+    console.error("ERROR:", error.message);
     return res.status(500).json({
-      reply: "⚠️ حدث خطأ في السيرفر."
+      reply: "حدث خطأ مؤقت."
     });
   }
-});
-
-/* ===============================
-   ✅ Health Check
-================================ */
-
-app.get("/", (req, res) => {
-  res.send("✅ Server is alive");
 });
 
 /* ===============================
@@ -227,5 +183,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("✅ Server running on port " + PORT);
+  console.log("Server running on port " + PORT);
 });
