@@ -26,7 +26,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ In‑Memory Conversation Store
+   ✅ Conversation Memory
 ================================ */
 
 const conversationMemory = new Map();
@@ -80,9 +80,9 @@ async function correctUserIntent(message) {
       {
         role: "system",
         content: `
-صحح أي خطأ إملائي في أسماء البرامج أو المصطلحات التقنية.
-إذا كان المستخدم يقصد برنامج معروف مثل Photoshop أو Illustrator صححه.
-أعد النص المصحح فقط بدون شرح.
+صحح أي خطأ إملائي في أسماء البرامج.
+إذا كان المستخدم يقصد برنامج مثل Photoshop أو Illustrator صححه.
+أعد النص المصحح فقط.
 `
       },
       { role: "user", content: message }
@@ -122,10 +122,7 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    /* ===============================
-       ✅ Setup Memory
-    ============================== */
-
+    /* ✅ Setup Memory */
     if (!conversationMemory.has(session_id)) {
       conversationMemory.set(session_id, {
         history: [],
@@ -136,10 +133,7 @@ app.post("/chat", async (req, res) => {
     const sessionData = conversationMemory.get(session_id);
     let chatHistory = sessionData.history;
 
-    /* ===============================
-       ✅ Correct & Detect Intent
-    ============================== */
-
+    /* ✅ Correct & Detect */
     const correctedMessage = await correctUserIntent(message);
     const normalizedMessage = normalizeArabic(correctedMessage);
     const directCourseQuestion = isCourseQuestion(normalizedMessage);
@@ -147,21 +141,17 @@ app.post("/chat", async (req, res) => {
     let selectedCourse = sessionData.currentCourse;
     let similarityScore = 0;
 
-    /* ===============================
-       ✅ Search Course
-    ============================== */
-
+    /* ✅ Embedding Search */
     const embedding = await createEmbedding(correctedMessage);
 
-    const { data: results, error } = await supabase.rpc("match_documents", {
+    const { data: results } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
       query_text: correctedMessage,
       match_threshold: 0.75,
       match_count: 1,
     });
 
-    if (!error && results && results.length > 0) {
-
+    if (results && results.length > 0) {
       similarityScore = results[0].similarity || 0;
 
       if (similarityScore >= 0.75) {
@@ -178,14 +168,28 @@ app.post("/chat", async (req, res) => {
       }
     }
 
+    /* ✅ Fallback Search لو مفيش نتيجة قوية */
+    if (!selectedCourse) {
+      const { data: fallbackCourses } = await supabase
+        .from("courses")
+        .select("*")
+        .ilike("title", `%${correctedMessage}%`)
+        .limit(1);
+
+      if (fallbackCourses && fallbackCourses.length > 0) {
+        selectedCourse = fallbackCourses[0];
+        sessionData.currentCourse = fallbackCourses[0];
+      }
+    }
+
     /* ===============================
-       ✅ Build GPT Messages
+       ✅ GPT Response
     ============================== */
 
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
-- قدم شرحاً واضحاً ومفيداً.
-- افهم الأسئلة المتابعة مثل "السعر كام؟".
+- اشرح المفاهيم بوضوح.
+- افهم الأسئلة المتابعة.
 - لا تضع روابط داخل الرد.
 `;
 
@@ -195,25 +199,25 @@ app.post("/chat", async (req, res) => {
       chatHistory = chatHistory.slice(-10);
     }
 
-    const messagesForGPT = [
-      { role: "system", content: systemPrompt },
-      ...chatHistory
-    ];
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.5,
       max_tokens: 400,
-      messages: messagesForGPT
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...chatHistory
+      ]
     });
 
     let reply = completion.choices[0].message.content.trim();
+
+    /* ✅ Remove links */
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    /* ===============================
-       ✅ Smart Promotion (FIXED)
-    ============================== */
+    /* ✅ Convert Markdown Bold to HTML */
+    reply = reply.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
+    /* ✅ Smart Promotion */
     const shouldPromote =
       selectedCourse &&
       (
@@ -231,15 +235,12 @@ style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-d
 </a>`;
     }
 
-    /* ✅ Save Assistant Reply */
+    /* ✅ Save Reply */
     chatHistory.push({ role: "assistant", content: reply });
     sessionData.history = chatHistory;
     conversationMemory.set(session_id, sessionData);
 
-    return res.json({
-      reply,
-      session_id
-    });
+    return res.json({ reply, session_id });
 
   } catch (error) {
     console.error("SERVER ERROR:", error);
