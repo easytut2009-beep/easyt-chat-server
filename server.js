@@ -46,6 +46,27 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
+   ✅ Detect Course Question
+================================ */
+
+function isCourseQuestion(message) {
+  const keywords = [
+    "دورة",
+    "كورس",
+    "السعر",
+    "سعر",
+    "مدة",
+    "مده",
+    "محاضر",
+    "التسجيل",
+    "الرابط",
+    "محتوى"
+  ];
+
+  return keywords.some(word => message.includes(word));
+}
+
+/* ===============================
    ✅ Embedding
 ================================ */
 
@@ -56,24 +77,6 @@ async function createEmbedding(text) {
   });
 
   return response.data[0].embedding;
-}
-
-/* ===============================
-   ✅ Detect Follow-up
-================================ */
-
-function isFollowUp(message) {
-  const shortQuestions = [
-    "السعر",
-    "مده",
-    "مدة",
-    "المحاضر",
-    "الرابط",
-    "التسجيل",
-    "المحتوى",
-  ];
-
-  return shortQuestions.some(word => message.includes(word));
 }
 
 /* ===============================
@@ -94,105 +97,85 @@ app.post("/chat", async (req, res) => {
     }
 
     const normalizedMessage = normalizeArabic(message);
-    let selectedCourse;
+    const directCourseQuestion = isCourseQuestion(normalizedMessage);
 
-    /* ✅ لو السؤال متابعة */
-    if (
-      sessionMemory.has(session_id) &&
-      isFollowUp(normalizedMessage)
-    ) {
-      selectedCourse = sessionMemory.get(session_id);
-    }
+    let selectedCourse = null;
 
-    /* ✅ لو مفيش كورس محفوظ نعمل بحث */
-    if (!selectedCourse) {
+    /* ✅ نبحث عن دورة مطابقة فقط لو فيه احتمالية ارتباط */
+    const embedding = await createEmbedding(message);
 
-      const embedding = await createEmbedding(message);
+    const { data: results } = await supabase.rpc("match_documents", {
+      query_embedding: embedding,
+      query_text: message,
+      match_threshold: 0.01,
+      match_count: 1,
+    });
 
-      const { data: results, error } = await supabase.rpc("match_documents", {
-        query_embedding: embedding,
-        query_text: message,
-        match_threshold: 0.01,
-        match_count: 5,
-      });
+    if (results && results.length > 0) {
+      const { data: course } = await supabase
+        .from("courses")
+        .select("*")
+        .eq("document_id", results[0].id)
+        .maybeSingle();
 
-      if (error) {
-        console.error("RPC Error:", error.message);
-      }
-
-      if (!results || results.length === 0) {
-
-        // ✅ Fallback search
-        const { data: fallbackCourses } = await supabase
-          .from("courses")
-          .select("*")
-          .or(`title.ilike.%${message}%,description.ilike.%${message}%`)
-          .limit(1);
-
-        if (!fallbackCourses || fallbackCourses.length === 0) {
-          return res.json({ reply: "لم أجد دورة مطابقة." });
-        }
-
-        selectedCourse = fallbackCourses[0];
-
-      } else {
-
-        const { data: course } = await supabase
-          .from("courses")
-          .select("*")
-          .eq("document_id", results[0].id)
-          .maybeSingle();
-
-        if (!course) {
-          return res.json({ reply: "حدث خطأ في تحميل الدورة." });
-        }
-
+      if (course) {
         selectedCourse = course;
       }
-
-      // ✅ نخزن في الجلسة
-      sessionMemory.set(session_id, selectedCourse);
     }
 
     /* ✅ GPT Answer */
 
-    const courseContext = `
+    let systemPrompt;
+
+    if (directCourseQuestion && selectedCourse) {
+      systemPrompt = `
+أجب بدقة وباختصار بناءً على بيانات الدورة فقط.
+لا تضع أي روابط داخل الرد.
+`;
+    } else {
+      systemPrompt = `
+أجب كخبير وابدأ بشرح المفهوم أو الإجابة بشكل تعليمي واضح ومفيد.
+لا تضع أي روابط داخل الرد.
+`;
+    }
+
+    const courseContext = selectedCourse
+      ? `
 اسم الدورة: ${selectedCourse.title}
 الوصف: ${selectedCourse.description || ""}
-المحتوى: ${selectedCourse.content || ""}
 السعر: ${selectedCourse.price || "غير محدد"}
 المدة: ${selectedCourse.duration || "غير محددة"}
 المحاضر: ${selectedCourse.instructor || "غير محدد"}
-`;
+`
+      : "";
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط. لا تضع أي روابط داخل الرد."
-        },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `بيانات الدورة:\n${courseContext}\n\nسؤال:\n${message}`
+          content: `${courseContext}\n\nسؤال:\n${message}`
         }
       ],
-      temperature: 0.2,
-      max_tokens: 300
+      temperature: 0.5,
+      max_tokens: 400
     });
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ حذف أي روابط لو GPT كتبها
+    // ✅ إزالة أي روابط لو GPT كتبها
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    // ✅ إضافة جملة كليكابل واحدة فقط
-    reply += `
+    // ✅ لو فيه دورة مرتبطة نضيف جملة ترويج ذكية
+    if (selectedCourse) {
+      reply += `
 <br><br>
 <a href="${selectedCourse.url}" target="_blank" style="color:#ffcc00;font-weight:bold;text-decoration:none;">
-اعرف تفاصيل أكتر
+اعرف تفاصيل أكتر عن دورة ${selectedCourse.title}
 </a>
 `;
+    }
 
     return res.json({ reply, session_id });
 
