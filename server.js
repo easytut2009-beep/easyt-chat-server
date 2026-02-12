@@ -84,15 +84,14 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ Embedding مباشر بدون expansion
+    // ✅ ✅ ✅ استخدم نفس موديل التخزين
     const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-large",
+      model: "text-embedding-3-small", // ✅ تم التصحيح هنا
       input: normalizedMessage,
     });
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // ✅ Hybrid Search
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
       query_text: normalizedMessage,
@@ -120,7 +119,6 @@ app.post("/chat", async (req, res) => {
       )
       .join("\n\n");
 
-    // ✅ Re-ranking
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
