@@ -32,6 +32,8 @@ function normalizeArabic(text) {
     .toLowerCase();
 }
 
+
+
 // ✅ Levenshtein Distance
 function levenshtein(a, b) {
   const matrix = Array.from({ length: b.length + 1 }, () =>
@@ -58,7 +60,9 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-// ✅ Smart Keyword Correction
+
+
+// ✅ Smart Keyword Correction (لكل كلمة منفصلة)
 function smartKeywordCorrection(text) {
   const keywords = [
     "اليستريتور",
@@ -67,16 +71,19 @@ function smartKeywordCorrection(text) {
     "photoshop"
   ];
 
-  let correctedText = text;
+  const words = text.split(" ");
 
-  keywords.forEach((keyword) => {
-    const distance = levenshtein(text, keyword);
-    if (distance <= 3) {
-      correctedText = keyword;
+  const correctedWords = words.map((word) => {
+    for (let keyword of keywords) {
+      const distance = levenshtein(word, keyword);
+      if (distance <= 2) {
+        return keyword;
+      }
     }
+    return word;
   });
 
-  return correctedText;
+  return correctedWords.join(" ");
 }
 
 
@@ -117,7 +124,7 @@ app.get("/add-test-course", async (req, res) => {
 
 
 
-// ✅ الشات الذكي جدًا
+// ✅ الشات الاحترافي الكامل
 app.post("/chat", async (req, res) => {
   try {
     const { message } = req.body;
@@ -125,25 +132,43 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    // ✅ تنظيف السؤال
+    // ✅ 1️⃣ تنظيف
     let normalizedMessage = normalizeArabic(message);
 
-    // ✅ تصحيح ذكي للكلمات القريبة
+    // ✅ 2️⃣ تصحيح إملائي
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ Embedding قوي
+    // ✅ 3️⃣ GPT Query Expansion (يفهم المعنى)
+    const expansion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+حوّل سؤال المستخدم إلى كلمات بحث واضحة داخل منصة دورات.
+اكتب كلمات مفتاحية فقط.
+`
+        },
+        { role: "user", content: normalizedMessage }
+      ],
+    });
+
+    const expandedQuery = expansion.choices[0].message.content;
+
+    // ✅ 4️⃣ Embedding قوي
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-large",
-      input: normalizedMessage,
+      input: expandedQuery,
     });
 
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // ✅ Vector Search
+    // ✅ 5️⃣ Hybrid Search
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.35,
-      match_count: 8,
+      query_text: expandedQuery,
+      match_threshold: 0.25,
+      match_count: 10,
     });
 
     if (error) console.error(error);
@@ -163,19 +188,18 @@ app.post("/chat", async (req, res) => {
         .join("\n\n");
     }
 
-    // ✅ GPT Re-ranking
+    // ✅ 6️⃣ GPT Re-ranking
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content: `
-أنت زيكو، مساعد منصة easyT الذكي جدًا.
+أنت زيكو، مساعد منصة easyT.
 
-لديك النتائج التالية:
+اختر أفضل نتيجة من النتائج التالية:
 ${contextText}
 
-اختر أفضل نتيجة تناسب سؤال المستخدم.
 إذا لم توجد نتيجة مناسبة قل أن المحتوى غير متوفر.
 اعرض:
 • اسم الدورة
