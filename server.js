@@ -18,10 +18,8 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    const lowerMessage = message.toLowerCase();
-
-    // ✅ رد مباشر لدورة اليستريتور
-    if (lowerMessage.includes("اليستريتور") || lowerMessage.includes("illustrator")) {
+    // ✅ رد مباشر لليستريتور
+    if (/اليستريتور|illustrator/i.test(message)) {
       return res.json({
         reply: `
 ✅ قوة الذكاء الاصطناعي داخل اليستريتور
@@ -35,8 +33,8 @@ https://easyt.online/p/illustrator-ai
       });
     }
 
-    // ✅ رد مباشر لدورة فوتوشوب
-    if (lowerMessage.includes("فوتوشوب") || lowerMessage.includes("photoshop")) {
+    // ✅ رد مباشر لفوتوشوب
+    if (/فوتوشوب|photoshop/i.test(message)) {
       return res.json({
         reply: `
 ✅ قوة الذكاء الاصطناعي داخل فوتوشوب
@@ -51,7 +49,7 @@ https://easyt.online/p/photoshop-ai
     }
 
     // ✅ رد مباشر لدبلومة المشاريع
-    if (lowerMessage.includes("دبلومة") || lowerMessage.includes("المشاريع الإلكترونية")) {
+    if (/دبلومة|المشاريع الإلكترونية|freelance/i.test(message)) {
       return res.json({
         reply: `
 ✅ دبلومة المشاريع الإلكترونية والعمل الحر
@@ -66,7 +64,7 @@ https://easyt.online/p/e-projects-and-freeance
     }
 
     // ✅ رد مباشر لمكتبة الأمن السيبراني
-    if (lowerMessage.includes("الأمن السيبراني") || lowerMessage.includes("cyber")) {
+    if (/الأمن السيبراني|cyber/i.test(message)) {
       return res.json({
         reply: `
 ✅ مكتبة الأمن السيبراني
