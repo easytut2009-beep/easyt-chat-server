@@ -40,7 +40,7 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Detect Direct Course Question
+   ✅ Detect Course Question
 ================================ */
 
 function isCourseQuestion(message) {
@@ -58,6 +58,30 @@ function isCourseQuestion(message) {
   ];
 
   return keywords.some(word => message.includes(word));
+}
+
+/* ===============================
+   ✅ Smart Intent Correction
+================================ */
+
+async function correctUserIntent(message) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `
+قم بتصحيح أي خطأ إملائي في أسماء البرامج أو المصطلحات التقنية.
+إذا كان المستخدم يقصد برنامج معروف مثل Photoshop أو Illustrator صححه.
+أعد النص المصحح فقط بدون شرح.
+`
+      },
+      { role: "user", content: message }
+    ],
+    temperature: 0
+  });
+
+  return completion.choices[0].message.content.trim();
 }
 
 /* ===============================
@@ -90,19 +114,21 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const normalizedMessage = normalizeArabic(message);
+    // ✅ تصحيح النية قبل أي بحث
+    const correctedMessage = await correctUserIntent(message);
+    const normalizedMessage = normalizeArabic(correctedMessage);
     const directCourseQuestion = isCourseQuestion(normalizedMessage);
 
     let selectedCourse = null;
     let similarityScore = 0;
 
-    /* ✅ نعمل بحث Embedding */
-    const embedding = await createEmbedding(message);
+    /* ✅ نعمل embedding بعد التصحيح */
+    const embedding = await createEmbedding(correctedMessage);
 
     const { data: results, error } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
-      query_text: message,
-      match_threshold: 0.75,   // ✅ رفعنا الحد
+      query_text: correctedMessage,
+      match_threshold: 0.80,
       match_count: 1,
     });
 
@@ -110,7 +136,7 @@ app.post("/chat", async (req, res) => {
 
       similarityScore = results[0].similarity || 0;
 
-      if (similarityScore >= 0.75) {
+      if (similarityScore >= 0.80) {
 
         const { data: course } = await supabase
           .from("courses")
@@ -119,16 +145,7 @@ app.post("/chat", async (req, res) => {
           .maybeSingle();
 
         if (course) {
-
-          // ✅ فلترة إضافية تمنع ربط برنامج ببرنامج مختلف
-          const normalizedTitle = normalizeArabic(course.title);
-          if (
-            normalizedMessage.includes(normalizedTitle) ||
-            normalizedTitle.includes(normalizedMessage) ||
-            directCourseQuestion
-          ) {
-            selectedCourse = course;
-          }
+          selectedCourse = course;
         }
       }
     }
@@ -147,7 +164,7 @@ app.post("/chat", async (req, res) => {
     } else {
       systemPrompt = `
 أجب كخبير وقدم شرحاً تعليمياً واضحاً ومفيداً.
-إذا كانت هناك دورة مرتبطة بالسؤال سيتم عرضها لاحقاً.
+لا تذكر أي دورة إلا إذا كانت مرتبطة بالسؤال.
 لا تضع أي روابط داخل الرد.
 `;
     }
@@ -168,7 +185,7 @@ app.post("/chat", async (req, res) => {
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `${courseContext}\n\nسؤال:\n${message}`
+          content: `${courseContext}\n\nسؤال:\n${correctedMessage}`
         }
       ],
       temperature: 0.5,
@@ -177,20 +194,19 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ إزالة أي روابط
-    reply = reply.replace(/https?:\/\/\S+/g, "");
+    reply = reply.replace(/https?:\/\/\S+/g, "").trim();
 
     /* ===============================
-       ✅ Add Promotion Smartly
+       ✅ Smart Promotion
     ============================== */
 
-    if (selectedCourse && similarityScore >= 0.75) {
+    if (selectedCourse && similarityScore >= 0.80) {
       reply += `
-<br><br>
-<a href="${selectedCourse.url}" target="_blank" style="color:#ffcc00;font-weight:bold;text-decoration:none;">
+<br>
+<a href="${selectedCourse.url}" target="_blank"
+style="color:#ffcc00;font-weight:bold;text-decoration:none;display:inline-block;margin-top:6px;">
 اعرف تفاصيل أكتر عن دورة ${selectedCourse.title}
-</a>
-`;
+</a>`;
     }
 
     return res.json({ reply, session_id });
