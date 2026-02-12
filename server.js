@@ -52,7 +52,7 @@ function normalizeArabic(text) {
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text, // ✅ نستخدم النص الأصلي مش normalized
+    input: text,
   });
 
   return response.data[0].embedding;
@@ -94,7 +94,6 @@ app.post("/chat", async (req, res) => {
     }
 
     const normalizedMessage = normalizeArabic(message);
-
     let selectedCourse;
 
     /* ✅ لو السؤال متابعة */
@@ -108,20 +107,14 @@ app.post("/chat", async (req, res) => {
     /* ✅ لو مفيش كورس محفوظ نعمل بحث */
     if (!selectedCourse) {
 
-      console.log("Creating embedding...");
-
-      const embedding = await createEmbedding(message); // ✅ الأصلي
-
-      console.log("Searching vector...");
+      const embedding = await createEmbedding(message);
 
       const { data: results, error } = await supabase.rpc("match_documents", {
         query_embedding: embedding,
         query_text: message,
-        match_threshold: 0.01, // ✅ أقل عشان العربي
-        match_count: 5,        // ✅ مش 1
+        match_threshold: 0.01,
+        match_count: 5,
       });
-
-      console.log("Vector results:", results);
 
       if (error) {
         console.error("RPC Error:", error.message);
@@ -130,8 +123,6 @@ app.post("/chat", async (req, res) => {
       if (!results || results.length === 0) {
 
         // ✅ Fallback search
-        console.log("Running fallback search...");
-
         const { data: fallbackCourses } = await supabase
           .from("courses")
           .select("*")
@@ -172,7 +163,6 @@ app.post("/chat", async (req, res) => {
 السعر: ${selectedCourse.price || "غير محدد"}
 المدة: ${selectedCourse.duration || "غير محددة"}
 المحاضر: ${selectedCourse.instructor || "غير محدد"}
-الرابط: ${selectedCourse.url || "غير متوفر"}
 `;
 
     const completion = await openai.chat.completions.create({
@@ -180,7 +170,7 @@ app.post("/chat", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط. لا تخترع معلومات."
+          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط. لا تضع أي روابط داخل الرد."
         },
         {
           role: "user",
@@ -191,7 +181,18 @@ app.post("/chat", async (req, res) => {
       max_tokens: 300
     });
 
-    const reply = completion.choices[0].message.content;
+    let reply = completion.choices[0].message.content;
+
+    // ✅ حذف أي روابط لو GPT كتبها
+    reply = reply.replace(/https?:\/\/\S+/g, "");
+
+    // ✅ إضافة جملة كليكابل واحدة فقط
+    reply += `
+<br><br>
+<a href="${selectedCourse.url}" target="_blank" style="color:#ffcc00;font-weight:bold;text-decoration:none;">
+اعرف تفاصيل أكتر
+</a>
+`;
 
     return res.json({ reply, session_id });
 
