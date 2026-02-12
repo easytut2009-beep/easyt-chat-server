@@ -34,6 +34,7 @@ const supabase = createClient(
 
 /* ===============================
    ✅ Helper: Promise Timeout
+   (نستخدمه مع Supabase فقط)
 ================================ */
 
 function withTimeout(promise, ms, label = "Operation") {
@@ -61,21 +62,17 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Safe Embedding (NO CRASH)
+   ✅ Safe Embedding (بدون Timeout)
 ================================ */
 
 async function createEmbeddingSafe(text) {
   try {
     console.log("🟡 Creating embedding...");
 
-    const response = await withTimeout(
-      openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: text,
-      }),
-      12000,
-      "Embedding"
-    );
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
 
     console.log("✅ Embedding created");
 
@@ -83,8 +80,6 @@ async function createEmbeddingSafe(text) {
 
   } catch (error) {
     console.error("❌ Embedding failed:", error.message);
-
-    // ✅ بدل ما نكراش السيرفر
     return null;
   }
 }
@@ -94,9 +89,7 @@ async function createEmbeddingSafe(text) {
 ================================ */
 
 app.post("/chat", async (req, res) => {
-
   try {
-
     let { message, session_id } = req.body;
 
     if (!message) {
@@ -118,16 +111,16 @@ app.post("/chat", async (req, res) => {
       supabase.from("chat_messages").insert([
         { session_id, role: "user", message }
       ]),
-      8000,
+      10000,
       "Insert message"
     );
 
-    /* ✅ Embedding */
+    /* ✅ Embedding (بدون قتل الطلب بدري) */
     const queryEmbedding = await createEmbeddingSafe(normalizedMessage);
 
     if (!queryEmbedding) {
       return res.json({
-        reply: "⚠️ الخدمة بطيئة حالياً، حاول مرة أخرى بعد لحظات."
+        reply: "⚠️ حدث خطأ مؤقت أثناء معالجة الطلب، حاول مرة أخرى."
       });
     }
 
@@ -141,7 +134,7 @@ app.post("/chat", async (req, res) => {
         match_threshold: 0.05,
         match_count: 5,
       }),
-      12000,
+      15000,
       "Supabase RPC"
     );
 
@@ -166,7 +159,7 @@ app.post("/chat", async (req, res) => {
         .select("*")
         .eq("document_id", selectedDocument.id)
         .maybeSingle(),
-      8000,
+      10000,
       "Fetch course"
     );
 
@@ -198,11 +191,10 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
     return res.json({ reply, session_id });
 
   } catch (error) {
-
     console.error("🔥 SERVER ERROR FULL:", error.message);
 
-    return res.json({
-      reply: "⚠️ حدث خطأ مؤقت، حاول مرة أخرى."
+    return res.status(500).json({
+      reply: "⚠️ حدث خطأ في السيرفر."
     });
   }
 });
