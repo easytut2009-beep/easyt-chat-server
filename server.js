@@ -4,24 +4,32 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
+/* ===============================
+   ✅ Setup
+================================ */
+
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-/* ===============================
-   ✅ ENV CHECK
-================================ */
 
 if (!process.env.OPENAI_API_KEY) process.exit(1);
 if (!process.env.SUPABASE_URL) process.exit(1);
 if (!process.env.SUPABASE_SERVICE_KEY) process.exit(1);
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+/* ===============================
+   ✅ In‑Memory Conversation Store
+================================ */
+
+const conversationMemory = new Map();
 
 /* ===============================
    ✅ Normalize Arabic
@@ -61,31 +69,31 @@ function isCourseQuestion(message) {
 }
 
 /* ===============================
-   ✅ Smart Intent Correction
+   ✅ Smart Spelling Correction
 ================================ */
 
 async function correctUserIntent(message) {
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
+    temperature: 0,
     messages: [
       {
         role: "system",
         content: `
-قم بتصحيح أي خطأ إملائي في أسماء البرامج أو المصطلحات التقنية.
+صحح أي خطأ إملائي في أسماء البرامج أو المصطلحات التقنية.
 إذا كان المستخدم يقصد برنامج معروف مثل Photoshop أو Illustrator صححه.
 أعد النص المصحح فقط بدون شرح.
 `
       },
       { role: "user", content: message }
-    ],
-    temperature: 0
+    ]
   });
 
   return completion.choices[0].message.content.trim();
 }
 
 /* ===============================
-   ✅ Embedding
+   ✅ Create Embedding
 ================================ */
 
 async function createEmbedding(text) {
@@ -114,21 +122,41 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    // ✅ تصحيح النية قبل أي بحث
+    /* ===============================
+       ✅ Setup Conversation Memory
+    ============================== */
+
+    if (!conversationMemory.has(session_id)) {
+      conversationMemory.set(session_id, {
+        history: [],
+        currentCourse: null
+      });
+    }
+
+    const sessionData = conversationMemory.get(session_id);
+    let chatHistory = sessionData.history;
+
+    /* ===============================
+       ✅ Correct & Detect Intent
+    ============================== */
+
     const correctedMessage = await correctUserIntent(message);
     const normalizedMessage = normalizeArabic(correctedMessage);
     const directCourseQuestion = isCourseQuestion(normalizedMessage);
 
-    let selectedCourse = null;
+    let selectedCourse = sessionData.currentCourse;
     let similarityScore = 0;
 
-    /* ✅ نعمل embedding بعد التصحيح */
+    /* ===============================
+       ✅ Search Course (only if needed)
+    ============================== */
+
     const embedding = await createEmbedding(correctedMessage);
 
     const { data: results, error } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
       query_text: correctedMessage,
-      match_threshold: 0.80,
+      match_threshold: 0.75,
       match_count: 1,
     });
 
@@ -136,7 +164,7 @@ app.post("/chat", async (req, res) => {
 
       similarityScore = results[0].similarity || 0;
 
-      if (similarityScore >= 0.80) {
+      if (similarityScore >= 0.75) {
 
         const { data: course } = await supabase
           .from("courses")
@@ -146,70 +174,67 @@ app.post("/chat", async (req, res) => {
 
         if (course) {
           selectedCourse = course;
+          sessionData.currentCourse = course; // ✅ حفظ الدورة في السياق
         }
       }
     }
 
     /* ===============================
-       ✅ GPT Answer
+       ✅ Build GPT Messages
     ============================== */
 
-    let systemPrompt;
+    const systemPrompt = `
+أنت مساعد ذكي لمنصة easyT.
+- قدم شرحاً واضحاً ومفيداً.
+- إذا كان السؤال متابعة مثل "السعر كام؟" افهم أنه متعلق بالسياق السابق.
+- لا تضع روابط داخل الرد.
+- لا تذكر أي دورة إلا إذا كانت مرتبطة بالسؤال.
+`;
 
-    if (directCourseQuestion && selectedCourse) {
-      systemPrompt = `
-أجب بدقة وباختصار بناءً على بيانات الدورة فقط.
-لا تضع أي روابط داخل الرد.
-`;
-    } else {
-      systemPrompt = `
-أجب كخبير وقدم شرحاً تعليمياً واضحاً ومفيداً.
-لا تذكر أي دورة إلا إذا كانت مرتبطة بالسؤال.
-لا تضع أي روابط داخل الرد.
-`;
+    chatHistory.push({ role: "user", content: correctedMessage });
+
+    // ✅ احتفظ بآخر 10 رسائل فقط
+    if (chatHistory.length > 10) {
+      chatHistory = chatHistory.slice(-10);
     }
 
-    const courseContext = selectedCourse
-      ? `
-اسم الدورة: ${selectedCourse.title}
-الوصف: ${selectedCourse.description || ""}
-السعر: ${selectedCourse.price || "غير محدد"}
-المدة: ${selectedCourse.duration || "غير محددة"}
-المحاضر: ${selectedCourse.instructor || "غير محدد"}
-`
-      : "";
+    const messagesForGPT = [
+      { role: "system", content: systemPrompt },
+      ...chatHistory
+    ];
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `${courseContext}\n\nسؤال:\n${correctedMessage}`
-        }
-      ],
       temperature: 0.5,
-      max_tokens: 400
+      max_tokens: 400,
+      messages: messagesForGPT
     });
 
     let reply = completion.choices[0].message.content;
-
     reply = reply.replace(/https?:\/\/\S+/g, "").trim();
 
     /* ===============================
        ✅ Smart Promotion
     ============================== */
 
-    if (selectedCourse && similarityScore >= 0.80) {
+    if (selectedCourse && similarityScore >= 0.75) {
       reply += `
 <br>
 <a href="${selectedCourse.url}" target="_blank"
-style="color:#ffcc00;font-weight:bold;text-decoration:none;display:inline-block;margin-top:6px;">
+style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-decoration:none;">
 اعرف تفاصيل أكتر عن دورة ${selectedCourse.title}
 </a>`;
     }
 
-    return res.json({ reply, session_id });
+    /* ✅ حفظ رد البوت في الذاكرة */
+    chatHistory.push({ role: "assistant", content: reply });
+    sessionData.history = chatHistory;
+    conversationMemory.set(session_id, sessionData);
+
+    return res.json({
+      reply,
+      session_id
+    });
 
   } catch (error) {
     console.error("SERVER ERROR:", error);
