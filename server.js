@@ -48,7 +48,7 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Smart Spelling Correction
+   ✅ Spelling Correction
 ================================ */
 
 async function correctUserIntent(message) {
@@ -82,11 +82,12 @@ async function createEmbedding(text) {
 }
 
 /* ===============================
-   ✅ Chat Route (RAG Enhanced)
+   ✅ Chat Route (Smart RAG)
 ================================ */
 
 app.post("/chat", async (req, res) => {
   try {
+
     let { message, session_id } = req.body;
 
     if (!message) {
@@ -98,78 +99,64 @@ app.post("/chat", async (req, res) => {
     }
 
     if (!conversationMemory.has(session_id)) {
-      conversationMemory.set(session_id, {
-        history: [],
-        currentCourse: null
-      });
+      conversationMemory.set(session_id, { history: [] });
     }
 
     const sessionData = conversationMemory.get(session_id);
     let chatHistory = sessionData.history;
 
-    /* ✅ تصحيح السؤال */
     const correctedMessage = await correctUserIntent(message);
-    const normalizedMessage = normalizeArabic(correctedMessage);
 
     /* ✅ Embedding Search */
     const embedding = await createEmbedding(correctedMessage);
 
     const { data: results } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
-      match_count: 8   // ✅ زودنا العدد
+      match_count: 12
     });
 
-    console.log("🔎 Search Results:", results?.length || 0);
+    console.log("🔎 Results:", results?.length || 0);
 
     let contextText = "";
-    let selectedCourse = null;
+    let bestMatch = null;
 
     if (results && results.length > 0) {
+
+      // ✅ أفضل نتيجة
+      bestMatch = results[0];
 
       // ✅ ناخد أفضل 5 للسياق
       contextText = results
         .slice(0, 5)
-        .map(r => r.content?.slice(0, 1500) || "")
+        .map(r => `عنوان: ${r.title}\nرابط: ${r.url}\nمحتوى: ${r.content.slice(0,1000)}`)
         .join("\n\n");
-
-      // ✅ نحاول نربط أول نتيجة بكورس
-      const topDocumentId = results[0].id;
-
-      const { data: course } = await supabase
-        .from("courses")
-        .select("*")
-        .eq("document_id", topDocumentId)
-        .maybeSingle();
-
-      if (course) {
-        selectedCourse = course;
-        sessionData.currentCourse = course;
-      }
     }
 
-    /* ✅ System Prompt */
+    /* ✅ System Prompt احترافي */
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 
+القواعد:
 - استخدم فقط المعلومات الموجودة في "السياق".
-- إذا لم تجد أي معلومات في السياق قل: المعلومة غير متوفرة حالياً.
+- إذا وُجد أكثر من نتيجة مناسبة، اختر الأنسب واذكرها.
+- إذا لم توجد دبلومة، اقترح دورة قريبة من نفس المجال.
+- في نهاية الرد اقترح الخيار الأنسب بوضوح.
 - لا تخترع معلومات.
-- اكتب الرد بالعربية الواضحة.
-- لا تضع روابط داخل الرد.
+- لا تضع روابط داخل النص (سيتم إضافتها تلقائياً).
+- اكتب بأسلوب واضح ومختصر.
 `;
 
-    /* ✅ GPT Call */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
-      max_tokens: 400,
+      max_tokens: 500,
       messages: [
         { role: "system", content: systemPrompt },
         {
           role: "user",
           content: `
 السياق:
-${contextText || "لا يوجد سياق"}
+${contextText || "لا يوجد بيانات"}
 
 السؤال:
 ${correctedMessage}
@@ -180,21 +167,21 @@ ${correctedMessage}
 
     let reply = completion.choices[0].message.content.trim();
 
-    /* ✅ تنظيف الرد */
     reply = reply.replace(/https?:\/\/\S+/g, "");
-    reply = reply.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
-    /* ✅ إضافة زر الكورس لو موجود */
-    if (selectedCourse) {
+    /* ✅ إضافة اقتراح مباشر في النهاية */
+    if (bestMatch) {
       reply += `
-<br>
-<a href="${selectedCourse.url}" target="_blank"
+<br><br>
+<strong>✅ الخيار الأنسب لك:</strong><br>
+<a href="${bestMatch.url}" target="_blank"
 style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-decoration:none;">
-اعرف تفاصيل أكتر عن دورة ${selectedCourse.title}
+${bestMatch.title}
 </a>`;
+    } else {
+      reply = "حالياً لا توجد نتائج مطابقة، يمكنك تصفح جميع الدورات من الصفحة الرئيسية.";
     }
 
-    /* ✅ حفظ المحادثة */
     chatHistory.push({ role: "user", content: correctedMessage });
     chatHistory.push({ role: "assistant", content: reply });
 
