@@ -20,7 +20,7 @@ const supabase = createClient(
 
 
 
-// ✅ Arabic Normalization (ذكاء لغوي)
+// ✅ Arabic Normalization
 function normalizeArabic(text) {
   return text
     .replace(/[إأآا]/g, "ا")
@@ -30,6 +30,53 @@ function normalizeArabic(text) {
     .replace(/ئ/g, "ي")
     .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
     .toLowerCase();
+}
+
+// ✅ Levenshtein Distance
+function levenshtein(a, b) {
+  const matrix = Array.from({ length: b.length + 1 }, () =>
+    new Array(a.length + 1).fill(0)
+  );
+
+  for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b[i - 1] === a[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+// ✅ Smart Keyword Correction
+function smartKeywordCorrection(text) {
+  const keywords = [
+    "اليستريتور",
+    "illustrator",
+    "فوتوشوب",
+    "photoshop"
+  ];
+
+  let correctedText = text;
+
+  keywords.forEach((keyword) => {
+    const distance = levenshtein(text, keyword);
+    if (distance <= 3) {
+      correctedText = keyword;
+    }
+  });
+
+  return correctedText;
 }
 
 
@@ -79,7 +126,10 @@ app.post("/chat", async (req, res) => {
     }
 
     // ✅ تنظيف السؤال
-    const normalizedMessage = normalizeArabic(message);
+    let normalizedMessage = normalizeArabic(message);
+
+    // ✅ تصحيح ذكي للكلمات القريبة
+    normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
     // ✅ Embedding قوي
     const embeddingResponse = await openai.embeddings.create({
@@ -113,7 +163,7 @@ app.post("/chat", async (req, res) => {
         .join("\n\n");
     }
 
-    // ✅ GPT Re-ranking + توليد رد ذكي
+    // ✅ GPT Re-ranking
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -122,20 +172,16 @@ app.post("/chat", async (req, res) => {
           content: `
 أنت زيكو، مساعد منصة easyT الذكي جدًا.
 
-لديك النتائج التالية من قاعدة البيانات:
+لديك النتائج التالية:
 ${contextText}
 
-المطلوب:
-- اختر أفضل نتيجة تناسب سؤال المستخدم.
-- إذا كان هناك أكثر من نتيجة قريبة، اختر الأنسب فقط.
-- إذا لم توجد نتائج مناسبة، قل أن المحتوى غير متوفر حاليًا داخل المنصة.
-- أظهر:
-  • اسم الدورة
-  • وصف مختصر
-  • الرابط
-  • دعوة للتسجيل
-
-تحدث بالعربية وبأسلوب احترافي مقنع.
+اختر أفضل نتيجة تناسب سؤال المستخدم.
+إذا لم توجد نتيجة مناسبة قل أن المحتوى غير متوفر.
+اعرض:
+• اسم الدورة
+• وصف مختصر
+• الرابط
+• دعوة للتسجيل
 `
         },
         { role: "user", content: message }
