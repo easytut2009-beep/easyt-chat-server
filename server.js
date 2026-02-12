@@ -27,38 +27,13 @@ function normalizeArabic(text) {
     .toLowerCase();
 }
 
-function levenshtein(a, b) {
-  const matrix = Array.from({ length: b.length + 1 }, () =>
-    new Array(a.length + 1).fill(0)
-  );
-
-  for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b[i - 1] === a[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return matrix[b.length][a.length];
-}
-
 function smartKeywordCorrection(text) {
   const keywords = ["اليستريتور", "illustrator", "فوتوشوب", "photoshop"];
   const words = text.split(" ");
   return words
     .map((word) => {
       for (let keyword of keywords) {
-        if (levenshtein(word, keyword) <= 2) {
+        if (keyword.includes(word) || word.includes(keyword)) {
           return keyword;
         }
       }
@@ -75,67 +50,21 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "لا يوجد سؤال" });
     }
 
-    let normalizedMessage = normalizeArabic(message);
-    normalizedMessage = smartKeywordCorrection(normalizedMessage);
+    const normalizedMessage = smartKeywordCorrection(
+      normalizeArabic(message)
+    );
 
-    // ✅ تخزين رسالة المستخدم
     if (session_id) {
       await supabase.from("chat_messages").insert([
         { session_id, role: "user", message },
       ]);
     }
 
-    // ✅ استرجاع آخر 5 رسائل
-    let memoryMessages = [];
-    if (session_id) {
-      const { data } = await supabase
-        .from("chat_messages")
-        .select("role, message")
-        .eq("session_id", session_id)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      if (data) {
-        memoryMessages = data.reverse().map((m) => ({
-          role: m.role,
-          content: m.message,
-        }));
-      }
-    }
-
-    // ✅ Intent Detection
-    let intentType = "new_question";
-
-    if (memoryMessages.length > 0) {
-      const intentCheck = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `
-حدد هل السؤال متابعة لسؤال سابق أم سؤال جديد.
-أجب بكلمة واحدة فقط:
-follow_up
-or
-new_question
-`,
-          },
-          ...memoryMessages,
-          { role: "user", content: message },
-        ],
-      });
-
-      intentType = intentCheck.choices[0].message.content.trim();
-    }
-
-    let contextText = "";
-    let selectedCourse = null;
-
-    // ✅ لو متابعة → استرجاع آخر course_id بدون بحث
+    // ✅ جلب آخر course_id
     let activeCourseId = null;
 
-    if (intentType === "follow_up" && session_id) {
-      const { data: lastCourse } = await supabase
+    if (session_id) {
+      const { data } = await supabase
         .from("chat_messages")
         .select("course_id")
         .eq("session_id", session_id)
@@ -143,107 +72,63 @@ new_question
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (lastCourse && lastCourse.length > 0) {
-        activeCourseId = lastCourse[0].course_id;
+      if (data && data.length > 0) {
+        activeCourseId = data[0].course_id;
       }
+    }
 
-      if (activeCourseId) {
-        const { data: courseData } = await supabase
-          .from("documents")
-          .select("*")
-          .eq("id", activeCourseId)
-          .single();
+    // ✅ لو متابعة ولدينا كورس نشط
+    if (activeCourseId) {
+      const { data: course } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("id", activeCourseId)
+        .single();
 
-        if (courseData) {
-          contextText = `
-العنوان: ${courseData.title}
-الرابط: ${courseData.url}
-المحتوى: ${courseData.content}
-`;
+      if (course) {
+        // 🔥 Structured Responses
+        if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
+          return res.json({ reply: `مدة الدورة هي ${course.duration || "غير متوفرة"}.` });
+        }
+
+        if (normalizedMessage.includes("سعر")) {
+          return res.json({ reply: `سعر الدورة هو ${course.price || "غير متوفر"}.` });
+        }
+
+        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
+          return res.json({ reply: `رابط الدورة هو:\n${course.url}` });
         }
       }
     }
 
-    // ✅ لو سؤال جديد → اعمل البحث
-    if (intentType === "new_question") {
-      const expansion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `
-حوّل سؤال المستخدم إلى 3 صيغ بحث مختلفة.
-أعدهم كسطر منفصل لكل صيغة بدون ترقيم.
-`,
-          },
-          { role: "user", content: normalizedMessage },
-        ],
+    // ✅ لو سؤال جديد → بحث عادي
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: normalizedMessage,
+    });
+
+    const queryEmbedding = embeddingResponse.data[0].embedding;
+
+    const { data: results } = await supabase.rpc("match_documents", {
+      query_embedding: queryEmbedding,
+      query_text: normalizedMessage,
+      match_threshold: 0.05,
+      match_count: 5,
+    });
+
+    if (!results || results.length === 0) {
+      return res.json({
+        reply: "عذرًا، المحتوى غير متوفر حاليًا.",
       });
-
-      const queries = expansion.choices[0].message.content
-        .split("\n")
-        .map((q) => q.trim())
-        .filter((q) => q.length > 0);
-
-      const thresholds = [0.2, 0.12, 0.08, 0.05, 0.03];
-
-      let finalResults = [];
-
-      for (let threshold of thresholds) {
-        let allResults = [];
-
-        for (let q of queries) {
-          const embeddingResponse = await openai.embeddings.create({
-            model: "text-embedding-3-small",
-            input: q,
-          });
-
-          const queryEmbedding = embeddingResponse.data[0].embedding;
-
-          const { data } = await supabase.rpc("match_documents", {
-            query_embedding: queryEmbedding,
-            query_text: q,
-            match_threshold: threshold,
-            match_count: 5,
-          });
-
-          if (data && data.length > 0) {
-            allResults.push(...data);
-          }
-        }
-
-        const uniqueResults = Array.from(
-          new Map(allResults.map((item) => [item.id, item])).values()
-        );
-
-        uniqueResults.sort((a, b) => b.similarity - a.similarity);
-
-        if (uniqueResults.length > 0) {
-          finalResults = uniqueResults.slice(0, 5);
-          break;
-        }
-      }
-
-      if (finalResults.length === 0) {
-        return res.json({
-          reply: "عذرًا، المحتوى غير متوفر حاليًا.",
-        });
-      }
-
-      selectedCourse = finalResults[0];
-
-      contextText = finalResults
-        .map(
-          (doc, index) =>
-            `#${index + 1}
-العنوان: ${doc.title}
-الرابط: ${doc.url}
-المحتوى: ${doc.content}`
-        )
-        .join("\n\n");
     }
 
-    // ✅ الرد النهائي
+    const selectedCourse = results[0];
+
+    const contextText = `
+العنوان: ${selectedCourse.title}
+المحتوى: ${selectedCourse.content}
+`;
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -251,28 +136,22 @@ new_question
           role: "system",
           content: `
 أنت زيكو، مساعد منصة easyT.
-اعتمد على السياق السابق.
-${contextText}
+اعرض اسم الدورة ووصف مختصر فقط.
 `,
         },
-        ...memoryMessages,
-        { role: "user", content: message },
+        { role: "user", content: contextText },
       ],
     });
 
     const reply = completion.choices[0].message.content;
 
-    // ✅ تخزين الرد مع course_id
     if (session_id) {
       await supabase.from("chat_messages").insert([
         {
           session_id,
           role: "assistant",
           message: reply,
-          course_id:
-            intentType === "new_question" && selectedCourse
-              ? selectedCourse.id
-              : activeCourseId || null,
+          course_id: selectedCourse.id,
         },
       ]);
     }
