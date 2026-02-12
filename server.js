@@ -46,8 +46,11 @@ app.post("/chat", async (req, res) => {
   try {
     const { message, session_id } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: "لا يوجد سؤال" });
+    console.log("Incoming message:", message);
+    console.log("Session:", session_id);
+
+    if (!message || !session_id) {
+      return res.status(400).json({ error: "Missing message or session_id" });
     }
 
     const normalizedMessage = smartKeywordCorrection(
@@ -55,30 +58,28 @@ app.post("/chat", async (req, res) => {
     );
 
     // ✅ تخزين رسالة المستخدم
-    if (session_id) {
-      await supabase.from("chat_messages").insert([
-        { session_id, role: "user", message },
-      ]);
-    }
+    await supabase.from("chat_messages").insert([
+      { session_id, role: "user", message },
+    ]);
 
     // ✅ جلب آخر كورس نشط
     let activeDocumentId = null;
 
-    if (session_id) {
-      const { data } = await supabase
-        .from("chat_messages")
-        .select("course_id")
-        .eq("session_id", session_id)
-        .not("course_id", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1);
+    const { data: lastCourse } = await supabase
+      .from("chat_messages")
+      .select("course_id")
+      .eq("session_id", session_id)
+      .not("course_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-      if (data && data.length > 0) {
-        activeDocumentId = data[0].course_id;
-      }
+    if (lastCourse && lastCourse.length > 0) {
+      activeDocumentId = lastCourse[0].course_id;
     }
 
-    // ✅ Structured Follow‑up + Analytics
+    console.log("Active course:", activeDocumentId);
+
+    // ✅ Structured Follow‑up
     if (activeDocumentId) {
       const { data: course } = await supabase
         .from("courses")
@@ -88,54 +89,59 @@ app.post("/chat", async (req, res) => {
 
       if (course) {
 
-        // مدة
-        if (normalizedMessage.includes("مده") || normalizedMessage.includes("مدتها")) {
+        // ✅ مدة
+        if (
+          normalizedMessage.includes("مده") ||
+          normalizedMessage.includes("مدتها") ||
+          normalizedMessage.includes("المده") ||
+          normalizedMessage.includes("المدة")
+        ) {
           return res.json({
             reply: `مدة الدورة هي ${course.duration}.`,
           });
         }
 
-        // سعر
-        if (normalizedMessage.includes("سعر")) {
+        // ✅ سعر
+        if (
+          normalizedMessage.includes("سعر") ||
+          normalizedMessage.includes("السعر")
+        ) {
 
-          if (session_id) {
-            await supabase.from("chat_events").insert([
-              {
-                session_id,
-                event_type: "price_view",
-                course_id: activeDocumentId,
-              },
-            ]);
-          }
+          await supabase.from("chat_events").insert([
+            {
+              session_id,
+              event_type: "price_view",
+              course_id: activeDocumentId,
+            },
+          ]);
 
           return res.json({
-            reply:
-              `سعر الدورة هو ${course.price}.\n\n🎯 هل تحب التسجيل الآن؟ يمكنني إرسال رابط التسجيل فورًا.`,
+            reply: `سعر الدورة هو ${course.price}.`,
           });
         }
 
-        // رابط
-        if (normalizedMessage.includes("رابط") || normalizedMessage.includes("لينك")) {
+        // ✅ رابط
+        if (
+          normalizedMessage.includes("رابط") ||
+          normalizedMessage.includes("لينك")
+        ) {
 
-          if (session_id) {
-            await supabase.from("chat_events").insert([
-              {
-                session_id,
-                event_type: "link_click",
-                course_id: activeDocumentId,
-              },
-            ]);
-          }
+          await supabase.from("chat_events").insert([
+            {
+              session_id,
+              event_type: "link_click",
+              course_id: activeDocumentId,
+            },
+          ]);
 
           return res.json({
-            reply:
-              `رابط التسجيل:\n${course.url}\n\n✅ المقاعد محدودة، ننصح بالتسجيل الآن لضمان مكانك.`,
+            reply: `رابط التسجيل:\n${course.url}`,
           });
         }
       }
     }
 
-    // ✅ سؤال جديد → بحث
+    // ✅ لو مش Follow‑up → نعمل بحث جديد
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: normalizedMessage,
@@ -158,28 +164,11 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
-    // ✅ تسجيل عرض الكورس (Analytics)
-    if (session_id) {
-      await supabase.from("chat_events").insert([
-        {
-          session_id,
-          event_type: "course_view",
-          course_id: selectedDocument.id,
-        },
-      ]);
-    }
-
-    // ✅ جلب بيانات الكورس
     const { data: selectedCourse } = await supabase
       .from("courses")
       .select("*")
       .eq("document_id", selectedDocument.id)
       .single();
-
-    const contextText = `
-العنوان: ${selectedDocument.title}
-المحتوى: ${selectedDocument.content}
-`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -189,49 +178,34 @@ app.post("/chat", async (req, res) => {
           content:
             "أنت زيكو، مساعد منصة easyT. اعرض اسم الدورة ووصف مختصر فقط.",
         },
-        { role: "user", content: contextText },
+        {
+          role: "user",
+          content: `
+العنوان: ${selectedDocument.title}
+المحتوى: ${selectedDocument.content}
+          `,
+        },
       ],
     });
 
     let reply = completion.choices[0].message.content;
 
-    // ✅ CTA
     reply += "\n\n🚀 هل ترغب في معرفة السعر أو التسجيل الآن؟";
 
-    // ✅ Recommendation Engine
-    if (selectedCourse && selectedCourse.category) {
-      const { data: relatedCourses } = await supabase
-        .from("courses")
-        .select("title, url")
-        .eq("category", selectedCourse.category)
-        .neq("document_id", selectedDocument.id)
-        .limit(2);
-
-      if (relatedCourses && relatedCourses.length > 0) {
-        reply +=
-          "\n\nقد يعجبك أيضًا:\n" +
-          relatedCourses
-            .map((c) => `• ${c.title}\n${c.url}`)
-            .join("\n\n");
-      }
-    }
-
-    // ✅ تخزين الرد
-    if (session_id) {
-      await supabase.from("chat_messages").insert([
-        {
-          session_id,
-          role: "assistant",
-          message: reply,
-          course_id: selectedDocument.id,
-        },
-      ]);
-    }
+    // ✅ تخزين الرد مع course_id
+    await supabase.from("chat_messages").insert([
+      {
+        session_id,
+        role: "assistant",
+        message: reply,
+        course_id: selectedDocument.id,
+      },
+    ]);
 
     res.json({ reply });
 
   } catch (error) {
-    console.error(error);
+    console.error("ERROR:", error);
     res.status(500).json({ error: "حدث خطأ في السيرفر" });
   }
 });
