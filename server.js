@@ -79,10 +79,20 @@ async function createEmbeddingWithRetry(text, retries = 2) {
 ================================ */
 
 app.post("/chat", async (req, res) => {
+
+  const timeout = setTimeout(() => {
+    console.log("⏰ Request Timeout");
+    return res.json({
+      reply: "⏳ السيرفر يستغرق وقت أطول من المعتاد، حاول مرة أخرى."
+    });
+  }, 25000); // 25 ثانية حماية
+
   try {
+
     let { message, session_id } = req.body;
 
     if (!message) {
+      clearTimeout(timeout);
       return res.status(400).json({
         reply: "لم يتم إرسال رسالة."
       });
@@ -139,6 +149,7 @@ app.post("/chat", async (req, res) => {
         if (course) {
 
           if (normalizedMessage.includes("سعر")) {
+            clearTimeout(timeout);
             return res.json({
               reply: `💰 سعر الدورة هو ${course.price || "غير محدد حالياً"}.`
             });
@@ -148,6 +159,7 @@ app.post("/chat", async (req, res) => {
             normalizedMessage.includes("مده") ||
             normalizedMessage.includes("المدة")
           ) {
+            clearTimeout(timeout);
             return res.json({
               reply: `⏳ مدة الدورة هي ${course.duration || "غير محددة حالياً"}.`
             });
@@ -158,6 +170,7 @@ app.post("/chat", async (req, res) => {
             normalizedMessage.includes("رابط") ||
             normalizedMessage.includes("الاشتراك")
           ) {
+            clearTimeout(timeout);
             return res.json({
               reply: `✅ يمكنك التسجيل من هنا:\n${course.url || "الرابط غير متوفر حالياً"}`
             });
@@ -185,6 +198,7 @@ app.post("/chat", async (req, res) => {
     );
 
     if (!results || results.length === 0) {
+      clearTimeout(timeout);
       return res.json({
         reply: "عذرًا، لم أجد دورة مطابقة."
       });
@@ -199,14 +213,11 @@ app.post("/chat", async (req, res) => {
       .maybeSingle();
 
     if (!selectedCourse) {
+      clearTimeout(timeout);
       return res.json({
         reply: "حدث خطأ في تحميل بيانات الدورة."
       });
     }
-
-    /* ===============================
-       ✅ Build Main Course Reply
-    ================================ */
 
     const reply = `📚 اسم الدورة: ${selectedCourse.title}
 
@@ -226,10 +237,15 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
       }
     ]);
 
+    clearTimeout(timeout);
     return res.json({ reply, session_id });
 
   } catch (error) {
+
     console.error("🔥 SERVER ERROR FULL:", error);
+
+    clearTimeout(timeout);
+
     return res.status(500).json({
       reply: "حدث خطأ في السيرفر."
     });
