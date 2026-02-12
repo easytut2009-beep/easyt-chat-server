@@ -24,7 +24,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Session Memory (Ultra Fast)
+   ✅ Session Memory
 ================================ */
 
 const sessionMemory = new Map();
@@ -41,7 +41,8 @@ function normalizeArabic(text) {
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي")
     .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
-    .toLowerCase();
+    .toLowerCase()
+    .trim();
 }
 
 /* ===============================
@@ -51,14 +52,14 @@ function normalizeArabic(text) {
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text,
+    input: text, // ✅ نستخدم النص الأصلي مش normalized
   });
 
   return response.data[0].embedding;
 }
 
 /* ===============================
-   ✅ Detect Follow-up Question
+   ✅ Detect Follow-up
 ================================ */
 
 function isFollowUp(message) {
@@ -96,7 +97,7 @@ app.post("/chat", async (req, res) => {
 
     let selectedCourse;
 
-    /* ✅ لو فيه كورس محفوظ في الجلسة والسؤال متابعة */
+    /* ✅ لو السؤال متابعة */
     if (
       sessionMemory.has(session_id) &&
       isFollowUp(normalizedMessage)
@@ -104,39 +105,65 @@ app.post("/chat", async (req, res) => {
       selectedCourse = sessionMemory.get(session_id);
     }
 
-    /* ✅ غير كده نعمل بحث */
+    /* ✅ لو مفيش كورس محفوظ نعمل بحث */
     if (!selectedCourse) {
 
-      const embedding = await createEmbedding(normalizedMessage);
+      console.log("Creating embedding...");
 
-      const { data: results } = await supabase.rpc("match_documents", {
+      const embedding = await createEmbedding(message); // ✅ الأصلي
+
+      console.log("Searching vector...");
+
+      const { data: results, error } = await supabase.rpc("match_documents", {
         query_embedding: embedding,
-        query_text: normalizedMessage,
-        match_threshold: 0.05,
-        match_count: 1,
+        query_text: message,
+        match_threshold: 0.01, // ✅ أقل عشان العربي
+        match_count: 5,        // ✅ مش 1
       });
 
+      console.log("Vector results:", results);
+
+      if (error) {
+        console.error("RPC Error:", error.message);
+      }
+
       if (!results || results.length === 0) {
-        return res.json({ reply: "لم أجد دورة مطابقة." });
+
+        // ✅ Fallback search
+        console.log("Running fallback search...");
+
+        const { data: fallbackCourses } = await supabase
+          .from("courses")
+          .select("*")
+          .or(`title.ilike.%${message}%,description.ilike.%${message}%`)
+          .limit(1);
+
+        if (!fallbackCourses || fallbackCourses.length === 0) {
+          return res.json({ reply: "لم أجد دورة مطابقة." });
+        }
+
+        selectedCourse = fallbackCourses[0];
+
+      } else {
+
+        const { data: course } = await supabase
+          .from("courses")
+          .select("*")
+          .eq("document_id", results[0].id)
+          .maybeSingle();
+
+        if (!course) {
+          return res.json({ reply: "حدث خطأ في تحميل الدورة." });
+        }
+
+        selectedCourse = course;
       }
 
-      const { data: course } = await supabase
-        .from("courses")
-        .select("*")
-        .eq("document_id", results[0].id)
-        .maybeSingle();
-
-      if (!course) {
-        return res.json({ reply: "حدث خطأ في تحميل الدورة." });
-      }
-
-      selectedCourse = course;
-
-      /* ✅ نخزن الكورس في الجلسة */
-      sessionMemory.set(session_id, course);
+      // ✅ نخزن في الجلسة
+      sessionMemory.set(session_id, selectedCourse);
     }
 
-    /* ✅ GPT Smart Answer */
+    /* ✅ GPT Answer */
 
     const courseContext = `
 اسم الدورة: ${selectedCourse.title}
@@ -153,7 +180,7 @@ app.post("/chat", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط."
+          content: "أجب بدقة وباختصار بناءً على بيانات الدورة فقط. لا تخترع معلومات."
         },
         {
           role: "user",
@@ -169,7 +196,7 @@ app.post("/chat", async (req, res) => {
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("ERROR:", error.message);
+    console.error("SERVER ERROR:", error);
     return res.status(500).json({
       reply: "حدث خطأ مؤقت."
     });
