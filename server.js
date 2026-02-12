@@ -1,3 +1,4 @@
+// ⚠️ IMPORTANT: Must match the model used when storing embeddings (1536 dims)
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
