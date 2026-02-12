@@ -62,10 +62,10 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Safe Embedding (بدون Timeout)
+   ✅ Embedding with Retry
 ================================ */
 
-async function createEmbeddingSafe(text) {
+async function createEmbeddingSafe(text, retries = 2) {
   try {
     console.log("🟡 Creating embedding...");
 
@@ -79,7 +79,16 @@ async function createEmbeddingSafe(text) {
     return response.data[0].embedding;
 
   } catch (error) {
-    console.error("❌ Embedding failed:", error.message);
+
+    console.error("❌ Embedding error:", error.message);
+
+    // ✅ لو OpenAI رجع 500 أو error مؤقت
+    if (retries > 0) {
+      console.log("🔁 Retrying embedding...");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return createEmbeddingSafe(text, retries - 1);
+    }
+
     return null;
   }
 }
@@ -89,7 +98,9 @@ async function createEmbeddingSafe(text) {
 ================================ */
 
 app.post("/chat", async (req, res) => {
+
   try {
+
     let { message, session_id } = req.body;
 
     if (!message) {
@@ -115,7 +126,7 @@ app.post("/chat", async (req, res) => {
       "Insert message"
     );
 
-    /* ✅ Embedding (بدون قتل الطلب بدري) */
+    /* ✅ Embedding with Retry */
     const queryEmbedding = await createEmbeddingSafe(normalizedMessage);
 
     if (!queryEmbedding) {
@@ -134,7 +145,7 @@ app.post("/chat", async (req, res) => {
         match_threshold: 0.05,
         match_count: 5,
       }),
-      15000,
+      20000,
       "Supabase RPC"
     );
 
@@ -159,7 +170,7 @@ app.post("/chat", async (req, res) => {
         .select("*")
         .eq("document_id", selectedDocument.id)
         .maybeSingle(),
-      10000,
+      15000,
       "Fetch course"
     );
 
@@ -191,6 +202,7 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
     return res.json({ reply, session_id });
 
   } catch (error) {
+
     console.error("🔥 SERVER ERROR FULL:", error.message);
 
     return res.status(500).json({
