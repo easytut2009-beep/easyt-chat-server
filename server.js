@@ -33,8 +33,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Helper: Promise Timeout
-   (نستخدمه مع Supabase فقط)
+   ✅ Helper Timeout (Supabase only)
 ================================ */
 
 function withTimeout(promise, ms, label = "Operation") {
@@ -67,28 +66,21 @@ function normalizeArabic(text) {
 
 async function createEmbeddingSafe(text, retries = 2) {
   try {
-    console.log("🟡 Creating embedding...");
-
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: text,
     });
 
-    console.log("✅ Embedding created");
-
     return response.data[0].embedding;
 
   } catch (error) {
 
-    console.error("❌ Embedding error:", error.message);
-
-    // ✅ لو OpenAI رجع 500 أو error مؤقت
     if (retries > 0) {
-      console.log("🔁 Retrying embedding...");
       await new Promise(resolve => setTimeout(resolve, 1500));
       return createEmbeddingSafe(text, retries - 1);
     }
 
+    console.error("❌ Embedding failed:", error.message);
     return null;
   }
 }
@@ -115,46 +107,27 @@ app.post("/chat", async (req, res) => {
 
     const normalizedMessage = normalizeArabic(message);
 
-    console.log("📩 New message:", normalizedMessage);
+    /* ✅ Save user message */
+    await supabase.from("chat_messages").insert([
+      { session_id, role: "user", message }
+    ]);
 
-    /* ✅ Save User Message */
-    await withTimeout(
-      supabase.from("chat_messages").insert([
-        { session_id, role: "user", message }
-      ]),
-      10000,
-      "Insert message"
-    );
-
-    /* ✅ Embedding with Retry */
+    /* ✅ Create embedding */
     const queryEmbedding = await createEmbeddingSafe(normalizedMessage);
 
     if (!queryEmbedding) {
       return res.json({
-        reply: "⚠️ حدث خطأ مؤقت أثناء معالجة الطلب، حاول مرة أخرى."
+        reply: "⚠️ حدث خطأ مؤقت، حاول مرة أخرى."
       });
     }
 
-    /* ✅ Supabase Search */
-    console.log("🟡 Searching Supabase...");
-
-    const { data: results, error: rpcError } = await withTimeout(
-      supabase.rpc("match_documents", {
-        query_embedding: queryEmbedding,
-        query_text: normalizedMessage,
-        match_threshold: 0.05,
-        match_count: 5,
-      }),
-      20000,
-      "Supabase RPC"
-    );
-
-    if (rpcError) {
-      console.error("❌ RPC Error:", rpcError.message);
-      return res.json({
-        reply: "حدث خطأ أثناء البحث في قاعدة البيانات."
-      });
-    }
+    /* ✅ Search course */
+    const { data: results } = await supabase.rpc("match_documents", {
+      query_embedding: queryEmbedding,
+      query_text: normalizedMessage,
+      match_threshold: 0.05,
+      match_count: 3,
+    });
 
     if (!results || results.length === 0) {
       return res.json({
@@ -164,31 +137,59 @@ app.post("/chat", async (req, res) => {
 
     const selectedDocument = results[0];
 
-    const { data: selectedCourse, error: courseError } = await withTimeout(
-      supabase
-        .from("courses")
-        .select("*")
-        .eq("document_id", selectedDocument.id)
-        .maybeSingle(),
-      15000,
-      "Fetch course"
-    );
+    const { data: selectedCourse } = await supabase
+      .from("courses")
+      .select("*")
+      .eq("document_id", selectedDocument.id)
+      .maybeSingle();
 
-    if (courseError || !selectedCourse) {
-      console.error("❌ Course fetch error:", courseError?.message);
+    if (!selectedCourse) {
       return res.json({
         reply: "حدث خطأ في تحميل بيانات الدورة."
       });
     }
 
-    const reply = `📚 اسم الدورة: ${selectedCourse.title}
+    /* ✅ هنا الذكاء الحقيقي */
 
-📝 تفاصيل الدورة:
-${selectedCourse.description || selectedCourse.content || "سيتم إضافة تفاصيل قريباً."}
+    const courseContext = `
+اسم الدورة: ${selectedCourse.title}
+الوصف: ${selectedCourse.description || ""}
+المحتوى: ${selectedCourse.content || ""}
+السعر: ${selectedCourse.price || "غير محدد"}
+المدة: ${selectedCourse.duration || "غير محددة"}
+المحاضر: ${selectedCourse.instructor || "غير محدد"}
+رابط الدورة: ${selectedCourse.url || "غير متوفر"}
+`;
 
-💰 يمكنك سؤال عن السعر
-⏳ أو مدة الدورة
-🚀 أو التسجيل الآن`;
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+أنت مساعد ذكي لدورات تدريبية.
+جاوب فقط بناءً على بيانات الدورة المقدمة لك.
+إذا سأل المستخدم عن السعر أو المدة أو المحاضر أو المحتوى أو أي تفصيل،
+جاوب بدقة من البيانات.
+لو طلب رابط اجعله واضح ويمكن نسخه.
+لا تخترع معلومات غير موجودة.
+`
+        },
+        {
+          role: "user",
+          content: `
+بيانات الدورة:
+${courseContext}
+
+سؤال المستخدم:
+${message}
+`
+        }
+      ],
+      temperature: 0.3
+    });
+
+    const reply = completion.choices[0].message.content;
 
     await supabase.from("chat_messages").insert([
       {
@@ -203,7 +204,7 @@ ${selectedCourse.description || selectedCourse.content || "سيتم إضافة �
 
   } catch (error) {
 
-    console.error("🔥 SERVER ERROR FULL:", error.message);
+    console.error("🔥 SERVER ERROR:", error.message);
 
     return res.status(500).json({
       reply: "⚠️ حدث خطأ في السيرفر."
