@@ -1,4 +1,5 @@
 // ⚠️ IMPORTANT: Must match the model used when storing embeddings (1536 dims)
+
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -85,32 +86,68 @@ app.post("/chat", async (req, res) => {
     let normalizedMessage = normalizeArabic(message);
     normalizedMessage = smartKeywordCorrection(normalizedMessage);
 
-    // ✅ ✅ ✅ استخدم نفس موديل التخزين
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small", // ✅ تم التصحيح هنا
-      input: normalizedMessage,
+    // ✅ ✅ Multi‑Query Generation
+    const expansion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+حوّل سؤال المستخدم إلى 3 صيغ بحث مختلفة.
+أعدهم كسطر منفصل لكل صيغة بدون ترقيم.
+`,
+        },
+        { role: "user", content: normalizedMessage },
+      ],
     });
 
-    const queryEmbedding = embeddingResponse.data[0].embedding;
+    const queries = expansion.choices[0].message.content
+      .split("\n")
+      .map(q => q.trim())
+      .filter(q => q.length > 0);
 
-    const { data, error } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
-      query_text: normalizedMessage,
-      match_threshold: 0.05,
-      match_count: 5,
-    });
+    let allResults = [];
 
-    if (error) console.error(error);
+    // ✅ Search each generated query
+    for (let q of queries) {
+      const embeddingResponse = await openai.embeddings.create({
+        model: "text-embedding-3-small", // ✅ MUST stay small (1536)
+        input: q,
+      });
 
-    console.log("Search Results:", data);
+      const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    if (!data || data.length === 0) {
+      const { data, error } = await supabase.rpc("match_documents", {
+        query_embedding: queryEmbedding,
+        query_text: q,
+        match_threshold: 0.05,
+        match_count: 5,
+      });
+
+      if (error) console.error(error);
+
+      if (data) {
+        allResults.push(...data);
+      }
+    }
+
+    // ✅ Remove duplicate documents
+    const uniqueResults = Array.from(
+      new Map(allResults.map(item => [item.id, item])).values()
+    );
+
+    // ✅ Sort by similarity
+    uniqueResults.sort((a, b) => b.similarity - a.similarity);
+
+    const finalResults = uniqueResults.slice(0, 5);
+
+    if (finalResults.length === 0) {
       return res.json({
         reply: "عذرًا، المحتوى غير متوفر حاليًا.",
       });
     }
 
-    const contextText = data
+    const contextText = finalResults
       .map(
         (doc, index) =>
           `#${index + 1}
@@ -120,6 +157,7 @@ app.post("/chat", async (req, res) => {
       )
       .join("\n\n");
 
+    // ✅ Re‑Ranking / Response Generation
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -144,6 +182,7 @@ ${contextText}
     res.json({
       reply: completion.choices[0].message.content,
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "حدث خطأ في السيرفر" });
