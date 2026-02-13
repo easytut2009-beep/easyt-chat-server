@@ -76,7 +76,7 @@ async function createEmbedding(text) {
 }
 
 /* ==========================================================
-   ✅ Chat Route
+   ✅ Chat Route (RAG للجميع)
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -92,7 +92,7 @@ app.post("/chat", async (req, res) => {
     }
 
     /* ===============================
-       ✅ Check Premium Access
+       ✅ Check Premium (فقط لإضافة CTA)
     ================================= */
 
     let isPremium = false;
@@ -110,39 +110,11 @@ app.post("/chat", async (req, res) => {
     }
 
     /* =======================================================
-       ✅ NON PREMIUM → SALES MODE
-    ======================================================= */
-
-    if (!isPremium) {
-      const salesPrompt = `
-أنت مساعد مبيعات لمنصة easyT.
-اشرح الاشتراك العام ومميزاته وشجع المستخدم على الاشتراك.
-لا تقدم أي محتوى تعليمي.
-`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.3,
-        max_tokens: 400,
-        messages: [
-          { role: "system", content: salesPrompt },
-          { role: "user", content: message }
-        ]
-      });
-
-      return res.json({
-        reply: completion.choices[0].message.content.trim(),
-        session_id
-      });
-    }
-
-    /* =======================================================
-       ✅ PREMIUM → RAG MODE
+       ✅ RAG MODE للجميع
     ======================================================= */
 
     const correctedMessage = await correctUserIntent(message);
     const normalizedMessage = normalizeArabic(correctedMessage);
-
     const embedding = await createEmbedding(correctedMessage);
 
     const { data: results, error } = await supabase.rpc("match_ai_knowledge", {
@@ -186,8 +158,9 @@ app.post("/chat", async (req, res) => {
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 استخدم فقط المعلومات الموجودة في السياق.
-لا تخترع معلومات.
-اكتب بشكل واضح ومختصر.
+إذا كان السؤال عن دورة، أكد وجودها واذكر أهم مميزاتها.
+لا تخترع معلومات غير موجودة في السياق.
+اكتب بشكل واضح ومقنع.
 `;
 
     const completion = await openai.chat.completions.create({
@@ -212,15 +185,26 @@ ${correctedMessage}
     let reply = completion.choices[0].message.content.trim();
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    /* ✅ Add CTA Link */
+    /* ✅ Add Course Link */
     if (bestMatch && bestMatch.url) {
       reply += `
 <br><br>
-<strong>✅ الخيار الأنسب لك:</strong><br>
+<strong>✅ رابط الدورة:</strong><br>
 <a href="${bestMatch.url}" target="_blank"
 style="color:#ffcc00;font-weight:bold;text-decoration:none;">
 ${bestMatch.title}
 </a>`;
+    }
+
+    /* ✅ CTA لغير المشتركين */
+    if (!isPremium) {
+      reply += `
+<br><br>
+<div style="background:#111;padding:12px;border-radius:8px;color:#fff;">
+🔓 للوصول الكامل لجميع الدورات والمحتوى المتقدم،
+اشترك الآن في باقة easyT واستفد من كل المميزات.
+</div>
+`;
     }
 
     return res.json({ reply, session_id });
