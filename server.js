@@ -76,61 +76,11 @@ async function createEmbedding(text) {
 }
 
 /* ==========================================================
-   ✅ TEMP ROUTE: Generate Embeddings (Protected)
-========================================================== */
-
-app.get("/generate-embeddings", async (req, res) => {
-  try {
-
-    if (req.query.secret !== process.env.EMBEDDING_SECRET) {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
-
-    const { data, error } = await supabase
-      .from("ai_knowledge")
-      .select("id, content")
-      .is("embedding", null);
-
-    if (error) {
-      return res.json({ error });
-    }
-
-    console.log(`Generating embeddings for ${data.length} rows...`);
-
-    for (const row of data) {
-      const response = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: row.content,
-      });
-
-      const embedding = response.data[0].embedding;
-
-      await supabase
-        .from("ai_knowledge")
-        .update({ embedding })
-        .eq("id", row.id);
-
-      console.log(`✅ Updated ID: ${row.id}`);
-    }
-
-    return res.json({
-      success: true,
-      updated: data.length
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Failed generating embeddings" });
-  }
-});
-
-/* ==========================================================
    ✅ Chat Route
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
   try {
-
     let { message, session_id, user_id } = req.body;
 
     if (!message) {
@@ -164,11 +114,10 @@ app.post("/chat", async (req, res) => {
     ======================================================= */
 
     if (!isPremium) {
-
       const salesPrompt = `
 أنت مساعد مبيعات لمنصة easyT.
-اشرح الاشتراك العام وشجع المستخدم على الاشتراك.
-لا تقدم محتوى تعليمي.
+اشرح الاشتراك العام ومميزاته وشجع المستخدم على الاشتراك.
+لا تقدم أي محتوى تعليمي.
 `;
 
       const completion = await openai.chat.completions.create({
@@ -196,32 +145,44 @@ app.post("/chat", async (req, res) => {
 
     const embedding = await createEmbedding(correctedMessage);
 
-    const { data: results } = await supabase.rpc("match_ai_knowledge", {
+    const { data: results, error } = await supabase.rpc("match_ai_knowledge", {
       query_embedding: embedding,
       match_count: 10
     });
 
-    let contextText = "";
-    let bestMatch = null;
-
-    if (results && results.length > 0) {
-
-      contextText = results
-        .slice(0, 5)
-        .map(r =>
-          `نوع: ${r.source_type}
-عنوان: ${r.title}
-محتوى: ${r.content.slice(0, 1000)}`
-        )
-        .join("\n\n");
-
-      const directMatch = results.find(r =>
-        normalizeArabic(r.title).includes(normalizedMessage)
-      );
-
-      bestMatch = directMatch || results[0];
+    if (error) {
+      console.error("Vector search error:", error);
+      return res.json({
+        reply: "حدث خطأ أثناء البحث في البيانات.",
+        session_id
+      });
     }
 
+    if (!results || results.length === 0) {
+      return res.json({
+        reply: "حالياً لا توجد نتائج مطابقة، يمكنك تصفح جميع الدورات من الصفحة الرئيسية.",
+        session_id
+      });
+    }
+
+    /* ✅ Build Context */
+    const contextText = results
+      .slice(0, 5)
+      .map(r =>
+        `نوع: ${r.source_type}
+عنوان: ${r.title}
+محتوى: ${r.content.slice(0, 1000)}`
+      )
+      .join("\n\n");
+
+    /* ✅ Best Match */
+    const directMatch = results.find(r =>
+      normalizeArabic(r.title).includes(normalizedMessage)
+    );
+
+    const bestMatch = directMatch || results[0];
+
+    /* ✅ AI Response */
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 استخدم فقط المعلومات الموجودة في السياق.
@@ -239,7 +200,7 @@ app.post("/chat", async (req, res) => {
           role: "user",
           content: `
 السياق:
-${contextText || "لا يوجد بيانات مطابقة"}
+${contextText}
 
 السؤال:
 ${correctedMessage}
@@ -251,6 +212,7 @@ ${correctedMessage}
     let reply = completion.choices[0].message.content.trim();
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
+    /* ✅ Add CTA Link */
     if (bestMatch && bestMatch.url) {
       reply += `
 <br><br>
@@ -259,10 +221,6 @@ ${correctedMessage}
 style="color:#ffcc00;font-weight:bold;text-decoration:none;">
 ${bestMatch.title}
 </a>`;
-    }
-
-    if (!results || results.length === 0) {
-      reply = "حالياً لا توجد نتائج مطابقة.";
     }
 
     return res.json({ reply, session_id });
