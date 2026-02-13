@@ -55,7 +55,7 @@ async function createEmbedding(text) {
 }
 
 /* ==========================================================
-   ✅ Chat Route (Smart RAG)
+   ✅ Chat Route (Premium Smart RAG)
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -73,7 +73,7 @@ app.post("/chat", async (req, res) => {
     const lowerMsg = message.trim().toLowerCase();
 
     /* =======================================================
-       ✅ Identity Intent (انت مين؟)
+       ✅ Identity Intent
     ======================================================= */
 
     if (
@@ -83,21 +83,26 @@ app.post("/chat", async (req, res) => {
     ) {
       return res.json({
         reply: `
-مرحبًا 👋  
-أنا **زيكو** – مساعد easyT الذكي.
+<div style="line-height:1.6">
+<strong>مرحبًا 👋</strong><br>
+أنا <strong>زيكو</strong> – مساعد easyT الذكي.<br><br>
 
-أساعدك في:
-• معرفة تفاصيل أي دورة  
-• ترشيح أفضل مسار مناسب لك  
-• توجيهك للاشتراك الصحيح  
+أساعدك في:<br>
+<ul style="padding-right:18px">
+<li>معرفة تفاصيل أي دورة</li>
+<li>ترشيح أفضل مسار مناسب لك</li>
+<li>توجيهك للاشتراك الصحيح</li>
+</ul>
 
-قولي حابب تتعلم إيه؟ 🚀`,
+قولي حابب تتعلم إيه؟ 🚀
+</div>
+`,
         session_id
       });
     }
 
     /* ===============================
-       ✅ Check Premium (فقط CTA)
+       ✅ Check Premium
     ================================= */
 
     let isPremium = false;
@@ -136,48 +141,66 @@ app.post("/chat", async (req, res) => {
     if (!results || results.length === 0) {
       return res.json({
         reply: `
-لم أجد نتائج مطابقة لسؤالك 🤔  
-يمكنك تصفح جميع الدورات من الصفحة الرئيسية.`,
+<div style="line-height:1.6">
+لم أجد نتائج مطابقة لسؤالك 🤔<br>
+يمكنك تصفح جميع الدورات من الصفحة الرئيسية.
+</div>
+`,
         session_id
       });
     }
 
-    /* ✅ Build Context */
-    const contextText = results
-      .slice(0, 5)
+    /* =======================================================
+       ✅ Filter Matching Courses
+    ======================================================= */
+
+    const normalizedMessage = normalizeArabic(message);
+
+    const matchedCourses = results.filter(r =>
+      normalizeArabic(r.title).includes(normalizedMessage)
+    );
+
+    const finalCourses =
+      matchedCourses.length > 0
+        ? matchedCourses
+        : results.slice(0, 3);
+
+    /* =======================================================
+       ✅ Build Context
+    ======================================================= */
+
+    const contextText = finalCourses
       .map(r =>
         `عنوان: ${r.title}
-محتوى: ${r.content.slice(0, 800)}`
+محتوى: ${r.content.slice(0, 600)}`
       )
       .join("\n\n");
 
-    const bestMatch = results[0];
-
     /* =======================================================
-       ✅ Smart System Prompt
+       ✅ System Prompt (منظم بدون نجوم)
     ======================================================= */
 
     const systemPrompt = `
 أنت "زيكو" مساعد easyT الذكي.
 
-شخصيتك:
-- ودود واحترافي.
-- تكتب بشكل منظم وواضح.
-- تستخدم عناوين ونقاط.
+التنسيق الإجباري:
+- استخدم HTML فقط.
+- لا تستخدم ** أو نجوم.
+- العناوين <strong>
+- النقاط داخل <ul><li>
+- لا تضع مسافات كبيرة بين الأسطر.
 
-القواعد:
-1) إذا كان السؤال عن دورة:
-   - أكد وجودها.
-   - اذكر أهم المميزات في نقاط.
-   - استخدم تنسيق واضح.
-2) لا تخترع معلومات خارج السياق.
-3) اجعل الرد مقنع ومريح للقراءة.
+إذا كان السؤال عن دورات:
+- اذكر جميع الدورات الموجودة في السياق.
+- لكل دورة عنوان واضح وثلاث مميزات.
+- اجعل الرد أنيق ومنظم.
+- لا تخترع معلومات.
 `;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 600,
+      max_tokens: 700,
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -194,28 +217,58 @@ ${message}
     });
 
     let reply = completion.choices[0].message.content.trim();
+
+    /* ✅ تنظيف المسافات */
+    reply = reply.replace(/\n\s*\n/g, "\n");
+    reply = reply.replace(/\n/g, "<br>");
+    reply = reply.replace(/\*\*/g, "");
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    /* ✅ Add Course Link */
-    if (bestMatch?.url) {
-      reply += `
-<br><br>
-<strong>✅ رابط الدورة:</strong><br>
-<a href="${bestMatch.url}" target="_blank"
-style="color:#444;font-weight:bold;text-decoration:none;">
-${bestMatch.title}
-</a>`;
-    }
+    /* =======================================================
+       ✅ Add Course Buttons
+    ======================================================= */
 
-    /* ✅ CTA لغير المشتركين */
+    reply += `<br><br><strong>✅ روابط الدورات:</strong><br>`;
+
+    finalCourses.forEach(course => {
+      if (course.url) {
+        reply += `
+        <div style="margin-top:10px">
+          <a href="${course.url}" target="_blank"
+          style="
+            display:inline-block;
+            padding:10px 14px;
+            background:#ffcc00;
+            color:#000;
+            font-weight:bold;
+            border-radius:8px;
+            text-decoration:none;
+          ">
+            ${course.title}
+          </a>
+        </div>
+        `;
+      }
+    });
+
+    /* =======================================================
+       ✅ CTA لغير المشتركين
+    ======================================================= */
+
     if (!isPremium) {
       reply += `
-<br><br>
-<div style="background:#222;padding:14px;border-radius:10px;color:#fff;">
-🔓 للوصول الكامل لجميع الدورات والمحتوى المتقدم،
-اشترك الآن في باقة easyT واستفد من كل المميزات.
-</div>
-`;
+      <br><br>
+      <div style="
+        background:#111;
+        padding:16px;
+        border-radius:12px;
+        color:#fff;
+        line-height:1.6;
+      ">
+      🔓 للوصول الكامل لجميع الدورات والمحتوى المتقدم<br>
+      اشترك الآن في باقة easyT واستفد من كل المميزات.
+      </div>
+      `;
     }
 
     return res.json({ reply, session_id });
