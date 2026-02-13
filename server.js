@@ -75,12 +75,62 @@ async function createEmbedding(text) {
   return response.data[0].embedding;
 }
 
-/* ===============================
+/* ==========================================================
+   ✅ TEMP ROUTE: Generate Embeddings (Protected)
+========================================================== */
+
+app.get("/generate-embeddings", async (req, res) => {
+  try {
+
+    if (req.query.secret !== process.env.EMBEDDING_SECRET) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const { data, error } = await supabase
+      .from("ai_knowledge")
+      .select("id, content")
+      .is("embedding", null);
+
+    if (error) {
+      return res.json({ error });
+    }
+
+    console.log(`Generating embeddings for ${data.length} rows...`);
+
+    for (const row of data) {
+      const response = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: row.content,
+      });
+
+      const embedding = response.data[0].embedding;
+
+      await supabase
+        .from("ai_knowledge")
+        .update({ embedding })
+        .eq("id", row.id);
+
+      console.log(`✅ Updated ID: ${row.id}`);
+    }
+
+    return res.json({
+      success: true,
+      updated: data.length
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed generating embeddings" });
+  }
+});
+
+/* ==========================================================
    ✅ Chat Route
-================================ */
+========================================================== */
 
 app.post("/chat", async (req, res) => {
   try {
+
     let { message, session_id, user_id } = req.body;
 
     if (!message) {
@@ -109,23 +159,16 @@ app.post("/chat", async (req, res) => {
       isPremium = !!premiumUser;
     }
 
-    console.log("User:", user_id, "Premium:", isPremium);
-
     /* =======================================================
        ✅ NON PREMIUM → SALES MODE
     ======================================================= */
 
     if (!isPremium) {
+
       const salesPrompt = `
 أنت مساعد مبيعات لمنصة easyT.
-
-مهمتك:
-- شرح مميزات الاشتراك العام
-- الرد على السعر ومدة الاشتراك
-- تشجيع المستخدم على الاشتراك
-
-لا تقدم أي محتوى تعليمي.
-لا تجب عن تفاصيل الكورسات أو الدبلومات.
+اشرح الاشتراك العام وشجع المستخدم على الاشتراك.
+لا تقدم محتوى تعليمي.
 `;
 
       const completion = await openai.chat.completions.create({
@@ -138,13 +181,14 @@ app.post("/chat", async (req, res) => {
         ]
       });
 
-      const reply = completion.choices[0].message.content.trim();
-
-      return res.json({ reply, session_id });
+      return res.json({
+        reply: completion.choices[0].message.content.trim(),
+        session_id
+      });
     }
 
     /* =======================================================
-       ✅ PREMIUM → RAG MODE (ai_knowledge)
+       ✅ PREMIUM → RAG MODE
     ======================================================= */
 
     const correctedMessage = await correctUserIntent(message);
@@ -180,13 +224,9 @@ app.post("/chat", async (req, res) => {
 
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
-
-القواعد:
-- استخدم فقط المعلومات الموجودة في "السياق".
-- لا تخترع معلومات غير موجودة.
-- لا تضع روابط داخل النص.
-- اكتب بأسلوب واضح ومختصر.
-- إذا كانت النتيجة من نوع دبلومة أو كورس وضّح ذلك.
+استخدم فقط المعلومات الموجودة في السياق.
+لا تخترع معلومات.
+اكتب بشكل واضح ومختصر.
 `;
 
     const completion = await openai.chat.completions.create({
@@ -216,13 +256,13 @@ ${correctedMessage}
 <br><br>
 <strong>✅ الخيار الأنسب لك:</strong><br>
 <a href="${bestMatch.url}" target="_blank"
-style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-decoration:none;">
+style="color:#ffcc00;font-weight:bold;text-decoration:none;">
 ${bestMatch.title}
 </a>`;
     }
 
     if (!results || results.length === 0) {
-      reply = "حالياً لا توجد نتائج مطابقة، يمكنك تصفح جميع الدورات من الصفحة الرئيسية.";
+      reply = "حالياً لا توجد نتائج مطابقة.";
     }
 
     return res.json({ reply, session_id });
