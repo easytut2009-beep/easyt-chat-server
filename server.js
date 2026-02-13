@@ -42,27 +42,6 @@ function normalizeArabic(text) {
 }
 
 /* ===============================
-   ✅ Spelling Correction
-================================ */
-
-async function correctUserIntent(message) {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content:
-          "صحح أي خطأ إملائي في أسماء البرامج فقط وأعد النص المصحح بدون شرح."
-      },
-      { role: "user", content: message }
-    ]
-  });
-
-  return completion.choices[0].message.content.trim();
-}
-
-/* ===============================
    ✅ Create Embedding
 ================================ */
 
@@ -76,7 +55,7 @@ async function createEmbedding(text) {
 }
 
 /* ==========================================================
-   ✅ Chat Route (RAG للجميع)
+   ✅ Chat Route (Smart RAG)
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -91,8 +70,34 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
+    const lowerMsg = message.trim().toLowerCase();
+
+    /* =======================================================
+       ✅ Identity Intent (انت مين؟)
+    ======================================================= */
+
+    if (
+      lowerMsg.includes("انت مين") ||
+      lowerMsg.includes("من انت") ||
+      lowerMsg.includes("مين انت")
+    ) {
+      return res.json({
+        reply: `
+مرحبًا 👋  
+أنا **زيكو** – مساعد easyT الذكي.
+
+أساعدك في:
+• معرفة تفاصيل أي دورة  
+• ترشيح أفضل مسار مناسب لك  
+• توجيهك للاشتراك الصحيح  
+
+قولي حابب تتعلم إيه؟ 🚀`,
+        session_id
+      });
+    }
+
     /* ===============================
-       ✅ Check Premium (فقط لإضافة CTA)
+       ✅ Check Premium (فقط CTA)
     ================================= */
 
     let isPremium = false;
@@ -110,12 +115,10 @@ app.post("/chat", async (req, res) => {
     }
 
     /* =======================================================
-       ✅ RAG MODE للجميع
+       ✅ RAG Search
     ======================================================= */
 
-    const correctedMessage = await correctUserIntent(message);
-    const normalizedMessage = normalizeArabic(correctedMessage);
-    const embedding = await createEmbedding(correctedMessage);
+    const embedding = await createEmbedding(message);
 
     const { data: results, error } = await supabase.rpc("match_ai_knowledge", {
       query_embedding: embedding,
@@ -132,7 +135,9 @@ app.post("/chat", async (req, res) => {
 
     if (!results || results.length === 0) {
       return res.json({
-        reply: "حالياً لا توجد نتائج مطابقة، يمكنك تصفح جميع الدورات من الصفحة الرئيسية.",
+        reply: `
+لم أجد نتائج مطابقة لسؤالك 🤔  
+يمكنك تصفح جميع الدورات من الصفحة الرئيسية.`,
         session_id
       });
     }
@@ -141,31 +146,37 @@ app.post("/chat", async (req, res) => {
     const contextText = results
       .slice(0, 5)
       .map(r =>
-        `نوع: ${r.source_type}
-عنوان: ${r.title}
-محتوى: ${r.content.slice(0, 1000)}`
+        `عنوان: ${r.title}
+محتوى: ${r.content.slice(0, 800)}`
       )
       .join("\n\n");
 
-    /* ✅ Best Match */
-    const directMatch = results.find(r =>
-      normalizeArabic(r.title).includes(normalizedMessage)
-    );
+    const bestMatch = results[0];
 
-    const bestMatch = directMatch || results[0];
+    /* =======================================================
+       ✅ Smart System Prompt
+    ======================================================= */
 
-    /* ✅ AI Response */
     const systemPrompt = `
-أنت مساعد ذكي لمنصة easyT.
-استخدم فقط المعلومات الموجودة في السياق.
-إذا كان السؤال عن دورة، أكد وجودها واذكر أهم مميزاتها.
-لا تخترع معلومات غير موجودة في السياق.
-اكتب بشكل واضح ومقنع.
+أنت "زيكو" مساعد easyT الذكي.
+
+شخصيتك:
+- ودود واحترافي.
+- تكتب بشكل منظم وواضح.
+- تستخدم عناوين ونقاط.
+
+القواعد:
+1) إذا كان السؤال عن دورة:
+   - أكد وجودها.
+   - اذكر أهم المميزات في نقاط.
+   - استخدم تنسيق واضح.
+2) لا تخترع معلومات خارج السياق.
+3) اجعل الرد مقنع ومريح للقراءة.
 `;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.2,
+      temperature: 0.3,
       max_tokens: 600,
       messages: [
         { role: "system", content: systemPrompt },
@@ -176,7 +187,7 @@ app.post("/chat", async (req, res) => {
 ${contextText}
 
 السؤال:
-${correctedMessage}
+${message}
 `
         }
       ]
@@ -186,12 +197,12 @@ ${correctedMessage}
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
     /* ✅ Add Course Link */
-    if (bestMatch && bestMatch.url) {
+    if (bestMatch?.url) {
       reply += `
 <br><br>
 <strong>✅ رابط الدورة:</strong><br>
 <a href="${bestMatch.url}" target="_blank"
-style="color:#ffcc00;font-weight:bold;text-decoration:none;">
+style="color:#444;font-weight:bold;text-decoration:none;">
 ${bestMatch.title}
 </a>`;
     }
@@ -200,7 +211,7 @@ ${bestMatch.title}
     if (!isPremium) {
       reply += `
 <br><br>
-<div style="background:#111;padding:12px;border-radius:8px;color:#fff;">
+<div style="background:#222;padding:14px;border-radius:10px;color:#fff;">
 🔓 للوصول الكامل لجميع الدورات والمحتوى المتقدم،
 اشترك الآن في باقة easyT واستفد من كل المميزات.
 </div>
