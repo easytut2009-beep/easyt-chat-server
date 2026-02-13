@@ -78,13 +78,13 @@ async function createEmbedding(text) {
 }
 
 /* ===============================
-   ✅ Chat Route (Hierarchy Smart RAG)
+   ✅ Chat Route
 ================================ */
 
 app.post("/chat", async (req, res) => {
   try {
 
-    let { message, session_id } = req.body;
+    let { message, session_id, user_id } = req.body;
 
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
@@ -101,18 +101,72 @@ app.post("/chat", async (req, res) => {
     const sessionData = conversationMemory.get(session_id);
     let chatHistory = sessionData.history;
 
+    /* ===============================
+       ✅ Check Premium Access
+    ================================= */
+
+    let isPremium = false;
+
+    if (user_id) {
+      const { data: premiumUser } = await supabase
+        .from("premium_users")
+        .select("id")
+        .eq("id", user_id)
+        .eq("status", "active")
+        .gt("subscription_expires_at", new Date().toISOString())
+        .maybeSingle();
+
+      isPremium = !!premiumUser;
+    }
+
+    console.log("User:", user_id, "Premium:", isPremium);
+
+    /* =======================================================
+       ✅ NON PREMIUM → SALES MODE
+    ======================================================= */
+
+    if (!isPremium) {
+
+      const salesPrompt = `
+أنت مساعد مبيعات لمنصة easyT.
+
+مهمتك:
+- شرح مميزات الاشتراك العام
+- الرد على السعر ومدة الاشتراك
+- تشجيع المستخدم على الاشتراك
+
+لا تقدم أي محتوى تعليمي.
+لا تجب عن تفاصيل الكورسات أو الدبلومات.
+`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        max_tokens: 400,
+        messages: [
+          { role: "system", content: salesPrompt },
+          { role: "user", content: message }
+        ]
+      });
+
+      const reply = completion.choices[0].message.content.trim();
+
+      return res.json({ reply, session_id });
+    }
+
+    /* =======================================================
+       ✅ PREMIUM → SMART RAG MODE
+    ======================================================= */
+
     const correctedMessage = await correctUserIntent(message);
     const normalizedMessage = normalizeArabic(correctedMessage);
 
-    /* ✅ Embedding Search */
     const embedding = await createEmbedding(correctedMessage);
 
     const { data: results } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
       match_count: 12
     });
-
-    console.log("🔎 Results:", results?.length || 0);
 
     let contextText = "";
     let bestMatch = null;
@@ -124,18 +178,12 @@ app.post("/chat", async (req, res) => {
         .map(r => `عنوان: ${r.title}\nمحتوى: ${r.content.slice(0,1000)}`)
         .join("\n\n");
 
-      /* =========================================
-         ✅ Smart Hierarchy Logic
-      ========================================= */
-
-      // 1️⃣ هل السؤال عن دورة محددة؟
       const possibleCourseMatch = results.find(r =>
         normalizeArabic(r.title).includes(normalizedMessage)
       );
 
       if (possibleCourseMatch) {
 
-        // 2️⃣ هل توجد دبلومة تحتوي هذه الدورة؟
         const diplomaContainingCourse = results.find(r =>
           r.title.includes("دبلومة") &&
           normalizeArabic(r.content).includes(normalizedMessage)
@@ -148,13 +196,10 @@ app.post("/chat", async (req, res) => {
         }
 
       } else {
-
-        // 3️⃣ سؤال عام → أفضل نتيجة
         bestMatch = results[0];
       }
     }
 
-    /* ✅ System Prompt */
     const systemPrompt = `
 أنت مساعد ذكي لمنصة easyT.
 
@@ -188,7 +233,6 @@ ${correctedMessage}
     let reply = completion.choices[0].message.content.trim();
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    /* ✅ إضافة الاقتراح النهائي الصحيح */
     if (bestMatch) {
       reply += `
 <br><br>
