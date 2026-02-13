@@ -25,8 +25,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const conversationMemory = new Map();
-
 /* ===============================
    ✅ Normalize Arabic
 ================================ */
@@ -83,7 +81,6 @@ async function createEmbedding(text) {
 
 app.post("/chat", async (req, res) => {
   try {
-
     let { message, session_id, user_id } = req.body;
 
     if (!message) {
@@ -93,13 +90,6 @@ app.post("/chat", async (req, res) => {
     if (!session_id) {
       session_id = crypto.randomUUID();
     }
-
-    if (!conversationMemory.has(session_id)) {
-      conversationMemory.set(session_id, { history: [] });
-    }
-
-    const sessionData = conversationMemory.get(session_id);
-    let chatHistory = sessionData.history;
 
     /* ===============================
        ✅ Check Premium Access
@@ -126,7 +116,6 @@ app.post("/chat", async (req, res) => {
     ======================================================= */
 
     if (!isPremium) {
-
       const salesPrompt = `
 أنت مساعد مبيعات لمنصة easyT.
 
@@ -155,7 +144,7 @@ app.post("/chat", async (req, res) => {
     }
 
     /* =======================================================
-       ✅ PREMIUM → SMART RAG MODE
+       ✅ PREMIUM → RAG MODE (ai_knowledge)
     ======================================================= */
 
     const correctedMessage = await correctUserIntent(message);
@@ -163,9 +152,9 @@ app.post("/chat", async (req, res) => {
 
     const embedding = await createEmbedding(correctedMessage);
 
-    const { data: results } = await supabase.rpc("match_documents", {
+    const { data: results } = await supabase.rpc("match_ai_knowledge", {
       query_embedding: embedding,
-      match_count: 12
+      match_count: 10
     });
 
     let contextText = "";
@@ -175,29 +164,18 @@ app.post("/chat", async (req, res) => {
 
       contextText = results
         .slice(0, 5)
-        .map(r => `عنوان: ${r.title}\nمحتوى: ${r.content.slice(0,1000)}`)
+        .map(r =>
+          `نوع: ${r.source_type}
+عنوان: ${r.title}
+محتوى: ${r.content.slice(0, 1000)}`
+        )
         .join("\n\n");
 
-      const possibleCourseMatch = results.find(r =>
+      const directMatch = results.find(r =>
         normalizeArabic(r.title).includes(normalizedMessage)
       );
 
-      if (possibleCourseMatch) {
-
-        const diplomaContainingCourse = results.find(r =>
-          r.title.includes("دبلومة") &&
-          normalizeArabic(r.content).includes(normalizedMessage)
-        );
-
-        if (diplomaContainingCourse) {
-          bestMatch = diplomaContainingCourse;
-        } else {
-          bestMatch = possibleCourseMatch;
-        }
-
-      } else {
-        bestMatch = results[0];
-      }
+      bestMatch = directMatch || results[0];
     }
 
     const systemPrompt = `
@@ -205,23 +183,23 @@ app.post("/chat", async (req, res) => {
 
 القواعد:
 - استخدم فقط المعلومات الموجودة في "السياق".
-- إذا كان السؤال عن دورة داخل دبلومة، وضّح أنها ضمن الدبلومة.
-- لا تخترع معلومات.
+- لا تخترع معلومات غير موجودة.
 - لا تضع روابط داخل النص.
 - اكتب بأسلوب واضح ومختصر.
+- إذا كانت النتيجة من نوع دبلومة أو كورس وضّح ذلك.
 `;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 600,
       messages: [
         { role: "system", content: systemPrompt },
         {
           role: "user",
           content: `
 السياق:
-${contextText || "لا يوجد بيانات"}
+${contextText || "لا يوجد بيانات مطابقة"}
 
 السؤال:
 ${correctedMessage}
@@ -233,7 +211,7 @@ ${correctedMessage}
     let reply = completion.choices[0].message.content.trim();
     reply = reply.replace(/https?:\/\/\S+/g, "");
 
-    if (bestMatch) {
+    if (bestMatch && bestMatch.url) {
       reply += `
 <br><br>
 <strong>✅ الخيار الأنسب لك:</strong><br>
@@ -241,19 +219,11 @@ ${correctedMessage}
 style="display:inline-block;margin-top:6px;color:#ffcc00;font-weight:bold;text-decoration:none;">
 ${bestMatch.title}
 </a>`;
-    } else {
+    }
+
+    if (!results || results.length === 0) {
       reply = "حالياً لا توجد نتائج مطابقة، يمكنك تصفح جميع الدورات من الصفحة الرئيسية.";
     }
-
-    chatHistory.push({ role: "user", content: correctedMessage });
-    chatHistory.push({ role: "assistant", content: reply });
-
-    if (chatHistory.length > 10) {
-      chatHistory = chatHistory.slice(-10);
-    }
-
-    sessionData.history = chatHistory;
-    conversationMemory.set(session_id, sessionData);
 
     return res.json({ reply, session_id });
 
