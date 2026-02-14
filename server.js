@@ -41,6 +41,33 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
+   ✅ INTENT DETECTION
+============================== */
+
+async function detectIntent(message) {
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+حدد نوع الرسالة.
+ارجع كلمة واحدة فقط من:
+course_search
+general_question
+other
+`
+      },
+      { role: "user", content: message }
+    ]
+  });
+
+  return completion.choices[0].message.content.trim();
+}
+
+/* ==============================
    ✅ SEMANTIC SEARCH
 ============================== */
 
@@ -48,10 +75,8 @@ async function searchCourses(message) {
 
   try {
 
-    // 1️⃣ إنشاء embedding لرسالة المستخدم
     const queryEmbedding = await createEmbedding(message);
 
-    // 2️⃣ استدعاء RPC الصحيح (بدون threshold)
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
       match_count: 5
@@ -62,7 +87,12 @@ async function searchCourses(message) {
       return [];
     }
 
-    return data || [];
+    // ✅ فلترة حسب similarity لو موجودة
+    const filtered = (data || []).filter(course => 
+      !course.similarity || course.similarity > 0.75
+    );
+
+    return filtered;
 
   } catch (err) {
     console.log("Search crash:", err.message);
@@ -114,6 +144,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
+    /* ✅ 1️⃣ تحديد النية */
+    const intent = await detectIntent(message);
+
+    /* ✅ 2️⃣ رد الشات */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -136,8 +170,12 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ البحث الدلالي من قاعدة البيانات */
-    const courses = await searchCourses(message);
+    /* ✅ 3️⃣ البحث فقط لو النية course_search */
+    let courses = [];
+
+    if (intent === "course_search") {
+      courses = await searchCourses(message);
+    }
 
     if (courses.length > 0) {
 
