@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -8,11 +9,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
-if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
+/* =====================================================
+   ✅ Clients
+===================================================== */
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -22,10 +25,10 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   ✅ DOMAIN DETECTION INTELLIGENT
+   ✅ DOMAIN DETECTION (AI)
 ===================================================== */
 
-async function detectDomainAI(message) {
+async function detectDomain(message, history) {
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -35,6 +38,7 @@ async function detectDomainAI(message) {
         role: "system",
         content: `
 حدد المجال الرئيسي فقط من القائمة التالية:
+
 programming
 web
 mobile
@@ -48,6 +52,7 @@ general
 أعد كلمة واحدة فقط.
 `
       },
+      ...history.slice(-4),
       { role: "user", content: message }
     ]
   });
@@ -56,41 +61,40 @@ general
 }
 
 /* =====================================================
-   ✅ EMBEDDING
+   ✅ Embedding
 ===================================================== */
 
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text,
+    input: text
   });
+
   return response.data[0].embedding;
 }
 
 /* =====================================================
-   ✅ SMART FILTERED SEARCH
+   ✅ Smart Search
 ===================================================== */
 
-async function searchCoursesSmart(message, limit = 4) {
-
-  const domain = await detectDomainAI(message);
+async function searchCourses(message, domain) {
 
   if (domain === "general") return [];
 
   const embedding = await createEmbedding(message);
 
-  const { data } = await supabase.rpc("match_ai_knowledge_filtered", {
+  const { data } = await supabase.rpc("smart_course_search", {
     query_embedding: embedding,
-    match_count: limit,
     filter_domain: domain,
-    similarity_threshold: 0.75
+    match_count: 4,
+    similarity_threshold: 0.78
   });
 
   return data || [];
 }
 
 /* =====================================================
-   ✅ CLEAN HTML
+   ✅ Clean HTML
 ===================================================== */
 
 function cleanHTML(reply) {
@@ -122,7 +126,9 @@ app.post("/chat", async (req, res) => {
   try {
 
     let { message, session_id } = req.body;
-    if (!message) return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
+    if (!message) {
+      return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
+    }
 
     if (!session_id) session_id = crypto.randomUUID();
 
@@ -133,7 +139,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ رد ذكي سياقي */
+    /* ✅ 1) Detect Domain */
+    const domain = await detectDomain(message, history);
+
+    /* ✅ 2) Generate Smart Response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -141,9 +150,10 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي ذكي ومحترف.
+أنت مستشار أكاديمي محترف جدًا.
 افهم طلب المستخدم بدقة.
-لا تقترح تقنيات أو لغات غير مطلوبة.
+لا تقترح أي مجال مختلف عن المطلوب.
+لا تذكر تقنيات أو لغات لم يطلبها المستخدم.
 استخدم HTML بسيط فقط (strong / br / ul / li).
 `
         },
@@ -156,15 +166,15 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ بحث دقيق */
-    const relatedCourses = await searchCoursesSmart(message, 4);
+    /* ✅ 3) Smart Course Matching */
+    const courses = await searchCourses(message, domain);
 
-    if (relatedCourses.length > 0) {
+    if (courses.length > 0) {
 
       reply += `<div class="courses-title">الدورات المطابقة لطلبك:</div>`;
       reply += `<div class="courses-container">`;
 
-      relatedCourses.forEach(course => {
+      courses.forEach(course => {
         reply += `
 <a href="${course.url}" target="_blank" class="course-btn">
 ${course.title}
@@ -174,58 +184,17 @@ ${course.title}
       reply += `</div>`;
     }
 
-    /* ✅ CSS */
+    /* ✅ Styling */
     reply = `
 <style>
-
-.chat-wrapper{
-  font-size:14px;
-  line-height:1.5;
-}
-
-.chat-wrapper ul{
-  margin:0;
-  padding-right:18px;
-}
-
-.chat-wrapper li{
-  margin:0;
-  padding:0;
-  line-height:1.4;
-}
-
-.chat-wrapper li br{
-  display:none;
-}
-
-.courses-title{
-  margin-top:16px;
-  margin-bottom:8px;
-  color:#c40000;
-  font-weight:bold;
-}
-
-.courses-container{
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-.course-btn{
-  display:block;
-  width:100%;
-  max-width:420px;
-  padding:12px 14px;
-  background:#c40000;
-  color:#ffffff;
-  font-size:14px;
-  border-radius:8px;
-  text-decoration:none;
-  text-align:center;
-}
-
+.chat-wrapper{font-size:14px;line-height:1.5;}
+.chat-wrapper ul{margin:0;padding-right:18px;}
+.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
+.chat-wrapper li br{display:none;}
+.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
+.courses-container{display:flex;flex-direction:column;gap:12px;}
+.course-btn{display:block;width:100%;max-width:420px;padding:12px 14px;background:#c40000;color:#fff;font-size:14px;border-radius:8px;text-decoration:none;text-align:center;}
 </style>
-
 <div class="chat-wrapper">
 ${reply}
 </div>
@@ -241,5 +210,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ultra Intelligent AI Assistant Running on port " + PORT);
+  console.log("🔥 Ultra Intelligent AI Assistant Running on port " + PORT);
 });
