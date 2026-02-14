@@ -42,12 +42,21 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
+/* ✅ تنظيف احترافي يمنع السطرين */
 function cleanHTML(reply) {
+
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
+
+  // نحول أي عدد سطور إلى <br> واحد فقط
   reply = reply.replace(/\n+/g, "<br>");
+
+  // نمنع تكرار <br><br>
+  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
+
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
+
   return reply.trim();
 }
 
@@ -107,7 +116,6 @@ app.post("/chat", async (req, res) => {
 
       reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong>`;
 
-      // ✅ لف الأزرار داخل container
       reply += `<div class="courses-container">`;
 
       relatedCourses.forEach(course => {
@@ -131,11 +139,11 @@ font-size:14px;
 line-height:1.45;
 }
 
-/* ✅ ده الحل الحقيقي */
+/* ✅ حل احترافي للفصل بين الأزرار */
 .courses-container{
 display:flex;
 flex-direction:column;
-gap:10px;   /* ✅ مسافة واضحة بين المستطيلات */
+gap:10px;
 margin-top:8px;
 }
 
@@ -174,5 +182,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Professional Layout running on port " + PORT);
+  console.log("✅ AI Assistant Clean Professional Version running on port " + PORT);
 });
