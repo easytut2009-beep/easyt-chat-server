@@ -42,16 +42,19 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* ✅ تنظيف احترافي يمنع السطرين */
+/* ✅ تنظيف احترافي بدون حذف أول سطر */
 function cleanHTML(reply) {
+
+  // ✅ نحذف أي أسطر فاضية في بداية النص فقط
+  reply = reply.replace(/^\s*\n+/, "");
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
-  // نحول أي عدد سطور إلى <br> واحد فقط
-  reply = reply.replace(/\n+/g, "<br>");
+  // ✅ نحول الأسطر إلى <br>
+  reply = reply.replace(/\n/g, "<br>");
 
-  // نمنع تكرار <br><br>
+  // ✅ لو في أكتر من <br> ورا بعض نخليهم واحد
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
 
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
@@ -139,12 +142,12 @@ font-size:14px;
 line-height:1.45;
 }
 
-/* ✅ حل احترافي للفصل بين الأزرار */
+/* ✅ فصل نظيف وثابت */
 .courses-container{
 display:flex;
 flex-direction:column;
-gap:10px;
-margin-top:8px;
+gap:12px;
+margin-top:10px;
 }
 
 .course-btn{
@@ -182,5 +185,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Clean Professional Version running on port " + PORT);
+  console.log("✅ AI Assistant Stable Professional Version running on port " + PORT);
 });
