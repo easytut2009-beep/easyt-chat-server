@@ -54,29 +54,34 @@ function cleanHTML(reply) {
   return reply.trim();
 }
 
-/* ✅ كشف الأسئلة العامة */
-function isGeneralQuestion(text) {
-  const patterns = [
-    "اتعلم برمجة",
-    "ابدأ برمجة",
-    "ازاي ابدأ",
-    "كيف أبدأ",
-    "عاوز أتعلم",
-    "تعلم البرمجة",
-    "ابدأ منين"
+/* ✅ حذف أي كلام خارجي */
+function removeExternalContent(text) {
+  const forbidden = [
+    "الإنترنت",
+    "يوتيوب",
+    "فيسبوك",
+    "جروبات",
+    "مجتمعات",
+    "منصات",
+    "مواقع",
+    "مصادر خارجية"
   ];
-  return patterns.some(p => text.includes(p));
+
+  forbidden.forEach(word => {
+    const regex = new RegExp(word, "gi");
+    text = text.replace(regex, "");
+  });
+
+  return text;
 }
 
-/* ✅ كشف مستوى مبتدئ */
-function isBeginner(text) {
-  const patterns = [
-    "مبتدئ",
-    "لسه بادئ",
-    "ماعرفش حاجة",
-    "بدون خبرة"
-  ];
-  return patterns.some(p => text.includes(p));
+/* ✅ تحديد مجال تلقائي لو السؤال عام */
+function detectTopic(message) {
+  if (message.includes("برمجة")) return "أساسيات البرمجة";
+  if (message.includes("ويب")) return "برمجة الويب";
+  if (message.includes("تطبيقات")) return "برمجة تطبيقات الهواتف";
+  if (message.includes("بيانات")) return "تحليل البيانات";
+  return "أساسيات البرمجة";
 }
 
 /* ========================================================== */
@@ -107,17 +112,16 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مساعد أكاديمي احترافي.
-لا تذكر أي منصات خارجية.
-استخدم HTML بسيط فقط (strong / br / ul / li).
+أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
 
-في النهاية أضف:
-<state>normal</state>
-أو
-<state>recommend</state>
-
-ولو recommend أضف:
-<topic>اسم المجال فقط</topic>
+قواعد صارمة:
+- لا تذكر الإنترنت.
+- لا تذكر مواقع.
+- لا تذكر مجتمعات.
+- لا تذكر جروبات.
+- لا توجه المستخدم لأي مكان خارج المنصة.
+- قدم خطوات تعليمية عملية فقط.
+- استخدم HTML بسيط (strong / br / ul / li).
 `
         },
         ...history
@@ -127,51 +131,25 @@ app.post("/chat", async (req, res) => {
     let reply = completion.choices[0].message.content;
     history.push({ role: "assistant", content: reply });
 
-    let state = "normal";
-    let topic = null;
-
-    const stateMatch = reply.match(/<state>(.*?)<\/state>/);
-    if (stateMatch) {
-      state = stateMatch[1].trim();
-      reply = reply.replace(/<state>.*?<\/state>/, "");
-    }
-
-    const topicMatch = reply.match(/<topic>(.*?)<\/topic>/);
-    if (topicMatch) {
-      topic = topicMatch[1].trim();
-      reply = reply.replace(/<topic>.*?<\/topic>/, "");
-    }
-
-    reply = reply.trim();
-
-    /* ✅ منع اقتراح لغة لو السؤال عام */
-    if (isGeneralQuestion(message)) {
-      state = "normal";
-    }
-
-    /* ✅ لو مبتدئ → غير الموضوع لأساسيات */
-    if (isBeginner(message)) {
-      topic = "أساسيات البرمجة";
-      state = "recommend";
-    }
-
-    if (state === "recommend" && topic) {
-
-      const relatedCourses = await getRelatedCourses(topic, 3);
-
-      if (relatedCourses.length > 0) {
-
-        reply += `<br><strong style="color:#c40000;">الدورات المقترحة:</strong>`;
-
-        relatedCourses.forEach(course => {
-          if (course.url) {
-            reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
-          }
-        });
-      }
-    }
-
+    reply = removeExternalContent(reply);
     reply = cleanHTML(reply);
+
+    /* ✅ تحديد الموضوع تلقائي */
+    const topic = detectTopic(message);
+
+    /* ✅ جلب الدورات دايمًا */
+    const relatedCourses = await getRelatedCourses(topic, 3);
+
+    if (relatedCourses.length > 0) {
+
+      reply += `<br><strong style="color:#c40000;">ابدأ بأحد هذه الدورات:</strong>`;
+
+      relatedCourses.forEach(course => {
+        if (course.url) {
+          reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+        }
+      });
+    }
 
     reply = `
 <style>
@@ -189,6 +167,7 @@ padding-right:20px;
 margin:2px 0;
 }
 
+/* ✅ أزرار صغيرة بمسافة قليلة جدًا */
 .course-btn{
 display:block;
 width:100%;
@@ -223,9 +202,7 @@ ${reply}
   }
 });
 
-/* =============================== */
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant running on port " + PORT);
+  console.log("✅ AI Assistant Strict Mode running on port " + PORT);
 });
