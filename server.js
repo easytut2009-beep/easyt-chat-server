@@ -12,9 +12,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!process.env.OPENAI_API_KEY) process.exit(1);
-if (!process.env.SUPABASE_URL) process.exit(1);
-if (!process.env.SUPABASE_SERVICE_KEY) process.exit(1);
+if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
+if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
+if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -29,7 +29,7 @@ const supabase = createClient(
    ✅ Normalize Arabic
 ================================ */
 
-function normalizeArabic(text) {
+function normalizeArabic(text = "") {
   return text
     .replace(/[إأآا]/g, "ا")
     .replace(/ة/g, "ه")
@@ -50,8 +50,37 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text,
   });
-
   return response.data[0].embedding;
+}
+
+/* ===============================
+   ✅ Detect Intent
+================================ */
+
+function detectIntent(message) {
+  const normalized = normalizeArabic(message);
+
+  const identityWords = ["انتمين", "مينانت", "منانت", "انتنين"];
+  if (identityWords.some(w => normalized.replace(/\s/g,"").includes(w))) {
+    return "identity";
+  }
+
+  const adviceWords = [
+    "ابدأ",
+    "ابدأ بايه",
+    "ابدأ ازاي",
+    "ابدأ منين",
+    "اتعلم ازاي",
+    "انسب حاجه",
+    "ايه الافضل",
+    "محتار"
+  ];
+
+  if (adviceWords.some(w => normalized.includes(normalizeArabic(w)))) {
+    return "advice";
+  }
+
+  return "search";
 }
 
 /* ==========================================================
@@ -70,15 +99,13 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const normalizedMsg = normalizeArabic(message);
+    const intent = detectIntent(message);
 
     /* =======================================================
-       ✅ 1) Identity Intent
+       ✅ 1) Identity
     ======================================================= */
 
-    const identityTriggers = ["انتمين","انتنين","مينانت","منانت"];
-
-    if (identityTriggers.some(t => normalizedMsg.replace(/\s/g,"").includes(t))) {
+    if (intent === "identity") {
       return res.json({
         reply: `
 <div style="font-size:14px;line-height:1.4;">
@@ -91,21 +118,10 @@ app.post("/chat", async (req, res) => {
     }
 
     /* =======================================================
-       ✅ 2) Advice Intent (استشارة)
+       ✅ 2) Advice (استشارة)
     ======================================================= */
 
-    const adviceTriggers = [
-      "ابدأ",
-      "ابدأ بايه",
-      "ابدأ ازاي",
-      "اتعلم ازاي",
-      "ابدأ منين",
-      "انسب حاجه",
-      "ايه الافضل",
-      "محتار"
-    ];
-
-    if (adviceTriggers.some(t => normalizedMsg.includes(normalizeArabic(t)))) {
+    if (intent === "advice") {
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -114,11 +130,12 @@ app.post("/chat", async (req, res) => {
           {
             role: "system",
             content: `
-أنت مستشار تعليمي خبير.
-قدم مسار واضح ومنطقي.
-استخدم HTML بسيط بدون مسافات كبيرة.
+أنت مستشار تعليمي محترف.
+قدم مسار منطقي واضح.
+استخدم HTML بسيط.
 عناوين bold.
-قوائم ul صغيرة.
+قوائم قصيرة.
+بدون مسافات كبيرة.
 `
           },
           { role: "user", content: message }
@@ -135,33 +152,15 @@ app.post("/chat", async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    /* ===============================
-       ✅ Check Premium
-    ================================= */
-
-    let isPremium = false;
-
-    if (user_id) {
-      const { data: premiumUser } = await supabase
-        .from("premium_users")
-        .select("id")
-        .eq("id", user_id)
-        .eq("status", "active")
-        .gt("subscription_expires_at", new Date().toISOString())
-        .maybeSingle();
-
-      isPremium = !!premiumUser;
-    }
-
     /* =======================================================
-       ✅ 3) Search Intent (RAG)
+       ✅ 3) Search (RAG)
     ======================================================= */
 
     const embedding = await createEmbedding(message);
 
     const { data: results, error } = await supabase.rpc("match_ai_knowledge", {
       query_embedding: embedding,
-      match_count: 10
+      match_count: 8
     });
 
     if (error || !results || results.length === 0) {
@@ -169,6 +168,21 @@ app.post("/chat", async (req, res) => {
         reply: `<div style="font-size:14px;">لم أجد نتائج مطابقة 🤔</div>`,
         session_id
       });
+    }
+
+    /* ✅ Premium Check */
+    let isPremium = false;
+
+    if (user_id) {
+      const { data } = await supabase
+        .from("premium_users")
+        .select("id")
+        .eq("id", user_id)
+        .eq("status", "active")
+        .gt("subscription_expires_at", new Date().toISOString())
+        .maybeSingle();
+
+      isPremium = !!data;
     }
 
     const normalizedSearch = normalizeArabic(message);
@@ -196,10 +210,9 @@ app.post("/chat", async (req, res) => {
           content: `
 أنت زيكو.
 استخدم HTML منظم.
-Compact بدون مسافات كبيرة.
-عناوين bold.
-لا تستخدم نجوم.
-لا تخترع معلومات.
+Compact.
+بدون نجوم.
+بدون مسافات كبيرة.
 `
         },
         {
