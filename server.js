@@ -42,17 +42,23 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
+/* ✅ تنظيف احترافي للمسافات */
 function cleanHTML(reply) {
 
   reply = reply.trim();
+
+  // منع أي سطرين ورا بعض
+  reply = reply.replace(/\n\s*\n+/g, "\n");
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
   reply = reply.replace(/\n/g, "<br>");
 
+  // منع <br><br>
+  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
+
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
-  reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
 
   return reply;
 }
@@ -111,8 +117,8 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      // ✅ مسافة طبيعية قبل العنوان
-      reply += `<strong class="courses-title">ابدأ بأحد الدورات التالية:</strong>`;
+      // ✅ مسافة واحدة فقط قبل العنوان
+      reply += `<div class="courses-title">ابدأ بأحد الدورات التالية:</div>`;
 
       reply += `<div class="courses-container">`;
 
@@ -135,15 +141,15 @@ app.post("/chat", async (req, res) => {
 .chat-wrapper{
 font-size:14px;
 line-height:1.6;
-overflow:hidden; /* ✅ يمنع margin collapse */
+overflow:hidden;
 }
 
-/* ✅ إزالة أي فراغ علوي من أول عنصر */
+/* ❌ منع أي مسافة في أول الرسالة */
 .chat-wrapper > *:first-child{
 margin-top:0 !important;
 }
 
-/* ✅ ضبط الليست */
+/* ضبط الليست */
 .chat-wrapper ul{
 margin:0;
 padding-right:18px;
@@ -153,16 +159,15 @@ padding-right:18px;
 margin-bottom:8px;
 }
 
-/* ✅ مسافة متوازنة قبل العنوان */
+/* ✅ مسافة واحدة قبل "ابدأ بأحد الدورات" */
 .courses-title{
-display:block;
-margin-top:18px;
-margin-bottom:10px;
+margin-top:16px;
+margin-bottom:8px;
 color:#c40000;
 font-weight:bold;
 }
 
-/* ✅ الأزرار */
+/* الأزرار */
 .courses-container{
 display:flex;
 flex-direction:column;
@@ -204,5 +209,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Fully Polished Layout running on port " + PORT);
+  console.log("✅ AI Assistant Spacing Fixed Version running on port " + PORT);
 });
