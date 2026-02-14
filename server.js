@@ -28,7 +28,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ EMBEDDING FUNCTION
+   ✅ EMBEDDING
 ============================== */
 
 async function createEmbedding(text) {
@@ -41,7 +41,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ INTENT DETECTION
+   ✅ INTENT CLASSIFIER
 ============================== */
 
 async function detectIntent(message) {
@@ -49,22 +49,48 @@ async function detectIntent(message) {
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
+    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `
-حدد نوع الرسالة.
-ارجع كلمة واحدة فقط من:
-course_search
-general_question
+أنت مصنف نوايا احترافي.
+
+صنّف رسالة المستخدم إلى أحد الأنواع التالية فقط:
+
+learning_intent
+(يريد تعلم شيء، يفكر يدرس مجال، يسأل يبدأ منين)
+
+preference_statement
+(يذكر تفضيل شخصي مثل "أنا بحب التصميم")
+
+comparison
+(يقارن بين مجالين أو يسأل أيهما أفضل)
+
+informational_question
+(يسأل عن تعريف أو شرح فقط)
+
 other
+
+أعد JSON فقط بالشكل:
+
+{
+  "intent": "learning_intent"
+}
+
+لا تكتب أي شيء خارج JSON.
 `
       },
       { role: "user", content: message }
     ]
   });
 
-  return completion.choices[0].message.content.trim();
+  try {
+    const result = JSON.parse(completion.choices[0].message.content);
+    return result.intent;
+  } catch {
+    return "other";
+  }
 }
 
 /* ==============================
@@ -87,9 +113,9 @@ async function searchCourses(message) {
       return [];
     }
 
-    // ✅ فلترة حسب similarity لو موجودة
-    const filtered = (data || []).filter(course => 
-      !course.similarity || course.similarity > 0.75
+    // فلترة حسب similarity لو موجودة
+    const filtered = (data || []).filter(course =>
+      !course.similarity || course.similarity > 0.7
     );
 
     return filtered;
@@ -144,10 +170,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ 1️⃣ تحديد النية */
+    /* ✅ 1️⃣ Detect Intent */
     const intent = await detectIntent(message);
 
-    /* ✅ 2️⃣ رد الشات */
+    /* ✅ 2️⃣ Generate Chat Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -156,9 +182,11 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي.
-اشرح المجال فقط.
+
+اشرح المجال بوضوح وبشكل بسيط.
+
 لا تكتب قائمة دورات.
-لا تقترح أسماء دورات.
+لا تذكر أسماء دورات محددة.
 `
         },
         ...history
@@ -170,10 +198,10 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ 3️⃣ البحث فقط لو النية course_search */
+    /* ✅ 3️⃣ Recommendation Logic */
     let courses = [];
 
-    if (intent === "course_search") {
+    if (intent === "learning_intent" || intent === "comparison") {
       courses = await searchCourses(message);
     }
 
