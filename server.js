@@ -21,7 +21,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Conversation Memory
+   ✅ Smart Memory
 ================================ */
 const conversations = new Map();
 
@@ -38,12 +38,10 @@ async function createEmbedding(text) {
 
 async function getRelatedCourses(query, limit = 3) {
   const embedding = await createEmbedding(query);
-
   const { data } = await supabase.rpc("match_ai_knowledge", {
     query_embedding: embedding,
     match_count: limit
   });
-
   return data || [];
 }
 
@@ -51,15 +49,12 @@ async function getRelatedCourses(query, limit = 3) {
    ✅ Clean HTML
 ================================ */
 function cleanHTML(reply) {
-
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
-
   reply = reply.replace(/\n{2,}/g, "\n");
   reply = reply.trim();
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/<br><br>/g, "<br>");
-
   return reply;
 }
 
@@ -87,62 +82,96 @@ app.post("/chat", async (req, res) => {
 
     const history = conversations.get(session_id);
 
-    /* ✅ أضف رسالة المستخدم */
     history.push({ role: "user", content: message });
 
-    /* ===============================
-       ✅ System Prompt احترافي
-    =============================== */
+    /* ============================================
+       ✅ Step 1: Hidden Reasoning (يفكر بصمت)
+    ============================================ */
 
-    const systemPrompt = `
-أنت مستشار أكاديمي محترف.
+    const reasoning = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: `
+حلل المحادثة.
+حدد:
+- هل المستخدم مرتبك؟
+- هل لم يفهم السؤال السابق؟
+- هل الرد القادم يجب أن يكون تبسيط؟
+- هل أنت جاهز لتقديم توصية نهائية؟
+أجب بجملة قصيرة تصف الحالة فقط.
+`
+        },
+        ...history
+      ]
+    });
 
-قواعد مهمة:
-- تابع سياق المحادثة ولا تبدأ من جديد.
-- إذا قال المستخدم "أنا مبتدئ" أو "أنا محترف" فاعتبرها إجابة على سؤالك السابق.
-- إذا كنت ما زلت تجمع معلومات فلا تقترح أي دورات.
-- اقترح دورات فقط عندما تقدم توصية نهائية واضحة.
-- لا تستخدم h1 أو h2.
-- لا تكبر الخط.
-- استخدم HTML بسيط فقط (strong / br / ul / li).
-- اجعل الرد رزِين، عملي، مختصر.
-`;
+    const analysis = reasoning.choices[0].message.content;
+
+    /* ============================================
+       ✅ Step 2: Final Response
+    ============================================ */
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
       messages: [
-        { role: "system", content: systemPrompt },
+        {
+          role: "system",
+          content: `
+أنت مستشار أكاديمي طبيعي وذكي.
+
+تعليمات:
+- تابع سياق المحادثة.
+- لو المستخدم مرتبك أو قال "مش فاهم"، بسّط السؤال.
+- لو تحتاج معلومات إضافية، اسأل بلطف.
+- لو كونت رأي واضح، قدّم توصية عملية.
+- لا تستخدم عناوين كبيرة.
+- استخدم HTML بسيط فقط.
+- لا تكبر الخط.
+`
+        },
         ...history
       ]
     });
 
     let reply = completion.choices[0].message.content;
 
-    /* ✅ حفظ رد المساعد */
     history.push({ role: "assistant", content: reply });
 
-    /* ===============================
-       ✅ تحديد هل الرد توصية نهائية؟
-    =============================== */
+    /* ============================================
+       ✅ Step 3: GPT يقرر هل التوصية نهائية
+    ============================================ */
 
-    const shouldRecommend =
-      reply.includes("أنصح") ||
-      reply.includes("ابدأ") ||
-      reply.includes("أفضل مسار") ||
-      reply.includes("الخيار الأنسب") ||
-      reply.includes("يمكنك دراسة");
+    const decision = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+هل الرد التالي يتضمن توصية نهائية واضحة لمسار تعليمي؟
+أجب فقط بـ:
+YES
+أو
+NO
+`
+        },
+        { role: "user", content: reply }
+      ]
+    });
 
-    if (shouldRecommend) {
+    const isFinal = decision.choices[0].message.content.trim() === "YES";
 
-      let searchKeyword = message;
+    /* ============================================
+       ✅ Step 4: عرض الترشيحات فقط لو نهائي
+    ============================================ */
 
-      if (reply.includes("Python")) searchKeyword = "Python";
-      else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
-      else if (reply.includes("تصميم")) searchKeyword = "تصميم";
-      else if (reply.includes("فوتوشوب")) searchKeyword = "فوتوشوب";
+    if (isFinal) {
 
-      const relatedCourses = await getRelatedCourses(searchKeyword, 3);
+      const relatedCourses = await getRelatedCourses(message, 3);
 
       if (relatedCourses.length > 0) {
 
@@ -158,7 +187,6 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ منع تكبير الخط */
     reply = `
 <style>
 .course-btn{
@@ -196,5 +224,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko running on port " + PORT);
+  console.log("✅ Ziko Intelligent Mode running on port " + PORT);
 });
