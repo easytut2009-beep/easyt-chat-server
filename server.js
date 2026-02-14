@@ -41,20 +41,19 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH (المعنى مش كلمة)
+   ✅ SEMANTIC SEARCH
 ============================== */
 
 async function searchCourses(message) {
 
   try {
 
-    // 1️⃣ نعمل embedding لرسالة المستخدم
+    // 1️⃣ إنشاء embedding لرسالة المستخدم
     const queryEmbedding = await createEmbedding(message);
 
-    // 2️⃣ نستخدم vector similarity في Supabase
+    // 2️⃣ استدعاء RPC الصحيح (بدون threshold)
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.6,
       match_count: 5
     });
 
@@ -137,7 +136,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ هنا البحث أصبح بالمعنى */
+    /* ✅ البحث الدلالي من قاعدة البيانات */
     const courses = await searchCourses(message);
 
     if (courses.length > 0) {
@@ -147,7 +146,7 @@ app.post("/chat", async (req, res) => {
 
       courses.forEach(course => {
         reply += `
-<a href="${course.url}" target="_blank" class="course-btn">
+<a href="${course.link}" target="_blank" class="course-btn">
 ${course.title}
 </a>`;
       });
