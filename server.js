@@ -25,6 +25,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =============================== */
+
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
@@ -55,8 +56,8 @@ function cleanHTML(reply) {
 
 function removeExternalContent(text) {
   const forbidden = [
-    "الإنترنت","يوتيوب","فيسبوك","جروبات","مجتمعات",
-    "منصات","مواقع","مصادر خارجية"
+    "الإنترنت","يوتيوب","فيسبوك","جروبات",
+    "مجتمعات","منصات","مواقع","مصادر خارجية"
   ];
 
   forbidden.forEach(word => {
@@ -125,10 +126,10 @@ app.post("/chat", async (req, res) => {
 
       reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong><br>`;
 
-      relatedCourses.forEach((course, index) => {
+      relatedCourses.forEach(course => {
         if (course.url) {
           reply += `
-          <a href="${course.url}" target="_blank" class="course-btn ${index !== 0 ? 'with-divider' : ''}">
+          <a href="${course.url}" target="_blank" class="course-btn">
             ${course.title}
           </a>`;
         }
@@ -142,6 +143,7 @@ font-size:14px;
 line-height:1.45;
 }
 
+/* ✅ المستطيلات الحمراء */
 .course-btn{
 display:block;
 width:100%;
@@ -153,19 +155,14 @@ font-size:14px;
 line-height:1.3;
 border-radius:6px;
 text-decoration:none;
-margin:4px auto;
+margin:0 auto 2px auto;  /* ✅ فاصل رفيع جدًا بين كل مستطيل */
 text-align:center;
 transition:0.2s ease;
 }
 
-/* ✅ فاصل رفيع جدًا بين المستطيلات */
-.course-btn.with-divider{
-border-top:1px solid #ffffff22;
-}
-
-/* ✅ هوفر بلون وردي فاتح جدًا للنص فقط */
+/* ✅ هوفر وردي فاتح جدًا للنص فقط */
 .course-btn:hover{
-color:#ffb6d9;
+color:#ffd6ea;
 background:#c40000;
 }
 </style>
@@ -185,5 +182,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Updated UI running on port " + PORT);
+  console.log("✅ AI Assistant UI Final running on port " + PORT);
 });
