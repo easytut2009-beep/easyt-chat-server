@@ -46,15 +46,26 @@ async function getRelatedCourses(query, limit = 3) {
 
 /* =============================== */
 function cleanHTML(reply) {
-
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
-
   reply = reply.replace(/\n+/g, "<br>");
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
-
   return reply.trim();
+}
+
+/* ✅ منع الاقتراح العشوائي لو السؤال عام */
+function isGeneralProgrammingQuestion(text) {
+  const generalWords = [
+    "اتعلم برمجة",
+    "ابدأ برمجة",
+    "ازاي ابدأ",
+    "كيف أبدأ",
+    "عاوز أتعلم",
+    "تعلم البرمجة"
+  ];
+
+  return generalWords.some(word => text.includes(word));
 }
 
 /* ========================================================== */
@@ -69,9 +80,7 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
 
-    if (!session_id) {
-      session_id = crypto.randomUUID();
-    }
+    if (!session_id) session_id = crypto.randomUUID();
 
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
@@ -80,7 +89,6 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ SYSTEM MESSAGE مقفول على easyT */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -88,18 +96,9 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت المساعد الذكي الرسمي داخل منصة easyT التعليمية فقط.
-
-قواعد صارمة:
-
-- أنت تعمل داخل easyT فقط.
-- لا تذكر أي منصات تعليمية أخرى إطلاقاً.
-- لا تقترح Coursera أو Udemy أو Codecademy أو أي منصة منافسة.
-- جميع التوصيات يجب أن تكون من محتوى easyT فقط.
-- لا تقل "يمكنك التعلم عبر الإنترنت".
-- لا تشير لأي موقع خارجي.
-- استخدم HTML بسيط فقط (strong / br / ul / li).
-- كن احترافي ومباشر.
+أنت مساعد أكاديمي احترافي داخل منصة تعليمية.
+لا تذكر أي منصات أخرى.
+استخدم HTML بسيط فقط (strong / br / ul / li).
 
 في النهاية أضف:
 <state>normal</state>
@@ -134,14 +133,18 @@ app.post("/chat", async (req, res) => {
 
     reply = reply.trim();
 
-    /* ✅ جلب كورسات easyT فقط */
+    /* ✅ لو السؤال عام → ما نقترحش لغة محددة */
+    if (isGeneralProgrammingQuestion(message)) {
+      state = "normal";
+    }
+
     if (state === "recommend" && topic) {
 
       const relatedCourses = await getRelatedCourses(topic, 3);
 
       if (relatedCourses.length > 0) {
 
-        reply += `<br><strong style="color:#c40000;">يمكنك الدراسة داخل easyT:</strong>`;
+        reply += `<br><strong style="color:#c40000;">الدورات المقترحة:</strong>`;
 
         relatedCourses.forEach(course => {
           if (course.url) {
@@ -153,7 +156,6 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ الشكل النهائي المتناسق */
     reply = `
 <style>
 .chat-wrapper{
@@ -170,7 +172,7 @@ padding-right:20px;
 margin:2px 0;
 }
 
-/* ✅ أزرار easyT الرسمية */
+/* ✅ أزرار الاقتراح */
 .course-btn{
 display:block;
 width:100%;
@@ -179,11 +181,16 @@ padding:12px 16px;
 background:#c40000;
 color:#fff;
 font-size:14px;
-line-height:1.25;
+line-height:1.2;
 border-radius:6px;
 text-decoration:none;
-margin:3px auto;
+margin:1px auto;   /* ✅ مسافة صغيرة جدًا */
 text-align:center;
+transition:0.2s ease;
+}
+
+.course-btn:hover{
+background:#ff4d8d;  /* ✅ اللون الوردي عند الهوفر */
 }
 </style>
 
@@ -195,14 +202,12 @@ ${reply}
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("SERVER ERROR:", error);
+    console.error(error);
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
 
-/* =============================== */
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ easyT Official AI Assistant running on port " + PORT);
+  console.log("✅ AI Assistant running on port " + PORT);
 });
