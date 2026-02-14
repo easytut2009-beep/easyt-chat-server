@@ -24,83 +24,25 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   DOMAIN DETECTION
+   SEARCH COURSES (FIXED 100%)
+   ✅ بدون embedding
+   ✅ بدون RPC
+   ✅ يرجع أول 5 دورات مباشرة
 ===================================================== */
 
-async function detectDomain(message) {
+async function searchCourses() {
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content: `
-حدد المجال فقط من:
-programming
-web
-mobile
-data
-design
-leadership
-language
-it
-general
-
-أعد كلمة واحدة فقط.
-`
-      },
-      { role: "user", content: message }
-    ]
-  });
-
-  return completion.choices[0].message.content.trim().toLowerCase();
-}
-
-/* =====================================================
-   EMBEDDING
-===================================================== */
-
-async function createEmbedding(text) {
-
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text
-  });
-
-  return response.data[0].embedding;
-}
-
-/* =====================================================
-   SMART SEARCH (FIXED VERSION)
-===================================================== */
-
-async function searchCourses(message) {
-
-  const embedding = await createEmbedding(message);
-
-  const { data, error } = await supabase.rpc("smart_course_search", {
-    query_embedding: embedding,
-    match_count: 5,
-    similarity_threshold: 0.60
-  });
+  const { data, error } = await supabase
+    .from("courses")
+    .select("title, url")
+    .limit(5);
 
   if (error) {
-    console.error("RPC error:", error.message);
+    console.error("Supabase error:", error.message);
+    return [];
   }
 
-  // ✅ fallback لو مفيش نتائج
-  if (!data || data.length === 0) {
-
-    const { data: fallback } = await supabase
-      .from("courses")
-      .select("title, url")
-      .limit(5);
-
-    return fallback || [];
-  }
-
-  return data;
+  return data || [];
 }
 
 /* =====================================================
@@ -136,7 +78,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* 1) AI Explanation ONLY */
+    /* ✅ AI Explanation Only */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -157,12 +99,12 @@ app.post("/chat", async (req, res) => {
     let reply = completion.choices[0].message.content;
     reply = cleanHTML(reply);
 
-    /* 2) Fetch courses from DB */
-    const courses = await searchCourses(message);
+    /* ✅ Fetch Courses Directly */
+    const courses = await searchCourses();
 
     if (courses.length > 0) {
 
-      reply += `<div class="courses-title">الدورات المتاحة داخل Easy‑T:</div>`;
+      reply += `<div class="courses-title">استعرض الدورات المتاحة:</div>`;
       reply += `<div class="courses-container">`;
 
       courses.forEach(course => {
