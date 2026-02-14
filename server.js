@@ -20,26 +20,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-/* =============================== */
-/* ✅ Normalize Arabic */
-/* =============================== */
-
-function normalizeArabic(text = "") {
-  return text
-    .replace(/[إأآا]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/[^ء-يa-zA-Z0-9\s]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-/* =============================== */
-/* ✅ Embedding */
-/* =============================== */
-
+/* ===============================
+   ✅ Create Embedding
+================================ */
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
@@ -48,12 +31,11 @@ async function createEmbedding(text) {
   return response.data[0].embedding;
 }
 
-/* =============================== */
-/* ✅ Get Related Courses */
-/* =============================== */
-
-async function getRelatedCourses(message, limit = 3) {
-  const embedding = await createEmbedding(message);
+/* ===============================
+   ✅ Get Related Courses
+================================ */
+async function getRelatedCourses(query, limit = 3) {
+  const embedding = await createEmbedding(query);
 
   const { data } = await supabase.rpc("match_ai_knowledge", {
     query_embedding: embedding,
@@ -63,11 +45,10 @@ async function getRelatedCourses(message, limit = 3) {
   return data || [];
 }
 
-/* =============================== */
-/* ✅ Smart Intent Detection (AI) */
-/* =============================== */
-
-async function detectIntentAI(message) {
+/* ===============================
+   ✅ AI Intent Detection
+================================ */
+async function detectIntent(message) {
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -78,14 +59,14 @@ async function detectIntentAI(message) {
         content: `
 صنف الرسالة إلى واحدة فقط من:
 identity
-advice
+consult
 search
 
 identity = سؤال عن من أنت
-advice = طلب نصيحة أو توجيه
-search = بحث عن دورة أو موضوع
+consult = سؤال عام يحتاج تحليل وتوجيه
+search = سؤال محدد عن دورة أو موضوع
 
-ارجع فقط الكلمة.
+ارجع كلمة واحدة فقط.
 `
       },
       { role: "user", content: message }
@@ -95,17 +76,22 @@ search = بحث عن دورة أو موضوع
   return completion.choices[0].message.content.trim().toLowerCase();
 }
 
-/* =============================== */
-/* ✅ Clean HTML */
-/* =============================== */
-
+/* ===============================
+   ✅ Clean HTML (منع الفراغات)
+================================ */
 function cleanHTML(reply) {
-  reply = reply.replace(/<h1.*?>.*?<\/h1>/gi, "");
-  reply = reply.replace(/<h2.*?>.*?<\/h2>/gi, "");
+
+  // منع أي عناوين ضخمة
+  reply = reply.replace(/<h1.*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h1>/gi, "</strong>");
+  reply = reply.replace(/<h2.*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h2>/gi, "</strong>");
+
   reply = reply.replace(/\n{2,}/g, "\n");
   reply = reply.trim();
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/<br><br>/g, "<br>");
+
   return reply;
 }
 
@@ -114,6 +100,7 @@ function cleanHTML(reply) {
 /* ========================================================== */
 
 app.post("/chat", async (req, res) => {
+
   try {
 
     let { message, session_id } = req.body;
@@ -126,20 +113,29 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const intent = await detectIntentAI(message);
+    const intent = await detectIntent(message);
     let reply = "";
+    let searchKeyword = message;
 
-    /* ✅ Identity */
+    /* ===============================
+       ✅ Identity
+    =============================== */
+
     if (intent === "identity") {
+
       reply = `
 <strong style="color:#c40000;">مرحبًا 👋</strong><br>
 أنا <strong>زيكو</strong> مساعد easyT الذكي.<br>
-مهمتي أساعدك تختار أفضل مسار تعليمي يناسبك.
+مهمتي مساعدتك في اختيار مسارك التعليمي المناسب.
 `;
+
     }
 
-    /* ✅ Advice */
-    else if (intent === "advice") {
+    /* ===============================
+       ✅ Consult (تحليل ذكي)
+    =============================== */
+
+    else if (intent === "consult") {
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -148,11 +144,15 @@ app.post("/chat", async (req, res) => {
           {
             role: "system",
             content: `
-أنت مستشار تعليمي ذكي.
-افهم السؤال جيدًا.
-قدم رد مختصر، واضح، عملي.
+أنت مستشار أكاديمي محترف في البرمجة.
+حلل مستوى السائل أولًا.
+لو السؤال عام مثل "عاوز أدرس برمجة":
+- اعتبره مبتدئ.
+- اقترح Python أو Web (HTML/CSS/JS).
+- لا تقترح Ruby أو Flutter إلا إذا طُلب.
+اجعل الرد رزِين، عملي، مختصر.
 بدون عناوين كبيرة.
-استخدم HTML بسيط.
+استخدم HTML بسيط فقط.
 `
           },
           { role: "user", content: message }
@@ -160,9 +160,17 @@ app.post("/chat", async (req, res) => {
       });
 
       reply = completion.choices[0].message.content;
+
+      // استخراج كلمة بحث ذكية للترشيح
+      if (reply.includes("Python")) searchKeyword = "Python";
+      else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
+      else searchKeyword = message;
     }
 
-    /* ✅ Search */
+    /* ===============================
+       ✅ Search (محدد)
+    =============================== */
+
     else {
 
       const courses = await getRelatedCourses(message, 3);
@@ -172,7 +180,7 @@ app.post("/chat", async (req, res) => {
       } else {
 
         const contextText = courses
-          .map(c => `عنوان: ${c.title}\nوصف: ${c.content.slice(0,300)}`)
+          .map(c => `عنوان: ${c.title}\nوصف: ${c.content.slice(0,250)}`)
           .join("\n\n");
 
         const completion = await openai.chat.completions.create({
@@ -182,10 +190,10 @@ app.post("/chat", async (req, res) => {
             {
               role: "system",
               content: `
-أجب بناءً على السياق فقط.
+أجب اعتمادًا على السياق فقط.
 لا تخترع معلومات.
 استخدم HTML بسيط.
-بدون مسافات كبيرة.
+بدون عناوين كبيرة.
 `
             },
             {
@@ -199,11 +207,13 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    /* ✅ Add Recommendations (NOT for identity) */
+    /* ===============================
+       ✅ Recommendations
+    =============================== */
 
     if (intent !== "identity") {
 
-      const relatedCourses = await getRelatedCourses(message, 3);
+      const relatedCourses = await getRelatedCourses(searchKeyword, 3);
 
       if (relatedCourses.length > 0) {
 
@@ -223,16 +233,16 @@ app.post("/chat", async (req, res) => {
 <style>
 .course-btn{
 display:inline-block;
-padding:5px 8px;
+padding:6px 10px;
 background:#c40000;
 color:#fff;
 font-size:12px;
-border-radius:5px;
+border-radius:6px;
 text-decoration:none;
-margin-top:3px;
+margin-top:4px;
 }
 </style>
-<div style="font-size:13px;line-height:1.4;">
+<div style="font-size:14px;line-height:1.6;">
 ${reply}
 </div>
 `;
