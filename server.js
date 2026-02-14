@@ -42,21 +42,33 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* تنظيف بسيط */
+/* ===============================
+   ✅ تنظيف صارم بدون أي فراغات
+================================ */
 function cleanHTML(reply) {
 
   if (!reply) return "";
 
-  // نشيل أي <br> أو مسافات في البداية
+  // إزالة أي فراغ أو <br> من بداية النص
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
 
-  // نمنع سطرين ورا بعض
+  // منع سطرين ورا بعض
   reply = reply.replace(/\n\s*\n+/g, "\n");
 
+  // تحويل الهيدنج ل strong
+  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
+
+  // تحويل الأسطر لـ br
   reply = reply.replace(/\n/g, "<br>");
 
-  // نمنع <br><br>
+  // منع br مكرر
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
+
+  // ✅ منع br بعد أو قبل li
+  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
+  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
+  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
 
   return reply.trim();
 }
@@ -99,6 +111,7 @@ app.post("/chat", async (req, res) => {
           content: `
 أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
 استخدم HTML بسيط فقط (strong / br / ul / li).
+لا تضف سطور فارغة بين عناصر القائمة.
 `
         },
         ...history
@@ -115,80 +128,91 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      // ✅ سطر واحد فقط قبل العنوان
       reply += `<div class="courses-title">ابدأ بأحد الدورات التالية:</div>`;
-
       reply += `<div class="courses-container">`;
 
       relatedCourses.forEach(course => {
         if (course.url) {
           reply += `
-            <a href="${course.url}" target="_blank" class="course-btn">
-              ${course.title}
-            </a>
-          `;
+<a href="${course.url}" target="_blank" class="course-btn">
+${course.title}
+</a>`;
         }
       });
 
       reply += `</div>`;
     }
 
+    /* ===============================
+       ✅ CSS نهائي بدون مسافات مضاعفة
+    ================================ */
+
     reply = `
 <style>
 
-/* ✅ Reset كامل داخل الرسالة */
-.chat-wrapper *{
-margin:0;
-padding:0;
-box-sizing:border-box;
-}
-
 .chat-wrapper{
-font-size:14px;
-line-height:1.6;
+  font-size:14px;
+  line-height:1.5;
 }
 
-/* ضبط الليست */
+/* إزالة أي margin لأول عنصر */
+.chat-wrapper > *{
+  margin-top:0;
+}
+
+.chat-wrapper > *:first-child{
+  margin-top:0 !important;
+  padding-top:0 !important;
+}
+
+/* ✅ ضبط الليست */
 .chat-wrapper ul{
-padding-right:18px;
-margin-bottom:8px;
+  margin:0;
+  padding-right:18px;
 }
 
 .chat-wrapper li{
-margin-bottom:8px;
+  margin:0;
+  padding:0;
+  line-height:1.4;
 }
 
-/* ✅ مسافة واحدة فقط قبل العنوان */
+/* منع أي br داخل li */
+.chat-wrapper li br{
+  display:none;
+}
+
+/* ✅ عنوان الكورسات */
 .courses-title{
-margin-top:16px;
-margin-bottom:8px;
-color:#c40000;
-font-weight:bold;
+  margin-top:16px;
+  margin-bottom:8px;
+  color:#c40000;
+  font-weight:bold;
 }
 
-/* الأزرار */
+/* ✅ الأزرار */
 .courses-container{
-display:flex;
-flex-direction:column;
-gap:12px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
 }
 
 .course-btn{
-display:block;
-width:100%;
-max-width:420px;
-padding:12px 14px;
-background:#c40000;
-color:#ffffff;
-font-size:14px;
-border-radius:8px;
-text-decoration:none;
-text-align:center;
-transition:0.2s ease;
+  display:block;
+  width:100%;
+  max-width:420px;
+  padding:12px 14px;
+  background:#c40000;
+  color:#ffffff;
+  font-size:14px;
+  border-radius:8px;
+  text-decoration:none;
+  text-align:center;
+  transition:0.2s ease;
 }
 
 .course-btn:hover{
-color:#ffd6ea;
+  color:#ffd6ea;
 }
 
 </style>
@@ -208,5 +232,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Final Reset Version running on port " + PORT);
+  console.log("✅ AI Assistant Bullets Spacing Fully Fixed running on port " + PORT);
 });
