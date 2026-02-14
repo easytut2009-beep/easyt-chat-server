@@ -13,7 +13,9 @@ if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -33,6 +35,7 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text,
   });
+
   return response.data[0].embedding;
 }
 
@@ -63,7 +66,6 @@ function cleanHTML(reply) {
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
-
   try {
 
     let { message, session_id } = req.body;
@@ -104,7 +106,7 @@ app.post("/chat", async (req, res) => {
 - لا تفترض أن كل مبتدئ يجب أن يتعلم Python.
 - إذا كان المستخدم مبتدئ داخل نفس المجال، اقترح نقطة بداية من نفس المجال فقط.
 - لا تسأل أكثر من سؤال واحد متتالي.
-- كن مباشر وطبيعي بدون رسمية زائدة.
+- كن مباشر وطبيعي.
 - استخدم HTML بسيط فقط (strong / br / ul / li).
 
 في نهاية الرد أضف:
@@ -123,6 +125,7 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
+
     history.push({ role: "assistant", content: reply });
 
     /* ============================================
@@ -147,7 +150,7 @@ app.post("/chat", async (req, res) => {
     reply = reply.trim();
 
     /* ============================================
-       ✅ Recommendation Search (Exact Topic)
+       ✅ Recommendation Search
     ============================================ */
 
     if (state === "recommend" && topic) {
@@ -169,7 +172,7 @@ app.post("/chat", async (req, res) => {
     reply = cleanHTML(reply);
 
     /* ============================================
-       ✅ Ultra Compact Style
+       ✅ Ultra Compact Styling
     ============================================ */
 
     reply = `
@@ -187,7 +190,7 @@ margin-top:2px;
 
 .chat-wrapper{
 font-size:14px !important;
-line-height:1.3 !important;
+line-height:1.25 !important;
 }
 
 .chat-wrapper *{
@@ -203,7 +206,7 @@ padding-right:16px !important;
 
 .chat-wrapper li{
 margin:0 !important;
-line-height:1.3 !important;
+line-height:1.25 !important;
 }
 </style>
 
