@@ -55,7 +55,7 @@ async function createEmbedding(text) {
 }
 
 /* ==========================================================
-   ✅ Chat Route (Premium Smart RAG)
+   ✅ Chat Route
 ========================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -70,35 +70,69 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const lowerMsg = message.trim().toLowerCase();
+    const normalizedMsg = normalizeArabic(message);
 
     /* =======================================================
-       ✅ Identity Intent
+       ✅ 1) Identity Intent
     ======================================================= */
 
-    if (
-      lowerMsg.includes("انت مين") ||
-      lowerMsg.includes("من انت") ||
-      lowerMsg.includes("مين انت")
-    ) {
+    const identityTriggers = ["انتمين","انتنين","مينانت","منانت"];
+
+    if (identityTriggers.some(t => normalizedMsg.replace(/\s/g,"").includes(t))) {
       return res.json({
         reply: `
-<div style="line-height:1.6">
-<strong>مرحبًا 👋</strong><br>
-أنا <strong>زيكو</strong> – مساعد easyT الذكي.<br><br>
-
-أساعدك في:<br>
-<ul style="padding-right:18px">
-<li>معرفة تفاصيل أي دورة</li>
-<li>ترشيح أفضل مسار مناسب لك</li>
-<li>توجيهك للاشتراك الصحيح</li>
-</ul>
-
-قولي حابب تتعلم إيه؟ 🚀
+<div style="font-size:14px;line-height:1.4;">
+<strong style="color:#c40000;">مرحبًا 👋</strong><br>
+أنا <strong>زيكو</strong> مساعد <strong>easyT</strong> الذكي.
 </div>
 `,
         session_id
       });
+    }
+
+    /* =======================================================
+       ✅ 2) Advice Intent (استشارة)
+    ======================================================= */
+
+    const adviceTriggers = [
+      "ابدأ",
+      "ابدأ بايه",
+      "ابدأ ازاي",
+      "اتعلم ازاي",
+      "ابدأ منين",
+      "انسب حاجه",
+      "ايه الافضل",
+      "محتار"
+    ];
+
+    if (adviceTriggers.some(t => normalizedMsg.includes(normalizeArabic(t)))) {
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.4,
+        messages: [
+          {
+            role: "system",
+            content: `
+أنت مستشار تعليمي خبير.
+قدم مسار واضح ومنطقي.
+استخدم HTML بسيط بدون مسافات كبيرة.
+عناوين bold.
+قوائم ul صغيرة.
+`
+          },
+          { role: "user", content: message }
+        ]
+      });
+
+      let reply = completion.choices[0].message.content.trim();
+
+      reply = reply.replace(/\n\s*\n/g,"\n");
+      reply = reply.replace(/\n/g,"<br>");
+      reply = reply.replace(/<ul>/g,'<ul style="padding-right:14px;margin:4px 0;">');
+      reply = reply.replace(/<li>/g,'<li style="margin:2px 0;">');
+
+      return res.json({ reply, session_id });
     }
 
     /* ===============================
@@ -120,7 +154,7 @@ app.post("/chat", async (req, res) => {
     }
 
     /* =======================================================
-       ✅ RAG Search
+       ✅ 3) Search Intent (RAG)
     ======================================================= */
 
     const embedding = await createEmbedding(message);
@@ -130,34 +164,17 @@ app.post("/chat", async (req, res) => {
       match_count: 10
     });
 
-    if (error) {
-      console.error("Vector search error:", error);
+    if (error || !results || results.length === 0) {
       return res.json({
-        reply: "حدث خطأ أثناء البحث في البيانات.",
+        reply: `<div style="font-size:14px;">لم أجد نتائج مطابقة 🤔</div>`,
         session_id
       });
     }
 
-    if (!results || results.length === 0) {
-      return res.json({
-        reply: `
-<div style="line-height:1.6">
-لم أجد نتائج مطابقة لسؤالك 🤔<br>
-يمكنك تصفح جميع الدورات من الصفحة الرئيسية.
-</div>
-`,
-        session_id
-      });
-    }
-
-    /* =======================================================
-       ✅ Filter Matching Courses
-    ======================================================= */
-
-    const normalizedMessage = normalizeArabic(message);
+    const normalizedSearch = normalizeArabic(message);
 
     const matchedCourses = results.filter(r =>
-      normalizeArabic(r.title).includes(normalizedMessage)
+      normalizeArabic(r.title).includes(normalizedSearch)
     );
 
     const finalCourses =
@@ -165,83 +182,61 @@ app.post("/chat", async (req, res) => {
         ? matchedCourses
         : results.slice(0, 3);
 
-    /* =======================================================
-       ✅ Build Context
-    ======================================================= */
-
     const contextText = finalCourses
-      .map(r =>
-        `عنوان: ${r.title}
-محتوى: ${r.content.slice(0, 600)}`
-      )
+      .map(r => `عنوان: ${r.title}\nمحتوى: ${r.content.slice(0, 500)}`)
       .join("\n\n");
-
-    /* =======================================================
-       ✅ System Prompt (منظم بدون نجوم)
-    ======================================================= */
-
-    const systemPrompt = `
-أنت "زيكو" مساعد easyT الذكي.
-
-التنسيق الإجباري:
-- استخدم HTML فقط.
-- لا تستخدم ** أو نجوم.
-- العناوين <strong>
-- النقاط داخل <ul><li>
-- لا تضع مسافات كبيرة بين الأسطر.
-
-إذا كان السؤال عن دورات:
-- اذكر جميع الدورات الموجودة في السياق.
-- لكل دورة عنوان واضح وثلاث مميزات.
-- اجعل الرد أنيق ومنظم.
-- لا تخترع معلومات.
-`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 700,
+      max_tokens: 600,
       messages: [
-        { role: "system", content: systemPrompt },
+        {
+          role: "system",
+          content: `
+أنت زيكو.
+استخدم HTML منظم.
+Compact بدون مسافات كبيرة.
+عناوين bold.
+لا تستخدم نجوم.
+لا تخترع معلومات.
+`
+        },
         {
           role: "user",
-          content: `
-السياق:
-${contextText}
-
-السؤال:
-${message}
-`
+          content: `السياق:\n${contextText}\n\nالسؤال:\n${message}`
         }
       ]
     });
 
     let reply = completion.choices[0].message.content.trim();
 
-    /* ✅ تنظيف المسافات */
-    reply = reply.replace(/\n\s*\n/g, "\n");
-    reply = reply.replace(/\n/g, "<br>");
-    reply = reply.replace(/\*\*/g, "");
-    reply = reply.replace(/https?:\/\/\S+/g, "");
+    reply = reply.replace(/\n\s*\n/g,"\n");
+    reply = reply.replace(/\n/g,"<br>");
+    reply = reply.replace(/<ul>/g,'<ul style="padding-right:14px;margin:4px 0;">');
+    reply = reply.replace(/<li>/g,'<li style="margin:2px 0;">');
 
-    /* =======================================================
-       ✅ Add Course Buttons
-    ======================================================= */
+    /* ✅ Course Buttons */
 
-    reply += `<br><br><strong>✅ روابط الدورات:</strong><br>`;
+    reply += `
+<br>
+<div style="margin-top:6px;font-size:13px;">
+<strong style="color:#c40000;">روابط الدورات:</strong>
+</div>
+`;
 
     finalCourses.forEach(course => {
       if (course.url) {
         reply += `
-        <div style="margin-top:10px">
+        <div style="margin-top:5px;">
           <a href="${course.url}" target="_blank"
           style="
             display:inline-block;
-            padding:10px 14px;
-            background:#ffcc00;
-            color:#000;
-            font-weight:bold;
-            border-radius:8px;
+            padding:6px 10px;
+            background:#c40000;
+            color:#fff;
+            font-size:13px;
+            border-radius:6px;
             text-decoration:none;
           ">
             ${course.title}
@@ -251,22 +246,24 @@ ${message}
       }
     });
 
-    /* =======================================================
-       ✅ CTA لغير المشتركين
-    ======================================================= */
+    /* ✅ CTA */
 
     if (!isPremium) {
       reply += `
-      <br><br>
+      <br>
       <div style="
         background:#111;
-        padding:16px;
-        border-radius:12px;
         color:#fff;
-        line-height:1.6;
+        padding:10px;
+        border-radius:8px;
+        font-size:13px;
+        line-height:1.4;
+        margin-top:8px;
       ">
-      🔓 للوصول الكامل لجميع الدورات والمحتوى المتقدم<br>
-      اشترك الآن في باقة easyT واستفد من كل المميزات.
+        🔒 للوصول الكامل لكل الدورات<br>
+        <span style="color:#c40000;font-weight:bold;">
+        اشترك الآن في easyT
+        </span>
       </div>
       `;
     }
