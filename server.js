@@ -111,8 +111,8 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      // ✅ سطر واحد فقط قبل العنوان
-      reply += `<br><strong class="courses-title">ابدأ بأحد الدورات التالية:</strong>`;
+      // ✅ مسافة طبيعية قبل العنوان
+      reply += `<strong class="courses-title">ابدأ بأحد الدورات التالية:</strong>`;
 
       reply += `<div class="courses-container">`;
 
@@ -134,26 +134,32 @@ app.post("/chat", async (req, res) => {
 
 .chat-wrapper{
 font-size:14px;
-line-height:1.5;
+line-height:1.6;
+overflow:hidden; /* ✅ يمنع margin collapse */
 }
 
-/* ✅ إزالة الفراغ الافتراضي */
+/* ✅ إزالة أي فراغ علوي من أول عنصر */
+.chat-wrapper > *:first-child{
+margin-top:0 !important;
+}
+
+/* ✅ ضبط الليست */
 .chat-wrapper ul{
-margin-top:0;
-margin-bottom:0;
+margin:0;
 padding-right:18px;
 }
 
 .chat-wrapper li{
-margin-bottom:6px;
+margin-bottom:8px;
 }
 
-/* ✅ عنوان الدورات بسطر واحد فراغ */
+/* ✅ مسافة متوازنة قبل العنوان */
 .courses-title{
 display:block;
-margin-top:8px;
-margin-bottom:6px;
+margin-top:18px;
+margin-bottom:10px;
 color:#c40000;
+font-weight:bold;
 }
 
 /* ✅ الأزرار */
@@ -161,7 +167,6 @@ color:#c40000;
 display:flex;
 flex-direction:column;
 gap:12px;
-margin-top:4px;
 }
 
 .course-btn{
@@ -199,5 +204,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Clean Layout Version running on port " + PORT);
+  console.log("✅ AI Assistant Fully Polished Layout running on port " + PORT);
 });
