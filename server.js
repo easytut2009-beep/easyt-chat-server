@@ -54,7 +54,6 @@ function cleanHTML(reply) {
   return reply.trim();
 }
 
-/* ✅ حذف أي كلام خارجي */
 function removeExternalContent(text) {
   const forbidden = [
     "الإنترنت",
@@ -75,7 +74,6 @@ function removeExternalContent(text) {
   return text;
 }
 
-/* ✅ تحديد مجال تلقائي لو السؤال عام */
 function detectTopic(message) {
   if (message.includes("برمجة")) return "أساسيات البرمجة";
   if (message.includes("ويب")) return "برمجة الويب";
@@ -114,12 +112,9 @@ app.post("/chat", async (req, res) => {
           content: `
 أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
 
-قواعد صارمة:
-- لا تذكر الإنترنت.
-- لا تذكر مواقع.
-- لا تذكر مجتمعات.
-- لا تذكر جروبات.
-- لا توجه المستخدم لأي مكان خارج المنصة.
+قواعد:
+- لا تذكر الإنترنت أو أي مصادر خارجية.
+- لا تذكر مجتمعات أو جروبات.
 - قدم خطوات تعليمية عملية فقط.
 - استخدم HTML بسيط (strong / br / ul / li).
 `
@@ -134,19 +129,17 @@ app.post("/chat", async (req, res) => {
     reply = removeExternalContent(reply);
     reply = cleanHTML(reply);
 
-    /* ✅ تحديد الموضوع تلقائي */
     const topic = detectTopic(message);
-
-    /* ✅ جلب الدورات دايمًا */
     const relatedCourses = await getRelatedCourses(topic, 3);
 
     if (relatedCourses.length > 0) {
 
-      reply += `<br><strong style="color:#c40000;">ابدأ بأحد هذه الدورات:</strong>`;
+      // ✅ سطر فاضي قبل العنوان
+      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong>`;
 
       relatedCourses.forEach(course => {
         if (course.url) {
-          reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+          reply += `<a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
         }
       });
     }
@@ -167,25 +160,27 @@ padding-right:20px;
 margin:2px 0;
 }
 
-/* ✅ أزرار صغيرة بمسافة قليلة جدًا */
+/* ✅ المستطيل أحمر ثابت */
 .course-btn{
 display:block;
 width:100%;
 max-width:420px;
-padding:12px 16px;
+padding:10px 14px;
 background:#c40000;
-color:#fff;
+color:#ffffff;
 font-size:14px;
 line-height:1.2;
 border-radius:6px;
 text-decoration:none;
-margin:1px auto;
+margin:0.5px auto;  /* ✅ ربع المسافة تقريبًا */
 text-align:center;
 transition:0.2s ease;
 }
 
+/* ✅ الهوفر يغير لون النص فقط */
 .course-btn:hover{
-background:#ff4d8d;
+color:#ff4d8d;
+background:#c40000;
 }
 </style>
 
@@ -204,5 +199,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Strict Mode running on port " + PORT);
+  console.log("✅ AI Assistant Final Mode running on port " + PORT);
 });
