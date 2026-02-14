@@ -46,20 +46,17 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ Clean HTML (FIXED)
+   ✅ Clean HTML
 ================================ */
 function cleanHTML(reply) {
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
-  // حول الأسطر
   reply = reply.replace(/\n+/g, "<br>");
 
-  // ✅ احذف أي <br> بعد </li>
+  // إزالة أي <br> بعد عناصر القائمة
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
-
-  // ✅ احذف أي فراغ بين </li><li>
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
 
   reply = reply.trim();
@@ -100,8 +97,8 @@ app.post("/chat", async (req, res) => {
 أنت مستشار أكاديمي ذكي.
 
 - لا تغيّر المجال.
-- لا تفترض Python تلقائياً.
 - استخدم HTML بسيط فقط (strong / br / ul / li).
+- لا تضع فراغات بين عناصر القائمة.
 
 في النهاية:
 <state>normal</state>
@@ -152,7 +149,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Styling مضبوط */
+    /* ✅ Styling النهائي */
     reply = `
 <style>
 .chat-wrapper{
@@ -170,15 +167,15 @@ margin:2px 0;
 }
 
 .course-btn{
-display:inline-block;
-padding:6px 10px;
+display:block;
+width:fit-content;
+padding:6px 12px;
 background:#c40000;
 color:#fff;
-font-size:12px;
-border-radius:6px;
+font-size:13px;
+border-radius:4px;   /* استدارة صغيرة */
 text-decoration:none;
-margin-top:6px;
-margin-bottom:4px;
+margin:6px 0;
 }
 </style>
 
@@ -199,5 +196,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Final Fixed Layout running on port " + PORT);
+  console.log("✅ Ziko Final Layout Clean running on port " + PORT);
 });
