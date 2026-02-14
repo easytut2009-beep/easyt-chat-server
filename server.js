@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -32,7 +31,7 @@ const conversations = new Map();
    ✅ DOMAIN DETECTION
 ============================== */
 
-async function detectDomain(message, history) {
+async function detectDomain(message) {
 
   try {
     const completion = await openai.chat.completions.create({
@@ -57,7 +56,6 @@ general
 أعد كلمة واحدة فقط.
 `
         },
-        ...history.slice(-3),
         { role: "user", content: message }
       ]
     });
@@ -115,7 +113,6 @@ app.post("/track-click", async (req, res) => {
     course_id
   });
 
-  // زيادة popularity
   await supabase.rpc("increment_popularity", {
     course_id_input: course_id
   });
@@ -124,12 +121,10 @@ app.post("/track-click", async (req, res) => {
 });
 
 /* ==============================
-   ✅ HYBRID SEARCH
+   ✅ HYBRID SEARCH + FALLBACK
 ============================== */
 
 async function searchCourses(message, domain, user_id) {
-
-  if (domain === "general") return [];
 
   const embedding = await createEmbedding(message);
 
@@ -141,7 +136,17 @@ async function searchCourses(message, domain, user_id) {
     match_count: 5
   });
 
-  return data || [];
+  if (data && data.length > 0) {
+    return data;
+  }
+
+  // ✅ fallback لو مفيش نتائج
+  const { data: fallback } = await supabase
+    .from("courses")
+    .select("id, title, url")
+    .limit(5);
+
+  return fallback || [];
 }
 
 /* ==============================
@@ -189,7 +194,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    const domain = await detectDomain(message, history);
+    const domain = await detectDomain(message);
 
     await saveMemory(user_id, message, domain);
 
