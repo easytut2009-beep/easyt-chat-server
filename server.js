@@ -21,7 +21,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Smart Memory
+   ✅ Memory
 ================================ */
 const conversations = new Map();
 
@@ -85,52 +85,37 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "user", content: message });
 
     /* ============================================
-       ✅ Step 1: Hidden Reasoning (يفكر بصمت)
-    ============================================ */
-
-    const reasoning = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content: `
-حلل المحادثة.
-حدد:
-- هل المستخدم مرتبك؟
-- هل لم يفهم السؤال السابق؟
-- هل الرد القادم يجب أن يكون تبسيط؟
-- هل أنت جاهز لتقديم توصية نهائية؟
-أجب بجملة قصيرة تصف الحالة فقط.
-`
-        },
-        ...history
-      ]
-    });
-
-    const analysis = reasoning.choices[0].message.content;
-
-    /* ============================================
-       ✅ Step 2: Final Response
+       ✅ Single Smart Call (يفكر ويرد مرة واحدة)
     ============================================ */
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.5,
       messages: [
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي طبيعي وذكي.
+أنت مستشار أكاديمي ذكي وطبيعي جدًا.
 
-تعليمات:
+مهم:
 - تابع سياق المحادثة.
-- لو المستخدم مرتبك أو قال "مش فاهم"، بسّط السؤال.
-- لو تحتاج معلومات إضافية، اسأل بلطف.
-- لو كونت رأي واضح، قدّم توصية عملية.
+- لا تطرح أكثر من سؤال واحد متتالي.
+- إذا قال المستخدم "أنا مبتدئ" ولم يحدد مجال:
+  اقترح له مسار بداية واضح (مثلاً Python) بدل الاستمرار في الأسئلة.
+- إذا بدا مرتبكًا أو قال "مش فاهم"، بسّط كلامك.
+- إذا وصلت لتوصية واضحة، اعتبرها توصية نهائية.
 - لا تستخدم عناوين كبيرة.
-- استخدم HTML بسيط فقط.
+- استخدم HTML بسيط فقط (strong / br / ul / li).
 - لا تكبر الخط.
+- لا تكن رسميًا زيادة.
+- كن طبيعي ومباشر.
+
+في نهاية ردك أضف سطرًا مخفيًا بالشكل التالي:
+<state>normal</state>
+أو
+<state>recommend</state>
+
+ولا تشرح معنى الحالة.
 `
         },
         ...history
@@ -142,34 +127,22 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "assistant", content: reply });
 
     /* ============================================
-       ✅ Step 3: GPT يقرر هل التوصية نهائية
+       ✅ Extract State
     ============================================ */
 
-    const decision = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
-هل الرد التالي يتضمن توصية نهائية واضحة لمسار تعليمي؟
-أجب فقط بـ:
-YES
-أو
-NO
-`
-        },
-        { role: "user", content: reply }
-      ]
-    });
+    let state = "normal";
 
-    const isFinal = decision.choices[0].message.content.trim() === "YES";
+    const match = reply.match(/<state>(.*?)<\/state>/);
+    if (match) {
+      state = match[1].trim();
+      reply = reply.replace(/<state>.*?<\/state>/, "").trim();
+    }
 
     /* ============================================
-       ✅ Step 4: عرض الترشيحات فقط لو نهائي
+       ✅ لو توصية نهائية → اعرض كورسات
     ============================================ */
 
-    if (isFinal) {
+    if (state === "recommend") {
 
       const relatedCourses = await getRelatedCourses(message, 3);
 
@@ -224,5 +197,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Intelligent Mode running on port " + PORT);
+  console.log("✅ Ziko Conversational Mode running on port " + PORT);
 });
