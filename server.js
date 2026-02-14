@@ -22,20 +22,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-/* ===============================
-   ✅ MemorY
-================================ */
+/* =============================== */
 const conversations = new Map();
 
-/* ===============================
-   ✅ Embedding
-================================ */
+/* =============================== */
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text,
   });
-
   return response.data[0].embedding;
 }
 
@@ -51,21 +46,31 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ Clean HTML Compact)
+   ✅ Clean HTML (FIXED)
 ================================ */
 function cleanHTML(reply) {
+
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
+
+  // حول الأسطر
   reply = reply.replace(/\n+/g, "<br>");
+
+  // ✅ احذف أي <br> بعد </li>
+  reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
+
+  // ✅ احذف أي فراغ بين </li><li>
+  reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
+
   reply = reply.trim();
+
   return reply;
 }
 
 /* ========================================================== */
-/* ✅ Chat Route
-========================================================== */
 
 app.post("/chat", async (req, res) => {
+
   try {
 
     let { message, session_id } = req.body;
@@ -85,10 +90,6 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ============================================
-       ✅ GPT Call (Context Locked)
-    ============================================ */
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -96,28 +97,19 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي ذكي وطبيعي.
+أنت مستشار أكاديمي ذكي.
 
-قواعد صارمة:
-- تابع المجال الحالي في المحادثة بدقة.
-- لا تغيّر المجال إطلاقاً.
-- إذا كان الحديث عن التصميم، ابقَ في التصميم فقط.
-- إذا كان الحديث عن البرمجة، ابقَ في البرمجة فقط.
-- لا تفترض أن كل مبتدئ يجب أن يتعلم Python.
-- إذا كان المستخدم مبتدئ داخل نفس المجال، اقترح نقطة بداية من نفس المجال فقط.
-- لا تسأل أكثر من سؤال واحد متتالي.
-- كن مباشر وطبيعي.
+- لا تغيّر المجال.
+- لا تفترض Python تلقائياً.
 - استخدم HTML بسيط فقط (strong / br / ul / li).
 
-في نهاية الرد أضف:
+في النهاية:
 <state>normal</state>
 أو
 <state>recommend</state>
 
-إذا كانت recommend أضف أيضاً:
-<topic>اسم المجال أو المسار المقترح فقط</topic>
-
-لا تشرح الوسوم.
+ولو recommend أضف:
+<topic>اسم المجال فقط</topic>
 `
         },
         ...history
@@ -125,12 +117,7 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
     history.push({ role: "assistant", content: reply });
-
-    /* ============================================
-       ✅ Extract State & Topic
-    ============================================ */
 
     let state = "normal";
     let topic = null;
@@ -149,16 +136,10 @@ app.post("/chat", async (req, res) => {
 
     reply = reply.trim();
 
-    /* ============================================
-       ✅ Recommendation Search
-    ============================================ */
-
     if (state === "recommend" && topic) {
-
       const relatedCourses = await getRelatedCourses(topic, 3);
 
       if (relatedCourses.length > 0) {
-
         reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
 
         relatedCourses.forEach(course => {
@@ -171,42 +152,33 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ============================================
-       ✅ Ultra Compact Styling
-    ============================================ */
-
+    /* ✅ Styling مضبوط */
     reply = `
 <style>
-.course-btn{
-display:inline-block;
-padding:4px 8px;
-background:#c40000;
-color:#fff;
-font-size:12px !important;
-border-radius:5px;
-text-decoration:none;
-margin-top:2px;
-}
-
 .chat-wrapper{
-font-size:14px !important;
-line-height:1.25 !important;
-}
-
-.chat-wrapper *{
-font-size:14px !important;
-margin:0 !important;
-padding:0 !important;
+font-size:14px;
+line-height:1.45;
 }
 
 .chat-wrapper ul{
-margin:0 !important;
-padding-right:16px !important;
+margin:4px 0;
+padding-right:18px;
 }
 
 .chat-wrapper li{
-margin:0 !important;
-line-height:1.25 !important;
+margin:2px 0;
+}
+
+.course-btn{
+display:inline-block;
+padding:6px 10px;
+background:#c40000;
+color:#fff;
+font-size:12px;
+border-radius:6px;
+text-decoration:none;
+margin-top:6px;
+margin-bottom:4px;
 }
 </style>
 
@@ -227,5 +199,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Context Locked Ultra Compact Mode running on port " + PORT);
+  console.log("✅ Ziko Final Fixed Layout running on port " + PORT);
 });
