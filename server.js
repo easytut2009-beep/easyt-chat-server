@@ -51,7 +51,7 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ Clean HTML (Compact)
+   ✅ Clean HTML Compact)
 ================================ */
 function cleanHTML(reply) {
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
