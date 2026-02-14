@@ -12,6 +12,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
+if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
+if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
+
+/* =====================================================
+   ✅ Clients
+===================================================== */
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -36,7 +44,8 @@ async function detectDomain(message) {
       {
         role: "system",
         content: `
-حدد المجال فقط من:
+حدد المجال فقط من القائمة التالية:
+
 programming
 web
 mobile
@@ -58,21 +67,19 @@ general
 }
 
 /* =====================================================
-   ✅ CREATE EMBEDDING
+   ✅ EMBEDDING
 ===================================================== */
 
 async function createEmbedding(text) {
-
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text
   });
-
   return response.data[0].embedding;
 }
 
 /* =====================================================
-   ✅ SMART COURSE SEARCH (DB ONLY)
+   ✅ SMART SEARCH + FALLBACK
 ===================================================== */
 
 async function searchCourses(message, domain) {
@@ -85,15 +92,52 @@ async function searchCourses(message, domain) {
     query_embedding: embedding,
     filter_domain: domain,
     match_count: 5,
-    similarity_threshold: 0.75
+    similarity_threshold: 0.65
   });
 
   if (error) {
-    console.error(error);
-    return [];
+    console.error("RPC error:", error.message);
   }
 
-  return data || [];
+  // ✅ لو مفيش نتائج نرجع أحدث كورسات في نفس المجال
+  if (!data || data.length === 0) {
+
+    const { data: fallback } = await supabase
+      .from("courses")
+      .select("title, url")
+      .eq("domain", domain)
+      .limit(5);
+
+    return fallback || [];
+  }
+
+  return data;
+}
+
+/* =====================================================
+   ✅ BLOCK ANY EXTERNAL ADVICE
+===================================================== */
+
+function blockExternalAdvice(text) {
+
+  const forbidden = [
+    "الإنترنت",
+    "مقالات",
+    "فيديوهات",
+    "يوتيوب",
+    "منصات",
+    "موارد",
+    "عبر الإنترنت",
+    "البحث",
+    "جوجل"
+  ];
+
+  forbidden.forEach(word => {
+    const regex = new RegExp(word, "gi");
+    text = text.replace(regex, "");
+  });
+
+  return text;
 }
 
 /* =====================================================
@@ -116,6 +160,7 @@ app.post("/chat", async (req, res) => {
   try {
 
     let { message, session_id } = req.body;
+
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
@@ -132,7 +177,7 @@ app.post("/chat", async (req, res) => {
     /* ✅ 1) Detect Domain */
     const domain = await detectDomain(message);
 
-    /* ✅ 2) AI Explanation ONLY (no course names) */
+    /* ✅ 2) AI Response (NO COURSE NAMES – NO EXTERNAL ADVICE) */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -140,10 +185,20 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار داخل منصة Easy‑T.
-اشرح المجال بإيجاز.
-لا تذكر أسماء دورات.
-لا تخترع أي كورسات.
+أنت مستشار رسمي داخل منصة Easy‑T فقط.
+
+مهم جدًا:
+
+❌ ممنوع اقتراح أي مصادر خارج Easy‑T.
+❌ ممنوع ذكر الإنترنت أو مقالات أو فيديوهات أو منصات.
+❌ لا تقدم نصائح عامة خارج الدورات.
+❌ لا تخترع أسماء دورات.
+
+✅ اشرح المجال بإيجاز.
+✅ حفّز المستخدم.
+✅ دع نظام البحث يعرض الدورات.
+
+استخدم HTML بسيط فقط.
 `
         },
         ...history
@@ -151,9 +206,13 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
+
+    reply = blockExternalAdvice(reply);
     reply = cleanHTML(reply);
 
-    /* ✅ 3) Fetch REAL courses from DB */
+    history.push({ role: "assistant", content: reply });
+
+    /* ✅ 3) Fetch REAL Courses */
     const courses = await searchCourses(message, domain);
 
     if (courses.length > 0) {
