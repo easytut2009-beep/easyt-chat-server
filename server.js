@@ -45,9 +45,7 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* ===============================
-   ✅ Clean HTML
-================================ */
+/* =============================== */
 function cleanHTML(reply) {
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
@@ -55,13 +53,10 @@ function cleanHTML(reply) {
 
   reply = reply.replace(/\n+/g, "<br>");
 
-  // إزالة أي <br> بعد عناصر القائمة
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
 
-  reply = reply.trim();
-
-  return reply;
+  return reply.trim();
 }
 
 /* ========================================================== */
@@ -95,10 +90,7 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي ذكي.
-
-- لا تغيّر المجال.
-- استخدم HTML بسيط فقط (strong / br / ul / li).
-- لا تضع فراغات بين عناصر القائمة.
+استخدم HTML بسيط فقط (strong / br / ul / li).
 
 في النهاية:
 <state>normal</state>
@@ -134,9 +126,11 @@ app.post("/chat", async (req, res) => {
     reply = reply.trim();
 
     if (state === "recommend" && topic) {
+
       const relatedCourses = await getRelatedCourses(topic, 3);
 
       if (relatedCourses.length > 0) {
+
         reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
 
         relatedCourses.forEach(course => {
@@ -149,33 +143,33 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Styling النهائي */
+    /* ✅ الشكل النهائي المحسّن */
     reply = `
 <style>
 .chat-wrapper{
 font-size:14px;
-line-height:1.45;
+line-height:1.5;
 }
 
 .chat-wrapper ul{
-margin:4px 0;
-padding-right:18px;
+margin:6px 0;
+padding-right:20px;
 }
 
 .chat-wrapper li{
-margin:2px 0;
+margin:3px 0;
 }
 
 .course-btn{
 display:block;
 width:fit-content;
-padding:6px 12px;
+padding:10px 16px;          /* مساحة داخلية مريحة */
 background:#c40000;
 color:#fff;
 font-size:13px;
-border-radius:4px;   /* استدارة صغيرة */
+border-radius:3px;         /* استدارة صغيرة جداً */
 text-decoration:none;
-margin:6px 0;
+margin:4px 0;              /* مسافة بسيطة جداً بين الأزرار */
 }
 </style>
 
@@ -196,5 +190,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Final Layout Clean running on port " + PORT);
+  console.log("✅ Ziko Final Spacing Optimized running on port " + PORT);
 });
