@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-/* =============================== */
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -13,9 +12,7 @@ if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -54,20 +51,6 @@ function cleanHTML(reply) {
   return reply.trim();
 }
 
-function removeExternalContent(text) {
-  const forbidden = [
-    "الإنترنت","يوتيوب","فيسبوك","جروبات",
-    "مجتمعات","منصات","مواقع","مصادر خارجية"
-  ];
-
-  forbidden.forEach(word => {
-    const regex = new RegExp(word, "gi");
-    text = text.replace(regex, "");
-  });
-
-  return text;
-}
-
 function detectTopic(message) {
   if (message.includes("برمجة")) return "أساسيات البرمجة";
   if (message.includes("ويب")) return "برمجة الويب";
@@ -76,7 +59,7 @@ function detectTopic(message) {
   return "أساسيات البرمجة";
 }
 
-/* ========================================================== */
+/* =============================== */
 
 app.post("/chat", async (req, res) => {
 
@@ -105,7 +88,6 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
-لا تذكر أي مصادر خارجية.
 استخدم HTML بسيط فقط (strong / br / ul / li).
 `
         },
@@ -116,7 +98,6 @@ app.post("/chat", async (req, res) => {
     let reply = completion.choices[0].message.content;
     history.push({ role: "assistant", content: reply });
 
-    reply = removeExternalContent(reply);
     reply = cleanHTML(reply);
 
     const topic = detectTopic(message);
@@ -126,45 +107,56 @@ app.post("/chat", async (req, res) => {
 
       reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong>`;
 
+      // ✅ لف الأزرار داخل container
+      reply += `<div class="courses-container">`;
+
       relatedCourses.forEach(course => {
         if (course.url) {
           reply += `
-          <a href="${course.url}" target="_blank" class="course-btn">
-            ${course.title}
-          </a>`;
+            <a href="${course.url}" target="_blank" class="course-btn">
+              ${course.title}
+            </a>
+          `;
         }
       });
+
+      reply += `</div>`;
     }
 
     reply = `
 <style>
+
 .chat-wrapper{
 font-size:14px;
 line-height:1.45;
 }
 
-/* ✅ فصل بصري حقيقي */
+/* ✅ ده الحل الحقيقي */
+.courses-container{
+display:flex;
+flex-direction:column;
+gap:10px;   /* ✅ مسافة واضحة بين المستطيلات */
+margin-top:8px;
+}
+
 .course-btn{
 display:block;
 width:100%;
 max-width:420px;
-padding:10px 14px;
+padding:12px 14px;
 background:#c40000;
 color:#ffffff;
 font-size:14px;
-line-height:1.3;
 border-radius:8px;
 text-decoration:none;
-margin-top:8px;   /* ✅ مسافة واضحة فعلاً */
 text-align:center;
 transition:0.2s ease;
-box-shadow:0 2px 4px rgba(0,0,0,0.08); /* ✅ ده اللي هيفصلهم بصريًا */
 }
 
 .course-btn:hover{
 color:#ffd6ea;
-background:#c40000;
 }
+
 </style>
 
 <div class="chat-wrapper">
@@ -182,5 +174,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Final Fixed UI running on port " + PORT);
+  console.log("✅ AI Assistant Professional Layout running on port " + PORT);
 });
