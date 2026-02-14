@@ -143,6 +143,7 @@ font-size:14px;
 line-height:1.45;
 }
 
+/* ✅ فصل بصري حقيقي */
 .course-btn{
 display:block;
 width:100%;
@@ -152,15 +153,16 @@ background:#c40000;
 color:#ffffff;
 font-size:14px;
 line-height:1.3;
-border-radius:6px;
+border-radius:8px;
 text-decoration:none;
-margin-top:6px;   /* ✅ مسافة بين كل مستطيل والتاني */
+margin-top:8px;   /* ✅ مسافة واضحة فعلاً */
 text-align:center;
 transition:0.2s ease;
+box-shadow:0 2px 4px rgba(0,0,0,0.08); /* ✅ ده اللي هيفصلهم بصريًا */
 }
 
 .course-btn:hover{
-color:#ffd6ea;   /* ✅ وردي فاتح جدًا */
+color:#ffd6ea;
 background:#c40000;
 }
 </style>
@@ -180,5 +182,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Clean Version running on port " + PORT);
+  console.log("✅ AI Assistant Final Fixed UI running on port " + PORT);
 });
