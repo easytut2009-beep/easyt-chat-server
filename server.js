@@ -42,25 +42,20 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* ✅ تنظيف احترافي بدون حذف أول سطر */
+/* تنظيف بسيط بدون لعب في المسافات */
 function cleanHTML(reply) {
 
-  // ✅ نحذف أي أسطر فاضية في بداية النص فقط
-  reply = reply.replace(/^\s*\n+/, "");
+  reply = reply.trim(); // بس نشيل الفراغ من البداية والنهاية
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
-  // ✅ نحول الأسطر إلى <br>
   reply = reply.replace(/\n/g, "<br>");
-
-  // ✅ لو في أكتر من <br> ورا بعض نخليهم واحد
-  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
 
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
 
-  return reply.trim();
+  return reply;
 }
 
 function detectTopic(message) {
@@ -142,7 +137,18 @@ font-size:14px;
 line-height:1.45;
 }
 
-/* ✅ فصل نظيف وثابت */
+/* ✅ الحل الحقيقي للمسافة الفاضية */
+.chat-wrapper ul{
+margin-top:0;
+margin-bottom:10px;
+padding-right:18px;
+}
+
+.chat-wrapper li{
+margin-bottom:6px;
+}
+
+/* ✅ فصل الأزرار */
 .courses-container{
 display:flex;
 flex-direction:column;
@@ -185,5 +191,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Stable Professional Version running on port " + PORT);
+  console.log("✅ AI Assistant Final Stable Version running on port " + PORT);
 });
