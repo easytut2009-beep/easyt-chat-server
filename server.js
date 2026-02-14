@@ -42,10 +42,9 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* تنظيف بسيط بدون لعب في المسافات */
 function cleanHTML(reply) {
 
-  reply = reply.trim(); // بس نشيل الفراغ من البداية والنهاية
+  reply = reply.trim();
 
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
@@ -112,7 +111,8 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong>`;
+      // ✅ سطر واحد فقط قبل العنوان
+      reply += `<br><strong class="courses-title">ابدأ بأحد الدورات التالية:</strong>`;
 
       reply += `<div class="courses-container">`;
 
@@ -134,13 +134,13 @@ app.post("/chat", async (req, res) => {
 
 .chat-wrapper{
 font-size:14px;
-line-height:1.45;
+line-height:1.5;
 }
 
-/* ✅ الحل الحقيقي للمسافة الفاضية */
+/* ✅ إزالة الفراغ الافتراضي */
 .chat-wrapper ul{
 margin-top:0;
-margin-bottom:10px;
+margin-bottom:0;
 padding-right:18px;
 }
 
@@ -148,12 +148,20 @@ padding-right:18px;
 margin-bottom:6px;
 }
 
-/* ✅ فصل الأزرار */
+/* ✅ عنوان الدورات بسطر واحد فراغ */
+.courses-title{
+display:block;
+margin-top:8px;
+margin-bottom:6px;
+color:#c40000;
+}
+
+/* ✅ الأزرار */
 .courses-container{
 display:flex;
 flex-direction:column;
 gap:12px;
-margin-top:10px;
+margin-top:4px;
 }
 
 .course-btn{
@@ -191,5 +199,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Final Stable Version running on port " + PORT);
+  console.log("✅ AI Assistant Clean Layout Version running on port " + PORT);
 });
