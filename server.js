@@ -124,14 +124,16 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong><br>`;
+      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong><br><br>`;
 
       relatedCourses.forEach(course => {
         if (course.url) {
           reply += `
-          <a href="${course.url}" target="_blank" class="course-btn">
-            ${course.title}
-          </a>`;
+          <div class="course-wrapper">
+            <a href="${course.url}" target="_blank" class="course-btn">
+              ${course.title}
+            </a>
+          </div>`;
         }
       });
     }
@@ -143,7 +145,12 @@ font-size:14px;
 line-height:1.45;
 }
 
-/* ✅ المستطيلات الحمراء */
+/* ✅ wrapper بيعمل فاصل حقيقي */
+.course-wrapper{
+margin-bottom:4px;   /* ✅ مسافة واضحة وناعمة */
+}
+
+/* ✅ المستطيل الأحمر */
 .course-btn{
 display:block;
 width:100%;
@@ -155,12 +162,11 @@ font-size:14px;
 line-height:1.3;
 border-radius:6px;
 text-decoration:none;
-margin:0 auto 2px auto;  /* ✅ فاصل رفيع جدًا بين كل مستطيل */
 text-align:center;
 transition:0.2s ease;
 }
 
-/* ✅ هوفر وردي فاتح جدًا للنص فقط */
+/* ✅ هوفر وردي فاتح جدًا */
 .course-btn:hover{
 color:#ffd6ea;
 background:#c40000;
@@ -182,5 +188,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant UI Final running on port " + PORT);
+  console.log("✅ AI Assistant Final Spacing Fixed running on port " + PORT);
 });
