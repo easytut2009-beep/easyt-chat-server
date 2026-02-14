@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 
 /* ==============================
    ✅ INIT
@@ -12,6 +11,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("Missing OPENAI_API_KEY");
+}
+
+if (!process.env.SUPABASE_URL) {
+  throw new Error("Missing SUPABASE_URL");
+}
+
+if (!process.env.SUPABASE_SERVICE_KEY) {
+  throw new Error("Missing SUPABASE_SERVICE_KEY");
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -20,8 +31,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
-
-const conversations = new Map();
 
 /* ==============================
    ✅ CREATE EMBEDDING
@@ -37,151 +46,69 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH (Stable Version)
+   ✅ REGENERATE EMBEDDINGS
 ============================== */
 
-async function searchCourses(message) {
+async function regenerateEmbeddings() {
 
-  try {
+  console.log("🚀 Starting embeddings regeneration...\n");
 
-    const queryEmbedding = await createEmbedding(message);
+  const { data: courses, error } = await supabase
+    .from("courses")
+    .select("*");
 
-    const { data, error } = await supabase.rpc("match_courses", {
-      query_embedding: queryEmbedding,
-      match_count: 5
-    });
-
-    if (error) {
-      console.log("RPC ERROR:", error);
-      return [];
-    }
-
-    if (!data || data.length === 0) {
-      console.log("No data returned from RPC");
-      return [];
-    }
-
-    console.log("=== Similarities ===");
-    data.forEach(c => {
-      console.log(c.title, "→", c.similarity);
-    });
-
-    // ✅ رتب حسب الأعلى
-    const sorted = data.sort((a, b) => b.similarity - a.similarity);
-
-    const best = sorted[0];
-
-    // ✅ لو similarity ضعيفة جدًا رجّع نتيجة واحدة بس
-    if (best.similarity < 0.50) {
-      console.log("Low similarity — returning best only");
-      return [best];
-    }
-
-    // ✅ لو كويسة رجّع أفضل 2
-    return sorted.slice(0, 2);
-
-  } catch (err) {
-    console.log("Search crash:", err.message);
-    return [];
+  if (error) {
+    console.log("❌ Error fetching courses:", error.message);
+    return;
   }
+
+  console.log(`📦 Found ${courses.length} courses\n`);
+
+  for (let i = 0; i < courses.length; i++) {
+
+    const course = courses[i];
+
+    try {
+
+      const fullText = `
+      ${course.title || ""}
+      ${course.description || ""}
+      ${course.category || ""}
+      `;
+
+      const embedding = await createEmbedding(fullText);
+
+      const { error: updateError } = await supabase
+        .from("courses")
+        .update({ embedding })
+        .eq("id", course.id);
+
+      if (updateError) {
+        console.log(`❌ Failed: ${course.title}`);
+      } else {
+        console.log(`✅ Updated (${i + 1}/${courses.length}): ${course.title}`);
+      }
+
+    } catch (err) {
+      console.log(`⚠️ Error processing: ${course.title}`);
+    }
+  }
+
+  console.log("\n🎉 All embeddings regenerated successfully!");
 }
 
 /* ==============================
-   ✅ MAIN ROUTE
-============================== */
-
-app.post("/chat", async (req, res) => {
-
-  try {
-
-    let { message, session_id } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
-    }
-
-    if (!session_id) session_id = crypto.randomUUID();
-
-    if (!conversations.has(session_id)) {
-      conversations.set(session_id, []);
-    }
-
-    const history = conversations.get(session_id);
-    history.push({ role: "user", content: message });
-
-    /* ✅ Generate AI Reply */
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content: `
-أنت مستشار أكاديمي.
-اشرح المجال بوضوح.
-لا تذكر أسماء دورات.
-`
-        },
-        ...history
-      ]
-    });
-
-    let reply = completion.choices[0].message.content;
-    history.push({ role: "assistant", content: reply });
-
-    /* ✅ Get Recommendations */
-    const courses = await searchCourses(message);
-
-    if (courses.length > 0) {
-
-      reply += `<div class="courses-title">الدورات المقترحة:</div>`;
-      reply += `<div class="courses-container">`;
-
-      courses.forEach(course => {
-        reply += `
-<a href="${course.link}" target="_blank" class="course-btn">
-${course.title}
-</a>`;
-      });
-
-      reply += `</div>`;
-    }
-
-    reply = `
-<style>
-.chat-wrapper{font-size:14px;line-height:1.6;}
-.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
-.courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{
-display:block;
-width:100%;
-max-width:420px;
-padding:12px 14px;
-background:#c40000;
-color:#fff;
-font-size:14px;
-border-radius:8px;
-text-decoration:none;
-text-align:center;
-}
-</style>
-<div class="chat-wrapper">${reply}</div>
-`;
-
-    return res.json({ reply, session_id });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ reply: "حدث خطأ مؤقت." });
-  }
-});
-
-/* ==============================
-   ✅ START SERVER
+   ✅ START SERVER (ONE TIME RUN)
 ============================== */
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+
   console.log("✅ Server Running on port " + PORT);
+  
+  await regenerateEmbeddings();
+
+  console.log("\n✅ Done. Stopping server...");
+  process.exit(); // يقفل السيرفر بعد ما يخلص
 });
