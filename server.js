@@ -48,17 +48,12 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ Clean HTML + منع تكبير الخط
+   ✅ Clean HTML
 ================================ */
 function cleanHTML(reply) {
 
-  // منع أي عناوين كبيرة
-  reply = reply.replace(/<h1.*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h1>/gi, "</strong>");
-  reply = reply.replace(/<h2.*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h2>/gi, "</strong>");
-  reply = reply.replace(/<h3.*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h3>/gi, "</strong>");
+  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
   reply = reply.replace(/\n{2,}/g, "\n");
   reply = reply.trim();
@@ -92,20 +87,25 @@ app.post("/chat", async (req, res) => {
 
     const history = conversations.get(session_id);
 
-    /* ✅ إضافة رسالة المستخدم للتاريخ */
+    /* ✅ أضف رسالة المستخدم */
     history.push({ role: "user", content: message });
 
-    /* ✅ النظام الأساسي */
+    /* ===============================
+       ✅ System Prompt احترافي
+    =============================== */
+
     const systemPrompt = `
 أنت مستشار أكاديمي محترف.
-تابع سياق المحادثة ولا تعتبر كل رسالة بداية جديدة.
-إذا قال المستخدم "أنا مبتدئ" أو "أنا محترف"
-اعتبرها إجابة على سؤالك السابق.
-حلل السؤال بذكاء.
-اجعل الرد رزِين، عملي، مختصر.
-لا تستخدم عناوين كبيرة.
-لا تستخدم h1 أو h2.
-استخدم HTML بسيط فقط.
+
+قواعد مهمة:
+- تابع سياق المحادثة ولا تبدأ من جديد.
+- إذا قال المستخدم "أنا مبتدئ" أو "أنا محترف" فاعتبرها إجابة على سؤالك السابق.
+- إذا كنت ما زلت تجمع معلومات فلا تقترح أي دورات.
+- اقترح دورات فقط عندما تقدم توصية نهائية واضحة.
+- لا تستخدم h1 أو h2.
+- لا تكبر الخط.
+- استخدم HTML بسيط فقط (strong / br / ul / li).
+- اجعل الرد رزِين، عملي، مختصر.
 `;
 
     const completion = await openai.chat.completions.create({
@@ -119,32 +119,46 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    /* ✅ حفظ رد المساعد في الذاكرة */
+    /* ✅ حفظ رد المساعد */
     history.push({ role: "assistant", content: reply });
 
-    /* ✅ ترشيحات ذكية حسب آخر رسالة */
-    let searchKeyword = message;
+    /* ===============================
+       ✅ تحديد هل الرد توصية نهائية؟
+    =============================== */
 
-    if (reply.includes("Python")) searchKeyword = "Python";
-    else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
-    else if (reply.includes("تصميم")) searchKeyword = "تصميم";
+    const shouldRecommend =
+      reply.includes("أنصح") ||
+      reply.includes("ابدأ") ||
+      reply.includes("أفضل مسار") ||
+      reply.includes("الخيار الأنسب") ||
+      reply.includes("يمكنك دراسة");
 
-    const relatedCourses = await getRelatedCourses(searchKeyword, 3);
+    if (shouldRecommend) {
 
-    if (relatedCourses.length > 0) {
+      let searchKeyword = message;
 
-      reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+      if (reply.includes("Python")) searchKeyword = "Python";
+      else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
+      else if (reply.includes("تصميم")) searchKeyword = "تصميم";
+      else if (reply.includes("فوتوشوب")) searchKeyword = "فوتوشوب";
 
-      relatedCourses.forEach(course => {
-        if (course.url) {
-          reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
-        }
-      });
+      const relatedCourses = await getRelatedCourses(searchKeyword, 3);
+
+      if (relatedCourses.length > 0) {
+
+        reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+
+        relatedCourses.forEach(course => {
+          if (course.url) {
+            reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+          }
+        });
+      }
     }
 
     reply = cleanHTML(reply);
 
-    /* ✅ منع تكبير الخط نهائيًا */
+    /* ✅ منع تكبير الخط */
     reply = `
 <style>
 .course-btn{
@@ -152,7 +166,7 @@ display:inline-block;
 padding:6px 10px;
 background:#c40000;
 color:#fff;
-font-size:12px;
+font-size:12px !important;
 border-radius:6px;
 text-decoration:none;
 margin-top:4px;
@@ -182,5 +196,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Server running on port " + PORT);
+  console.log("✅ Ziko running on port " + PORT);
 });
