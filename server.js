@@ -33,6 +33,7 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text,
   });
+
   return response.data[0].embedding;
 }
 
@@ -86,33 +87,38 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "user", content: message });
 
     /* ============================================
-       ✅ GPT Call
+       ✅ GPT Call (Context Locked Version)
     ============================================ */
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
         {
           role: "system",
           content: `
 أنت مستشار أكاديمي ذكي وطبيعي.
 
-مهم:
-- تابع سياق المحادثة.
+قواعد صارمة:
+- تابع المجال الحالي في المحادثة بدقة.
+- لا تغيّر المجال إطلاقاً.
+- إذا كان الحديث عن التصميم، ابقَ في التصميم فقط.
+- إذا كان الحديث عن البرمجة، ابقَ في البرمجة فقط.
+- لا تفترض أن كل مبتدئ يجب أن يتعلم Python.
+- إذا كان المستخدم مبتدئ داخل نفس المجال، اقترح نقطة بداية من نفس المجال فقط.
 - لا تسأل أكثر من سؤال واحد متتالي.
-- إذا كان المستخدم مبتدئ وغير محدد، اقترح مسار واضح (مثلاً Python).
-- إذا وصلت لتوصية واضحة لمسار أو لغة أو مجال، اعتبرها توصية نهائية.
+- كن مباشر وطبيعي بدون رسمية زائدة.
+- استخدم HTML بسيط فقط (strong / br / ul / li).
 
 في نهاية الرد أضف:
 <state>normal</state>
 أو
 <state>recommend</state>
 
-ولو كانت recommend أضف أيضًا:
-<topic>اسم الموضوع أو اللغة المقترحة فقط</topic>
+إذا كانت recommend أضف أيضاً:
+<topic>اسم المجال أو المسار المقترح فقط</topic>
 
-لا تشرح أي شيء عن هذه الوسوم.
+لا تشرح الوسوم.
 `
         },
         ...history
@@ -144,7 +150,7 @@ app.post("/chat", async (req, res) => {
     reply = reply.trim();
 
     /* ============================================
-       ✅ لو توصية → ابحث بالموضوع نفسه
+       ✅ Recommendation Based on Exact Topic
     ============================================ */
 
     if (state === "recommend" && topic) {
@@ -202,5 +208,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Smart Recommendation Mode running on port " + PORT);
+  console.log("✅ Ziko Context Locked Mode running on port " + PORT);
 });
