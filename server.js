@@ -44,7 +44,6 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* =============================== */
 function cleanHTML(reply) {
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
@@ -56,14 +55,8 @@ function cleanHTML(reply) {
 
 function removeExternalContent(text) {
   const forbidden = [
-    "الإنترنت",
-    "يوتيوب",
-    "فيسبوك",
-    "جروبات",
-    "مجتمعات",
-    "منصات",
-    "مواقع",
-    "مصادر خارجية"
+    "الإنترنت","يوتيوب","فيسبوك","جروبات","مجتمعات",
+    "منصات","مواقع","مصادر خارجية"
   ];
 
   forbidden.forEach(word => {
@@ -111,12 +104,8 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
-
-قواعد:
-- لا تذكر الإنترنت أو أي مصادر خارجية.
-- لا تذكر مجتمعات أو جروبات.
-- قدم خطوات تعليمية عملية فقط.
-- استخدم HTML بسيط (strong / br / ul / li).
+لا تذكر أي مصادر خارجية.
+استخدم HTML بسيط فقط (strong / br / ul / li).
 `
         },
         ...history
@@ -134,12 +123,14 @@ app.post("/chat", async (req, res) => {
 
     if (relatedCourses.length > 0) {
 
-      // ✅ سطر فاضي قبل العنوان
-      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong>`;
+      reply += `<br><br><strong style="color:#c40000;">ابدأ بأحد الدورات التالية:</strong><br>`;
 
-      relatedCourses.forEach(course => {
+      relatedCourses.forEach((course, index) => {
         if (course.url) {
-          reply += `<a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+          reply += `
+          <a href="${course.url}" target="_blank" class="course-btn ${index !== 0 ? 'with-divider' : ''}">
+            ${course.title}
+          </a>`;
         }
       });
     }
@@ -151,16 +142,6 @@ font-size:14px;
 line-height:1.45;
 }
 
-.chat-wrapper ul{
-margin:6px 0;
-padding-right:20px;
-}
-
-.chat-wrapper li{
-margin:2px 0;
-}
-
-/* ✅ المستطيل أحمر ثابت */
 .course-btn{
 display:block;
 width:100%;
@@ -172,13 +153,19 @@ font-size:14px;
 line-height:1.3;
 border-radius:6px;
 text-decoration:none;
-margin:3px auto;   /* ✅ مسافة بسيطة جدًا وواضحة */
+margin:4px auto;
 text-align:center;
 transition:0.2s ease;
 }
 
+/* ✅ فاصل رفيع جدًا بين المستطيلات */
+.course-btn.with-divider{
+border-top:1px solid #ffffff22;
+}
+
+/* ✅ هوفر بلون وردي فاتح جدًا للنص فقط */
 .course-btn:hover{
-color:#ff4d8d;
+color:#ffb6d9;
 background:#c40000;
 }
 </style>
@@ -198,5 +185,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Final Mode running on port " + PORT);
+  console.log("✅ AI Assistant Updated UI running on port " + PORT);
 });
