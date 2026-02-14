@@ -22,7 +22,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-/* =============================== */
 const conversations = new Map();
 
 /* =============================== */
@@ -81,6 +80,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
+    /* ✅ SYSTEM MESSAGE مقفول على easyT */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -88,10 +88,20 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي ذكي.
-استخدم HTML بسيط فقط (strong / br / ul / li).
+أنت المساعد الذكي الرسمي داخل منصة easyT التعليمية فقط.
 
-في النهاية:
+قواعد صارمة:
+
+- أنت تعمل داخل easyT فقط.
+- لا تذكر أي منصات تعليمية أخرى إطلاقاً.
+- لا تقترح Coursera أو Udemy أو Codecademy أو أي منصة منافسة.
+- جميع التوصيات يجب أن تكون من محتوى easyT فقط.
+- لا تقل "يمكنك التعلم عبر الإنترنت".
+- لا تشير لأي موقع خارجي.
+- استخدم HTML بسيط فقط (strong / br / ul / li).
+- كن احترافي ومباشر.
+
+في النهاية أضف:
 <state>normal</state>
 أو
 <state>recommend</state>
@@ -124,13 +134,14 @@ app.post("/chat", async (req, res) => {
 
     reply = reply.trim();
 
+    /* ✅ جلب كورسات easyT فقط */
     if (state === "recommend" && topic) {
 
       const relatedCourses = await getRelatedCourses(topic, 3);
 
       if (relatedCourses.length > 0) {
 
-        reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+        reply += `<br><strong style="color:#c40000;">يمكنك الدراسة داخل easyT:</strong>`;
 
         relatedCourses.forEach(course => {
           if (course.url) {
@@ -142,7 +153,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ الشكل المضبوط النهائي */
+    /* ✅ الشكل النهائي المتناسق */
     reply = `
 <style>
 .chat-wrapper{
@@ -159,18 +170,20 @@ padding-right:20px;
 margin:2px 0;
 }
 
-/* ✅ الزرار الأحمر */
+/* ✅ أزرار easyT الرسمية */
 .course-btn{
 display:block;
-width:fit-content;
-padding:12px 18px;     /* هوامش داخلية مريحة */
+width:100%;
+max-width:420px;
+padding:12px 16px;
 background:#c40000;
 color:#fff;
 font-size:14px;
-line-height:1.2;       /* تصغير المسافة بين السطور داخل الزرار */
+line-height:1.25;
 border-radius:6px;
 text-decoration:none;
-margin:1px 0;          /* مسافة صغيرة جداً بين الاقتراحات */
+margin:3px auto;
+text-align:center;
 }
 </style>
 
@@ -191,5 +204,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Perfect Spacing Mode running on port " + PORT);
+  console.log("✅ easyT Official AI Assistant running on port " + PORT);
 });
