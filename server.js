@@ -54,31 +54,18 @@ async function detectIntent(message) {
       {
         role: "system",
         content: `
-أنت مصنف نوايا احترافي.
+أنت مصنف نوايا.
 
-صنّف رسالة المستخدم إلى أحد الأنواع التالية فقط:
-
-learning_intent
-(يريد تعلم شيء، يفكر يدرس مجال، يسأل يبدأ منين)
-
-preference_statement
-(يذكر تفضيل شخصي مثل "أنا بحب التصميم")
-
-comparison
-(يقارن بين مجالين أو يسأل أيهما أفضل)
-
-informational_question
-(يسأل عن تعريف أو شرح فقط)
-
+learning_intent: يريد تعلم أو دراسة مجال
+comparison: يقارن بين مجالين
+informational_question: شرح فقط
+preference_statement: يذكر تفضيل شخصي
 other
 
 أعد JSON فقط بالشكل:
-
 {
   "intent": "learning_intent"
 }
-
-لا تكتب أي شيء خارج JSON.
 `
       },
       { role: "user", content: message }
@@ -87,8 +74,10 @@ other
 
   try {
     const result = JSON.parse(completion.choices[0].message.content);
+    console.log("Intent:", result.intent);
     return result.intent;
   } catch {
+    console.log("Intent parsing failed");
     return "other";
   }
 }
@@ -113,12 +102,10 @@ async function searchCourses(message) {
       return [];
     }
 
-    // فلترة حسب similarity لو موجودة
-    const filtered = (data || []).filter(course =>
-      !course.similarity || course.similarity > 0.7
-    );
+    console.log("Search results:", data);
 
-    return filtered;
+    // ✅ بدون فلترة similarity عشان نتأكد إنها بترجع
+    return data || [];
 
   } catch (err) {
     console.log("Search crash:", err.message);
@@ -182,11 +169,8 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي.
-
-اشرح المجال بوضوح وبشكل بسيط.
-
-لا تكتب قائمة دورات.
-لا تذكر أسماء دورات محددة.
+اشرح المجال بشكل واضح.
+لا تذكر أسماء دورات.
 `
         },
         ...history
@@ -201,9 +185,8 @@ app.post("/chat", async (req, res) => {
     /* ✅ 3️⃣ Recommendation Logic */
     let courses = [];
 
-    if (intent === "learning_intent" || intent === "comparison") {
-      courses = await searchCourses(message);
-    }
+    // ✅ مؤقتًا: هنجيب اقتراحات في كل الحالات عشان نتأكد إن البحث شغال
+    courses = await searchCourses(message);
 
     if (courses.length > 0) {
 
