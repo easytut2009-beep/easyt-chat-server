@@ -22,10 +22,10 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   ✅ AI INTENT ANALYZER (يفهم الطلب بذكاء)
+   ✅ DOMAIN DETECTION INTELLIGENT
 ===================================================== */
 
-async function analyzeIntent(message, history) {
+async function detectDomainAI(message) {
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -34,37 +34,29 @@ async function analyzeIntent(message, history) {
       {
         role: "system",
         content: `
-حلل رسالة المستخدم وحدد:
-1- المجال الأساسي (Programming / Web / Mobile / Data / Design / Language / Other)
-2- المستوى (Beginner / Intermediate / Advanced)
-3- كلمات مفتاحية دقيقة
+حدد المجال الرئيسي فقط من القائمة التالية:
+programming
+web
+mobile
+data
+design
+leadership
+language
+it
+general
 
-أعد الرد بصيغة JSON فقط:
-{
-  "domain": "",
-  "level": "",
-  "keywords": ""
-}
+أعد كلمة واحدة فقط.
 `
       },
-      ...history.slice(-6),
       { role: "user", content: message }
     ]
   });
 
-  try {
-    return JSON.parse(completion.choices[0].message.content);
-  } catch {
-    return {
-      domain: "Programming",
-      level: "Beginner",
-      keywords: message
-    };
-  }
+  return completion.choices[0].message.content.trim().toLowerCase();
 }
 
 /* =====================================================
-   ✅ EMBEDDING SEARCH SMART
+   ✅ EMBEDDING
 ===================================================== */
 
 async function createEmbedding(text) {
@@ -75,13 +67,23 @@ async function createEmbedding(text) {
   return response.data[0].embedding;
 }
 
-async function searchCoursesSmart(queryText, limit = 4) {
+/* =====================================================
+   ✅ SMART FILTERED SEARCH
+===================================================== */
 
-  const embedding = await createEmbedding(queryText);
+async function searchCoursesSmart(message, limit = 4) {
 
-  const { data } = await supabase.rpc("match_ai_knowledge", {
+  const domain = await detectDomainAI(message);
+
+  if (domain === "general") return [];
+
+  const embedding = await createEmbedding(message);
+
+  const { data } = await supabase.rpc("match_ai_knowledge_filtered", {
     query_embedding: embedding,
-    match_count: limit
+    match_count: limit,
+    filter_domain: domain,
+    similarity_threshold: 0.75
   });
 
   return data || [];
@@ -131,31 +133,18 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ تحليل ذكي */
-    const analysis = await analyzeIntent(message, history);
-
-    const smartSearchQuery = `
-المجال: ${analysis.domain}
-المستوى: ${analysis.level}
-الكلمات المفتاحية: ${analysis.keywords}
-`;
-
-    /* ✅ بحث دقيق مطابق للطلب */
-    const relatedCourses = await searchCoursesSmart(smartSearchQuery, 4);
-
     /* ✅ رد ذكي سياقي */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي ذكي جدًا.
-افهم سياق المستخدم جيدًا.
-قدم نصيحة دقيقة ومختصرة.
+أنت مستشار أكاديمي ذكي ومحترف.
+افهم طلب المستخدم بدقة.
+لا تقترح تقنيات أو لغات غير مطلوبة.
 استخدم HTML بسيط فقط (strong / br / ul / li).
-لا تذكر لغات أو تقنيات غير مطلوبة.
 `
         },
         ...history
@@ -167,19 +156,19 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ إضافة الكورسات المطابقة فقط */
+    /* ✅ بحث دقيق */
+    const relatedCourses = await searchCoursesSmart(message, 4);
+
     if (relatedCourses.length > 0) {
 
       reply += `<div class="courses-title">الدورات المطابقة لطلبك:</div>`;
       reply += `<div class="courses-container">`;
 
       relatedCourses.forEach(course => {
-        if (course.url) {
-          reply += `
+        reply += `
 <a href="${course.url}" target="_blank" class="course-btn">
 ${course.title}
 </a>`;
-        }
       });
 
       reply += `</div>`;
@@ -252,5 +241,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ultra Smart AI Assistant Running on port " + PORT);
+  console.log("✅ Ultra Intelligent AI Assistant Running on port " + PORT);
 });
