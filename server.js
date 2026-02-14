@@ -169,15 +169,14 @@ padding:10px 14px;
 background:#c40000;
 color:#ffffff;
 font-size:14px;
-line-height:1.2;
+line-height:1.3;
 border-radius:6px;
 text-decoration:none;
-margin:0.5px auto;  /* ✅ ربع المسافة تقريبًا */
+margin:3px auto;   /* ✅ مسافة بسيطة جدًا وواضحة */
 text-align:center;
 transition:0.2s ease;
 }
 
-/* ✅ الهوفر يغير لون النص فقط */
 .course-btn:hover{
 color:#ff4d8d;
 background:#c40000;
