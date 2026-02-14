@@ -33,7 +33,6 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text,
   });
-
   return response.data[0].embedding;
 }
 
@@ -49,15 +48,13 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ Clean HTML
+   ✅ Clean HTML (Compact)
 ================================ */
 function cleanHTML(reply) {
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
-  reply = reply.replace(/\n{2,}/g, "\n");
+  reply = reply.replace(/\n+/g, "<br>");
   reply = reply.trim();
-  reply = reply.replace(/\n/g, "<br>");
-  reply = reply.replace(/<br><br>/g, "<br>");
   return reply;
 }
 
@@ -87,7 +84,7 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "user", content: message });
 
     /* ============================================
-       ✅ GPT Call (Context Locked Version)
+       ✅ GPT Call (Context Locked)
     ============================================ */
 
     const completion = await openai.chat.completions.create({
@@ -150,7 +147,7 @@ app.post("/chat", async (req, res) => {
     reply = reply.trim();
 
     /* ============================================
-       ✅ Recommendation Based on Exact Topic
+       ✅ Recommendation Search (Exact Topic)
     ============================================ */
 
     if (state === "recommend" && topic) {
@@ -171,26 +168,45 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
+    /* ============================================
+       ✅ Ultra Compact Style
+    ============================================ */
+
     reply = `
 <style>
 .course-btn{
 display:inline-block;
-padding:6px 10px;
+padding:4px 8px;
 background:#c40000;
 color:#fff;
 font-size:12px !important;
-border-radius:6px;
+border-radius:5px;
 text-decoration:none;
-margin-top:4px;
+margin-top:2px;
 }
+
 .chat-wrapper{
 font-size:14px !important;
-line-height:1.6 !important;
+line-height:1.3 !important;
 }
+
 .chat-wrapper *{
 font-size:14px !important;
+margin:0 !important;
+padding:0 !important;
+}
+
+.chat-wrapper ul{
+margin:0 !important;
+padding-right:16px !important;
+}
+
+.chat-wrapper li{
+margin:0 !important;
+line-height:1.3 !important;
 }
 </style>
+
 <div class="chat-wrapper">
 ${reply}
 </div>
@@ -208,5 +224,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Context Locked Mode running on port " + PORT);
+  console.log("✅ Ziko Context Locked Ultra Compact Mode running on port " + PORT);
 });
