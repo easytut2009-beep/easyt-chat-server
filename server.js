@@ -21,7 +21,12 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Create Embedding
+   ✅ Conversation Memory
+================================ */
+const conversations = new Map();
+
+/* ===============================
+   ✅ Embedding
 ================================ */
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
@@ -31,9 +36,6 @@ async function createEmbedding(text) {
   return response.data[0].embedding;
 }
 
-/* ===============================
-   ✅ Get Related Courses
-================================ */
 async function getRelatedCourses(query, limit = 3) {
   const embedding = await createEmbedding(query);
 
@@ -46,46 +48,17 @@ async function getRelatedCourses(query, limit = 3) {
 }
 
 /* ===============================
-   ✅ AI Intent Detection
-================================ */
-async function detectIntent(message) {
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content: `
-صنف الرسالة إلى واحدة فقط من:
-identity
-consult
-search
-
-identity = سؤال عن من أنت
-consult = سؤال عام يحتاج تحليل وتوجيه
-search = سؤال محدد عن دورة أو موضوع
-
-ارجع كلمة واحدة فقط.
-`
-      },
-      { role: "user", content: message }
-    ]
-  });
-
-  return completion.choices[0].message.content.trim().toLowerCase();
-}
-
-/* ===============================
-   ✅ Clean HTML (منع الفراغات)
+   ✅ Clean HTML + منع تكبير الخط
 ================================ */
 function cleanHTML(reply) {
 
-  // منع أي عناوين ضخمة
+  // منع أي عناوين كبيرة
   reply = reply.replace(/<h1.*?>/gi, "<strong>");
   reply = reply.replace(/<\/h1>/gi, "</strong>");
   reply = reply.replace(/<h2.*?>/gi, "<strong>");
   reply = reply.replace(/<\/h2>/gi, "</strong>");
+  reply = reply.replace(/<h3.*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h3>/gi, "</strong>");
 
   reply = reply.replace(/\n{2,}/g, "\n");
   reply = reply.trim();
@@ -96,8 +69,8 @@ function cleanHTML(reply) {
 }
 
 /* ========================================================== */
-/* ✅ Chat Route */
-/* ========================================================== */
+/* ✅ Chat Route
+========================================================== */
 
 app.post("/chat", async (req, res) => {
 
@@ -113,122 +86,65 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const intent = await detectIntent(message);
-    let reply = "";
-    let searchKeyword = message;
+    if (!conversations.has(session_id)) {
+      conversations.set(session_id, []);
+    }
 
-    /* ===============================
-       ✅ Identity
-    =============================== */
+    const history = conversations.get(session_id);
 
-    if (intent === "identity") {
+    /* ✅ إضافة رسالة المستخدم للتاريخ */
+    history.push({ role: "user", content: message });
 
-      reply = `
-<strong style="color:#c40000;">مرحبًا 👋</strong><br>
-أنا <strong>زيكو</strong> مساعد easyT الذكي.<br>
-مهمتي مساعدتك في اختيار مسارك التعليمي المناسب.
+    /* ✅ النظام الأساسي */
+    const systemPrompt = `
+أنت مستشار أكاديمي محترف.
+تابع سياق المحادثة ولا تعتبر كل رسالة بداية جديدة.
+إذا قال المستخدم "أنا مبتدئ" أو "أنا محترف"
+اعتبرها إجابة على سؤالك السابق.
+حلل السؤال بذكاء.
+اجعل الرد رزِين، عملي، مختصر.
+لا تستخدم عناوين كبيرة.
+لا تستخدم h1 أو h2.
+استخدم HTML بسيط فقط.
 `;
 
-    }
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...history
+      ]
+    });
 
-    /* ===============================
-       ✅ Consult (تحليل ذكي)
-    =============================== */
+    let reply = completion.choices[0].message.content;
 
-    else if (intent === "consult") {
+    /* ✅ حفظ رد المساعد في الذاكرة */
+    history.push({ role: "assistant", content: reply });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.4,
-        messages: [
-          {
-            role: "system",
-            content: `
-أنت مستشار أكاديمي محترف في البرمجة.
-حلل مستوى السائل أولًا.
-لو السؤال عام مثل "عاوز أدرس برمجة":
-- اعتبره مبتدئ.
-- اقترح Python أو Web (HTML/CSS/JS).
-- لا تقترح Ruby أو Flutter إلا إذا طُلب.
-اجعل الرد رزِين، عملي، مختصر.
-بدون عناوين كبيرة.
-استخدم HTML بسيط فقط.
-`
-          },
-          { role: "user", content: message }
-        ]
+    /* ✅ ترشيحات ذكية حسب آخر رسالة */
+    let searchKeyword = message;
+
+    if (reply.includes("Python")) searchKeyword = "Python";
+    else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
+    else if (reply.includes("تصميم")) searchKeyword = "تصميم";
+
+    const relatedCourses = await getRelatedCourses(searchKeyword, 3);
+
+    if (relatedCourses.length > 0) {
+
+      reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+
+      relatedCourses.forEach(course => {
+        if (course.url) {
+          reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+        }
       });
-
-      reply = completion.choices[0].message.content;
-
-      // استخراج كلمة بحث ذكية للترشيح
-      if (reply.includes("Python")) searchKeyword = "Python";
-      else if (reply.includes("JavaScript")) searchKeyword = "JavaScript";
-      else searchKeyword = message;
-    }
-
-    /* ===============================
-       ✅ Search (محدد)
-    =============================== */
-
-    else {
-
-      const courses = await getRelatedCourses(message, 3);
-
-      if (!courses.length) {
-        reply = "لم أجد نتائج مطابقة.";
-      } else {
-
-        const contextText = courses
-          .map(c => `عنوان: ${c.title}\nوصف: ${c.content.slice(0,250)}`)
-          .join("\n\n");
-
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          temperature: 0.3,
-          messages: [
-            {
-              role: "system",
-              content: `
-أجب اعتمادًا على السياق فقط.
-لا تخترع معلومات.
-استخدم HTML بسيط.
-بدون عناوين كبيرة.
-`
-            },
-            {
-              role: "user",
-              content: `السياق:\n${contextText}\n\nالسؤال:\n${message}`
-            }
-          ]
-        });
-
-        reply = completion.choices[0].message.content;
-      }
-    }
-
-    /* ===============================
-       ✅ Recommendations
-    =============================== */
-
-    if (intent !== "identity") {
-
-      const relatedCourses = await getRelatedCourses(searchKeyword, 3);
-
-      if (relatedCourses.length > 0) {
-
-        reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
-
-        relatedCourses.forEach(course => {
-          if (course.url) {
-            reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
-          }
-        });
-      }
     }
 
     reply = cleanHTML(reply);
 
+    /* ✅ منع تكبير الخط نهائيًا */
     reply = `
 <style>
 .course-btn{
@@ -241,8 +157,15 @@ border-radius:6px;
 text-decoration:none;
 margin-top:4px;
 }
+.chat-wrapper{
+font-size:14px !important;
+line-height:1.6 !important;
+}
+.chat-wrapper *{
+font-size:14px !important;
+}
 </style>
-<div style="font-size:14px;line-height:1.6;">
+<div class="chat-wrapper">
 ${reply}
 </div>
 `;
