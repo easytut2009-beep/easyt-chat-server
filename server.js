@@ -142,12 +142,12 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ الشكل النهائي المطابق للصورة */
+    /* ✅ الشكل المضبوط النهائي */
     reply = `
 <style>
 .chat-wrapper{
 font-size:14px;
-line-height:1.5;
+line-height:1.45;
 }
 
 .chat-wrapper ul{
@@ -156,19 +156,21 @@ padding-right:20px;
 }
 
 .chat-wrapper li{
-margin:3px 0;
+margin:2px 0;
 }
 
+/* ✅ الزرار الأحمر */
 .course-btn{
 display:block;
 width:fit-content;
-padding:10px 18px;
+padding:12px 18px;     /* هوامش داخلية مريحة */
 background:#c40000;
 color:#fff;
 font-size:14px;
-border-radius:6px;   /* نفس الشكل في الصورة */
+line-height:1.2;       /* تصغير المسافة بين السطور داخل الزرار */
+border-radius:6px;
 text-decoration:none;
-margin:2px 0;        /* مسافة صغيرة جدًا بين الاقتراحات */
+margin:1px 0;          /* مسافة صغيرة جداً بين الاقتراحات */
 }
 </style>
 
@@ -189,5 +191,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Final Pixel Perfect running on port " + PORT);
+  console.log("✅ Ziko Perfect Spacing Mode running on port " + PORT);
 });
