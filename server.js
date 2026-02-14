@@ -32,19 +32,20 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   ✅ DOMAIN DETECTION
+   ✅ DOMAIN DETECTION (AI)
 ===================================================== */
 
-async function detectDomain(message) {
+async function detectDomain(message, history) {
+  try {
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content: `
-حدد المجال فقط من القائمة التالية:
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+حدد المجال الرئيسي فقط من القائمة التالية:
 
 programming
 web
@@ -56,18 +57,24 @@ language
 it
 general
 
-أعد كلمة واحدة فقط.
+أعد كلمة واحدة فقط بدون شرح.
 `
-      },
-      { role: "user", content: message }
-    ]
-  });
+        },
+        ...history.slice(-4),
+        { role: "user", content: message }
+      ]
+    });
 
-  return completion.choices[0].message.content.trim().toLowerCase();
+    return completion.choices[0].message.content.trim().toLowerCase();
+
+  } catch (err) {
+    console.error("Domain detection error:", err.message);
+    return "general";
+  }
 }
 
 /* =====================================================
-   ✅ EMBEDDING
+   ✅ Embedding
 ===================================================== */
 
 async function createEmbedding(text) {
@@ -75,76 +82,57 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text
   });
+
   return response.data[0].embedding;
 }
 
 /* =====================================================
-   ✅ SMART SEARCH + FALLBACK
+   ✅ Smart Search (Easy‑T Only)
 ===================================================== */
 
 async function searchCourses(message, domain) {
+
+  if (domain === "general") return [];
 
   const embedding = await createEmbedding(message);
 
   const { data, error } = await supabase.rpc("smart_course_search", {
     query_embedding: embedding,
     filter_domain: domain,
-    match_count: 5,
-    similarity_threshold: 0.65
+    match_count: 4,
+    similarity_threshold: 0.78
   });
 
   if (error) {
-    console.error("RPC error:", error.message);
+    console.error("Search error:", error.message);
+    return [];
   }
 
-  if (!data || data.length === 0) {
-
-    const { data: fallback } = await supabase
-      .from("courses")
-      .select("title, url")
-      .limit(5);
-
-    return fallback ?? [];
-  }
-
-  return data ?? [];
+  return data || [];
 }
 
 /* =====================================================
-   ✅ BLOCK ANY EXTERNAL ADVICE
+   ✅ Clean HTML
 ===================================================== */
 
-function blockExternalAdvice(text) {
+function cleanHTML(reply) {
 
-  const forbidden = [
-    "الإنترنت",
-    "مقالات",
-    "فيديوهات",
-    "يوتيوب",
-    "منصات",
-    "موارد",
-    "عبر الإنترنت",
-    "البحث",
-    "جوجل"
-  ];
+  if (!reply) return "";
 
-  forbidden.forEach(word => {
-    const regex = new RegExp(word, "gi");
-    text = text.replace(regex, "");
-  });
+  reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
+  reply = reply.replace(/\n\s*\n+/g, "\n");
 
-  return text;
-}
+  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
-/* =====================================================
-   ✅ CLEAN HTML
-===================================================== */
+  reply = reply.replace(/\n/g, "<br>");
+  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
 
-function cleanHTML(text) {
-  if (!text) return "";
-  text = text.replace(/\n/g, "<br>");
-  text = text.replace(/(<br>\s*){2,}/g, "<br>");
-  return text.trim();
+  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
+  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
+  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
+
+  return reply.trim();
 }
 
 /* =====================================================
@@ -170,8 +158,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    const domain = await detectDomain(message);
+    /* ✅ 1) Detect Domain */
+    const domain = await detectDomain(message, history);
 
+    /* ✅ 2) Generate Smart Response (Easy‑T Only) */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -179,20 +169,15 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار رسمي داخل منصة Easy‑T فقط.
+أنت مستشار أكاديمي رسمي داخل منصة Easy‑T فقط.
 
-مهم جدًا:
+❌ ممنوع ذكر أي منصة خارجية (Udemy, Coursera, YouTube, إلخ).
+❌ لا تقترح التعلم خارج Easy‑T.
+✅ اعتمد فقط على الدورات المتاحة داخل Easy‑T.
+✅ لا تذكر مواقع أخرى.
+✅ لا تقدم نصائح عامة خارج نظام الدورات.
 
-❌ ممنوع اقتراح أي مصادر خارج Easy‑T.
-❌ ممنوع ذكر الإنترنت أو مقالات أو فيديوهات أو منصات.
-❌ لا تقدم نصائح عامة خارج الدورات.
-❌ لا تخترع أسماء دورات.
-
-✅ اشرح المجال بإيجاز.
-✅ حفّز المستخدم.
-✅ دع نظام البحث يعرض الدورات.
-
-استخدم HTML بسيط فقط.
+استخدم HTML بسيط فقط (strong / br / ul / li).
 `
         },
         ...history
@@ -200,17 +185,16 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
-    reply = blockExternalAdvice(reply);
-    reply = cleanHTML(reply);
-
     history.push({ role: "assistant", content: reply });
 
+    reply = cleanHTML(reply);
+
+    /* ✅ 3) Smart Course Matching */
     const courses = await searchCourses(message, domain);
 
-    if (courses && courses.length > 0) {
+    if (courses.length > 0) {
 
-      reply += `<div class="courses-title">استعرض الدورات المتاحة:</div>`;
+      reply += `<div class="courses-title">الدورات المتاحة داخل Easy‑T:</div>`;
       reply += `<div class="courses-container">`;
 
       courses.forEach(course => {
@@ -223,26 +207,16 @@ ${course.title}
       reply += `</div>`;
     }
 
+    /* ✅ Styling */
     reply = `
 <style>
-.chat-wrapper{font-size:14px;line-height:1.6;}
-.courses-title{margin-top:16px;margin-bottom:10px;color:#c40000;font-weight:bold;}
+.chat-wrapper{font-size:14px;line-height:1.5;}
+.chat-wrapper ul{margin:0;padding-right:18px;}
+.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
+.chat-wrapper li br{display:none;}
+.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
 .courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{
-display:block;
-width:100%;
-max-width:420px;
-padding:12px 14px;
-background:#c40000;
-color:#fff;
-border-radius:8px;
-text-decoration:none;
-text-align:center;
-font-size:14px;
-}
-.course-btn:hover{
-background:#a00000;
-}
+.course-btn{display:block;width:100%;max-width:420px;padding:12px 14px;background:#c40000;color:#fff;font-size:14px;border-radius:8px;text-decoration:none;text-align:center;}
 </style>
 <div class="chat-wrapper">
 ${reply}
