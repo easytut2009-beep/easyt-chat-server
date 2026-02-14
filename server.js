@@ -28,7 +28,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ EMBEDDING
+   ✅ CREATE EMBEDDING
 ============================== */
 
 async function createEmbedding(text) {
@@ -41,7 +41,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ INTENT
+   ✅ INTENT DETECTION
 ============================== */
 
 async function detectIntent(message) {
@@ -76,7 +76,7 @@ Return JSON:
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH (ذكي)
+   ✅ SEMANTIC SEARCH (مستقر)
 ============================== */
 
 async function searchCourses(message) {
@@ -87,33 +87,27 @@ async function searchCourses(message) {
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 10
+      match_count: 5
     });
 
     if (error) {
-      console.log("Search error:", error.message);
+      console.log("Semantic search error:", error.message);
       return [];
     }
 
     if (!data || data.length === 0) return [];
 
-    console.log("All results:", data);
+    console.log("Raw similarities:");
+    data.forEach(c => {
+      console.log(c.title, c.similarity);
+    });
 
-    // ✅ فلترة أولية قوية
-    let filtered = data
-      .filter(c => c.similarity >= 0.75)
+    // ✅ فلترة خفيفة فقط لإزالة النتائج الضعيفة جدًا
+    const filtered = data
+      .filter(c => c.similarity > 0.55)
       .sort((a, b) => b.similarity - a.similarity);
 
-    // ✅ لو مفيش نتائج قوية ننزل العتبة شوية
-    if (filtered.length === 0) {
-      filtered = data
-        .filter(c => c.similarity >= 0.60)
-        .sort((a, b) => b.similarity - a.similarity);
-    }
-
-    console.log("Final results:", filtered);
-
-    return filtered.slice(0, 5);
+    return filtered;
 
   } catch (err) {
     console.log("Search crash:", err.message);
@@ -126,6 +120,7 @@ async function searchCourses(message) {
 ============================== */
 
 function cleanHTML(reply) {
+
   if (!reply) return "";
 
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
@@ -161,6 +156,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
+    /* ✅ Detect intent */
     const intent = await detectIntent(message);
 
     /* ✅ Generate AI reply */
@@ -185,7 +181,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Recommendations */
+    /* ✅ Show recommendations فقط لو نية تعلم */
     let courses = [];
 
     if (intent === "learning_intent" || intent === "comparison") {
