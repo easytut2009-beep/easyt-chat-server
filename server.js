@@ -54,18 +54,14 @@ async function detectIntent(message) {
       {
         role: "system",
         content: `
-أنت مصنف نوايا.
-
-learning_intent: يريد تعلم أو دراسة مجال
-comparison: يقارن بين مجالين
-informational_question: شرح فقط
-preference_statement: يذكر تفضيل شخصي
+learning_intent
+comparison
+informational_question
+preference_statement
 other
 
-أعد JSON فقط بالشكل:
-{
-  "intent": "learning_intent"
-}
+Return JSON:
+{ "intent": "learning_intent" }
 `
       },
       { role: "user", content: message }
@@ -74,16 +70,14 @@ other
 
   try {
     const result = JSON.parse(completion.choices[0].message.content);
-    console.log("Intent:", result.intent);
     return result.intent;
   } catch {
-    console.log("Intent parsing failed");
     return "other";
   }
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH
+   ✅ SEMANTIC SEARCH (Top 2)
 ============================== */
 
 async function searchCourses(message) {
@@ -94,7 +88,7 @@ async function searchCourses(message) {
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 5
+      match_count: 2   // ✅ أهم تعديل
     });
 
     if (error) {
@@ -102,10 +96,19 @@ async function searchCourses(message) {
       return [];
     }
 
-    console.log("Search results:", data);
+    if (!data || data.length === 0) return [];
 
-    // ✅ بدون فلترة similarity عشان نتأكد إنها بترجع
-    return data || [];
+    console.log("Similarities:");
+    data.forEach(c => {
+      console.log(c.title, c.similarity);
+    });
+
+    // ✅ فلترة جودة
+    const filtered = data
+      .filter(c => c.similarity >= 0.60)
+      .sort((a, b) => b.similarity - a.similarity);
+
+    return filtered;
 
   } catch (err) {
     console.log("Search crash:", err.message);
@@ -127,15 +130,12 @@ function cleanHTML(reply) {
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
-  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
-  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
-  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
 
   return reply.trim();
 }
 
 /* ==============================
-   ✅ MAIN CHAT ROUTE
+   ✅ MAIN ROUTE
 ============================== */
 
 app.post("/chat", async (req, res) => {
@@ -157,10 +157,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ 1️⃣ Detect Intent */
+    /* ✅ Detect intent */
     const intent = await detectIntent(message);
 
-    /* ✅ 2️⃣ Generate Chat Reply */
+    /* ✅ Generate response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -169,7 +169,7 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي.
-اشرح المجال بشكل واضح.
+اشرح المجال بوضوح.
 لا تذكر أسماء دورات.
 `
         },
@@ -182,11 +182,12 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ 3️⃣ Recommendation Logic */
+    /* ✅ Recommendations only if learning intent */
     let courses = [];
 
-    // ✅ مؤقتًا: هنجيب اقتراحات في كل الحالات عشان نتأكد إن البحث شغال
-    courses = await searchCourses(message);
+    if (intent === "learning_intent" || intent === "comparison") {
+      courses = await searchCourses(message);
+    }
 
     if (courses.length > 0) {
 
@@ -205,9 +206,7 @@ ${course.title}
 
     reply = `
 <style>
-.chat-wrapper{font-size:14px;line-height:1.5;}
-.chat-wrapper ul{margin:0;padding-right:18px;}
-.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
+.chat-wrapper{font-size:14px;line-height:1.6;}
 .courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
 .courses-container{display:flex;flex-direction:column;gap:12px;}
 .course-btn{
@@ -221,7 +220,9 @@ font-size:14px;
 border-radius:8px;
 text-decoration:none;
 text-align:center;
+transition:0.3s;
 }
+.course-btn:hover{opacity:0.85;}
 </style>
 <div class="chat-wrapper">${reply}</div>
 `;
