@@ -5,20 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
 /* =====================================================
-   ✅ INIT
+   INIT
 ===================================================== */
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
-if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
-
-/* =====================================================
-   ✅ Clients
-===================================================== */
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -32,7 +24,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   ✅ DOMAIN DETECTION
+   DOMAIN DETECTION
 ===================================================== */
 
 async function detectDomain(message) {
@@ -44,8 +36,7 @@ async function detectDomain(message) {
       {
         role: "system",
         content: `
-حدد المجال فقط من القائمة التالية:
-
+حدد المجال فقط من:
 programming
 web
 mobile
@@ -67,45 +58,43 @@ general
 }
 
 /* =====================================================
-   ✅ EMBEDDING
+   EMBEDDING
 ===================================================== */
 
 async function createEmbedding(text) {
+
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text
   });
+
   return response.data[0].embedding;
 }
 
 /* =====================================================
-   ✅ SMART SEARCH + FALLBACK
+   SMART SEARCH (FIXED VERSION)
 ===================================================== */
 
-async function searchCourses(message, domain) {
-
-  if (domain === "general") return [];
+async function searchCourses(message) {
 
   const embedding = await createEmbedding(message);
 
   const { data, error } = await supabase.rpc("smart_course_search", {
     query_embedding: embedding,
-    filter_domain: domain,
     match_count: 5,
-    similarity_threshold: 0.65
+    similarity_threshold: 0.60
   });
 
   if (error) {
     console.error("RPC error:", error.message);
   }
 
-  // ✅ لو مفيش نتائج نرجع أحدث كورسات في نفس المجال
+  // ✅ fallback لو مفيش نتائج
   if (!data || data.length === 0) {
 
     const { data: fallback } = await supabase
       .from("courses")
       .select("title, url")
-      .eq("domain", domain)
       .limit(5);
 
     return fallback || [];
@@ -115,33 +104,7 @@ async function searchCourses(message, domain) {
 }
 
 /* =====================================================
-   ✅ BLOCK ANY EXTERNAL ADVICE
-===================================================== */
-
-function blockExternalAdvice(text) {
-
-  const forbidden = [
-    "الإنترنت",
-    "مقالات",
-    "فيديوهات",
-    "يوتيوب",
-    "منصات",
-    "موارد",
-    "عبر الإنترنت",
-    "البحث",
-    "جوجل"
-  ];
-
-  forbidden.forEach(word => {
-    const regex = new RegExp(word, "gi");
-    text = text.replace(regex, "");
-  });
-
-  return text;
-}
-
-/* =====================================================
-   ✅ CLEAN HTML
+   CLEAN HTML
 ===================================================== */
 
 function cleanHTML(text) {
@@ -152,7 +115,7 @@ function cleanHTML(text) {
 }
 
 /* =====================================================
-   ✅ MAIN ROUTE
+   MAIN ROUTE
 ===================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -160,7 +123,6 @@ app.post("/chat", async (req, res) => {
   try {
 
     let { message, session_id } = req.body;
-
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
@@ -174,10 +136,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ 1) Detect Domain */
-    const domain = await detectDomain(message);
-
-    /* ✅ 2) AI Response (NO COURSE NAMES – NO EXTERNAL ADVICE) */
+    /* 1) AI Explanation ONLY */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -185,20 +144,10 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار رسمي داخل منصة Easy‑T فقط.
-
-مهم جدًا:
-
-❌ ممنوع اقتراح أي مصادر خارج Easy‑T.
-❌ ممنوع ذكر الإنترنت أو مقالات أو فيديوهات أو منصات.
-❌ لا تقدم نصائح عامة خارج الدورات.
-❌ لا تخترع أسماء دورات.
-
-✅ اشرح المجال بإيجاز.
-✅ حفّز المستخدم.
-✅ دع نظام البحث يعرض الدورات.
-
-استخدم HTML بسيط فقط.
+أنت مستشار داخل منصة Easy‑T.
+اشرح المجال بإيجاز فقط.
+لا تذكر مصادر خارجية.
+لا تخترع أسماء دورات.
 `
         },
         ...history
@@ -206,14 +155,10 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
-    reply = blockExternalAdvice(reply);
     reply = cleanHTML(reply);
 
-    history.push({ role: "assistant", content: reply });
-
-    /* ✅ 3) Fetch REAL Courses */
-    const courses = await searchCourses(message, domain);
+    /* 2) Fetch courses from DB */
+    const courses = await searchCourses(message);
 
     if (courses.length > 0) {
 
@@ -230,7 +175,7 @@ ${course.title}
       reply += `</div>`;
     }
 
-    /* ✅ Styling */
+    /* ✅ نفس التنسيق القديم بدون أي تغيير */
     reply = `
 <style>
 .chat-wrapper{font-size:14px;line-height:1.6;}
@@ -266,7 +211,7 @@ ${reply}
 });
 
 /* =====================================================
-   ✅ START SERVER
+   START SERVER
 ===================================================== */
 
 const PORT = process.env.PORT || 3000;
