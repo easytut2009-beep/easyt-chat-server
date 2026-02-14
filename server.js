@@ -5,12 +5,20 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
 /* =====================================================
-   INIT
+   ✅ INIT
 ===================================================== */
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
+if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
+if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
+
+/* =====================================================
+   ✅ Clients
+===================================================== */
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -24,28 +32,115 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   SEARCH COURSES
+   ✅ DOMAIN DETECTION
 ===================================================== */
 
-async function searchCourses() {
+async function detectDomain(message) {
 
-  const { data, error } = await supabase
-    .from("courses")
-    .select("title, url")
-    .limit(5);
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+حدد المجال فقط من القائمة التالية:
+
+programming
+web
+mobile
+data
+design
+leadership
+language
+it
+general
+
+أعد كلمة واحدة فقط.
+`
+      },
+      { role: "user", content: message }
+    ]
+  });
+
+  return completion.choices[0].message.content.trim().toLowerCase();
+}
+
+/* =====================================================
+   ✅ EMBEDDING
+===================================================== */
+
+async function createEmbedding(text) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: text
+  });
+  return response.data[0].embedding;
+}
+
+/* =====================================================
+   ✅ SMART SEARCH + FALLBACK
+===================================================== */
+
+async function searchCourses(message, domain) {
+
+  if (!domain) return [];
+
+  const embedding = await createEmbedding(message);
+
+  const { data, error } = await supabase.rpc("smart_course_search", {
+    query_embedding: embedding,
+    filter_domain: domain,
+    match_count: 5,
+    similarity_threshold: 0.65
+  });
 
   if (error) {
-    console.error("Supabase error:", error.message);
-    return [];
+    console.error("RPC error:", error.message);
   }
 
-  console.log("Supabase returned:", data);
+  if (!data || data.length === 0) {
+
+    const { data: fallback } = await supabase
+      .from("courses")
+      .select("title, url")
+      .eq("domain", domain)
+      .limit(5);
+
+    return fallback ?? [];
+  }
 
   return data ?? [];
 }
 
 /* =====================================================
-   CLEAN HTML
+   ✅ BLOCK ANY EXTERNAL ADVICE
+===================================================== */
+
+function blockExternalAdvice(text) {
+
+  const forbidden = [
+    "الإنترنت",
+    "مقالات",
+    "فيديوهات",
+    "يوتيوب",
+    "منصات",
+    "موارد",
+    "عبر الإنترنت",
+    "البحث",
+    "جوجل"
+  ];
+
+  forbidden.forEach(word => {
+    const regex = new RegExp(word, "gi");
+    text = text.replace(regex, "");
+  });
+
+  return text;
+}
+
+/* =====================================================
+   ✅ CLEAN HTML
 ===================================================== */
 
 function cleanHTML(text) {
@@ -56,7 +151,7 @@ function cleanHTML(text) {
 }
 
 /* =====================================================
-   MAIN ROUTE
+   ✅ MAIN ROUTE
 ===================================================== */
 
 app.post("/chat", async (req, res) => {
@@ -78,7 +173,8 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ AI Response */
+    const domain = await detectDomain(message);
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -86,10 +182,20 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار داخل منصة Easy‑T.
-اشرح المجال بإيجاز فقط.
-لا تذكر مصادر خارجية.
-لا تخترع أسماء دورات.
+أنت مستشار رسمي داخل منصة Easy‑T فقط.
+
+مهم جدًا:
+
+❌ ممنوع اقتراح أي مصادر خارج Easy‑T.
+❌ ممنوع ذكر الإنترنت أو مقالات أو فيديوهات أو منصات.
+❌ لا تقدم نصائح عامة خارج الدورات.
+❌ لا تخترع أسماء دورات.
+
+✅ اشرح المجال بإيجاز.
+✅ حفّز المستخدم.
+✅ دع نظام البحث يعرض الدورات.
+
+استخدم HTML بسيط فقط.
 `
         },
         ...history
@@ -97,12 +203,13 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
+
+    reply = blockExternalAdvice(reply);
     reply = cleanHTML(reply);
 
-    /* ✅ Fetch Courses */
-    const courses = await searchCourses();
+    history.push({ role: "assistant", content: reply });
 
-    console.log("Courses after function:", courses);
+    const courses = await searchCourses(message, domain);
 
     if (courses && courses.length > 0) {
 
@@ -119,7 +226,6 @@ ${course.title}
       reply += `</div>`;
     }
 
-    /* ✅ نفس التنسيق القديم بدون أي تغيير */
     reply = `
 <style>
 .chat-wrapper{font-size:14px;line-height:1.6;}
@@ -155,7 +261,7 @@ ${reply}
 });
 
 /* =====================================================
-   START SERVER
+   ✅ START SERVER
 ===================================================== */
 
 const PORT = process.env.PORT || 3000;
