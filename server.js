@@ -61,8 +61,7 @@ general
 
     return completion.choices[0].message.content.trim().toLowerCase();
 
-  } catch (err) {
-    console.log("Domain detection error:", err.message);
+  } catch {
     return "general";
   }
 }
@@ -81,80 +80,24 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ SAVE MEMORY
+   ✅ SEARCH COURSES (DB ONLY)
 ============================== */
 
-async function saveMemory(user_id, message, domain) {
-  try {
-    await supabase.from("user_memory").insert({
-      user_id,
-      message,
-      domain
-    });
-  } catch (err) {
-    console.log("Memory error:", err.message);
-  }
-}
-
-/* ==============================
-   ✅ TRACK COURSE CLICK
-============================== */
-
-app.post("/track-click", async (req, res) => {
-
-  try {
-    const { user_id, course_id } = req.body;
-
-    if (!user_id || !course_id) {
-      return res.status(400).json({ error: "Missing data" });
-    }
-
-    await supabase.from("user_interactions").insert({
-      user_id,
-      course_id
-    });
-
-    await supabase.rpc("increment_popularity", {
-      course_id_input: course_id
-    });
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.log("Track error:", err.message);
-    res.status(500).json({ error: "Tracking failed" });
-  }
-});
-
-/* ==============================
-   ✅ HYBRID SEARCH + FALLBACK
-============================== */
-
-async function searchCourses(message, domain, user_id) {
+async function searchCourses(message) {
 
   try {
 
-    const embedding = await createEmbedding(message);
-
-    const { data } = await supabase.rpc("smart_course_search", {
-      query_embedding: embedding,
-      filter_domain: domain,
-      keyword: message,
-      user_id: user_id,
-      match_count: 5
-    });
+    const { data } = await supabase
+      .from("courses")
+      .select("id, title, url")
+      .ilike("title", `%${message}%`)
+      .limit(5);
 
     if (data && data.length > 0) {
       return data;
     }
 
-    // ✅ Fallback لو مفيش نتائج
-    const { data: fallback } = await supabase
-      .from("courses")
-      .select("id, title, url")
-      .limit(5);
-
-    return fallback || [];
+    return [];
 
   } catch (err) {
     console.log("Search error:", err.message);
@@ -191,14 +134,13 @@ app.post("/chat", async (req, res) => {
 
   try {
 
-    let { message, session_id, user_id } = req.body;
+    let { message, session_id } = req.body;
 
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
 
     if (!session_id) session_id = crypto.randomUUID();
-    if (!user_id) user_id = "anonymous";
 
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
@@ -207,10 +149,6 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    const domain = await detectDomain(message);
-
-    await saveMemory(user_id, message, domain);
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -218,11 +156,10 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي محترف.
-افهم طلب المستخدم بدقة.
-لا تقترح مجال مختلف عن المطلوب.
-لا تقترح كورسات أطفال للكبار.
-استخدم HTML بسيط فقط (strong / br / ul / li).
+أنت مستشار أكاديمي.
+اشرح المجال فقط.
+لا تكتب قائمة دورات.
+لا تقترح أسماء دورات.
 `
         },
         ...history
@@ -230,12 +167,12 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
     history.push({ role: "assistant", content: reply });
 
     reply = cleanHTML(reply);
 
-    const courses = await searchCourses(message, domain, user_id);
+    /* ✅ هنا نجيب الدورات من قاعدة البيانات فقط */
+    const courses = await searchCourses(message);
 
     if (courses.length > 0) {
 
@@ -244,7 +181,7 @@ app.post("/chat", async (req, res) => {
 
       courses.forEach(course => {
         reply += `
-<a href="${course.url}" target="_blank" class="course-btn" data-id="${course.id}">
+<a href="${course.url}" target="_blank" class="course-btn">
 ${course.title}
 </a>`;
       });
@@ -278,7 +215,7 @@ text-align:center;
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("Chat error:", error);
+    console.error(error);
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
@@ -290,5 +227,5 @@ text-align:center;
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🔥 Enterprise AI Assistant Running on port " + PORT);
+  console.log("✅ Server Running on port " + PORT);
 });
