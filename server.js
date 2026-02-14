@@ -64,32 +64,49 @@ async function getRelatedCourses(message, limit = 3) {
 }
 
 /* =============================== */
-/* ✅ Compact Cleaner */
+/* ✅ Smart Intent Detection (AI) */
 /* =============================== */
 
-function compactHTML(reply) {
+async function detectIntentAI(message) {
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+صنف الرسالة إلى واحدة فقط من:
+identity
+advice
+search
+
+identity = سؤال عن من أنت
+advice = طلب نصيحة أو توجيه
+search = بحث عن دورة أو موضوع
+
+ارجع فقط الكلمة.
+`
+      },
+      { role: "user", content: message }
+    ]
+  });
+
+  return completion.choices[0].message.content.trim().toLowerCase();
+}
+
+/* =============================== */
+/* ✅ Clean HTML */
+/* =============================== */
+
+function cleanHTML(reply) {
+  reply = reply.replace(/<h1.*?>.*?<\/h1>/gi, "");
+  reply = reply.replace(/<h2.*?>.*?<\/h2>/gi, "");
   reply = reply.replace(/\n{2,}/g, "\n");
   reply = reply.trim();
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/<br><br>/g, "<br>");
   return reply;
-}
-
-/* =============================== */
-/* ✅ Intent Detection */
-/* =============================== */
-
-function detectIntent(message) {
-  const text = normalizeArabic(message);
-
-  if (text.replace(/\s/g,"").includes("انتمين")) return "identity";
-
-  const adviceWords = ["ابدأ","اتعلم","افضل","انسب","محتار","ابدأمنين"];
-  if (adviceWords.some(w => text.includes(normalizeArabic(w)))) {
-    return "advice";
-  }
-
-  return "search";
 }
 
 /* ========================================================== */
@@ -109,12 +126,16 @@ app.post("/chat", async (req, res) => {
       session_id = crypto.randomUUID();
     }
 
-    const intent = detectIntent(message);
+    const intent = await detectIntentAI(message);
     let reply = "";
 
     /* ✅ Identity */
     if (intent === "identity") {
-      reply = `<strong style="color:#c40000;">مرحبًا 👋</strong><br>أنا <strong>زيكو</strong> مساعد easyT الذكي.`;
+      reply = `
+<strong style="color:#c40000;">مرحبًا 👋</strong><br>
+أنا <strong>زيكو</strong> مساعد easyT الذكي.<br>
+مهمتي أساعدك تختار أفضل مسار تعليمي يناسبك.
+`;
     }
 
     /* ✅ Advice */
@@ -126,13 +147,19 @@ app.post("/chat", async (req, res) => {
         messages: [
           {
             role: "system",
-            content: "قدم إجابة مختصرة ومنظمة بدون عناوين كبيرة وبدون مسافات كثيرة."
+            content: `
+أنت مستشار تعليمي ذكي.
+افهم السؤال جيدًا.
+قدم رد مختصر، واضح، عملي.
+بدون عناوين كبيرة.
+استخدم HTML بسيط.
+`
           },
           { role: "user", content: message }
         ]
       });
 
-      reply = completion.choices[0].message.content.trim();
+      reply = completion.choices[0].message.content;
     }
 
     /* ✅ Search */
@@ -145,7 +172,7 @@ app.post("/chat", async (req, res) => {
       } else {
 
         const contextText = courses
-          .map(c => `عنوان: ${c.title}\nمحتوى: ${c.content.slice(0,300)}`)
+          .map(c => `عنوان: ${c.title}\nوصف: ${c.content.slice(0,300)}`)
           .join("\n\n");
 
         const completion = await openai.chat.completions.create({
@@ -154,7 +181,12 @@ app.post("/chat", async (req, res) => {
           messages: [
             {
               role: "system",
-              content: "استخدم HTML بسيط ومنظم بدون مسافات كبيرة."
+              content: `
+أجب بناءً على السياق فقط.
+لا تخترع معلومات.
+استخدم HTML بسيط.
+بدون مسافات كبيرة.
+`
             },
             {
               role: "user",
@@ -163,28 +195,29 @@ app.post("/chat", async (req, res) => {
           ]
         });
 
-        reply = completion.choices[0].message.content.trim();
+        reply = completion.choices[0].message.content;
       }
     }
 
-    /* ✅ Always Add Recommendations */
+    /* ✅ Add Recommendations (NOT for identity) */
 
-    const relatedCourses = await getRelatedCourses(message, 3);
+    if (intent !== "identity") {
 
-    if (relatedCourses.length > 0) {
+      const relatedCourses = await getRelatedCourses(message, 3);
 
-      reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+      if (relatedCourses.length > 0) {
 
-      relatedCourses.forEach(course => {
-        if (course.url) {
-          reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
-        }
-      });
+        reply += `<br><strong style="color:#c40000;">ممكن تدرس:</strong>`;
+
+        relatedCourses.forEach(course => {
+          if (course.url) {
+            reply += `<br><a href="${course.url}" target="_blank" class="course-btn">${course.title}</a>`;
+          }
+        });
+      }
     }
 
-    reply = compactHTML(reply);
-
-    /* ✅ Wrap with Safe Style Block */
+    reply = cleanHTML(reply);
 
     reply = `
 <style>
@@ -198,9 +231,8 @@ border-radius:5px;
 text-decoration:none;
 margin-top:3px;
 }
-body{line-height:1.3;}
 </style>
-<div style="font-size:13px;line-height:1.3;">
+<div style="font-size:13px;line-height:1.4;">
 ${reply}
 </div>
 `;
