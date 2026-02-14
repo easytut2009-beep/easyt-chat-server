@@ -32,7 +32,6 @@ const conversations = new Map();
 ============================== */
 
 async function detectDomain(message) {
-
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -62,7 +61,8 @@ general
 
     return completion.choices[0].message.content.trim().toLowerCase();
 
-  } catch {
+  } catch (err) {
+    console.log("Domain detection error:", err.message);
     return "general";
   }
 }
@@ -81,7 +81,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ LONG TERM MEMORY
+   ✅ SAVE MEMORY
 ============================== */
 
 async function saveMemory(user_id, message, domain) {
@@ -102,22 +102,28 @@ async function saveMemory(user_id, message, domain) {
 
 app.post("/track-click", async (req, res) => {
 
-  const { user_id, course_id } = req.body;
+  try {
+    const { user_id, course_id } = req.body;
 
-  if (!user_id || !course_id) {
-    return res.status(400).json({ error: "Missing data" });
+    if (!user_id || !course_id) {
+      return res.status(400).json({ error: "Missing data" });
+    }
+
+    await supabase.from("user_interactions").insert({
+      user_id,
+      course_id
+    });
+
+    await supabase.rpc("increment_popularity", {
+      course_id_input: course_id
+    });
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.log("Track error:", err.message);
+    res.status(500).json({ error: "Tracking failed" });
   }
-
-  await supabase.from("user_interactions").insert({
-    user_id,
-    course_id
-  });
-
-  await supabase.rpc("increment_popularity", {
-    course_id_input: course_id
-  });
-
-  res.json({ success: true });
 });
 
 /* ==============================
@@ -126,27 +132,34 @@ app.post("/track-click", async (req, res) => {
 
 async function searchCourses(message, domain, user_id) {
 
-  const embedding = await createEmbedding(message);
+  try {
 
-  const { data } = await supabase.rpc("smart_course_search", {
-    query_embedding: embedding,
-    filter_domain: domain,
-    keyword: message,
-    user_id: user_id,
-    match_count: 5
-  });
+    const embedding = await createEmbedding(message);
 
-  if (data && data.length > 0) {
-    return data;
+    const { data } = await supabase.rpc("smart_course_search", {
+      query_embedding: embedding,
+      filter_domain: domain,
+      keyword: message,
+      user_id: user_id,
+      match_count: 5
+    });
+
+    if (data && data.length > 0) {
+      return data;
+    }
+
+    // ✅ Fallback لو مفيش نتائج
+    const { data: fallback } = await supabase
+      .from("courses")
+      .select("id, title, url")
+      .limit(5);
+
+    return fallback || [];
+
+  } catch (err) {
+    console.log("Search error:", err.message);
+    return [];
   }
-
-  // ✅ fallback لو مفيش نتائج
-  const { data: fallback } = await supabase
-    .from("courses")
-    .select("id, title, url")
-    .limit(5);
-
-  return fallback || [];
 }
 
 /* ==============================
@@ -246,7 +259,18 @@ ${course.title}
 .chat-wrapper li{margin:0;padding:0;line-height:1.4;}
 .courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
 .courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{display:block;width:100%;max-width:420px;padding:12px 14px;background:#c40000;color:#fff;font-size:14px;border-radius:8px;text-decoration:none;text-align:center;}
+.course-btn{
+display:block;
+width:100%;
+max-width:420px;
+padding:12px 14px;
+background:#c40000;
+color:#fff;
+font-size:14px;
+border-radius:8px;
+text-decoration:none;
+text-align:center;
+}
 </style>
 <div class="chat-wrapper">${reply}</div>
 `;
@@ -254,7 +278,7 @@ ${course.title}
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error(error);
+    console.error("Chat error:", error);
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
