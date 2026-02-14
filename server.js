@@ -23,7 +23,7 @@ const supabase = createClient(
 );
 
 /* ===============================
-   ✅ Memory
+   ✅ MemorY
 ================================ */
 const conversations = new Map();
 
