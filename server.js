@@ -12,10 +12,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
-if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -28,7 +24,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ EMBEDDING
+   ✅ CREATE EMBEDDING
 ============================== */
 
 async function createEmbedding(text) {
@@ -41,43 +37,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER
-============================== */
-
-async function detectIntent(message) {
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `
-learning_intent
-comparison
-informational_question
-preference_statement
-other
-
-Return JSON:
-{ "intent": "learning_intent" }
-`
-      },
-      { role: "user", content: message }
-    ]
-  });
-
-  try {
-    const result = JSON.parse(completion.choices[0].message.content);
-    return result.intent;
-  } catch {
-    return "other";
-  }
-}
-
-/* ==============================
-   ✅ SEMANTIC SEARCH (Top 2)
+   ✅ SEMANTIC SEARCH (Stable Version)
 ============================== */
 
 async function searchCourses(message) {
@@ -88,50 +48,42 @@ async function searchCourses(message) {
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 2   // ✅ أهم تعديل
+      match_count: 5
     });
 
     if (error) {
-      console.log("Semantic search error:", error.message);
+      console.log("RPC ERROR:", error);
       return [];
     }
 
-    if (!data || data.length === 0) return [];
+    if (!data || data.length === 0) {
+      console.log("No data returned from RPC");
+      return [];
+    }
 
-    console.log("Similarities:");
+    console.log("=== Similarities ===");
     data.forEach(c => {
-      console.log(c.title, c.similarity);
+      console.log(c.title, "→", c.similarity);
     });
 
-    // ✅ فلترة جودة
-    const filtered = data
-      .filter(c => c.similarity >= 0.60)
-      .sort((a, b) => b.similarity - a.similarity);
+    // ✅ رتب حسب الأعلى
+    const sorted = data.sort((a, b) => b.similarity - a.similarity);
 
-    return filtered;
+    const best = sorted[0];
+
+    // ✅ لو similarity ضعيفة جدًا رجّع نتيجة واحدة بس
+    if (best.similarity < 0.50) {
+      console.log("Low similarity — returning best only");
+      return [best];
+    }
+
+    // ✅ لو كويسة رجّع أفضل 2
+    return sorted.slice(0, 2);
 
   } catch (err) {
     console.log("Search crash:", err.message);
     return [];
   }
-}
-
-/* ==============================
-   ✅ CLEAN HTML
-============================== */
-
-function cleanHTML(reply) {
-
-  if (!reply) return "";
-
-  reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
-  reply = reply.replace(/\n\s*\n+/g, "\n");
-  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
-  reply = reply.replace(/\n/g, "<br>");
-  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
-
-  return reply.trim();
 }
 
 /* ==============================
@@ -157,10 +109,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ Detect intent */
-    const intent = await detectIntent(message);
-
-    /* ✅ Generate response */
+    /* ✅ Generate AI Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -180,14 +129,8 @@ app.post("/chat", async (req, res) => {
     let reply = completion.choices[0].message.content;
     history.push({ role: "assistant", content: reply });
 
-    reply = cleanHTML(reply);
-
-    /* ✅ Recommendations only if learning intent */
-    let courses = [];
-
-    if (intent === "learning_intent" || intent === "comparison") {
-      courses = await searchCourses(message);
-    }
+    /* ✅ Get Recommendations */
+    const courses = await searchCourses(message);
 
     if (courses.length > 0) {
 
@@ -220,9 +163,7 @@ font-size:14px;
 border-radius:8px;
 text-decoration:none;
 text-align:center;
-transition:0.3s;
 }
-.course-btn:hover{opacity:0.85;}
 </style>
 <div class="chat-wrapper">${reply}</div>
 `;
