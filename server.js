@@ -42,21 +42,26 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* تنظيف بسيط */
+/* ✅ تنظيف حقيقي بدون أي سطر فاضي في البداية */
 function cleanHTML(reply) {
 
   if (!reply) return "";
 
-  // نشيل أي <br> أو مسافات في البداية
+  // نشيل أي مسافات أو أسطر أو <br> من أول النص
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
 
   // نمنع سطرين ورا بعض
   reply = reply.replace(/\n\s*\n+/g, "\n");
 
+  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
+  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
+
   reply = reply.replace(/\n/g, "<br>");
 
   // نمنع <br><br>
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
+
+  reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
 
   return reply.trim();
 }
@@ -136,29 +141,32 @@ app.post("/chat", async (req, res) => {
     reply = `
 <style>
 
-/* ✅ Reset كامل داخل الرسالة */
-.chat-wrapper *{
-margin:0;
-padding:0;
-box-sizing:border-box;
-}
-
 .chat-wrapper{
 font-size:14px;
 line-height:1.6;
 }
 
-/* ضبط الليست */
+/* ✅ تصفير كامل لأي عنصر أول */
+.chat-wrapper > *{
+margin-top:0;
+}
+
+.chat-wrapper > *:first-child{
+margin-top:0 !important;
+padding-top:0 !important;
+}
+
+/* ✅ تصفير الليست */
 .chat-wrapper ul{
+margin:0;
 padding-right:18px;
-margin-bottom:8px;
 }
 
 .chat-wrapper li{
 margin-bottom:8px;
 }
 
-/* ✅ مسافة واحدة فقط قبل العنوان */
+/* ✅ سطر واحد فقط قبل العنوان */
 .courses-title{
 margin-top:16px;
 margin-bottom:8px;
@@ -166,7 +174,7 @@ color:#c40000;
 font-weight:bold;
 }
 
-/* الأزرار */
+/* ✅ الأزرار */
 .courses-container{
 display:flex;
 flex-direction:column;
@@ -208,5 +216,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Final Reset Version running on port " + PORT);
+  console.log("✅ AI Assistant Layout Fully Fixed running on port " + PORT);
 });
