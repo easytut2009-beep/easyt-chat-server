@@ -21,7 +21,51 @@ const supabase = createClient(
 
 const conversations = new Map();
 
-/* =============================== */
+/* =====================================================
+   ✅ AI INTENT ANALYZER (يفهم الطلب بذكاء)
+===================================================== */
+
+async function analyzeIntent(message, history) {
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+حلل رسالة المستخدم وحدد:
+1- المجال الأساسي (Programming / Web / Mobile / Data / Design / Language / Other)
+2- المستوى (Beginner / Intermediate / Advanced)
+3- كلمات مفتاحية دقيقة
+
+أعد الرد بصيغة JSON فقط:
+{
+  "domain": "",
+  "level": "",
+  "keywords": ""
+}
+`
+      },
+      ...history.slice(-6),
+      { role: "user", content: message }
+    ]
+  });
+
+  try {
+    return JSON.parse(completion.choices[0].message.content);
+  } catch {
+    return {
+      domain: "Programming",
+      level: "Beginner",
+      keywords: message
+    };
+  }
+}
+
+/* =====================================================
+   ✅ EMBEDDING SEARCH SMART
+===================================================== */
 
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
@@ -31,8 +75,9 @@ async function createEmbedding(text) {
   return response.data[0].embedding;
 }
 
-async function getRelatedCourses(query, limit = 3) {
-  const embedding = await createEmbedding(query);
+async function searchCoursesSmart(queryText, limit = 4) {
+
+  const embedding = await createEmbedding(queryText);
 
   const { data } = await supabase.rpc("match_ai_knowledge", {
     query_embedding: embedding,
@@ -42,30 +87,23 @@ async function getRelatedCourses(query, limit = 3) {
   return data || [];
 }
 
-/* ===============================
-   ✅ تنظيف صارم بدون أي فراغات
-================================ */
+/* =====================================================
+   ✅ CLEAN HTML
+===================================================== */
+
 function cleanHTML(reply) {
 
   if (!reply) return "";
 
-  // إزالة أي فراغ أو <br> من بداية النص
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
-
-  // منع سطرين ورا بعض
   reply = reply.replace(/\n\s*\n+/g, "\n");
 
-  // تحويل الهيدنج ل strong
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
-  // تحويل الأسطر لـ br
   reply = reply.replace(/\n/g, "<br>");
-
-  // منع br مكرر
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
 
-  // ✅ منع br بعد أو قبل li
   reply = reply.replace(/<li>\s*<br>/gi, "<li>");
   reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
   reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
@@ -73,25 +111,16 @@ function cleanHTML(reply) {
   return reply.trim();
 }
 
-function detectTopic(message) {
-  if (message.includes("برمجة")) return "أساسيات البرمجة";
-  if (message.includes("ويب")) return "برمجة الويب";
-  if (message.includes("تطبيقات")) return "برمجة تطبيقات الهواتف";
-  if (message.includes("بيانات")) return "تحليل البيانات";
-  return "أساسيات البرمجة";
-}
-
-/* =============================== */
+/* =====================================================
+   ✅ MAIN ROUTE
+===================================================== */
 
 app.post("/chat", async (req, res) => {
 
   try {
 
     let { message, session_id } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
-    }
+    if (!message) return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
 
     if (!session_id) session_id = crypto.randomUUID();
 
@@ -102,16 +131,31 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
+    /* ✅ تحليل ذكي */
+    const analysis = await analyzeIntent(message, history);
+
+    const smartSearchQuery = `
+المجال: ${analysis.domain}
+المستوى: ${analysis.level}
+الكلمات المفتاحية: ${analysis.keywords}
+`;
+
+    /* ✅ بحث دقيق مطابق للطلب */
+    const relatedCourses = await searchCoursesSmart(smartSearchQuery, 4);
+
+    /* ✅ رد ذكي سياقي */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.2,
+      temperature: 0.4,
       messages: [
         {
           role: "system",
           content: `
-أنت مساعد أكاديمي داخل منصة تعليمية مغلقة.
+أنت مستشار أكاديمي ذكي جدًا.
+افهم سياق المستخدم جيدًا.
+قدم نصيحة دقيقة ومختصرة.
 استخدم HTML بسيط فقط (strong / br / ul / li).
-لا تضف سطور فارغة بين عناصر القائمة.
+لا تذكر لغات أو تقنيات غير مطلوبة.
 `
         },
         ...history
@@ -123,12 +167,10 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    const topic = detectTopic(message);
-    const relatedCourses = await getRelatedCourses(topic, 3);
-
+    /* ✅ إضافة الكورسات المطابقة فقط */
     if (relatedCourses.length > 0) {
 
-      reply += `<div class="courses-title">ابدأ بأحد الدورات التالية:</div>`;
+      reply += `<div class="courses-title">الدورات المطابقة لطلبك:</div>`;
       reply += `<div class="courses-container">`;
 
       relatedCourses.forEach(course => {
@@ -143,10 +185,7 @@ ${course.title}
       reply += `</div>`;
     }
 
-    /* ===============================
-       ✅ CSS نهائي بدون مسافات مضاعفة
-    ================================ */
-
+    /* ✅ CSS */
     reply = `
 <style>
 
@@ -155,17 +194,6 @@ ${course.title}
   line-height:1.5;
 }
 
-/* إزالة أي margin لأول عنصر */
-.chat-wrapper > *{
-  margin-top:0;
-}
-
-.chat-wrapper > *:first-child{
-  margin-top:0 !important;
-  padding-top:0 !important;
-}
-
-/* ✅ ضبط الليست */
 .chat-wrapper ul{
   margin:0;
   padding-right:18px;
@@ -177,12 +205,10 @@ ${course.title}
   line-height:1.4;
 }
 
-/* منع أي br داخل li */
 .chat-wrapper li br{
   display:none;
 }
 
-/* ✅ عنوان الكورسات */
 .courses-title{
   margin-top:16px;
   margin-bottom:8px;
@@ -190,7 +216,6 @@ ${course.title}
   font-weight:bold;
 }
 
-/* ✅ الأزرار */
 .courses-container{
   display:flex;
   flex-direction:column;
@@ -208,11 +233,6 @@ ${course.title}
   border-radius:8px;
   text-decoration:none;
   text-align:center;
-  transition:0.2s ease;
-}
-
-.course-btn:hover{
-  color:#ffd6ea;
 }
 
 </style>
@@ -232,5 +252,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ AI Assistant Bullets Spacing Fully Fixed running on port " + PORT);
+  console.log("✅ Ultra Smart AI Assistant Running on port " + PORT);
 });
