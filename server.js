@@ -28,46 +28,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ DOMAIN DETECTION
-============================== */
-
-async function detectDomain(message) {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
-حدد المجال الرئيسي فقط:
-
-programming
-web
-mobile
-data
-design
-leadership
-language
-it
-general
-
-أعد كلمة واحدة فقط.
-`
-        },
-        { role: "user", content: message }
-      ]
-    });
-
-    return completion.choices[0].message.content.trim().toLowerCase();
-
-  } catch {
-    return "general";
-  }
-}
-
-/* ==============================
-   ✅ EMBEDDING
+   ✅ EMBEDDING FUNCTION
 ============================== */
 
 async function createEmbedding(text) {
@@ -80,27 +41,32 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ SEARCH COURSES (DB ONLY)
+   ✅ SEMANTIC SEARCH (المعنى مش كلمة)
 ============================== */
 
 async function searchCourses(message) {
 
   try {
 
-    const { data } = await supabase
-      .from("courses")
-      .select("id, title, url")
-      .ilike("title", `%${message}%`)
-      .limit(5);
+    // 1️⃣ نعمل embedding لرسالة المستخدم
+    const queryEmbedding = await createEmbedding(message);
 
-    if (data && data.length > 0) {
-      return data;
+    // 2️⃣ نستخدم vector similarity في Supabase
+    const { data, error } = await supabase.rpc("match_courses", {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.6,
+      match_count: 5
+    });
+
+    if (error) {
+      console.log("Semantic search error:", error.message);
+      return [];
     }
 
-    return [];
+    return data || [];
 
   } catch (err) {
-    console.log("Search error:", err.message);
+    console.log("Search crash:", err.message);
     return [];
   }
 }
@@ -171,7 +137,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ هنا نجيب الدورات من قاعدة البيانات فقط */
+    /* ✅ هنا البحث أصبح بالمعنى */
     const courses = await searchCourses(message);
 
     if (courses.length > 0) {
