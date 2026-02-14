@@ -54,18 +54,29 @@ function cleanHTML(reply) {
   return reply.trim();
 }
 
-/* ✅ منع الاقتراح العشوائي لو السؤال عام */
-function isGeneralProgrammingQuestion(text) {
-  const generalWords = [
+/* ✅ كشف الأسئلة العامة */
+function isGeneralQuestion(text) {
+  const patterns = [
     "اتعلم برمجة",
     "ابدأ برمجة",
     "ازاي ابدأ",
     "كيف أبدأ",
     "عاوز أتعلم",
-    "تعلم البرمجة"
+    "تعلم البرمجة",
+    "ابدأ منين"
   ];
+  return patterns.some(p => text.includes(p));
+}
 
-  return generalWords.some(word => text.includes(word));
+/* ✅ كشف مستوى مبتدئ */
+function isBeginner(text) {
+  const patterns = [
+    "مبتدئ",
+    "لسه بادئ",
+    "ماعرفش حاجة",
+    "بدون خبرة"
+  ];
+  return patterns.some(p => text.includes(p));
 }
 
 /* ========================================================== */
@@ -91,13 +102,13 @@ app.post("/chat", async (req, res) => {
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.3,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
           content: `
-أنت مساعد أكاديمي احترافي داخل منصة تعليمية.
-لا تذكر أي منصات أخرى.
+أنت مساعد أكاديمي احترافي.
+لا تذكر أي منصات خارجية.
 استخدم HTML بسيط فقط (strong / br / ul / li).
 
 في النهاية أضف:
@@ -133,9 +144,15 @@ app.post("/chat", async (req, res) => {
 
     reply = reply.trim();
 
-    /* ✅ لو السؤال عام → ما نقترحش لغة محددة */
-    if (isGeneralProgrammingQuestion(message)) {
+    /* ✅ منع اقتراح لغة لو السؤال عام */
+    if (isGeneralQuestion(message)) {
       state = "normal";
+    }
+
+    /* ✅ لو مبتدئ → غير الموضوع لأساسيات */
+    if (isBeginner(message)) {
+      topic = "أساسيات البرمجة";
+      state = "recommend";
     }
 
     if (state === "recommend" && topic) {
@@ -172,7 +189,6 @@ padding-right:20px;
 margin:2px 0;
 }
 
-/* ✅ أزرار الاقتراح */
 .course-btn{
 display:block;
 width:100%;
@@ -184,13 +200,13 @@ font-size:14px;
 line-height:1.2;
 border-radius:6px;
 text-decoration:none;
-margin:1px auto;   /* ✅ مسافة صغيرة جدًا */
+margin:1px auto;
 text-align:center;
 transition:0.2s ease;
 }
 
 .course-btn:hover{
-background:#ff4d8d;  /* ✅ اللون الوردي عند الهوفر */
+background:#ff4d8d;
 }
 </style>
 
@@ -206,6 +222,8 @@ ${reply}
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
+
+/* =============================== */
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
