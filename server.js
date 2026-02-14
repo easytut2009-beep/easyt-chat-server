@@ -41,7 +41,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER
+   ✅ INTENT
 ============================== */
 
 async function detectIntent(message) {
@@ -54,15 +54,13 @@ async function detectIntent(message) {
       {
         role: "system",
         content: `
-صنف الرسالة إلى:
-
 learning_intent
 comparison
 informational_question
 preference_statement
 other
 
-أعد JSON فقط:
+Return JSON:
 { "intent": "learning_intent" }
 `
       },
@@ -71,15 +69,14 @@ other
   });
 
   try {
-    const result = JSON.parse(completion.choices[0].message.content);
-    return result.intent;
+    return JSON.parse(completion.choices[0].message.content).intent;
   } catch {
     return "other";
   }
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH (محسن)
+   ✅ SEMANTIC SEARCH (ذكي)
 ============================== */
 
 async function searchCourses(message) {
@@ -90,7 +87,7 @@ async function searchCourses(message) {
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 8
+      match_count: 10
     });
 
     if (error) {
@@ -98,17 +95,25 @@ async function searchCourses(message) {
       return [];
     }
 
-    if (!data) return [];
+    if (!data || data.length === 0) return [];
 
-    // ✅ فلترة قوية
-    const filtered = data
-      .filter(course => course.similarity >= 0.75)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
+    console.log("All results:", data);
 
-    console.log("Filtered results:", filtered);
+    // ✅ فلترة أولية قوية
+    let filtered = data
+      .filter(c => c.similarity >= 0.75)
+      .sort((a, b) => b.similarity - a.similarity);
 
-    return filtered;
+    // ✅ لو مفيش نتائج قوية ننزل العتبة شوية
+    if (filtered.length === 0) {
+      filtered = data
+        .filter(c => c.similarity >= 0.60)
+        .sort((a, b) => b.similarity - a.similarity);
+    }
+
+    console.log("Final results:", filtered);
+
+    return filtered.slice(0, 5);
 
   } catch (err) {
     console.log("Search crash:", err.message);
@@ -121,7 +126,6 @@ async function searchCourses(message) {
 ============================== */
 
 function cleanHTML(reply) {
-
   if (!reply) return "";
 
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
@@ -159,7 +163,7 @@ app.post("/chat", async (req, res) => {
 
     const intent = await detectIntent(message);
 
-    /* ✅ توليد الرد */
+    /* ✅ Generate AI reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -168,7 +172,7 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي.
-اشرح المجال بشكل واضح.
+اشرح المجال بوضوح.
 لا تذكر أسماء دورات.
 `
         },
@@ -181,7 +185,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ اقتراحات فقط لو النية مناسبة */
+    /* ✅ Recommendations */
     let courses = [];
 
     if (intent === "learning_intent" || intent === "comparison") {
@@ -205,7 +209,7 @@ ${course.title}
 
     reply = `
 <style>
-.chat-wrapper{font-size:14px;line-height:1.5;}
+.chat-wrapper{font-size:14px;line-height:1.6;}
 .courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
 .courses-container{display:flex;flex-direction:column;gap:12px;}
 .course-btn{
@@ -219,7 +223,9 @@ font-size:14px;
 border-radius:8px;
 text-decoration:none;
 text-align:center;
+transition:0.3s;
 }
+.course-btn:hover{opacity:0.85;}
 </style>
 <div class="chat-wrapper">${reply}</div>
 `;
