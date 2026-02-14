@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -29,47 +28,6 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ DOMAIN DETECTION
-============================== */
-
-async function detectDomain(message, history) {
-
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
-حدد المجال الرئيسي فقط:
-
-programming
-web
-mobile
-data
-design
-leadership
-language
-it
-general
-
-أعد كلمة واحدة فقط.
-`
-        },
-        ...history.slice(-3),
-        { role: "user", content: message }
-      ]
-    });
-
-    return completion.choices[0].message.content.trim().toLowerCase();
-
-  } catch {
-    return "general";
-  }
-}
-
-/* ==============================
    ✅ EMBEDDING
 ============================== */
 
@@ -78,58 +36,104 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text
   });
-
   return response.data[0].embedding;
 }
 
 /* ==============================
-   ✅ LONG TERM MEMORY
+   ✅ VECTOR MEMORY SAVE
 ============================== */
 
-async function saveMemory(user_id, message, domain) {
-  try {
-    await supabase.from("user_memory").insert({
-      user_id,
-      message,
-      domain
-    });
-  } catch (err) {
-    console.log("Memory error:", err.message);
-  }
+async function saveVectorMemory(user_id, message) {
+  const embedding = await createEmbedding(message);
+
+  await supabase.from("user_memory").insert({
+    user_id,
+    message,
+    embedding
+  });
 }
 
 /* ==============================
-   ✅ TRACK COURSE CLICK
+   ✅ DOMAIN + LEVEL DETECTION
 ============================== */
 
-app.post("/track-click", async (req, res) => {
+async function detectIntent(message) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+حدد:
+1- المجال (programming, web, mobile, data, design, leadership, language, it, general)
+2- المستوى (beginner, intermediate, advanced)
 
-  const { user_id, course_id } = req.body;
-
-  if (!user_id || !course_id) {
-    return res.status(400).json({ error: "Missing data" });
-  }
-
-  await supabase.from("user_interactions").insert({
-    user_id,
-    course_id
+أعد JSON فقط:
+{
+  "domain": "",
+  "level": ""
+}
+`
+      },
+      { role: "user", content: message }
+    ]
   });
 
-  // زيادة popularity
-  await supabase.rpc("increment_popularity", {
-    course_id_input: course_id
-  });
-
-  res.json({ success: true });
-});
+  return JSON.parse(completion.choices[0].message.content);
+}
 
 /* ==============================
-   ✅ HYBRID SEARCH
+   ✅ SMART FOLLOW UP
 ============================== */
 
-async function searchCourses(message, domain, user_id) {
+async function generateFollowUp(message, domain) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.5,
+    messages: [
+      {
+        role: "system",
+        content: `
+اقترح سؤال متابعة ذكي يساعد المستخدم على توضيح هدفه في مجال ${domain}.
+أعد جملة واحدة فقط.
+`
+      },
+      { role: "user", content: message }
+    ]
+  });
 
-  if (domain === "general") return [];
+  return completion.choices[0].message.content.trim();
+}
+
+/* ==============================
+   ✅ LEARNING PATH GENERATOR
+============================== */
+
+async function generateLearningPath(domain, level) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    messages: [
+      {
+        role: "system",
+        content: `
+أنشئ مسار تعليمي مرتب في مجال ${domain}
+بمستوى ${level}.
+استخدم HTML بسيط فقط (ul / li / strong).
+`
+      }
+    ]
+  });
+
+  return completion.choices[0].message.content;
+}
+
+/* ==============================
+   ✅ NETFLIX STYLE RECOMMENDATION
+============================== */
+
+async function recommendCourses(message, domain, user_id) {
 
   const embedding = await createEmbedding(message);
 
@@ -149,24 +153,14 @@ async function searchCourses(message, domain, user_id) {
 ============================== */
 
 function cleanHTML(reply) {
-
   if (!reply) return "";
-
-  reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
-  reply = reply.replace(/\n\s*\n+/g, "\n");
-  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
-  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
-  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
-  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
-
   return reply.trim();
 }
 
 /* ==============================
-   ✅ MAIN CHAT ROUTE
+   ✅ MAIN CHAT
 ============================== */
 
 app.post("/chat", async (req, res) => {
@@ -189,10 +183,13 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    const domain = await detectDomain(message, history);
+    /* ✅ Detect domain + level */
+    const intent = await detectIntent(message);
 
-    await saveMemory(user_id, message, domain);
+    /* ✅ Save vector memory */
+    await saveVectorMemory(user_id, message);
 
+    /* ✅ Generate main response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -200,11 +197,9 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي محترف.
-افهم طلب المستخدم بدقة.
-لا تقترح مجال مختلف عن المطلوب.
-لا تقترح كورسات أطفال للكبار.
-استخدم HTML بسيط فقط (strong / br / ul / li).
+أنت مستشار أكاديمي ذكي جدًا.
+قدم إجابة دقيقة.
+استخدم HTML بسيط فقط.
 `
         },
         ...history
@@ -213,20 +208,27 @@ app.post("/chat", async (req, res) => {
 
     let reply = completion.choices[0].message.content;
 
-    history.push({ role: "assistant", content: reply });
+    /* ✅ Generate learning path */
+    const learningPath = await generateLearningPath(intent.domain, intent.level);
 
-    reply = cleanHTML(reply);
+    reply += `<br><strong>المسار المقترح لك:</strong><br>${learningPath}`;
 
-    const courses = await searchCourses(message, domain, user_id);
+    /* ✅ Smart follow-up */
+    const followUp = await generateFollowUp(message, intent.domain);
+
+    reply += `<br><strong>سؤال مهم:</strong> ${followUp}`;
+
+    /* ✅ Netflix recommendation */
+    const courses = await recommendCourses(message, intent.domain, user_id);
 
     if (courses.length > 0) {
 
-      reply += `<div class="courses-title">الدورات المقترحة:</div>`;
+      reply += `<div class="courses-title">الدورات المقترحة لك:</div>`;
       reply += `<div class="courses-container">`;
 
       courses.forEach(course => {
         reply += `
-<a href="${course.url}" target="_blank" class="course-btn" data-id="${course.id}">
+<a href="${course.url}" target="_blank" class="course-btn">
 ${course.title}
 </a>`;
       });
@@ -236,14 +238,12 @@ ${course.title}
 
     reply = `
 <style>
-.chat-wrapper{font-size:14px;line-height:1.5;}
-.chat-wrapper ul{margin:0;padding-right:18px;}
-.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
-.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
-.courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{display:block;width:100%;max-width:420px;padding:12px 14px;background:#c40000;color:#fff;font-size:14px;border-radius:8px;text-decoration:none;text-align:center;}
+.chat-wrapper{font-size:14px;line-height:1.6;}
+.courses-title{margin-top:16px;color:#c40000;font-weight:bold;}
+.courses-container{display:flex;flex-direction:column;gap:12px;margin-top:8px;}
+.course-btn{padding:12px;background:#c40000;color:#fff;border-radius:8px;text-align:center;text-decoration:none;}
 </style>
-<div class="chat-wrapper">${reply}</div>
+<div class="chat-wrapper">${cleanHTML(reply)}</div>
 `;
 
     return res.json({ reply, session_id });
@@ -255,11 +255,11 @@ ${course.title}
 });
 
 /* ==============================
-   ✅ START SERVER
+   ✅ START
 ============================== */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🔥 Enterprise AI Assistant Running on port " + PORT);
+  console.log("🔥 AI Enterprise Education Engine Running");
 });
