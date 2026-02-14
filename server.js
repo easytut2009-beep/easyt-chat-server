@@ -38,10 +38,12 @@ async function createEmbedding(text) {
 
 async function getRelatedCourses(query, limit = 3) {
   const embedding = await createEmbedding(query);
+
   const { data } = await supabase.rpc("match_ai_knowledge", {
     query_embedding: embedding,
     match_count: limit
   });
+
   return data || [];
 }
 
@@ -81,41 +83,36 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = conversations.get(session_id);
-
     history.push({ role: "user", content: message });
 
     /* ============================================
-       ✅ Single Smart Call (يفكر ويرد مرة واحدة)
+       ✅ GPT Call
     ============================================ */
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.5,
+      temperature: 0.4,
       messages: [
         {
           role: "system",
           content: `
-أنت مستشار أكاديمي ذكي وطبيعي جدًا.
+أنت مستشار أكاديمي ذكي وطبيعي.
 
 مهم:
 - تابع سياق المحادثة.
-- لا تطرح أكثر من سؤال واحد متتالي.
-- إذا قال المستخدم "أنا مبتدئ" ولم يحدد مجال:
-  اقترح له مسار بداية واضح (مثلاً Python) بدل الاستمرار في الأسئلة.
-- إذا بدا مرتبكًا أو قال "مش فاهم"، بسّط كلامك.
-- إذا وصلت لتوصية واضحة، اعتبرها توصية نهائية.
-- لا تستخدم عناوين كبيرة.
-- استخدم HTML بسيط فقط (strong / br / ul / li).
-- لا تكبر الخط.
-- لا تكن رسميًا زيادة.
-- كن طبيعي ومباشر.
+- لا تسأل أكثر من سؤال واحد متتالي.
+- إذا كان المستخدم مبتدئ وغير محدد، اقترح مسار واضح (مثلاً Python).
+- إذا وصلت لتوصية واضحة لمسار أو لغة أو مجال، اعتبرها توصية نهائية.
 
-في نهاية ردك أضف سطرًا مخفيًا بالشكل التالي:
+في نهاية الرد أضف:
 <state>normal</state>
 أو
 <state>recommend</state>
 
-ولا تشرح معنى الحالة.
+ولو كانت recommend أضف أيضًا:
+<topic>اسم الموضوع أو اللغة المقترحة فقط</topic>
+
+لا تشرح أي شيء عن هذه الوسوم.
 `
         },
         ...history
@@ -123,28 +120,36 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
     history.push({ role: "assistant", content: reply });
 
     /* ============================================
-       ✅ Extract State
+       ✅ Extract State & Topic
     ============================================ */
 
     let state = "normal";
+    let topic = null;
 
-    const match = reply.match(/<state>(.*?)<\/state>/);
-    if (match) {
-      state = match[1].trim();
-      reply = reply.replace(/<state>.*?<\/state>/, "").trim();
+    const stateMatch = reply.match(/<state>(.*?)<\/state>/);
+    if (stateMatch) {
+      state = stateMatch[1].trim();
+      reply = reply.replace(/<state>.*?<\/state>/, "");
     }
 
+    const topicMatch = reply.match(/<topic>(.*?)<\/topic>/);
+    if (topicMatch) {
+      topic = topicMatch[1].trim();
+      reply = reply.replace(/<topic>.*?<\/topic>/, "");
+    }
+
+    reply = reply.trim();
+
     /* ============================================
-       ✅ لو توصية نهائية → اعرض كورسات
+       ✅ لو توصية → ابحث بالموضوع نفسه
     ============================================ */
 
-    if (state === "recommend") {
+    if (state === "recommend" && topic) {
 
-      const relatedCourses = await getRelatedCourses(message, 3);
+      const relatedCourses = await getRelatedCourses(topic, 3);
 
       if (relatedCourses.length > 0) {
 
@@ -197,5 +202,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Conversational Mode running on port " + PORT);
+  console.log("✅ Ziko Smart Recommendation Mode running on port " + PORT);
 });
