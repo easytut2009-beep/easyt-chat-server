@@ -52,7 +52,6 @@ function cleanHTML(reply) {
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
 
   reply = reply.replace(/\n+/g, "<br>");
-
   reply = reply.replace(/<\/li>\s*<br>/g, "</li>");
   reply = reply.replace(/<\/li>\s*<li>/g, "</li><li>");
 
@@ -143,7 +142,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ الشكل النهائي المحسّن */
+    /* ✅ الشكل النهائي المطابق للصورة */
     reply = `
 <style>
 .chat-wrapper{
@@ -163,13 +162,13 @@ margin:3px 0;
 .course-btn{
 display:block;
 width:fit-content;
-padding:10px 16px;          /* مساحة داخلية مريحة */
+padding:10px 18px;
 background:#c40000;
 color:#fff;
-font-size:13px;
-border-radius:3px;         /* استدارة صغيرة جداً */
+font-size:14px;
+border-radius:6px;   /* نفس الشكل في الصورة */
 text-decoration:none;
-margin:4px 0;              /* مسافة بسيطة جداً بين الأزرار */
+margin:2px 0;        /* مسافة صغيرة جدًا بين الاقتراحات */
 }
 </style>
 
@@ -190,5 +189,5 @@ ${reply}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("✅ Ziko Final Spacing Optimized running on port " + PORT);
+  console.log("✅ Ziko Final Pixel Perfect running on port " + PORT);
 });
