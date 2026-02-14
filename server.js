@@ -84,8 +84,6 @@ async function createEmbedding(text) {
 
 async function searchCourses(message, domain) {
 
-  if (!domain) return [];
-
   const embedding = await createEmbedding(message);
 
   const { data, error } = await supabase.rpc("smart_course_search", {
@@ -104,7 +102,6 @@ async function searchCourses(message, domain) {
     const { data: fallback } = await supabase
       .from("courses")
       .select("title, url")
-      .eq("domain", domain)
       .limit(5);
 
     return fallback ?? [];
