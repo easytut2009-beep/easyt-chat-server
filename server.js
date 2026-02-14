@@ -24,10 +24,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* =====================================================
-   SEARCH COURSES (FIXED 100%)
-   ✅ بدون embedding
-   ✅ بدون RPC
-   ✅ يرجع أول 5 دورات مباشرة
+   SEARCH COURSES
 ===================================================== */
 
 async function searchCourses() {
@@ -42,7 +39,9 @@ async function searchCourses() {
     return [];
   }
 
-  return data || [];
+  console.log("Supabase returned:", data);
+
+  return data ?? [];
 }
 
 /* =====================================================
@@ -65,6 +64,7 @@ app.post("/chat", async (req, res) => {
   try {
 
     let { message, session_id } = req.body;
+
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
@@ -78,7 +78,7 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ AI Explanation Only */
+    /* ✅ AI Response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -99,10 +99,12 @@ app.post("/chat", async (req, res) => {
     let reply = completion.choices[0].message.content;
     reply = cleanHTML(reply);
 
-    /* ✅ Fetch Courses Directly */
+    /* ✅ Fetch Courses */
     const courses = await searchCourses();
 
-    if (courses.length > 0) {
+    console.log("Courses after function:", courses);
+
+    if (courses && courses.length > 0) {
 
       reply += `<div class="courses-title">استعرض الدورات المتاحة:</div>`;
       reply += `<div class="courses-container">`;
