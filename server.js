@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 4 ACTIVE 🔥");
+console.log("🔥 VERSION 5 ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -43,38 +43,59 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK (FIXED)
+   ✅ TEACHABLE WEBHOOK (SMART VERSION)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
   try {
-    const data = req.body;
+    console.log("🔥 TEACHABLE WEBHOOK RECEIVED");
 
-    console.log("🔥 TEACHABLE WEBHOOK RECEIVED:");
+    const rawBody = req.body;
+
+    // أحيانًا البيانات بتيجي جوه data
+    const data = rawBody?.data || rawBody;
+
     console.log(JSON.stringify(data, null, 2));
 
-    // ✅ Extract user name safely
+    const eventType = data?.event || data?.event_name || "";
+
+    // ✅ نسجل فقط أحداث البيع / التسجيل المدفوع
+    const allowedEvents = [
+      "sale.created",
+      "transaction.created",
+      "enrollment.created",
+      "New Sale",
+      "New Transaction",
+      "New Enrollment"
+    ];
+
+    if (!allowedEvents.includes(eventType)) {
+      console.log("⛔ Ignored event:", eventType);
+      return res.status(200).send("Ignored ✅");
+    }
+
+    // ✅ استخراج الاسم
     const fullName =
       data?.user?.name ||
       data?.user?.full_name ||
       data?.student?.name ||
-      data?.user_name ||
-      "طالب جديد";
+      data?.sale?.user?.name ||
+      null;
 
-    const firstName = fullName.split(" ")[0];
-
-    // ✅ Extract product/course name safely
+    // ✅ استخراج اسم الكورس
     const productName =
       data?.course?.name ||
       data?.product?.name ||
+      data?.sale?.course?.name ||
       data?.transaction?.product_name ||
-      data?.course_name ||
-      "دبلومة";
+      null;
 
-    const eventType =
-      data?.event ||
-      data?.event_name ||
-      "purchase";
+    if (!fullName || !productName) {
+      console.log("⚠ Missing real data — not inserting");
+      return res.status(200).send("No valid data ✅");
+    }
+
+    const firstName = fullName.split(" ")[0];
 
     const { error } = await supabase
       .from("recent_activity")
@@ -89,7 +110,7 @@ app.post("/teachable-webhook", async (req, res) => {
     if (error) {
       console.log("❌ Supabase insert error:", error.message);
     } else {
-      console.log("✅ Activity inserted successfully");
+      console.log("✅ Real activity inserted");
     }
 
     return res.status(200).send("OK ✅");
