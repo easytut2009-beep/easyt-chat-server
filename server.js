@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 7 ACTIVE 🔥");
+console.log("🔥 VERSION 8 ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -43,7 +43,7 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK (FINAL FIX)
+   ✅ TEACHABLE WEBHOOK (SMART & FINAL)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
@@ -51,31 +51,23 @@ app.post("/teachable-webhook", async (req, res) => {
     console.log("🔥 TEACHABLE WEBHOOK RECEIVED");
 
     const data = req.body;
-
     console.log(JSON.stringify(data, null, 2));
 
-    // ✅ نتأكد إن الحدث Enrollment.create
-    if (data?.type !== "Enrollment.create") {
-      console.log("⛔ Not Enrollment.create event");
-      return res.status(200).send("Ignored ✅");
-    }
+    const object = data?.object;
 
-    const enrollment = data?.object;
-
-    // ✅ استخراج الاسم الصحيح
     const fullName =
-      enrollment?.user?.name ||
-      enrollment?.user?.full_name ||
+      object?.user?.name ||
+      object?.user?.full_name ||
       null;
 
-    // ✅ استخراج اسم الكورس الصحيح
     const productName =
-      enrollment?.course?.name ||
+      object?.course?.name ||
       null;
 
+    // ✅ فقط لو فيه اسم + كورس → ده شراء حقيقي
     if (!fullName || !productName) {
-      console.log("⚠ Missing name or course");
-      return res.status(200).send("No valid data ✅");
+      console.log("⛔ Not purchase-related webhook");
+      return res.status(200).send("Ignored ✅");
     }
 
     const firstName = fullName.trim().split(" ")[0];
