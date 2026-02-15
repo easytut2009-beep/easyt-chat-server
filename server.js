@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 8 ACTIVE 🔥");
+console.log("🔥 VERSION 9 ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -43,7 +43,7 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK (SMART & FINAL)
+   ✅ TEACHABLE WEBHOOK (SMART PRO)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
@@ -51,8 +51,6 @@ app.post("/teachable-webhook", async (req, res) => {
     console.log("🔥 TEACHABLE WEBHOOK RECEIVED");
 
     const data = req.body;
-    console.log(JSON.stringify(data, null, 2));
-
     const object = data?.object;
 
     const fullName =
@@ -64,7 +62,11 @@ app.post("/teachable-webhook", async (req, res) => {
       object?.course?.name ||
       null;
 
-    // ✅ فقط لو فيه اسم + كورس → ده شراء حقيقي
+    const country =
+      object?.user?.address?.country ||
+      object?.user?.country ||
+      "Unknown";
+
     if (!fullName || !productName) {
       console.log("⛔ Not purchase-related webhook");
       return res.status(200).send("Ignored ✅");
@@ -72,13 +74,29 @@ app.post("/teachable-webhook", async (req, res) => {
 
     const firstName = fullName.trim().split(" ")[0];
 
+    // ✅ منع التكرار خلال 60 ثانية لنفس الشخص ونفس الكورس
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+
+    const { data: existing } = await supabase
+      .from("recent_activity")
+      .select("*")
+      .eq("name", firstName)
+      .eq("product", productName)
+      .gte("created_at", oneMinuteAgo);
+
+    if (existing && existing.length > 0) {
+      console.log("⚠ Duplicate ignored");
+      return res.status(200).send("Duplicate ✅");
+    }
+
     const { error } = await supabase
       .from("recent_activity")
       .insert([
         {
           name: firstName,
           product: productName,
-          type: "purchase"
+          type: "purchase",
+          country: country
         }
       ]);
 
@@ -97,16 +115,20 @@ app.post("/teachable-webhook", async (req, res) => {
 });
 
 /* ==============================
-   ✅ GET RECENT ACTIVITY
+   ✅ GET RECENT ACTIVITY (Last 20 Minutes Only)
 ============================== */
 
 app.get("/recent-activity", async (req, res) => {
   try {
+
+    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+
     const { data, error } = await supabase
       .from("recent_activity")
       .select("*")
+      .gte("created_at", twentyMinutesAgo)
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(10);
 
     if (error) {
       console.log(error.message);
@@ -284,7 +306,7 @@ ${course.title}
    ✅ START SERVER
 ============================== */
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("✅ Server Running on port " + PORT);
