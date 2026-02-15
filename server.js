@@ -241,6 +241,56 @@ transition:0.3s;
 
 const PORT = process.env.PORT || 3000;
 
+
+// ===============================
+// TEACHABLE WEBHOOK
+// ===============================
+
+app.post("/teachable-webhook", async (req, res) => {
+  try {
+    const data = req.body;
+
+    const firstName =
+      data?.user?.name?.split(" ")[0] || "طالب جديد";
+
+    const productName =
+      data?.product?.name || "دبلومة";
+
+    const eventType =
+      data?.event || "purchase";
+
+    await supabase.from("recent_activity").insert([
+      {
+        name: firstName,
+        product: productName,
+        type: eventType
+      }
+    ]);
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Error");
+  }
+});
+
+// ===============================
+// GET RECENT ACTIVITY
+// ===============================
+
+app.get("/recent-activity", async (req, res) => {
+  const { data, error } = await supabase
+    .from("recent_activity")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (error) return res.status(500).json([]);
+
+  res.json(data);
+});
+
+
 app.listen(PORT, () => {
   console.log("✅ Server Running on port " + PORT);
 });
