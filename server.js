@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 10 PRO ACTIVE 🔥");
+console.log("🔥 VERSION 11 PRO ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -31,30 +31,6 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ COUNTRY CODE TO NAME
-============================== */
-
-function countryCodeToName(code) {
-  if (!code) return "Unknown";
-
-  const countries = {
-    EG: "Egypt",
-    SA: "Saudi Arabia",
-    AE: "UAE",
-    KW: "Kuwait",
-    QA: "Qatar",
-    OM: "Oman",
-    BH: "Bahrain",
-    US: "United States",
-    GB: "United Kingdom",
-    CA: "Canada",
-    AU: "Australia"
-  };
-
-  return countries[code.toUpperCase()] || code;
-}
-
-/* ==============================
    ✅ TEST ROUTES
 ============================== */
 
@@ -67,7 +43,7 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK (SMART PRO)
+   ✅ TEACHABLE WEBHOOK (FINAL FIXED)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
@@ -77,21 +53,35 @@ app.post("/teachable-webhook", async (req, res) => {
     const data = req.body;
     const object = data?.object;
 
+    if (!object) {
+      return res.status(200).send("No object ✅");
+    }
+
+    /* ✅ الاسم */
     const fullName =
       object?.user?.name ||
       object?.user?.full_name ||
+      object?.user_name ||
       null;
 
+    /* ✅ اسم الكورس */
     const productName =
       object?.course?.name ||
+      object?.product?.name ||
       null;
 
+    /* ✅ الدولة (الإصلاح هنا ✅) */
     let countryCode =
-      object?.user?.address?.country ||
+      object?.shipping_address?.country ||  // ✅ الصحيح حسب اللوج
       object?.user?.country ||
+      object?.user?.address?.country ||
       null;
 
-    const country = countryCodeToName(countryCode);
+    if (countryCode) {
+      countryCode = countryCode.toUpperCase();
+    }
+
+    const country = countryCode || "Unknown";
 
     if (!fullName || !productName) {
       console.log("⛔ Not purchase-related webhook");
@@ -129,7 +119,7 @@ app.post("/teachable-webhook", async (req, res) => {
     if (error) {
       console.log("❌ Supabase insert error:", error.message);
     } else {
-      console.log("✅ Real activity inserted");
+      console.log("✅ Real activity inserted with country:", country);
     }
 
     return res.status(200).send("OK ✅");
@@ -141,7 +131,7 @@ app.post("/teachable-webhook", async (req, res) => {
 });
 
 /* ==============================
-   ✅ GET RECENT ACTIVITY (Last 20 Minutes Only)
+   ✅ GET RECENT ACTIVITY (Last 20 Minutes)
 ============================== */
 
 app.get("/recent-activity", async (req, res) => {
