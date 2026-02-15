@@ -9,7 +9,13 @@ import crypto from "crypto";
 ============================== */
 
 const app = express();
-app.use(cors());
+
+app.use(cors({
+  origin: ["https://easyt.online", "https://www.easyt.online"],
+  methods: ["GET", "POST"],
+  credentials: true
+}));
+
 app.use(express.json());
 
 if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
@@ -28,6 +34,71 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
+   ✅ TEST ROUTE
+============================== */
+
+app.get("/test", (req, res) => {
+  res.send("SERVER WORKING ✅");
+});
+
+/* ==============================
+   ✅ TEACHABLE WEBHOOK
+============================== */
+
+app.post("/teachable-webhook", async (req, res) => {
+  try {
+    const data = req.body;
+
+    const firstName =
+      data?.user?.name?.split(" ")[0] || "طالب جديد";
+
+    const productName =
+      data?.product?.name || "دبلومة";
+
+    const eventType =
+      data?.event || "purchase";
+
+    await supabase.from("recent_activity").insert([
+      {
+        name: firstName,
+        product: productName,
+        type: eventType
+      }
+    ]);
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Webhook error:", error.message);
+    res.status(500).send("Error");
+  }
+});
+
+/* ==============================
+   ✅ GET RECENT ACTIVITY
+============================== */
+
+app.get("/recent-activity", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("recent_activity")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.log(error.message);
+      return res.json([]);
+    }
+
+    return res.json(data);
+
+  } catch (err) {
+    console.log("Recent activity error:", err.message);
+    return res.json([]);
+  }
+});
+
+/* ==============================
    ✅ EMBEDDING
 ============================== */
 
@@ -36,7 +107,6 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text
   });
-
   return response.data[0].embedding;
 }
 
@@ -45,7 +115,6 @@ async function createEmbedding(text) {
 ============================== */
 
 async function detectIntent(message) {
-
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -77,41 +146,25 @@ Return JSON:
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH (Top 2)
+   ✅ SEMANTIC SEARCH
 ============================== */
 
 async function searchCourses(message) {
-
   try {
-
     const queryEmbedding = await createEmbedding(message);
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 2   // ✅ أهم تعديل
+      match_count: 2
     });
 
-    if (error) {
-      console.log("Semantic search error:", error.message);
-      return [];
-    }
+    if (error || !data) return [];
 
-    if (!data || data.length === 0) return [];
-
-    console.log("Similarities:");
-    data.forEach(c => {
-      console.log(c.title, c.similarity);
-    });
-
-    // ✅ فلترة جودة
-    const filtered = data
+    return data
       .filter(c => c.similarity >= 0.60)
       .sort((a, b) => b.similarity - a.similarity);
 
-    return filtered;
-
-  } catch (err) {
-    console.log("Search crash:", err.message);
+  } catch {
     return [];
   }
 }
@@ -121,21 +174,18 @@ async function searchCourses(message) {
 ============================== */
 
 function cleanHTML(reply) {
-
   if (!reply) return "";
-
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
   reply = reply.replace(/\n\s*\n+/g, "\n");
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
-
   return reply.trim();
 }
 
 /* ==============================
-   ✅ MAIN ROUTE
+   ✅ MAIN CHAT ROUTE
 ============================== */
 
 app.post("/chat", async (req, res) => {
@@ -157,10 +207,8 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ Detect intent */
     const intent = await detectIntent(message);
 
-    /* ✅ Generate response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -182,7 +230,6 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Recommendations only if learning intent */
     let courses = [];
 
     if (intent === "learning_intent" || intent === "comparison") {
@@ -190,7 +237,6 @@ app.post("/chat", async (req, res) => {
     }
 
     if (courses.length > 0) {
-
       reply += `<div class="courses-title">الدورات المقترحة:</div>`;
       reply += `<div class="courses-container">`;
 
@@ -203,29 +249,6 @@ ${course.title}
 
       reply += `</div>`;
     }
-
-    reply = `
-<style>
-.chat-wrapper{font-size:14px;line-height:1.6;}
-.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
-.courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{
-display:block;
-width:100%;
-max-width:420px;
-padding:12px 14px;
-background:#c40000;
-color:#fff;
-font-size:14px;
-border-radius:8px;
-text-decoration:none;
-text-align:center;
-transition:0.3s;
-}
-.course-btn:hover{opacity:0.85;}
-</style>
-<div class="chat-wrapper">${reply}</div>
-`;
 
     return res.json({ reply, session_id });
 
@@ -240,56 +263,6 @@ transition:0.3s;
 ============================== */
 
 const PORT = process.env.PORT || 3000;
-
-
-// ===============================
-// TEACHABLE WEBHOOK
-// ===============================
-
-app.post("/teachable-webhook", async (req, res) => {
-  try {
-    const data = req.body;
-
-    const firstName =
-      data?.user?.name?.split(" ")[0] || "طالب جديد";
-
-    const productName =
-      data?.product?.name || "دبلومة";
-
-    const eventType =
-      data?.event || "purchase";
-
-    await supabase.from("recent_activity").insert([
-      {
-        name: firstName,
-        product: productName,
-        type: eventType
-      }
-    ]);
-
-    res.status(200).send("OK");
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Error");
-  }
-});
-
-// ===============================
-// GET RECENT ACTIVITY
-// ===============================
-
-app.get("/recent-activity", async (req, res) => {
-  const { data, error } = await supabase
-    .from("recent_activity")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  if (error) return res.status(500).json([]);
-
-  res.json(data);
-});
-
 
 app.listen(PORT, () => {
   console.log("✅ Server Running on port " + PORT);
