@@ -10,12 +10,9 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 3 ACTIVE 🔥");
+console.log("🔥 VERSION 4 ACTIVE 🔥");
 
-app.use(cors({
-  origin: "*"
-}));
-
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
@@ -34,7 +31,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ TEST ROUTE
+   ✅ TEST ROUTES
 ============================== */
 
 app.get("/", (req, res) => {
@@ -46,31 +43,56 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK
+   ✅ TEACHABLE WEBHOOK (FIXED)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
   try {
     const data = req.body;
 
-    const firstName =
-      data?.user?.name?.split(" ")[0] || "طالب جديد";
+    console.log("🔥 TEACHABLE WEBHOOK RECEIVED:");
+    console.log(JSON.stringify(data, null, 2));
 
+    // ✅ Extract user name safely
+    const fullName =
+      data?.user?.name ||
+      data?.user?.full_name ||
+      data?.student?.name ||
+      data?.user_name ||
+      "طالب جديد";
+
+    const firstName = fullName.split(" ")[0];
+
+    // ✅ Extract product/course name safely
     const productName =
-      data?.product?.name || "دبلومة";
+      data?.course?.name ||
+      data?.product?.name ||
+      data?.transaction?.product_name ||
+      data?.course_name ||
+      "دبلومة";
 
     const eventType =
-      data?.event || "purchase";
+      data?.event ||
+      data?.event_name ||
+      "purchase";
 
-    await supabase.from("recent_activity").insert([
-      {
-        name: firstName,
-        product: productName,
-        type: eventType
-      }
-    ]);
+    const { error } = await supabase
+      .from("recent_activity")
+      .insert([
+        {
+          name: firstName,
+          product: productName,
+          type: eventType
+        }
+      ]);
 
-    return res.status(200).send("OK");
+    if (error) {
+      console.log("❌ Supabase insert error:", error.message);
+    } else {
+      console.log("✅ Activity inserted successfully");
+    }
+
+    return res.status(200).send("OK ✅");
 
   } catch (error) {
     console.error("Webhook error:", error.message);
@@ -194,7 +216,6 @@ function cleanHTML(reply) {
 ============================== */
 
 app.post("/chat", async (req, res) => {
-
   try {
 
     let { message, session_id } = req.body;
