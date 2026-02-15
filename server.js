@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 11 PRO ACTIVE 🔥");
+console.log("🔥 VERSION 12 STABLE PRO 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -43,7 +43,7 @@ app.get("/test", (req, res) => {
 });
 
 /* ==============================
-   ✅ TEACHABLE WEBHOOK (FINAL FIXED)
+   ✅ TEACHABLE WEBHOOK (ANTI-DUPLICATE PRO)
 ============================== */
 
 app.post("/teachable-webhook", async (req, res) => {
@@ -55,6 +55,26 @@ app.post("/teachable-webhook", async (req, res) => {
 
     if (!object) {
       return res.status(200).send("No object ✅");
+    }
+
+    /* ✅ ID فريد لكل عملية بيع */
+    const saleId = object?.id || data?.id;
+
+    if (!saleId) {
+      console.log("⚠ No sale ID");
+      return res.status(200).send("No sale id ✅");
+    }
+
+    /* ✅ منع تكرار نفس العملية نهائيًا */
+    const { data: existingSale } = await supabase
+      .from("recent_activity")
+      .select("id")
+      .eq("sale_id", saleId)
+      .limit(1);
+
+    if (existingSale && existingSale.length > 0) {
+      console.log("⚠ Duplicate webhook ignored:", saleId);
+      return res.status(200).send("Duplicate ✅");
     }
 
     /* ✅ الاسم */
@@ -70,9 +90,14 @@ app.post("/teachable-webhook", async (req, res) => {
       object?.product?.name ||
       null;
 
-    /* ✅ الدولة (الإصلاح هنا ✅) */
+    if (!fullName || !productName) {
+      console.log("⛔ Not purchase-related webhook");
+      return res.status(200).send("Ignored ✅");
+    }
+
+    /* ✅ الدولة */
     let countryCode =
-      object?.shipping_address?.country ||  // ✅ الصحيح حسب اللوج
+      object?.shipping_address?.country ||
       object?.user?.country ||
       object?.user?.address?.country ||
       null;
@@ -83,32 +108,14 @@ app.post("/teachable-webhook", async (req, res) => {
 
     const country = countryCode || "Unknown";
 
-    if (!fullName || !productName) {
-      console.log("⛔ Not purchase-related webhook");
-      return res.status(200).send("Ignored ✅");
-    }
-
     const firstName = fullName.trim().split(" ")[0];
 
-    /* ✅ منع التكرار خلال 60 ثانية */
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
-
-    const { data: existing } = await supabase
-      .from("recent_activity")
-      .select("id")
-      .eq("name", firstName)
-      .eq("product", productName)
-      .gte("created_at", oneMinuteAgo);
-
-    if (existing && existing.length > 0) {
-      console.log("⚠ Duplicate ignored");
-      return res.status(200).send("Duplicate ✅");
-    }
-
+    /* ✅ إدخال العملية */
     const { error } = await supabase
       .from("recent_activity")
       .insert([
         {
+          sale_id: saleId,
           name: firstName,
           product: productName,
           type: "purchase",
@@ -117,9 +124,9 @@ app.post("/teachable-webhook", async (req, res) => {
       ]);
 
     if (error) {
-      console.log("❌ Supabase insert error:", error.message);
+      console.log("❌ Supabase error:", error.message);
     } else {
-      console.log("✅ Real activity inserted with country:", country);
+      console.log("✅ Real activity inserted:", saleId);
     }
 
     return res.status(200).send("OK ✅");
@@ -131,30 +138,27 @@ app.post("/teachable-webhook", async (req, res) => {
 });
 
 /* ==============================
-   ✅ GET RECENT ACTIVITY (Last 20 Minutes)
+   ✅ GET RECENT ACTIVITY (INSTANT DISPLAY)
 ============================== */
 
 app.get("/recent-activity", async (req, res) => {
   try {
 
-    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-
     const { data, error } = await supabase
       .from("recent_activity")
       .select("*")
-      .gte("created_at", twentyMinutesAgo)
       .order("created_at", { ascending: false })
       .limit(10);
 
     if (error) {
-      console.log(error.message);
+      console.log("Recent activity error:", error.message);
       return res.json([]);
     }
 
     return res.json(data);
 
   } catch (err) {
-    console.log("Recent activity error:", err.message);
+    console.log("Recent activity crash:", err.message);
     return res.json([]);
   }
 });
