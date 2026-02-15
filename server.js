@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 9 ACTIVE 🔥");
+console.log("🔥 VERSION 10 PRO ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -29,6 +29,30 @@ const supabase = createClient(
 );
 
 const conversations = new Map();
+
+/* ==============================
+   ✅ COUNTRY CODE TO NAME
+============================== */
+
+function countryCodeToName(code) {
+  if (!code) return "Unknown";
+
+  const countries = {
+    EG: "Egypt",
+    SA: "Saudi Arabia",
+    AE: "UAE",
+    KW: "Kuwait",
+    QA: "Qatar",
+    OM: "Oman",
+    BH: "Bahrain",
+    US: "United States",
+    GB: "United Kingdom",
+    CA: "Canada",
+    AU: "Australia"
+  };
+
+  return countries[code.toUpperCase()] || code;
+}
 
 /* ==============================
    ✅ TEST ROUTES
@@ -62,10 +86,12 @@ app.post("/teachable-webhook", async (req, res) => {
       object?.course?.name ||
       null;
 
-    const country =
+    let countryCode =
       object?.user?.address?.country ||
       object?.user?.country ||
-      "Unknown";
+      null;
+
+    const country = countryCodeToName(countryCode);
 
     if (!fullName || !productName) {
       console.log("⛔ Not purchase-related webhook");
@@ -74,12 +100,12 @@ app.post("/teachable-webhook", async (req, res) => {
 
     const firstName = fullName.trim().split(" ")[0];
 
-    // ✅ منع التكرار خلال 60 ثانية لنفس الشخص ونفس الكورس
+    /* ✅ منع التكرار خلال 60 ثانية */
     const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
 
     const { data: existing } = await supabase
       .from("recent_activity")
-      .select("*")
+      .select("id")
       .eq("name", firstName)
       .eq("product", productName)
       .gte("created_at", oneMinuteAgo);
