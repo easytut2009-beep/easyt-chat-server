@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 
-console.log("🔥 VERSION 6 ACTIVE 🔥");
+console.log("🔥 VERSION 7 ACTIVE 🔥");
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -50,31 +50,32 @@ app.post("/teachable-webhook", async (req, res) => {
   try {
     console.log("🔥 TEACHABLE WEBHOOK RECEIVED");
 
-    const rawBody = req.body;
-    const data = rawBody?.data || rawBody;
+    const data = req.body;
 
     console.log(JSON.stringify(data, null, 2));
 
-    // ✅ استخراج الاسم
-    const fullName =
-      data?.user?.name ||
-      data?.user?.full_name ||
-      data?.student?.name ||
-      data?.sale?.user?.name ||
-      null;
-
-    // ✅ استخراج اسم الكورس
-    const productName =
-      data?.course?.name ||
-      data?.sale?.course?.name ||
-      data?.product?.name ||
-      data?.transaction?.product_name ||
-      null;
-
-    // ✅ لو البيانات ناقصة ما نسجلش
-    if (!fullName || !productName) {
-      console.log("⛔ Not a valid enrollment event");
+    // ✅ نتأكد إن الحدث Enrollment.create
+    if (data?.type !== "Enrollment.create") {
+      console.log("⛔ Not Enrollment.create event");
       return res.status(200).send("Ignored ✅");
+    }
+
+    const enrollment = data?.object;
+
+    // ✅ استخراج الاسم الصحيح
+    const fullName =
+      enrollment?.user?.name ||
+      enrollment?.user?.full_name ||
+      null;
+
+    // ✅ استخراج اسم الكورس الصحيح
+    const productName =
+      enrollment?.course?.name ||
+      null;
+
+    if (!fullName || !productName) {
+      console.log("⚠ Missing name or course");
+      return res.status(200).send("No valid data ✅");
     }
 
     const firstName = fullName.trim().split(" ")[0];
