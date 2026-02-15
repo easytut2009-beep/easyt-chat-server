@@ -10,10 +10,10 @@ import crypto from "crypto";
 
 const app = express();
 
+console.log("🔥 VERSION 3 ACTIVE 🔥");
+
 app.use(cors({
-  origin: ["https://easyt.online", "https://www.easyt.online"],
-  methods: ["GET", "POST"],
-  credentials: true
+  origin: "*"
 }));
 
 app.use(express.json());
@@ -36,6 +36,10 @@ const conversations = new Map();
 /* ==============================
    ✅ TEST ROUTE
 ============================== */
+
+app.get("/", (req, res) => {
+  res.send("SERVER ROOT ✅");
+});
 
 app.get("/test", (req, res) => {
   res.send("SERVER WORKING ✅");
@@ -66,10 +70,11 @@ app.post("/teachable-webhook", async (req, res) => {
       }
     ]);
 
-    res.status(200).send("OK");
+    return res.status(200).send("OK");
+
   } catch (error) {
     console.error("Webhook error:", error.message);
-    res.status(500).send("Error");
+    return res.status(500).send("Error");
   }
 });
 
