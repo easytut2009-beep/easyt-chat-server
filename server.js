@@ -77,11 +77,11 @@ async function classifyIntent(message) {
           content: `
 صنف رسالة المستخدم إلى واحدة فقط من القيم التالية:
 
-NONE → لا علاقة لها بمجال تعليمي
-DOMAIN → سؤال تعليمي عام (شرح مفهوم أو موضوع)
-DIRECT → طلب كورسات أو تعلم مجال
+SUPPORT → مشكلة حساب / دفع / تسجيل دخول / دورة غير ظاهرة / مشكلة تقنية
+EDUCATIONAL → سؤال تعليمي أو طلب تعلم أو استفسار عن مجال
+NONE → تحية أو سؤال عام غير متعلق بالتعليم
 
-أجب فقط بكلمة واحدة.
+أجب بكلمة واحدة فقط.
 `
         },
         { role: "user", content: message }
@@ -96,7 +96,7 @@ DIRECT → طلب كورسات أو تعلم مجال
 }
 
 /* ==============================
-   ✅ EXTRACT DOMAIN FOR SEARCH
+   ✅ EXTRACT DOMAIN
 ============================== */
 
 async function extractSearchTopic(message) {
@@ -133,9 +133,17 @@ function getSystemPrompt(mode, course_id) {
 
   if (mode === "visitor") {
     return `
-أنت مستشار ذكي لمنصة easyT التعليمية.
-اشرح المفاهيم بوضوح.
-كن احترافيًا وغير دعائي.
+أنت مستشار تعليمي لمنصة easyT.
+اشرح المفاهيم بوضوح وبطريقة احترافية.
+لا تكن دعائيًا.
+`;
+  }
+
+  if (mode === "support") {
+    return `
+أنت مساعد دعم فني لمنصة easyT.
+ساعد المستخدم في حل مشاكل الحساب أو الدفع أو الوصول للدورات.
+كن مباشرًا وواضحًا.
 `;
   }
 
@@ -143,13 +151,6 @@ function getSystemPrompt(mode, course_id) {
     return `
 أنت مساعد داخل الكورس.
 اشرح ودرّب الطالب عمليًا.
-`;
-  }
-
-  if (mode === "support") {
-    return `
-أنت مساعد دعم فني.
-كن مباشرًا وواضحًا.
 `;
   }
 
@@ -180,18 +181,49 @@ app.post("/chat", async (req, res) => {
     }
 
     if (!session_id) session_id = crypto.randomUUID();
-    if (!mode) mode = "visitor";
 
+    /* ✅ Step 1: Classify First */
+    const intent = await classifyIntent(message);
+
+    let finalMode = "visitor";
+
+    if (intent === "SUPPORT") {
+      finalMode = "support";
+    }
+
+    /* ✅ Conversation memory */
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
     }
 
     const history = conversations.get(session_id);
+
+    /* ✅ لو دعم → نرد بدون اقتراح وبدون history طويل */
+    if (finalMode === "support") {
+
+      const supportPrompt = getSystemPrompt("support");
+
+      const supportCompletion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: supportPrompt },
+          { role: "user", content: message }
+        ]
+      });
+
+      let reply = supportCompletion.choices[0].message.content;
+      reply = cleanHTML(reply);
+
+      return res.json({ reply, session_id });
+    }
+
+    /* ✅ Visitor Educational Flow */
+
     history.push({ role: "user", content: message });
 
-    const systemPrompt = getSystemPrompt(mode, course_id);
+    const systemPrompt = getSystemPrompt("visitor", course_id);
 
-    /* ✅ Step 1: Main AI Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
@@ -206,24 +238,15 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Step 2: Smart Suggestion Logic */
+    /* ✅ Suggest only if EDUCATIONAL */
     let courses = [];
 
-    if (mode === "visitor") {
-
-      const intent = await classifyIntent(message);
-
-      if (intent === "DIRECT") {
-        courses = await searchCourses(message);
-      }
-
-      if (intent === "DOMAIN") {
-        const topic = await extractSearchTopic(message);
-        courses = await searchCourses(topic);
-      }
+    if (intent === "EDUCATIONAL") {
+      const topic = await extractSearchTopic(message);
+      courses = await searchCourses(topic);
     }
 
-    /* ✅ Step 3: Attach Suggestions */
+    /* ✅ Attach Suggestions */
     if (courses.length > 0) {
 
       reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
