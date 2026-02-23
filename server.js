@@ -330,8 +330,6 @@ app.post("/chat", async (req, res) => {
       history.shift();
     }
 
-    /* ✅ ENTITY MEMORY (FIXED CONTEXTUAL EXTRACTION) */
-
     const previousEntity = sessionEntityMemory.get(session_id) || null;
 
     const entityContextForExtraction = previousEntity
@@ -352,7 +350,6 @@ app.post("/chat", async (req, res) => {
       currentEntity
     );
 
-    /* ✅ INTENT MEMORY */
     let intent = await classifyPageIntent(contextualMessage);
 
     const lastIntent = sessionIntentMemory.get(session_id);
@@ -403,7 +400,17 @@ ${course.title}
     let pageContext = "";
 
     if (pages.length > 0) {
-      pageContext = filterRelevantContent(pages, contextualMessage);
+
+      if (
+        intent === "SUBSCRIPTION" ||
+        intent === "PAYMENT" ||
+        intent === "AUTHOR" ||
+        intent === "AFFILIATE"
+      ) {
+        pageContext = pages.map(p => p.content).join(" ");
+      } else {
+        pageContext = filterRelevantContent(pages, contextualMessage);
+      }
     }
 
     if (!pageContext) {
