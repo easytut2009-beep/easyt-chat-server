@@ -47,7 +47,7 @@ const DB = {
   description:  "description",
   link:         "link",
   price:        "price",
-  instructor:   "instructor_name",
+   instructor:   "instructor_id",
   image:        "image",
   subtitle:     "subtitle",
   domain:       "domain",
