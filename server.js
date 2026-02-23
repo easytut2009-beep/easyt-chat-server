@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
@@ -24,21 +24,22 @@ const supabase = createClient(
 );
 
 const conversations = new Map();
+const MAX_HISTORY = 6;
 
 /* ==============================
-   ✅ EMBEDDING
+   ✅ SAFE EMBEDDING
 ============================== */
 
 async function createEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text
+    input: text.slice(0, 4000)
   });
   return response.data[0].embedding;
 }
 
 /* ==============================
-   ✅ GENERAL RAG SEARCH
+   ✅ RAG SEARCH
 ============================== */
 
 async function searchPages(searchText) {
@@ -84,13 +85,13 @@ async function classifyPageIntent(message) {
         {
           role: "system",
           content: `
-حدد نية المستخدم بدقة:
+حدد نية المستخدم:
 
-SUBSCRIPTION → يريد وصول كامل لكل الكورسات
-PAYMENT → يسأل عن الدفع أو التحويل
-AUTHOR → يريد الانضمام كمحاضر
-AFFILIATE → يسأل عن العمولة
-GENERAL → سؤال عام
+SUBSCRIPTION
+PAYMENT
+AUTHOR
+AFFILIATE
+GENERAL
 
 أجب بكلمة واحدة فقط.
 `
@@ -106,7 +107,7 @@ GENERAL → سؤال عام
 }
 
 /* ==============================
-   ✅ SMART CONTEXT FILTER
+   ✅ SMART CONTEXT FILTER (IMPROVED)
 ============================== */
 
 function filterRelevantContent(pageData, message) {
@@ -114,23 +115,28 @@ function filterRelevantContent(pageData, message) {
   const fullText = pageData.map(p => p.content).join(" ");
   const sentences = fullText.split(/[.!؟]/);
 
-  const keywords = message.split(" ").filter(w => w.length > 2);
+  const words = message
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 2);
 
   const scored = sentences.map(sentence => {
+    const s = sentence.toLowerCase();
     let score = 0;
-    for (let word of keywords) {
-      if (sentence.includes(word)) score++;
+    for (let word of words) {
+      if (s.includes(word)) score++;
     }
-    return { sentence, score };
+    return { sentence: sentence.trim(), score };
   });
 
-  const topSentences = scored
+  const top = scored
+    .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
-    .map(s => s.sentence.trim())
+    .slice(0, 8)
+    .map(s => s.sentence)
     .filter(s => s.length > 20);
 
-  return topSentences.join(". ");
+  return top.join(". ");
 }
 
 /* ==============================
@@ -180,8 +186,8 @@ app.post("/chat", async (req, res) => {
 
     let { message, session_id } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
+    if (!message || message.length > 1000) {
+      return res.status(400).json({ reply: "رسالة غير صالحة." });
     }
 
     if (!session_id) session_id = crypto.randomUUID();
@@ -191,12 +197,17 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = conversations.get(session_id);
+
     history.push({ role: "user", content: message });
 
-    /* ✅ STEP 1: INTENT */
+    if (history.length > MAX_HISTORY) {
+      history.shift();
+    }
+
+    /* ✅ INTENT */
     const intent = await classifyPageIntent(message);
 
-    /* ✅ STEP 2: FETCH CONTENT */
+    /* ✅ FETCH CONTENT */
     let pages = [];
 
     if (intent === "SUBSCRIPTION") {
@@ -221,34 +232,37 @@ app.post("/chat", async (req, res) => {
       pageContext = filterRelevantContent(pages, message);
     }
 
-    /* ✅ STEP 3: GENERATE RESPONSE */
+    /* ✅ CONTROLLED FALLBACK */
+    if (!pageContext) {
+      return res.json({
+        reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT."
+      });
+    }
+
+    /* ✅ GENERATE */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.3,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
           content: `
-أنت مستشار رسمي لمنصة easyT.
-استخدم المعلومات التالية للإجابة بشكل مباشر.
-إذا كانت هناك معلومات مناسبة في النص لا تقل أنك لا تملك معلومات.
-لا تخترع معلومات خارج النص.
+أنت مستشار رسمي داخل منصة easyT فقط.
+
+ممنوع اقتراح أي منصة خارج easyT.
+استخدم المعلومات التالية للإجابة.
+لا تقل "قم بزيارة الموقع".
+لا تخترع معلومات.
 `
         },
-        ...(pageContext ? [{
-          role: "system",
-          content: `معلومات ذات صلة:\n${pageContext}`
-        }] : []),
+        { role: "system", content: `محتوى رسمي:\n${pageContext}` },
         ...history
       ]
     });
 
     let reply = completion.choices[0].message.content;
-    history.push({ role: "assistant", content: reply });
 
     reply = cleanHTML(reply);
-
-    /* ✅ STEP 4: ADD LINK */
     reply = appendSmartLink(reply, intent);
 
     return res.json({ reply, session_id });
@@ -260,7 +274,7 @@ app.post("/chat", async (req, res) => {
 });
 
 /* ==============================
-   ✅ START SERVER
+   ✅ START
 ============================== */
 
 const PORT = process.env.PORT || 3000;
