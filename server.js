@@ -27,7 +27,7 @@ const conversations = new Map();
 const MAX_HISTORY = 6;
 
 /* ==============================
-   ✅ SAFE EMBEDDING
+   ✅ EMBEDDING
 ============================== */
 
 async function createEmbedding(text) {
@@ -39,7 +39,26 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ RAG SEARCH
+   ✅ SEARCH COURSES
+============================== */
+
+async function searchCourses(searchText) {
+  try {
+    const queryEmbedding = await createEmbedding(searchText);
+
+    const { data } = await supabase.rpc("match_courses", {
+      query_embedding: queryEmbedding,
+      match_count: 5
+    });
+
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+/* ==============================
+   ✅ SEARCH PAGES (RAG)
 ============================== */
 
 async function searchPages(searchText) {
@@ -53,7 +72,6 @@ async function searchPages(searchText) {
     });
 
     return data || [];
-
   } catch {
     return [];
   }
@@ -107,7 +125,7 @@ GENERAL
 }
 
 /* ==============================
-   ✅ SMART CONTEXT FILTER (IMPROVED)
+   ✅ FILTER CONTEXT
 ============================== */
 
 function filterRelevantContent(pageData, message) {
@@ -197,19 +215,18 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = conversations.get(session_id);
-
     history.push({ role: "user", content: message });
 
     if (history.length > MAX_HISTORY) {
       history.shift();
     }
 
-    /* ✅ INTENT */
     const intent = await classifyPageIntent(message);
 
-    /* ✅ FETCH CONTENT */
     let pages = [];
+    let courses = [];
 
+    /* ✅ STEP 1: DIRECT PAGE ROUTING */
     if (intent === "SUBSCRIPTION") {
       pages = await getPageByURL("https://easyt.online/p/subscriptions");
     }
@@ -223,6 +240,25 @@ app.post("/chat", async (req, res) => {
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
+      /* ✅ STEP 2: SEARCH COURSES FIRST */
+      courses = await searchCourses(message);
+
+      if (courses.length > 0) {
+
+        let reply = "لدينا الدورات التالية على منصة easyT:<br><br>";
+
+        courses.forEach(course => {
+          reply += `
+<a href="${course.link}" target="_blank"
+style="background:#c40000;color:white;padding:8px;border-radius:6px;text-decoration:none;display:block;margin-bottom:8px;">
+${course.title}
+</a>`;
+        });
+
+        return res.json({ reply, session_id });
+      }
+
+      /* ✅ STEP 3: THEN RAG SEARCH */
       pages = await searchPages(message);
     }
 
@@ -232,14 +268,12 @@ app.post("/chat", async (req, res) => {
       pageContext = filterRelevantContent(pages, message);
     }
 
-    /* ✅ CONTROLLED FALLBACK */
     if (!pageContext) {
       return res.json({
         reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT."
       });
     }
 
-    /* ✅ GENERATE */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
@@ -248,10 +282,9 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار رسمي داخل منصة easyT فقط.
-
 ممنوع اقتراح أي منصة خارج easyT.
 استخدم المعلومات التالية للإجابة.
-لا تقل "قم بزيارة الموقع".
+لا تقل قم بزيارة الموقع.
 لا تخترع معلومات.
 `
         },
@@ -261,7 +294,6 @@ app.post("/chat", async (req, res) => {
     });
 
     let reply = completion.choices[0].message.content;
-
     reply = cleanHTML(reply);
     reply = appendSmartLink(reply, intent);
 
