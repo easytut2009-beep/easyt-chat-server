@@ -30,30 +30,47 @@ const sessionEntityMemory = new Map();
 const MAX_HISTORY = 6;
 
 /* ==============================
-   ✅ ENTITY EXTRACTION
+   ✅ SMART ENTITY EXTRACTION (AI BASED)
 ============================== */
 
-function extractEntityFromMessage(message) {
+async function extractEntityFromMessage(message) {
 
-  const keywords = [
-    "اشتراك",
-    "الدفع",
-    "طرق الدفع",
-    "Odoo",
-    "Oracle",
-    "AI Automation",
-    "Business Model",
-    "التسويق بالعمولة",
-    "محاضر"
-  ];
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+استخرج الكيان الأساسي الذي يتحدث عنه المستخدم داخل منصة easyT.
 
-  for (let key of keywords) {
-    if (message.toLowerCase().includes(key.toLowerCase())) {
-      return key;
-    }
+قد يكون:
+- اسم دورة
+- اشتراك
+- طرق الدفع
+- اسم محاضر
+- برنامج داخل المنصة
+
+إذا لم يوجد كيان واضح اكتب:
+NONE
+
+أجب باسم الكيان فقط بدون أي شرح.
+`
+        },
+        { role: "user", content: message }
+      ]
+    });
+
+    const entity = response.choices[0].message.content.trim();
+
+    if (entity === "NONE") return null;
+
+    return entity;
+
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 /* ==============================
@@ -172,6 +189,50 @@ GENERAL
 }
 
 /* ==============================
+   ✅ SMART GROUNDING VERIFIER
+============================== */
+
+async function verifyGrounding(question, answer, officialContext) {
+
+  const check = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `
+أنت نظام تدقيق.
+حدد هل الإجابة تعتمد فقط على النص الرسمي أم تحتوي على معلومات غير موجودة فيه.
+
+إذا كانت الإجابة تحتوي على أي معلومة غير موجودة في النص الرسمي اكتب:
+UNSUPPORTED
+
+إذا كانت مدعومة بالكامل بالنص الرسمي اكتب:
+SUPPORTED
+
+أجب بكلمة واحدة فقط.
+`
+      },
+      {
+        role: "user",
+        content: `
+السؤال:
+${question}
+
+النص الرسمي:
+${officialContext}
+
+الإجابة:
+${answer}
+`
+      }
+    ]
+  });
+
+  return check.choices[0].message.content.trim();
+}
+
+/* ==============================
    ✅ FILTER CONTEXT
 ============================== */
 
@@ -269,8 +330,8 @@ app.post("/chat", async (req, res) => {
       history.shift();
     }
 
-    /* ✅ ENTITY MEMORY */
-    const detectedEntity = extractEntityFromMessage(message);
+    /* ✅ ENTITY MEMORY (AI BASED) */
+    const detectedEntity = await extractEntityFromMessage(message);
     if (detectedEntity) {
       sessionEntityMemory.set(session_id, detectedEntity);
     }
@@ -363,6 +424,19 @@ ${course.title}
     });
 
     let reply = completion.choices[0].message.content;
+
+    const verification = await verifyGrounding(
+      contextualMessage,
+      reply,
+      pageContext
+    );
+
+    if (verification === "UNSUPPORTED") {
+      return res.json({
+        reply: "حالياً لا توجد معلومات واضحة داخل منصة easyT للإجابة على هذا الطلب."
+      });
+    }
+
     reply = cleanHTML(reply);
     reply = appendSmartLink(reply, intent);
 
