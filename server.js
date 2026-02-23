@@ -1,10 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.0
-   ✅ ALL v5.9 preserved
-   ✅ NEW: Diploma search from `diplomas` table
-   ✅ NEW: DIPLOMA_SEARCH intent
-   ✅ NEW: Related courses prioritized by query + diploma category
-   ✅ NEW: COURSE_SEARCH shows related diplomas when found
+   🤖 easyT Chatbot v6.0 — ⚡ Performance Optimized
+   ✅ ALL v6.0 features preserved
+   ⚡ Supabase .or() filters (N queries → 1 query per strategy)
+   ⚡ Promise.all() for parallel operations
+   ⚡ Instructor cache
+   ⚡ Parallel course + diploma search
+   ⚡ Parallel buildContext (FAQ + site_pages)
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -77,23 +78,65 @@ function mapCourse(row, instructorMap) {
   };
 }
 
+/* ⚡ Instructor Cache */
+const instructorCache = new Map();
+const INSTRUCTOR_CACHE_TTL = 5 * 60 * 1000;
+
 async function getInstructorMap(rows) {
   const ids = [...new Set(rows.map((r) => r[DB.instructor]).filter(Boolean))];
   if (!ids.length) return new Map();
-  try {
-    const { data, error } = await supabase
-      .from("instructors")
-      .select("id, name")
-      .in("id", ids);
-    if (error) return new Map();
-    return new Map((data || []).map((i) => [i.id, i.name]));
-  } catch (e) {
-    return new Map();
+
+  const now = Date.now();
+  const result = new Map();
+  const uncachedIds = [];
+
+  for (const id of ids) {
+    const cached = instructorCache.get(id);
+    if (cached && now - cached.time < INSTRUCTOR_CACHE_TTL) {
+      result.set(id, cached.name);
+    } else {
+      uncachedIds.push(id);
+    }
   }
+
+  if (uncachedIds.length) {
+    try {
+      const { data, error } = await supabase
+        .from("instructors")
+        .select("id, name")
+        .in("id", uncachedIds);
+      if (!error && data) {
+        for (const i of data) {
+          instructorCache.set(i.id, { name: i.name, time: now });
+          result.set(i.id, i.name);
+        }
+      }
+    } catch (e) {}
+  }
+
+  return result;
+}
+
+/* ⚡ Helper: build Supabase OR filter from terms + column */
+function buildOrFilter(column, terms) {
+  return terms
+    .map((t) => `${column}.ilike.%${t.replace(/[,.()"']/g, "")}%`)
+    .join(",");
+}
+
+/* ⚡ Helper: dedupe raw DB rows */
+function dedupeRows(rows) {
+  const seen = new Set();
+  return rows.filter((r) => {
+    const key = r[DB.title] || r[DB.link];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v6.0: Diploma DB Functions ═════════════════════
+   ═══ 🆕 v6.0: Diploma DB Functions — ⚡ Optimized ══════
    ══════════════════════════════════════════════════════════ */
 const DIPLOMA_SELECT = "title, slug, link, description, price, courses_count, books_count, hours";
 
@@ -106,54 +149,53 @@ async function searchDiplomas(terms) {
   console.log(`\n🎓 ═══ Diploma Search ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  let collected = [];
-  const seen = new Set();
+  /* ⚡ Strategy 1: Title — single OR query instead of loop */
+  try {
+    const { data, error } = await supabase
+      .from("diplomas")
+      .select(DIPLOMA_SELECT)
+      .or(buildOrFilter("title", clean))
+      .limit(15);
 
-  /* Strategy 1: Title ilike */
-  for (const term of clean) {
-    try {
-      const { data, error } = await supabase
-        .from("diplomas")
-        .select(DIPLOMA_SELECT)
-        .ilike("title", `%${term}%`)
-        .limit(6);
-
-      if (!error && data?.length) {
-        console.log(`   ✅ Diploma title "${term}": ${data.length}`);
-        for (const row of data) {
-          if (!seen.has(row.slug)) {
-            seen.add(row.slug);
-            collected.push(row);
-          }
+    if (!error && data?.length) {
+      console.log(`   ✅ Diploma title OR: ${data.length}`);
+      const deduped = [];
+      const seen = new Set();
+      for (const row of data) {
+        if (!seen.has(row.slug)) {
+          seen.add(row.slug);
+          deduped.push(row);
         }
       }
-    } catch (e) {}
-  }
+      if (deduped.length) return deduped.slice(0, 10);
+    }
+  } catch (e) {}
 
-  if (collected.length) return collected.slice(0, 10);
+  /* ⚡ Strategy 2: Description — single OR query */
+  try {
+    const descTerms = clean.slice(0, 4);
+    const { data, error } = await supabase
+      .from("diplomas")
+      .select(DIPLOMA_SELECT)
+      .or(buildOrFilter("description", descTerms))
+      .limit(15);
 
-  /* Strategy 2: Description ilike */
-  for (const term of clean.slice(0, 4)) {
-    try {
-      const { data, error } = await supabase
-        .from("diplomas")
-        .select(DIPLOMA_SELECT)
-        .ilike("description", `%${term}%`)
-        .limit(6);
-
-      if (!error && data?.length) {
-        for (const row of data) {
-          if (!seen.has(row.slug)) {
-            seen.add(row.slug);
-            collected.push(row);
-          }
+    if (!error && data?.length) {
+      const deduped = [];
+      const seen = new Set();
+      for (const row of data) {
+        if (!seen.has(row.slug)) {
+          seen.add(row.slug);
+          deduped.push(row);
         }
       }
-    } catch (e) {}
-  }
+      console.log(`   🎓 Total diplomas found: ${deduped.length}`);
+      return deduped.slice(0, 10);
+    }
+  } catch (e) {}
 
-  console.log(`   🎓 Total diplomas found: ${collected.length}`);
-  return collected.slice(0, 10);
+  console.log(`   🎓 Total diplomas found: 0`);
+  return [];
 }
 
 async function getAllDiplomas() {
@@ -814,7 +856,7 @@ function isVagueEntity(entity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Site Pages Search ══════════════════════════════════
+   ═══ Site Pages Search — ⚡ Optimized ═══════════════════
    ══════════════════════════════════════════════════════════ */
 async function searchSitePages(query) {
   const terms = query
@@ -828,69 +870,66 @@ async function searchSitePages(query) {
 
   if (!terms.length) return [];
 
-  let results = [];
-  const seen = new Set();
-
   console.log(`📄 Searching site_pages for: [${terms.join(", ")}]`);
 
-  for (const term of terms) {
-    try {
-      const { data, error } = await supabase
-        .from("site_pages")
-        .select("page_url, content")
-        .ilike("content", `%${term}%`)
-        .limit(5);
+  /* ⚡ Single OR query instead of loop */
+  try {
+    const orFilter = buildOrFilter("content", terms);
+    const { data, error } = await supabase
+      .from("site_pages")
+      .select("page_url, content")
+      .or(orFilter)
+      .limit(8);
 
-      if (error) continue;
+    if (!error && data?.length) {
+      /* Dedupe by page_url + content prefix */
+      const seen = new Set();
+      return data.filter((row) => {
+        const key = row.page_url + "|" + row.content?.slice(0, 50);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+  } catch (e) {}
 
-      if (data?.length) {
-        for (const row of data) {
-          const key = row.page_url + "|" + row.content?.slice(0, 50);
-          if (!seen.has(key)) {
-            seen.add(key);
-            results.push(row);
-          }
-        }
-      }
-    } catch (e) {}
-  }
-
-  return results.slice(0, 8);
+  return [];
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ buildContext helper ════════════════════════════════
+   ═══ buildContext helper — ⚡ Parallel ══════════════════
    ══════════════════════════════════════════════════════════ */
 async function buildContext(searchQuery, options = {}) {
   const { includeFAQ = true, includeSitePages = true } = options;
+
+  /* ⚡ Run FAQ + site_pages in parallel */
+  const [sitePages, faqResults] = await Promise.all([
+    includeSitePages ? searchSitePages(searchQuery) : [],
+    includeFAQ ? searchFAQ(searchQuery) : [],
+  ]);
+
   let context = "";
 
-  if (includeSitePages) {
-    const sitePages = await searchSitePages(searchQuery);
-    if (sitePages.length) {
-      context +=
-        "\n\n【محتوى من صفحات المنصة】\n" +
-        sitePages
-          .map((p) => `[${p.page_url}]\n${p.content}`)
-          .join("\n---\n")
-          .slice(0, 3000);
-      console.log(`📄 Context: ${sitePages.length} site pages`);
-    }
+  if (sitePages.length) {
+    context +=
+      "\n\n【محتوى من صفحات المنصة】\n" +
+      sitePages
+        .map((p) => `[${p.page_url}]\n${p.content}`)
+        .join("\n---\n")
+        .slice(0, 3000);
+    console.log(`📄 Context: ${sitePages.length} site pages`);
   }
 
-  if (includeFAQ) {
-    const faqResults = await searchFAQ(searchQuery);
-    if (faqResults.length) {
-      context += formatFAQContext(faqResults);
-      console.log(`📚 Context: ${faqResults.length} FAQ entries`);
-    }
+  if (faqResults.length) {
+    context += formatFAQContext(faqResults);
+    console.log(`📚 Context: ${faqResults.length} FAQ entries`);
   }
 
   return context;
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Search (courses) ════════════════════════════════
+   ═══ DB Search (courses) — ⚡ Optimized ═════════════════
    ══════════════════════════════════════════════════════════ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
@@ -904,79 +943,63 @@ async function searchCoursesRaw(terms) {
   console.log(`\n🔍 ═══ Course Search Start ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  let collected = [];
+  /* ⚡ Strategy 1: Title — single OR query */
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(buildOrFilter(DB.title, clean))
+      .limit(15);
 
-  /* Strategy 1: Title ilike */
-  for (const term of clean) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .ilike(DB.title, `%${term}%`)
-        .limit(6);
+    if (!error && data?.length) {
+      console.log(`   ✅ Title OR: ${data.length}`);
+      return dedupeRows(data).slice(0, 10);
+    }
+  } catch (e) {}
 
-      if (!error && data?.length) {
-        console.log(`   ✅ Title "${term}": ${data.length}`);
-        collected.push(...data);
-      }
-    } catch (e) {}
-  }
+  /* ⚡ Strategy 2: Subtitle — single OR query */
+  try {
+    const subTerms = clean.slice(0, 5);
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(buildOrFilter(DB.subtitle, subTerms))
+      .limit(15);
 
-  if (collected.length) {
-    const seen = new Set();
-    collected = collected.filter((r) => {
-      const key = r[DB.title] || r[DB.link];
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return collected.slice(0, 10);
-  }
+    if (!error && data?.length) {
+      return dedupeRows(data).slice(0, 10);
+    }
+  } catch (e) {}
 
-  /* Strategy 2: Subtitle ilike */
-  for (const term of clean.slice(0, 5)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .ilike(DB.subtitle, `%${term}%`)
-        .limit(6);
+  /* ⚡ Strategy 3: Description — single OR query */
+  try {
+    const descTerms = clean.slice(0, 4);
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(buildOrFilter(DB.description, descTerms))
+      .limit(15);
 
-      if (!error && data?.length) collected.push(...data);
-    } catch (e) {}
-  }
+    if (!error && data?.length) {
+      return dedupeRows(data).slice(0, 10);
+    }
+  } catch (e) {}
 
-  if (collected.length) return collected.slice(0, 10);
+  /* ⚡ Strategy 4: full_content — single OR query */
+  try {
+    const fullTerms = clean.slice(0, 3);
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(buildOrFilter(DB.full_content, fullTerms))
+      .limit(10);
 
-  /* Strategy 3: Description ilike */
-  for (const term of clean.slice(0, 4)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .ilike(DB.description, `%${term}%`)
-        .limit(6);
+    if (!error && data?.length) {
+      return dedupeRows(data).slice(0, 10);
+    }
+  } catch (e) {}
 
-      if (!error && data?.length) collected.push(...data);
-    } catch (e) {}
-  }
-
-  if (collected.length) return collected.slice(0, 10);
-
-  /* Strategy 4: full_content ilike */
-  for (const term of clean.slice(0, 3)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .ilike(DB.full_content, `%${term}%`)
-        .limit(5);
-
-      if (!error && data?.length) collected.push(...data);
-    } catch (e) {}
-  }
-
-  return collected.slice(0, 10);
+  return [];
 }
 
 function localRelevanceFilter(courses, entity, searchTerms) {
@@ -1070,7 +1093,7 @@ function dedupe(courses) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Category Course Fallback ═══════════════════════════
+   ═══ Category Course Fallback — ⚡ Optimized ════════════
    ══════════════════════════════════════════════════════════ */
 const CATEGORY_SEARCH_TERMS = {
   graphics: ["تصميم", "فوتوشوب", "اليستريتور", "جرافيك", "design"],
@@ -1101,32 +1124,23 @@ async function getCoursesByCategory(categoryKey) {
   const terms = CATEGORY_SEARCH_TERMS[categoryKey];
   if (!terms) return [];
 
-  let collected = [];
+  /* ⚡ Single OR query instead of loop */
+  const searchTerms = terms.slice(0, 3);
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(buildOrFilter(DB.title, searchTerms))
+      .limit(10);
 
-  for (const term of terms.slice(0, 3)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .ilike(DB.title, `%${term}%`)
-        .limit(4);
+    if (!error && data?.length) {
+      const deduped = dedupeRows(data);
+      const instructorMap = await getInstructorMap(deduped);
+      return deduped.slice(0, 6).map((row) => mapCourse(row, instructorMap));
+    }
+  } catch (e) {}
 
-      if (!error && data?.length) collected.push(...data);
-    } catch (e) {}
-  }
-
-  if (!collected.length) return [];
-
-  const seen = new Set();
-  collected = collected.filter((r) => {
-    const key = r[DB.title] || r[DB.link];
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  const instructorMap = await getInstructorMap(collected);
-  return collected.slice(0, 6).map((row) => mapCourse(row, instructorMap));
+  return [];
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1175,7 +1189,6 @@ function formatCourses(courses, category, diplomaMention = "") {
     html += `</div>`;
   });
 
-  /* 🆕 v6.0: Diploma mention */
   if (diplomaMention) {
     html += diplomaMention;
   }
@@ -1335,7 +1348,7 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route ════════════════════════════════════
+   ═══ Main Chat Route — ⚡ Optimized ═════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1413,7 +1426,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v6.0: DIPLOMA_SEARCH ════════════════════════
+    // ═══ DIPLOMA_SEARCH — ⚡ Optimized ═══════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "DIPLOMA_SEARCH") {
       console.log(`\n🎓 ═══ DIPLOMA_SEARCH ═══`);
@@ -1430,11 +1443,9 @@ app.post("/chat", limiter, async (req, res) => {
       let relatedCategory = null;
 
       if (isGeneralQuery) {
-        /* User wants to see ALL diplomas */
         console.log(`   📋 General diploma query → fetching all`);
         diplomas = await getAllDiplomas();
       } else {
-        /* User wants a SPECIFIC diploma topic */
         console.log(`   🔎 Specific diploma query: "${entity}"`);
         const terms = [
           ...new Set([entity, ...search_terms]),
@@ -1442,15 +1453,12 @@ app.post("/chat", limiter, async (req, res) => {
 
         diplomas = await searchDiplomas(terms);
 
-        /* If no specific match, show all diplomas */
         if (!diplomas.length) {
           console.log(`   ⚠️ No specific diploma found → showing all`);
           diplomas = await getAllDiplomas();
         }
 
-        /* 🆕 Get related courses: priority = user query terms, then diploma category */
         if (diplomas.length > 0) {
-          /* 1. Determine category from first matching diploma */
           const catKey =
             category_key || mapDiplomaToCategory(diplomas[0].title);
 
@@ -1461,32 +1469,37 @@ app.post("/chat", limiter, async (req, res) => {
             );
           }
 
-          /* 2. Search courses by user's specific terms FIRST (priority) */
           const courseSearchTerms = search_terms.length
             ? search_terms.filter((t) => t.length >= 2)
             : entity && !isVagueEntity(entity)
             ? [entity]
             : [];
 
+          /* ⚡ Parallel: course search + category courses */
           if (courseSearchTerms.length) {
-            relatedCourses = await searchCourses(courseSearchTerms, entity);
+            const [directCourses, catCourses] = await Promise.all([
+              searchCourses(courseSearchTerms, entity),
+              catKey ? getCoursesByCategory(catKey) : Promise.resolve([]),
+            ]);
+
+            relatedCourses = directCourses;
             console.log(
               `   📚 Related courses by query: ${relatedCourses.length}`
             );
-          }
 
-          /* 3. If not enough, fill with category courses */
-          if (relatedCourses.length < 4 && catKey) {
-            const catCourses = await getCoursesByCategory(catKey);
-            const existingUrls = new Set(relatedCourses.map((c) => c.url));
-            for (const c of catCourses) {
-              if (!existingUrls.has(c.url) && relatedCourses.length < 6) {
-                relatedCourses.push(c);
+            if (relatedCourses.length < 4 && catCourses.length) {
+              const existingUrls = new Set(relatedCourses.map((c) => c.url));
+              for (const c of catCourses) {
+                if (!existingUrls.has(c.url) && relatedCourses.length < 6) {
+                  relatedCourses.push(c);
+                }
               }
+              console.log(
+                `   📚 After category fill: ${relatedCourses.length} courses total`
+              );
             }
-            console.log(
-              `   📚 After category fill: ${relatedCourses.length} courses total`
-            );
+          } else if (catKey) {
+            relatedCourses = await getCoursesByCategory(catKey);
           }
         }
       }
@@ -1506,21 +1519,19 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* No diplomas at all (shouldn't happen if table has data) */
       const reply = `للأسف مفيش دبلومات متاحة حالياً.<br><br>تقدر تتصفح كل الدورات من هنا:<br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات على المنصة")}`;
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ COURSE_SEARCH — WITH DIPLOMA MENTION ════════════
+    // ═══ COURSE_SEARCH — ⚡ Parallel course + diploma ════
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
       let resolvedEntity = entity;
       let resolvedTerms = search_terms;
       let resolvedCategoryKey = category_key;
 
-      /* If entity is vague, resolve from history */
       if (isVagueEntity(entity)) {
         console.log(`   🧠 Vague entity "${entity}" → resolving...`);
 
@@ -1567,18 +1578,18 @@ app.post("/chat", limiter, async (req, res) => {
         `🔍 COURSE_SEARCH "${displayTerm}" → [${allTerms.join(" | ")}]`
       );
 
-      let courses = await searchCourses(allTerms, resolvedEntity);
+      /* ⚡ Parallel: course search + diploma search */
+      const [courses, relatedDiplomas] = await Promise.all([
+        searchCourses(allTerms, resolvedEntity),
+        allTerms.length > 0 ? searchDiplomas(allTerms) : Promise.resolve([]),
+      ]);
 
-      /* 🆕 v6.0: Also check for related diplomas */
       let diplomaMention = "";
-      if (allTerms.length > 0) {
-        const relatedDiplomas = await searchDiplomas(allTerms);
-        if (relatedDiplomas.length > 0) {
-          diplomaMention = formatDiplomaMention(relatedDiplomas);
-          console.log(
-            `   🎓 Found ${relatedDiplomas.length} related diploma(s)`
-          );
-        }
+      if (relatedDiplomas.length > 0) {
+        diplomaMention = formatDiplomaMention(relatedDiplomas);
+        console.log(
+          `   🎓 Found ${relatedDiplomas.length} related diploma(s)`
+        );
       }
 
       if (courses.length > 0) {
@@ -1610,7 +1621,6 @@ app.post("/chat", limiter, async (req, res) => {
         }
       }
 
-      /* 🆕 v6.0: If no courses but found diplomas, show them */
       if (diplomaMention) {
         let reply = `<b>🔍 مفيش كورس فردي عن "${displayTerm}" حالياً، لكن في دبلومة متكاملة في المجال ده:</b><br>`;
         reply += diplomaMention;
@@ -1670,7 +1680,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ FOLLOW_UP — WITH CONTEXT RESOLVE ═══════════════
+    // ═══ FOLLOW_UP — ⚡ Optimized ═══════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
       let followUpEntity = entity || session.entity || null;
@@ -1684,7 +1694,6 @@ app.post("/chat", limiter, async (req, res) => {
         }
       }
 
-      /* Check if this is a course request */
       const coursePatterns = [
         "كورس", "دورة", "كورسات", "دورات", "تشرح", "يشرح",
         "اتعلم", "course",
@@ -1698,7 +1707,7 @@ app.post("/chat", limiter, async (req, res) => {
         message.toLowerCase().includes(p)
       );
 
-      /* 🆕 v6.0: Diploma follow-up */
+      /* Diploma follow-up */
       if (
         isDiplomaFollowUp &&
         followUpEntity &&
@@ -1717,9 +1726,15 @@ app.post("/chat", limiter, async (req, res) => {
 
           if (catKey && CATEGORIES[catKey]) {
             relatedCategory = CATEGORIES[catKey];
-            relatedCourses = await searchCourses(terms, followUpEntity);
+
+            /* ⚡ Parallel: course search + category courses */
+            const [directCourses, catCourses] = await Promise.all([
+              searchCourses(terms, followUpEntity),
+              getCoursesByCategory(catKey),
+            ]);
+
+            relatedCourses = directCourses;
             if (relatedCourses.length < 4) {
-              const catCourses = await getCoursesByCategory(catKey);
               const existingUrls = new Set(relatedCourses.map((c) => c.url));
               for (const c of catCourses) {
                 if (
@@ -1766,11 +1781,13 @@ app.post("/chat", limiter, async (req, res) => {
           }
         }
 
-        const courses = await searchCourses(terms, followUpEntity);
+        /* ⚡ Parallel: course search + diploma search */
+        const [courses, relatedDiplomas] = await Promise.all([
+          searchCourses(terms, followUpEntity),
+          searchDiplomas(terms),
+        ]);
 
-        /* 🆕 v6.0: Check for related diplomas */
         let diplomaMention = "";
-        const relatedDiplomas = await searchDiplomas(terms);
         if (relatedDiplomas.length > 0) {
           diplomaMention = formatDiplomaMention(relatedDiplomas);
         }
@@ -1806,7 +1823,6 @@ app.post("/chat", limiter, async (req, res) => {
           }
         }
 
-        /* 🆕 v6.0: No courses but diplomas found */
         if (diplomaMention) {
           let reply = `<b>🔍 مفيش كورس فردي عن "${followUpEntity}" حالياً، لكن في دبلومة في المجال:</b><br>${diplomaMention}`;
           reply += `<br>${makeLink(ALL_COURSES_URL, "📚 تصفح جميع الدورات")}`;
@@ -1838,10 +1854,13 @@ app.post("/chat", limiter, async (req, res) => {
             )
           : [entity];
 
-        const courses = await searchCourses(terms, entity);
+        /* ⚡ Parallel: course search + diploma search */
+        const [courses, relDip] = await Promise.all([
+          searchCourses(terms, entity),
+          searchDiplomas(terms),
+        ]);
 
         let diplomaMention = "";
-        const relDip = await searchDiplomas(terms);
         if (relDip.length) diplomaMention = formatDiplomaMention(relDip);
 
         if (courses.length > 0) {
@@ -1991,7 +2010,6 @@ app.post("/chat", limiter, async (req, res) => {
    ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 
-/* 🆕 v6.0: Debug diploma search */
 app.get("/debug/diplomas/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const terms = q.split(/\s+/).filter((t) => t.length >= 2);
@@ -2055,8 +2073,11 @@ app.get("/debug/search/:query", async (req, res) => {
       ]
     : [q];
 
-  const courses = await searchCourses(terms, classification.entity);
-  const diplomas = await searchDiplomas(terms);
+  /* ⚡ Parallel: courses + diplomas */
+  const [courses, diplomas] = await Promise.all([
+    searchCourses(terms, classification.entity),
+    searchDiplomas(terms),
+  ]);
 
   let categoryFallback = [];
   if (courses.length === 0 && classification.category_key) {
@@ -2144,9 +2165,12 @@ app.post("/debug/test-context", async (req, res) => {
     ]),
   ].filter((t) => t && t.length >= 2);
 
-  const courses = await searchCourses(allTerms, resolvedEntity);
-  const diplomas = await searchDiplomas(allTerms);
-  const faqResults = await searchFAQ(resolvedEntity || current);
+  /* ⚡ Parallel: courses + diplomas + FAQ */
+  const [courses, diplomas, faqResults] = await Promise.all([
+    searchCourses(allTerms, resolvedEntity),
+    searchDiplomas(allTerms),
+    searchFAQ(resolvedEntity || current),
+  ]);
 
   res.json({
     input: {
@@ -2231,8 +2255,11 @@ app.get("/debug/test-context/:current", async (req, res) => {
     ]),
   ].filter((t) => t && t.length >= 2);
 
-  const courses = await searchCourses(allTerms, resolvedEntity);
-  const diplomas = await searchDiplomas(allTerms);
+  /* ⚡ Parallel: courses + diplomas */
+  const [courses, diplomas] = await Promise.all([
+    searchCourses(allTerms, resolvedEntity),
+    searchDiplomas(allTerms),
+  ]);
 
   res.json({
     current,
@@ -2251,33 +2278,27 @@ app.get("/debug/test-context/:current", async (req, res) => {
 
 app.get("/debug/columns", async (req, res) => {
   try {
-    const { data } = await supabase.from("courses").select("*").limit(1);
-    const { data: spData, error: spError } = await supabase
-      .from("site_pages")
-      .select("*")
-      .limit(1);
-    const { data: faqData, error: faqError } = await supabase
-      .from("faq")
-      .select("*")
-      .limit(1);
-    const { data: dipData, error: dipError } = await supabase
-      .from("diplomas")
-      .select("*")
-      .limit(1);
+    /* ⚡ Parallel: all table checks */
+    const [courseRes, spRes, faqRes, dipRes] = await Promise.all([
+      supabase.from("courses").select("*").limit(1),
+      supabase.from("site_pages").select("*").limit(1),
+      supabase.from("faq").select("*").limit(1),
+      supabase.from("diplomas").select("*").limit(1),
+    ]);
 
     res.json({
-      courses: { columns: data?.[0] ? Object.keys(data[0]) : [] },
+      courses: { columns: courseRes.data?.[0] ? Object.keys(courseRes.data[0]) : [] },
       site_pages: {
-        columns: spData?.[0] ? Object.keys(spData[0]) : [],
-        error: spError?.message,
+        columns: spRes.data?.[0] ? Object.keys(spRes.data[0]) : [],
+        error: spRes.error?.message,
       },
       faq: {
-        columns: faqData?.[0] ? Object.keys(faqData[0]) : [],
-        error: faqError?.message,
+        columns: faqRes.data?.[0] ? Object.keys(faqRes.data[0]) : [],
+        error: faqRes.error?.message,
       },
       diplomas: {
-        columns: dipData?.[0] ? Object.keys(dipData[0]) : [],
-        error: dipError?.message,
+        columns: dipRes.data?.[0] ? Object.keys(dipRes.data[0]) : [],
+        error: dipRes.error?.message,
       },
     });
   } catch (e) {
@@ -2287,24 +2308,19 @@ app.get("/debug/columns", async (req, res) => {
 
 app.get("/debug/db", async (req, res) => {
   try {
-    const { count: cCount } = await supabase
-      .from("courses")
-      .select("*", { count: "exact", head: true });
-    const { count: spCount } = await supabase
-      .from("site_pages")
-      .select("*", { count: "exact", head: true });
-    const { count: faqCount } = await supabase
-      .from("faq")
-      .select("*", { count: "exact", head: true });
-    const { count: dipCount } = await supabase
-      .from("diplomas")
-      .select("*", { count: "exact", head: true });
+    /* ⚡ Parallel: all counts */
+    const [cRes, spRes, faqRes, dipRes] = await Promise.all([
+      supabase.from("courses").select("*", { count: "exact", head: true }),
+      supabase.from("site_pages").select("*", { count: "exact", head: true }),
+      supabase.from("faq").select("*", { count: "exact", head: true }),
+      supabase.from("diplomas").select("*", { count: "exact", head: true }),
+    ]);
 
     res.json({
-      courses_count: cCount || 0,
-      site_pages_count: spCount || 0,
-      faq_count: faqCount || 0,
-      diplomas_count: dipCount || 0,
+      courses_count: cRes.count || 0,
+      site_pages_count: spRes.count || 0,
+      faq_count: faqRes.count || 0,
+      diplomas_count: dipRes.count || 0,
       faq_cache_size: faqCache.length,
       faq_cache_age_seconds: faqLastFetch
         ? Math.floor((Date.now() - faqLastFetch) / 1000)
@@ -2378,7 +2394,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.0",
+    version: "6.0-perf",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2391,11 +2407,12 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.0`);
+  console.log(`\n🤖 easyT Chatbot v6.0 ⚡ Performance Optimized`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   NEW: Diploma search from database`);
-  console.log(`   NEW: DIPLOMA_SEARCH intent`);
-  console.log(`   NEW: Related courses by query + diploma category`);
+  console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
+  console.log(`   ⚡ Promise.all() parallel operations`);
+  console.log(`   ⚡ Instructor cache`);
+  console.log(`   ⚡ Parallel course + diploma search`);
   console.log(
     `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
   );
