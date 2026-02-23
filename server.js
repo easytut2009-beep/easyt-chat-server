@@ -38,32 +38,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ COURSE SEARCH
-============================== */
-
-async function searchCourses(searchText) {
-  try {
-    const queryEmbedding = await createEmbedding(searchText);
-
-    const { data, error } = await supabase.rpc("match_courses", {
-      query_embedding: queryEmbedding,
-      match_count: 5
-    });
-
-    if (error) {
-      console.log("Course search error:", error.message);
-      return [];
-    }
-
-    return data || [];
-  } catch (err) {
-    console.log("Course search crash:", err.message);
-    return [];
-  }
-}
-
-/* ==============================
-   ✅ PAGE SEARCH (NEW)
+   ✅ PAGE SEARCH (RAG)
 ============================== */
 
 async function searchPages(searchText) {
@@ -72,8 +47,8 @@ async function searchPages(searchText) {
 
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.75,
-      match_count: 5
+      match_threshold: 0.55,   // ✅ خفضناها
+      match_count: 10          // ✅ زودنا العدد
     });
 
     if (error) {
@@ -81,6 +56,7 @@ async function searchPages(searchText) {
       return [];
     }
 
+    console.log("🔎 Pages found:", data?.length || 0);
     return data || [];
   } catch (err) {
     console.log("Page search crash:", err.message);
@@ -89,97 +65,34 @@ async function searchPages(searchText) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFICATION
+   ✅ AUTO LINK HELPER
 ============================== */
 
-async function classifyIntent(message) {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
-صنف رسالة المستخدم إلى واحدة فقط من القيم التالية:
+function appendSmartLink(reply, message) {
 
-SUPPORT → مشكلة حساب / دفع / تسجيل دخول / دورة غير ظاهرة / مشكلة تقنية
-EDUCATIONAL → سؤال تعليمي أو طلب تعلم أو استفسار عن مجال
-NONE → تحية أو سؤال عام غير متعلق بالتعليم
+  const msg = message.toLowerCase();
 
-أجب بكلمة واحدة فقط.
-`
-        },
-        { role: "user", content: message }
-      ]
-    });
-
-    return response.choices[0].message.content.trim();
-  } catch (err) {
-    console.log("Intent error:", err.message);
-    return "NONE";
-  }
-}
-
-/* ==============================
-   ✅ EXTRACT DOMAIN
-============================== */
-
-async function extractSearchTopic(message) {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
-استخرج المجال التعليمي الأنسب للبحث عن دورات بناءً على رسالة المستخدم.
-أجب فقط باسم المجال المختصر.
-`
-        },
-        { role: "user", content: message }
-      ]
-    });
-
-    return response.choices[0].message.content.trim();
-  } catch (err) {
-    console.log("Topic extraction error:", err.message);
-    return message;
-  }
-}
-
-/* ==============================
-   ✅ SYSTEM PROMPT
-============================== */
-
-function getSystemPrompt(mode) {
-
-  if (mode === "visitor") {
-    return `
-أنت مستشار تعليمي لمنصة easyT.
-أجب فقط بناءً على المعلومات المتاحة من الموقع.
-إذا لم تجد إجابة واضحة قل أنك لا تملك معلومات كافية.
-لا تخترع معلومات.
-`;
+  if (msg.includes("اشتراك") || msg.includes("عضوية")) {
+    reply += `<br><br><a href="https://easyt.online/p/subscriptions" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 رابط الاشتراك العام</a>`;
   }
 
-  if (mode === "support") {
-    return `
-أنت مساعد دعم فني لمنصة easyT.
-ساعد المستخدم في حل مشاكل الحساب أو الدفع أو الوصول للدورات.
-كن مباشرًا وواضحًا.
-`;
+  if (msg.includes("دفع") || msg.includes("طرق الدفع")) {
+    reply += `<br><br><a href="https://easyt.online/p/Payments" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 طرق الدفع</a>`;
   }
 
-  if (mode === "student") {
-    return `
-أنت مساعد داخل الكورس.
-اشرح ودرّب الطالب عمليًا.
-`;
+  if (msg.includes("محاضر") || msg.includes("انضم") || msg.includes("اعمل محاضر")) {
+    reply += `<br><br><a href="https://easyt.online/p/author" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 انضم إلى أسرة easyT كمحاضر</a>`;
   }
 
-  return `أنت مساعد ذكي.`;
+  if (msg.includes("تسويق") || msg.includes("عمولة") || msg.includes("افيلييت")) {
+    reply += `<br><br><a href="https://easyt.online/p/affiliate" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 برنامج التسويق بالعمولة</a>`;
+  }
+
+  return reply;
 }
 
 /* ==============================
@@ -207,52 +120,40 @@ app.post("/chat", async (req, res) => {
 
     if (!session_id) session_id = crypto.randomUUID();
 
-    const intent = await classifyIntent(message);
-
-    let finalMode = intent === "SUPPORT" ? "support" : "visitor";
-
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
     }
 
     const history = conversations.get(session_id);
 
-    /* ✅ SUPPORT FLOW */
-    if (finalMode === "support") {
-
-      const supportPrompt = getSystemPrompt("support");
-
-      const supportCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.3,
-        messages: [
-          { role: "system", content: supportPrompt },
-          { role: "user", content: message }
-        ]
-      });
-
-      let reply = cleanHTML(supportCompletion.choices[0].message.content);
-      return res.json({ reply, session_id });
-    }
-
-    /* ✅ VISITOR FLOW WITH RAG */
-
     history.push({ role: "user", content: message });
 
-    const pages = await searchPages(message);
+    /* ✅ RAG SEARCH */
+    let pages = await searchPages(message);
+
+    // ✅ fallback لو ما لاقاش نتيجة
+    if (pages.length === 0) {
+      pages = await searchPages(message + " easyT منصة اشتراك دفع محاضر");
+    }
 
     let pageContext = "";
     if (pages.length > 0) {
       pageContext = pages.map(p => p.content).join("\n\n");
     }
 
-    const systemPrompt = getSystemPrompt("visitor");
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
-        { role: "system", content: systemPrompt },
+        {
+          role: "system",
+          content: `
+أنت مستشار لمنصة easyT.
+أجب فقط بناءً على المعلومات التالية من الموقع.
+إذا لم تجد معلومة واضحة قل أنك لا تملك معلومات كافية.
+لا تخترع معلومات.
+`
+        },
         ...(pageContext ? [{ role: "system", content: `معلومات من الموقع:\n${pageContext}` }] : []),
         ...history
       ]
@@ -263,29 +164,8 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ COURSE SUGGESTIONS */
-    let courses = [];
-
-    if (intent === "EDUCATIONAL") {
-      const topic = await extractSearchTopic(message);
-      courses = await searchCourses(topic);
-    }
-
-    if (courses.length > 0) {
-
-      reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
-      reply += `<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">`;
-
-      courses.forEach(course => {
-        reply += `
-<a href="${course.link}" target="_blank"
-style="background:#c40000;color:white;padding:10px;border-radius:8px;text-align:center;text-decoration:none;">
-${course.title}
-</a>`;
-      });
-
-      reply += `</div>`;
-    }
+    // ✅ أضف الرابط المناسب تلقائيًا
+    reply = appendSmartLink(reply, message);
 
     return res.json({ reply, session_id });
 
