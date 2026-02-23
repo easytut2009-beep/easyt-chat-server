@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.6 — No-Results Fix + Anti-Hallucination
-   ✅ Structured "not found" message (no GPT hallucination)
-   ✅ Always links to /courses (not generic easyT.online)
-   ✅ NEVER invents fake category links
-   ✅ Gibberish detection
-   ✅ Search: local relevance filter
-   ✅ WhatsApp only when truly needed
+   🤖 easyT Chatbot v5.7
+   ✅ FIX: site_pages table name + columns (was "pages")
+   ✅ FIX: "البرمجة ابدأها ازاي" → COURSE_SEARCH not START_LEARNING
+   ✅ FIX: "كورس سي" → formatNoResults (not GPT)
+   ✅ FIX: "هل في ضمان" → searches site_pages correctly
+   ✅ NEW: Category-based course fallback
+   ✅ NEW: Guarantee/refund info in KB
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -44,14 +44,10 @@ const limiter = rateLimit({
   message: { reply: "استنى شوية وحاول تاني 🙏" },
 });
 
-/* ══════════════════════════════════════════════════════════
-   ═══ IMPORTANT LINKS ════════════════════════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
 
-/* ══════════════════════════════════════════════════════════
-   ═══ DB Column Mapping ═══════════════════════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ DB Column Mapping ═══ */
 const DB = {
   title: "title",
   description: "description",
@@ -188,14 +184,6 @@ const CATEGORIES = {
     name: "التصوير والمونتاج والأنيميشن",
     url: "https://easyt.online/courses/category/119ae93c-aade-459c-93df-6c6fb8c2e095",
   },
-  data: {
-    name: "تحليل البيانات",
-    url: "https://easyt.online/courses/category/data",
-  },
-  mobile: {
-    name: "تطبيقات الموبايل",
-    url: "https://easyt.online/courses/category/mobile",
-  },
 };
 
 const PAGE_LINKS = {
@@ -218,7 +206,7 @@ const PAGE_LINKS = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Knowledge Base v5.6 ════════════════════════════════
+   ═══ Knowledge Base v5.7 ════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const PLATFORM_KB = `
 【منصة إيزي تي — easyT.online】
@@ -276,6 +264,13 @@ const PLATFORM_KB = `
   - ملفك على LinkedIn
   - إثبات مهاراتك لأصحاب العمل
 ◆ مش شهادة جامعية أو حكومية — هي شهادة تدريبية مهنية من المنصة
+
+═══ الضمان وسياسة الاسترجاع ═══
+◆ المنصة بتوفر ضمان جودة المحتوى التعليمي
+◆ لو عندك مشكلة في محتوى دورة أو جودتها → تقدر تتواصل مع الدعم لحل المشكلة
+◆ تفاصيل شروط الاستخدام والضمان متاحة على صفحة المساعدة: https://easyt.online/p/help
+◆ الاشتراك السنوي → التجديد تلقائي والإلغاء متاح في أي وقت
+◆ لأي استفسار عن الضمان أو الاسترجاع → تواصل مع الدعم واتساب 01027007899
 
 ═══ المتصفحات والمتطلبات التقنية ═══
 ◆ المنصة بتشتغل على أي متصفح حديث
@@ -380,7 +375,7 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification v5.6 ═════════════════════════════
+   ═══ 🆕 v5.7: AI Classification — FIXED ════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -398,25 +393,39 @@ Return ONLY valid JSON:
   "refers_to_previous": true/false
 }
 
-═══ ⚠️ INTENT DEFINITIONS ═══
+═══ ⚠️ INTENT DEFINITIONS — READ VERY CAREFULLY ═══
 
 • GIBBERISH — Random characters, keyboard mashing, no meaningful words
 
-• GREETING — ONLY short greetings with NO topic: hi, hello, سلام, أهلا, ازيك
+• GREETING — ONLY short greetings with NO topic whatsoever: hi, hello, سلام, أهلا, ازيك
 
-• START_LEARNING — Wants to learn but NO specific topic mentioned at all
+• START_LEARNING — Wants to learn but ABSOLUTELY NO specific topic or field mentioned at all
+  ✅ Examples: "عايز اتعلم", "ازاي ابدأ", "من فين ابدأ", "عايز اتعلم حاجة"
+  ❌ NOT START_LEARNING if ANY topic mentioned even broadly:
+     "البرمجة ابدأها ازاي" → COURSE_SEARCH (topic: البرمجة)
+     "ازاي ابدأ تصميم" → COURSE_SEARCH (topic: تصميم)
+     "عايز ابدأ في الهاكينج" → COURSE_SEARCH (topic: هاكينج)
+     "من فين ابدأ ماركيتنج" → COURSE_SEARCH (topic: ماركيتنج)
+  ⚠️ RULE: If the message mentions ANY specific field/topic/skill + "ابدأ/ابتدي/ازاي" → COURSE_SEARCH!
 
-• COURSE_SEARCH — ANY message mentioning a SPECIFIC topic/tool/skill/technology
+• COURSE_SEARCH — ANY message mentioning a SPECIFIC topic/tool/skill/technology/field
   Examples: "فوتوشوب", "في فوتوشوب", "عن بايثون", "كورس سي", "عايز اتعلم اكسل",
-  "محتاج كورس تصميم", "python", "تعلم جافا", "دورة تسويق", "flutter", "كورس صيانة"
-  ⚠️ Even with Arabic prepositions (في/عن/على) → STILL COURSE_SEARCH
+  "محتاج كورس تصميم", "python", "تعلم جافا", "دورة تسويق", "flutter", "كورس صيانة",
+  "البرمجة ابدأها ازاي", "ازاي ابدأ تصميم", "عايز ادخل مجال الحماية"
+  ⚠️ Even with prepositions (في/عن/على) → STILL COURSE_SEARCH
+  ⚠️ Even with "ابدأ/ازاي/ابتدي" → STILL COURSE_SEARCH if topic is mentioned!
   ⚠️ NEVER classify a specific topic as GENERAL or START_LEARNING!
 
-• CERTIFICATE_QA — Questions ABOUT certificates
-• PLATFORM_QA — Questions about platform usage/technical issues
+• PLATFORM_QA — Questions about platform usage, policies, guarantees, refunds, terms, technical issues, browsers
+  Examples: "هل في ضمان", "ايه سياسة الاسترجاع", "ايه المتصفح المناسب",
+  "ازاي استخدم المنصة", "هل اقدر احمل الفيديوهات", "هل في تطبيق موبايل",
+  "ايه شروط الاستخدام", "هل الشهادة بتتوصل", "ازاي انزل الشهادة"
+
+• CERTIFICATE_QA — Questions specifically ABOUT certificates (اعتماد, شهادة, معتمدة)
+
 • PAYMENT — Payment methods, transfer, receipt, card issues
-• SUBSCRIPTION — Pricing, plans, offers, renewal
-• ACCESS_ISSUE — Can't login, can't access course
+• SUBSCRIPTION — Pricing, plans, offers, renewal, cancellation
+• ACCESS_ISSUE — Can't login, can't access course, account locked
 • AFFILIATE — Affiliate/commission program
 • AUTHOR — Wants to become instructor
 • FOLLOW_UP — Continuation of PREVIOUS topic (message must be coherent!)
@@ -431,11 +440,15 @@ Provide 3-5 focused search variations:
   "c"/"سي" → ["لغة سي", "C programming", "برمجة سي", "لغة C", "سي بروجرامنج"]
   "c++" → ["سي بلس بلس", "C++", "برمجة C++"]
   "صيانة" → ["صيانة", "maintenance", "صيانة أجهزة", "صيانة كمبيوتر", "صيانة موبايل"]
+  "البرمجة" → ["برمجة", "programming", "أساسيات البرمجة", "تعلم البرمجة", "كود"]
 
 ═══ ⚠️ category_key RULES ═══
 • ONLY return a category_key if the topic CLEARLY matches one of the categories below
 • If the topic does NOT match any category → return null
-• Examples of NO match: "صيانة" → null, "طبخ" → null, "رومايود" → null
+• "البرمجة"/"سي"/"جافا"/"بايثون" → programming
+• "صيانة" → null (no maintenance category!)
+• "طبخ" → null
+• "رومايود" → null
 
 Available categories:
 ${CAT_LIST}`;
@@ -501,9 +514,66 @@ async function classify(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Search v5.6 ═════════════════════════════════════
+   ═══ 🆕 v5.7: Site Pages Search — FIXED ════════════════
+   ═══ Was: "pages" table + wrong columns                ═
+   ═══ Now: "site_pages" table + correct columns          ═
    ══════════════════════════════════════════════════════════ */
+async function searchSitePages(query) {
+  /* Extract meaningful search terms */
+  const terms = query
+    .split(/\s+/)
+    .filter((t) => t.length >= 2)
+    .slice(0, 6);
 
+  if (!terms.length && query.trim().length >= 2) {
+    terms.push(query.trim());
+  }
+
+  if (!terms.length) return [];
+
+  let results = [];
+  const seen = new Set();
+
+  console.log(`📄 Searching site_pages for: [${terms.join(", ")}]`);
+
+  /* Strategy 1: ilike on content for each term */
+  for (const term of terms) {
+    try {
+      const { data, error } = await supabase
+        .from("site_pages")
+        .select("page_url, content")
+        .ilike("content", `%${term}%`)
+        .limit(5);
+
+      if (error) {
+        console.log(`   ⚠️ site_pages error for "${term}": ${error.message}`);
+        continue;
+      }
+
+      if (data?.length) {
+        console.log(`   ✅ site_pages "${term}": ${data.length} results`);
+        for (const row of data) {
+          const key = row.page_url + "|" + row.content?.slice(0, 50);
+          if (!seen.has(key)) {
+            seen.add(key);
+            results.push(row);
+          }
+        }
+      } else {
+        console.log(`   ⬜ site_pages "${term}": 0 results`);
+      }
+    } catch (e) {
+      console.error(`   ❌ site_pages search error for "${term}":`, e.message);
+    }
+  }
+
+  console.log(`📄 Total site_pages results: ${results.length}`);
+  return results.slice(0, 8);
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ DB Search (courses) ════════════════════════════════
+   ══════════════════════════════════════════════════════════ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
 
@@ -513,7 +583,7 @@ async function searchCoursesRaw(terms) {
 
   if (!clean.length) return [];
 
-  console.log(`\n🔍 ═══ Search Start ═══`);
+  console.log(`\n🔍 ═══ Course Search Start ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
   let collected = [];
@@ -650,7 +720,7 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   return filtered;
 }
 
-/* AI Relevance Filter (4+ results) */
+/* AI Relevance Filter */
 async function filterRelevantAI(courses, userQuery, entity) {
   if (courses.length <= 3) return courses;
 
@@ -695,7 +765,7 @@ async function filterRelevantAI(courses, userQuery, entity) {
   return courses;
 }
 
-/* Full Search Pipeline */
+/* Full Course Search Pipeline */
 async function searchCourses(searchTerms, entity) {
   const rawRows = await searchCoursesRaw(searchTerms);
   if (!rawRows.length) return [];
@@ -733,22 +803,73 @@ function dedupe(courses) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Page Search ════════════════════════════════════════
+   ═══ 🆕 v5.7: Category Course Fallback ═════════════════
+   ═══ When no direct results but category matches,       ═
+   ═══ try to get courses from that category              ═
    ══════════════════════════════════════════════════════════ */
-async function searchPages(query) {
-  try {
-    const { data } = await supabase
-      .from("pages")
-      .select("title, url, content")
-      .textSearch("content", query.split(" ").join(" & "), {
-        type: "websearch",
-        config: "arabic",
-      })
-      .limit(3);
-    return data || [];
-  } catch (e) {
-    return [];
+
+/* Broad terms for each category — used as fallback search */
+const CATEGORY_SEARCH_TERMS = {
+  graphics: ["تصميم", "فوتوشوب", "اليستريتور", "جرافيك", "design"],
+  security: ["حماية", "اختراق", "سيبراني", "security", "cyber"],
+  languages: ["لغة", "انجليزي", "language", "english"],
+  marketing: ["ماركيتنج", "تسويق", "ديجيتال", "marketing"],
+  engineering: ["هندسية", "اوتوكاد", "autocad", "ريفيت"],
+  webdev: ["ويب", "موقع", "تطبيق", "web", "react", "node"],
+  earning: ["ربح", "انترنت", "فريلانس", "دخل"],
+  basics: ["كمبيوتر", "ويندوز", "اوفيس", "اكسل", "computer"],
+  business: ["إدارة", "أعمال", "بيزنس", "management"],
+  kids: ["أطفال", "تربية", "تعليم أطفال"],
+  accounting: ["محاسبة", "اقتصاد", "احصاء", "accounting"],
+  skills: ["مهارات", "تطوير ذات", "soft skills"],
+  psychology: ["نفس", "psychology", "نفسي"],
+  ai_apps: ["ذكاء اصطناعي", "AI", "artificial intelligence"],
+  art: ["فن", "هوايات", "رسم", "art"],
+  electronics: ["روبوت", "الكترونيات", "شبكات", "network"],
+  programming: ["برمجة", "programming", "كود", "code", "قواعد بيانات", "database", "بايثون", "جافا"],
+  ai_programming: ["برمجة ذكاء", "machine learning", "deep learning", "LLM"],
+  ui_design: ["UI", "UX", "واجهة", "تصميم موقع"],
+  investment: ["استثمار", "أسواق مالية", "بورصة", "trading"],
+  sales: ["مبيعات", "تسويق", "sales"],
+  video: ["تصوير", "مونتاج", "أنيميشن", "فيديو", "montage"],
+};
+
+async function getCoursesByCategory(categoryKey) {
+  const terms = CATEGORY_SEARCH_TERMS[categoryKey];
+  if (!terms) return [];
+
+  console.log(`\n📂 Category fallback for "${categoryKey}" → terms: [${terms.join(", ")}]`);
+
+  let collected = [];
+
+  for (const term of terms.slice(0, 3)) {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(SELECT)
+        .ilike(DB.title, `%${term}%`)
+        .limit(4);
+
+      if (!error && data?.length) {
+        console.log(`   ✅ Category term "${term}": ${data.length}`);
+        collected.push(...data);
+      }
+    } catch (e) {}
   }
+
+  if (!collected.length) return [];
+
+  /* Deduplicate */
+  const seen = new Set();
+  collected = collected.filter((r) => {
+    const key = r[DB.title] || r[DB.link];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const instructorMap = await getInstructorMap(collected);
+  return collected.slice(0, 6).map((row) => mapCourse(row, instructorMap));
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -809,10 +930,61 @@ function formatCourses(courses, category) {
   return html;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v5.6: Structured "Not Found" Message ═══════════
-   ═══ NO GPT = NO hallucination = NO fake links ══════════
-   ══════════════════════════════════════════════════════════ */
+/* 🆕 v5.7: Format category courses (when direct search fails but category has courses) */
+function formatCategoryCourses(courses, category, originalTopic) {
+  let html = `<b>🔍 مفيش كورس باسم "${originalTopic}" بالظبط، لكن في دورات قريبة في قسم ${category.name}:</b><br><br>`;
+
+  courses.forEach((c, i) => {
+    const link = c.url || category.url;
+
+    html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
+
+    if (c.image_url) {
+      html += `<div style="text-align:center;margin-bottom:8px;">`;
+      html += `<a href="${link}" target="_blank">`;
+      html += `<img src="${c.image_url}" alt="${c.title}" `;
+      html += `style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" `;
+      html += `onerror="this.style.display='none'">`;
+      html += `</a></div>`;
+    }
+
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
+    html += `${i + 1}. ${c.title}</a><br>`;
+
+    if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
+
+    if (c.price !== undefined && c.price !== null) {
+      const p = String(c.price).trim();
+      if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
+        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+      } else {
+        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+      }
+    }
+
+    if (c.description) {
+      const desc =
+        c.description.length > 120
+          ? c.description.slice(0, 120) + "..."
+          : c.description;
+      html += `📝 ${desc}<br>`;
+    }
+
+    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a>`;
+    html += `</div>`;
+  });
+
+  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">`;
+  html += `تصفح جميع دورات ${category.name} ←</a>`;
+
+  html += `<br><br>💡 وصول لكل الدورات من خلال `;
+  html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">`;
+  html += `الاشتراك السنوي (49$ عرض رمضان)</a>`;
+
+  return html;
+}
+
+/* Structured "Not Found" Message — NO GPT */
 function formatNoResults(displayTerm, category) {
   let html = `<b>🔍 للأسف مفيش كورس عن "${displayTerm}" على المنصة حالياً.</b><br><br>`;
 
@@ -842,13 +1014,12 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 • ودود ومحترف — بتتكلم عامية مصرية بسيطة
 • إجابات مختصرة وواضحة مع إيموجي خفيف
 
-【قواعد صارمة — اقرأها كويس】
+【قواعد صارمة】
 
 1. ⚠️ أهم قاعدة: لا تخترع أي رابط أو اسم كورس أو تصنيف غير موجود!
    - لو مش متأكد إن الرابط صحيح → لا تحطه
    - لو عايز توجه المستخدم لتصفح الدورات → استخدم: https://easyt.online/courses
    - ⛔ ممنوع تخترع روابط فيها /courses/category/اسم-بالعربي
-   - ⛔ ممنوع تقول "كورسات الصيانة" أو أي تصنيف مش موجود في القائمة
    
 2. لا تقترح التواصل مع الدعم أو واتساب إلا في الحالات دي فقط:
    - المستخدم سأل صراحةً عن طريقة التواصل
@@ -856,17 +1027,18 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
    - مفيش إجابة واضحة في المعلومات المتاحة
 
 3. ⛔ ممنوع تقول "زور الموقع الرسمي easyT.online" — المستخدم أصلاً على الموقع!
-   لو عايز توجهه → قوله "تقدر تتصفح كل الدورات من هنا" وحط رابط /courses
 
-4. رحّب في أول رسالة فقط
-5. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
-6. لو سأل عن الشهادة → أجب من المعلومات المتاحة
-7. لو سأل عن المتصفح → Chrome أفضل + Firefox/Edge/Safari
+4. ⚠️ لو في "محتوى من صفحات المنصة" في السياق → استخدمه كمصدر أساسي للإجابة!
+   لا تتجاهله وتجاوب من عندك.
+
+5. رحّب في أول رسالة فقط
+6. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
 
 【الروابط المسموح بيها فقط — HTML】
 ★ كل الدورات → <a href="https://easyt.online/courses" target="_blank" style="color:#c40000;font-weight:bold;">📚 تصفح جميع الدورات</a>
 ★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#c40000;font-weight:bold;">💳 صفحة طرق الدفع</a>
 ★ اشتراك → <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">📋 صفحة الاشتراكات</a>
+★ مساعدة → <a href="https://easyt.online/p/help" target="_blank" style="color:#c40000;font-weight:bold;">❓ صفحة المساعدة</a>
 ★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#c40000;font-weight:bold;">💰 برنامج العمولة</a>
 ★ محاضر → <a href="https://easyt.online/p/author" target="_blank" style="color:#c40000;font-weight:bold;">🎓 الانضمام كمحاضر</a>
 ★ واتساب → <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">📱 تواصل مع الدعم واتساب</a>
@@ -875,7 +1047,7 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 【تنسيق】
 • <b>عنوان</b> • ▸ للنقاط • <a href="URL" target="_blank" style="color:#c40000;font-weight:bold;">نص</a> للروابط
 
-【روابط التصنيفات المعتمدة — فقط دول】
+【روابط التصنيفات المعتمدة】
 ${CATEGORY_LINKS_TEXT}
 
 【معلومات المنصة】
@@ -887,7 +1059,7 @@ async function generateAIResponse(session, extraContext, isFirst) {
   if (extraContext) {
     messages.push({
       role: "system",
-      content: `【مرجع إضافي】\n${extraContext}`,
+      content: `【مرجع إضافي — استخدم المعلومات دي للإجابة】\n${extraContext}`,
     });
   }
   if (isFirst) {
@@ -1021,12 +1193,11 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v5.6: COURSE_SEARCH — FIXED ════════════════
+    // ═══ 🆕 v5.7: COURSE_SEARCH — WITH CATEGORY FALLBACK
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
       const displayTerm = entity || message;
 
-      /* Only use AI-extracted terms, NOT the raw message */
       const allTerms = [
         ...new Set([
           ...(entity ? [entity] : []),
@@ -1038,6 +1209,7 @@ app.post("/chat", limiter, async (req, res) => {
         `🔍 COURSE_SEARCH for "${displayTerm}" → terms: [${allTerms.join(" | ")}]`
       );
 
+      /* Direct search */
       let courses = await searchCourses(allTerms, entity);
 
       if (courses.length > 0) {
@@ -1050,25 +1222,79 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* ═══════════════════════════════════════════════════
-         🆕 v5.6: NO GPT FALLBACK for "not found"!
-         → Use structured message instead
-         → This PREVENTS: fake links, "visit easyT.online",
-           inventing course names or categories
-         ═══════════════════════════════════════════════════ */
-      console.log(`⚠️ No results for "${displayTerm}" → structured message`);
+      /* 🆕 v5.7: Category fallback — try getting courses from matching category */
+      if (category_key) {
+        console.log(`📂 No direct results → trying category fallback: ${category_key}`);
+        const catCourses = await getCoursesByCategory(category_key);
 
+        if (catCourses.length > 0) {
+          console.log(`✅ Category fallback: ${catCourses.length} courses`);
+          const reply = formatCategoryCourses(catCourses, category, displayTerm);
+          session.history.push({
+            role: "assistant",
+            content: `[مفيش "${displayTerm}" بالظبط — عرض ${catCourses.length} دورات من قسم ${category.name}]`,
+          });
+          return res.json({ reply, session_id });
+        }
+      }
+
+      /* No results at all → structured message (NO GPT) */
+      console.log(`⚠️ No results for "${displayTerm}" → formatNoResults`);
       const reply = formatNoResults(displayTerm, category);
-
       session.history.push({
         role: "assistant",
-        content: `مفيش كورس عن "${displayTerm}" حالياً. تم توجيه المستخدم لتصفح كل الدورات.`,
+        content: `مفيش كورس عن "${displayTerm}" حالياً.`,
       });
+      return res.json({ reply, session_id });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ═══ 🆕 v5.7: PLATFORM_QA — NOW SEARCHES site_pages ══
+    // ═══════════════════════════════════════════════════════
+    if (intent === "PLATFORM_QA") {
+      const searchQuery = entity || message;
+      const sitePages = await searchSitePages(searchQuery);
+
+      let context = PLATFORM_KB;
+      if (sitePages.length) {
+        const pagesContent = sitePages
+          .map((p) => `[صفحة: ${p.page_url}]\n${p.content}`)
+          .join("\n---\n")
+          .slice(0, 3000);
+        context += `\n\n【محتوى من صفحات المنصة — استخدم ده كمصدر أساسي】\n${pagesContent}`;
+        console.log(`📄 Added ${sitePages.length} site pages to context`);
+      }
+
+      session.history.push({
+        role: "system",
+        content: `المستخدم بيسأل عن: "${searchQuery}".
+⚠️ لو في "محتوى من صفحات المنصة" في السياق → استخدمه كمصدر أساسي!
+⚠️ لا تتجاهل محتوى الصفحات وتجاوب من عندك.
+⚠️ لا تخترع أي روابط.
+⚠️ لا تقترح واتساب إلا لو فعلاً مفيش إجابة.`,
+      });
+
+      let reply = await generateAIResponse(session, context, isFirst);
+      reply = formatReply(reply);
+      session.history.pop(); // remove the system message
+
+      session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ─── CERTIFICATE_QA ───
     if (intent === "CERTIFICATE_QA") {
+      const sitePages = await searchSitePages("شهادة");
+      
+      let context = PLATFORM_KB;
+      if (sitePages.length) {
+        const pagesContent = sitePages
+          .map((p) => `[${p.page_url}]\n${p.content}`)
+          .join("\n---\n")
+          .slice(0, 2000);
+        context += `\n\n【محتوى من صفحات المنصة】\n${pagesContent}`;
+      }
+
       session.history.push({
         role: "system",
         content: `المستخدم بيسأل عن الشهادات. أجب بتفصيل من المعلومات المتاحة.
@@ -1076,24 +1302,7 @@ app.post("/chat", limiter, async (req, res) => {
 ⚠️ لا تخترع أي روابط.`,
       });
 
-      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
-      reply = formatReply(reply);
-      session.history.pop();
-
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
-    }
-
-    // ─── PLATFORM_QA ───
-    if (intent === "PLATFORM_QA") {
-      session.history.push({
-        role: "system",
-        content: `المستخدم بيسأل سؤال عن استخدام المنصة. أجب من المعلومات المتاحة بتفصيل.
-⚠️ لا تقترح واتساب إلا لو مفيش إجابة.
-⚠️ لا تخترع أي روابط. استخدم بس الروابط المعتمدة.`,
-      });
-
-      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
+      let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
       session.history.pop();
 
@@ -1105,13 +1314,11 @@ app.post("/chat", limiter, async (req, res) => {
     if (intent === "FOLLOW_UP") {
       const followUpEntity = entity || session.entity || "الموضوع السابق";
 
-      /* If previous was COURSE_SEARCH, might need to search again */
       if (
         session.intent === "COURSE_SEARCH" &&
         entity &&
         entity !== session.entity
       ) {
-        /* This is actually a new search disguised as follow-up */
         const terms = search_terms.length
           ? [...new Set([entity, ...search_terms])].filter((t) => t.length >= 2)
           : [entity];
@@ -1127,6 +1334,20 @@ app.post("/chat", limiter, async (req, res) => {
           return res.json({ reply, session_id });
         }
 
+        /* Category fallback */
+        if (category_key) {
+          const catCourses = await getCoursesByCategory(category_key);
+          if (catCourses.length > 0) {
+            const reply = formatCategoryCourses(catCourses, CATEGORIES[category_key], entity);
+            session.entity = entity;
+            session.history.push({
+              role: "assistant",
+              content: `[عرض ${catCourses.length} دورات من قسم مشابه]`,
+            });
+            return res.json({ reply, session_id });
+          }
+        }
+
         const reply = formatNoResults(entity, category);
         session.history.push({
           role: "assistant",
@@ -1135,13 +1356,21 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
+      /* General follow-up — search site_pages for context */
+      const sitePages = await searchSitePages(followUpEntity);
+      let extraContext = PLATFORM_KB;
+      if (sitePages.length) {
+        extraContext += `\n\n【محتوى من صفحات المنصة】\n` +
+          sitePages.map(p => p.content).join("\n---\n").slice(0, 2000);
+      }
+
       session.history.push({
         role: "system",
         content: `متابعة للمحادثة عن "${followUpEntity}".
 ⚠️ أجب على السؤال مباشرةً. لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
       });
 
-      let reply = await generateAIResponse(session, PLATFORM_KB, false);
+      let reply = await generateAIResponse(session, extraContext, false);
       reply = formatReply(reply);
       session.history.pop();
 
@@ -1151,13 +1380,20 @@ app.post("/chat", limiter, async (req, res) => {
 
     // ─── ACCESS_ISSUE ───
     if (intent === "ACCESS_ISSUE") {
+      const sitePages = await searchSitePages("مشكلة دخول حساب");
+      let context = PLATFORM_KB;
+      if (sitePages.length) {
+        context += `\n\n【محتوى من صفحات المنصة】\n` +
+          sitePages.map(p => p.content).join("\n---\n").slice(0, 2000);
+      }
+
       session.history.push({
         role: "system",
         content: `المستخدم عنده مشكلة في الوصول. اعطيه خطوات عملية.
 ⚠️ لا تخترع أي روابط.`,
       });
 
-      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
+      let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
       session.history.pop();
 
@@ -1176,19 +1412,19 @@ app.post("/chat", limiter, async (req, res) => {
     if (
       ["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)
     ) {
-      let context = PLATFORM_KB;
+      /* 🆕 v5.7: Search site_pages instead of old "pages" */
+      const searchQuery = entity || intent.toLowerCase();
+      const sitePages = await searchSitePages(searchQuery);
 
-      try {
-        const pages = await searchPages(intent.toLowerCase());
-        if (pages?.length) {
-          context +=
-            "\n\n【محتوى الصفحة】\n" +
-            pages
-              .map((p) => p.content)
-              .join("\n")
-              .slice(0, 2000);
-        }
-      } catch (e) {}
+      let context = PLATFORM_KB;
+      if (sitePages.length) {
+        context +=
+          "\n\n【محتوى من صفحات المنصة】\n" +
+          sitePages
+            .map((p) => p.content)
+            .join("\n---\n")
+            .slice(0, 2000);
+      }
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
@@ -1223,19 +1459,17 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ─── GENERAL (fallback) ───
+    /* 🆕 v5.7: Search site_pages */
+    const sitePages = await searchSitePages(entity || message);
     let context = PLATFORM_KB;
-
-    try {
-      const pages = await searchPages(entity || message);
-      if (pages?.length) {
-        context +=
-          "\n\n【صفحات ذات صلة】\n" +
-          pages
-            .map((p) => `[${p.title}]\n${p.content}`)
-            .join("\n---\n")
-            .slice(0, 2000);
-      }
-    } catch (e) {}
+    if (sitePages.length) {
+      context +=
+        "\n\n【محتوى من صفحات المنصة — استخدم ده كمصدر أساسي】\n" +
+        sitePages
+          .map((p) => `[${p.page_url}]\n${p.content}`)
+          .join("\n---\n")
+          .slice(0, 2000);
+    }
 
     let reply = await generateAIResponse(session, context, isFirst);
     reply = formatReply(reply);
@@ -1257,6 +1491,20 @@ app.post("/chat", limiter, async (req, res) => {
    ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 
+/* 🆕 v5.7: Debug site_pages search */
+app.get("/debug/site-pages/:query", async (req, res) => {
+  const q = decodeURIComponent(req.params.query);
+  const results = await searchSitePages(q);
+  res.json({
+    query: q,
+    results_count: results.length,
+    results: results.map((r) => ({
+      page_url: r.page_url,
+      content_preview: r.content?.slice(0, 200),
+    })),
+  });
+});
+
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const classification = await classify(q, [], null, null);
@@ -1270,6 +1518,12 @@ app.get("/debug/search/:query", async (req, res) => {
     : [q];
 
   const courses = await searchCourses(terms, classification.entity);
+
+  /* 🆕 v5.7: Also test category fallback */
+  let categoryFallback = [];
+  if (courses.length === 0 && classification.category_key) {
+    categoryFallback = await getCoursesByCategory(classification.category_key);
+  }
 
   let termTests = {};
   for (const term of terms.slice(0, 5)) {
@@ -1292,11 +1546,16 @@ app.get("/debug/search/:query", async (req, res) => {
   res.json({
     query: q,
     classification,
-    final_results: courses.length,
+    direct_results: courses.length,
     courses: courses.map((c) => ({
       title: c.title,
       url: c.url,
       instructor: c.instructor,
+    })),
+    category_fallback_count: categoryFallback.length,
+    category_fallback: categoryFallback.map((c) => ({
+      title: c.title,
+      url: c.url,
     })),
     per_term_test: termTests,
   });
@@ -1309,10 +1568,29 @@ app.get("/debug/columns", async (req, res) => {
       .select("*")
       .limit(1);
     if (error) return res.json({ error: error.message });
+
+    /* 🆕 v5.7: Also check site_pages */
+    const { data: spData, error: spError } = await supabase
+      .from("site_pages")
+      .select("*")
+      .limit(1);
+
     res.json({
-      table: "courses",
-      columns: data?.[0] ? Object.keys(data[0]) : [],
-      sample: data?.[0] || null,
+      courses: {
+        columns: data?.[0] ? Object.keys(data[0]) : [],
+        sample: data?.[0] || null,
+      },
+      site_pages: {
+        columns: spData?.[0] ? Object.keys(spData[0]) : [],
+        sample_preview: spData?.[0]
+          ? {
+              page_url: spData[0].page_url,
+              content_length: spData[0].content?.length,
+              has_embedding: !!spData[0].embedding,
+            }
+          : null,
+        error: spError?.message || null,
+      },
     });
   } catch (e) {
     res.json({ error: e.message });
@@ -1324,13 +1602,22 @@ app.get("/debug/db", async (req, res) => {
     const { count, error } = await supabase
       .from("courses")
       .select("*", { count: "exact", head: true });
+
+    /* 🆕 v5.7: Count site_pages */
+    const { count: spCount, error: spError } = await supabase
+      .from("site_pages")
+      .select("*", { count: "exact", head: true });
+
     const { data: instData } = await supabase
       .from("instructors")
       .select("id, name")
       .limit(3);
+
     res.json({
       courses_count: count || 0,
       courses_error: error?.message || null,
+      site_pages_count: spCount || 0,
+      site_pages_error: spError?.message || null,
       instructors_sample: instData || [],
     });
   } catch (e) {
@@ -1347,6 +1634,11 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "كورس سي", expected_intent: "COURSE_SEARCH" },
     { input: "كورس صيانة", expected_intent: "COURSE_SEARCH" },
     { input: "كورس بايثون", expected_intent: "COURSE_SEARCH" },
+    { input: "البرمجة ابدأها ازاي", expected_intent: "COURSE_SEARCH" },
+    { input: "ازاي ابدأ تصميم", expected_intent: "COURSE_SEARCH" },
+    { input: "عايز ادخل مجال الهاكينج", expected_intent: "COURSE_SEARCH" },
+    { input: "هل في ضمان", expected_intent: "PLATFORM_QA" },
+    { input: "ايه سياسة الاسترجاع", expected_intent: "PLATFORM_QA" },
     { input: "الشهادة معتمدة", expected_intent: "CERTIFICATE_QA" },
     { input: "ايه المتصفح المناسب", expected_intent: "PLATFORM_QA" },
     { input: "بكام الاشتراك", expected_intent: "SUBSCRIPTION" },
@@ -1395,7 +1687,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "5.6",
+    version: "5.7",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     categories: Object.keys(CATEGORIES).length,
@@ -1407,8 +1699,8 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v5.6`);
+  console.log(`\n🤖 easyT Chatbot v5.7`);
   console.log(`   Port: ${PORT}`);
   console.log(`   All courses URL: ${ALL_COURSES_URL}`);
-  console.log(`   Debug: /debug/search/:q | /debug/test-all | /debug/db\n`);
+  console.log(`   Debug: /debug/search/:q | /debug/site-pages/:q | /debug/test-all | /debug/db\n`);
 });
