@@ -38,7 +38,7 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ SEMANTIC SEARCH
+   ✅ COURSE SEARCH
 ============================== */
 
 async function searchCourses(searchText) {
@@ -51,13 +51,39 @@ async function searchCourses(searchText) {
     });
 
     if (error) {
-      console.log("Semantic search error:", error.message);
+      console.log("Course search error:", error.message);
       return [];
     }
 
     return data || [];
   } catch (err) {
-    console.log("Search crash:", err.message);
+    console.log("Course search crash:", err.message);
+    return [];
+  }
+}
+
+/* ==============================
+   ✅ PAGE SEARCH (NEW)
+============================== */
+
+async function searchPages(searchText) {
+  try {
+    const queryEmbedding = await createEmbedding(searchText);
+
+    const { data, error } = await supabase.rpc("match_documents", {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.75,
+      match_count: 5
+    });
+
+    if (error) {
+      console.log("Page search error:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.log("Page search crash:", err.message);
     return [];
   }
 }
@@ -110,8 +136,6 @@ async function extractSearchTopic(message) {
           content: `
 استخرج المجال التعليمي الأنسب للبحث عن دورات بناءً على رسالة المستخدم.
 أجب فقط باسم المجال المختصر.
-مثال:
-"يعني ايه ROAS" → "التسويق الرقمي"
 `
         },
         { role: "user", content: message }
@@ -129,13 +153,14 @@ async function extractSearchTopic(message) {
    ✅ SYSTEM PROMPT
 ============================== */
 
-function getSystemPrompt(mode, course_id) {
+function getSystemPrompt(mode) {
 
   if (mode === "visitor") {
     return `
 أنت مستشار تعليمي لمنصة easyT.
-اشرح المفاهيم بوضوح وبطريقة احترافية.
-لا تكن دعائيًا.
+أجب فقط بناءً على المعلومات المتاحة من الموقع.
+إذا لم تجد إجابة واضحة قل أنك لا تملك معلومات كافية.
+لا تخترع معلومات.
 `;
   }
 
@@ -174,7 +199,7 @@ app.post("/chat", async (req, res) => {
 
   try {
 
-    let { message, session_id, mode, course_id } = req.body;
+    let { message, session_id } = req.body;
 
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
@@ -182,23 +207,17 @@ app.post("/chat", async (req, res) => {
 
     if (!session_id) session_id = crypto.randomUUID();
 
-    /* ✅ Step 1: Classify First */
     const intent = await classifyIntent(message);
 
-    let finalMode = "visitor";
+    let finalMode = intent === "SUPPORT" ? "support" : "visitor";
 
-    if (intent === "SUPPORT") {
-      finalMode = "support";
-    }
-
-    /* ✅ Conversation memory */
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
     }
 
     const history = conversations.get(session_id);
 
-    /* ✅ لو دعم → نرد بدون اقتراح وبدون history طويل */
+    /* ✅ SUPPORT FLOW */
     if (finalMode === "support") {
 
       const supportPrompt = getSystemPrompt("support");
@@ -212,23 +231,29 @@ app.post("/chat", async (req, res) => {
         ]
       });
 
-      let reply = supportCompletion.choices[0].message.content;
-      reply = cleanHTML(reply);
-
+      let reply = cleanHTML(supportCompletion.choices[0].message.content);
       return res.json({ reply, session_id });
     }
 
-    /* ✅ Visitor Educational Flow */
+    /* ✅ VISITOR FLOW WITH RAG */
 
     history.push({ role: "user", content: message });
 
-    const systemPrompt = getSystemPrompt("visitor", course_id);
+    const pages = await searchPages(message);
+
+    let pageContext = "";
+    if (pages.length > 0) {
+      pageContext = pages.map(p => p.content).join("\n\n");
+    }
+
+    const systemPrompt = getSystemPrompt("visitor");
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
       messages: [
         { role: "system", content: systemPrompt },
+        ...(pageContext ? [{ role: "system", content: `معلومات من الموقع:\n${pageContext}` }] : []),
         ...history
       ]
     });
@@ -238,7 +263,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Suggest only if EDUCATIONAL */
+    /* ✅ COURSE SUGGESTIONS */
     let courses = [];
 
     if (intent === "EDUCATIONAL") {
@@ -246,7 +271,6 @@ app.post("/chat", async (req, res) => {
       courses = await searchCourses(topic);
     }
 
-    /* ✅ Attach Suggestions */
     if (courses.length > 0) {
 
       reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
