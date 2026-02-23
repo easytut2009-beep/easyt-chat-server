@@ -65,30 +65,64 @@ async function searchCourses(message) {
 }
 
 /* ==============================
+   ✅ INTENT DETECTION (Smart)
+============================== */
+
+async function shouldSuggestCourses(userMessage, assistantReply) {
+  try {
+    const check = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+أجب فقط بكلمة YES أو NO.
+هل من المناسب اقتراح دورات تعليمية من منصة تعليمية بناءً على سؤال المستخدم والسياق؟
+لا تقترح في حالات التحية أو الأسئلة العامة غير التعليمية.
+`
+        },
+        {
+          role: "user",
+          content: `
+سؤال المستخدم:
+${userMessage}
+
+رد المساعد:
+${assistantReply}
+`
+        }
+      ]
+    });
+
+    const answer = check.choices[0].message.content.trim().toUpperCase();
+    return answer.includes("YES");
+  } catch (err) {
+    console.log("Intent detection error:", err.message);
+    return false;
+  }
+}
+
+/* ==============================
    ✅ SYSTEM PROMPTS
 ============================== */
 
 function getSystemPrompt(mode, course_id) {
 
-  // 🟢 Visitor
   if (mode === "visitor") {
     return `
 أنت مستشار ذكي لمنصة easyT التعليمية.
 
 دورك:
 - شرح المجالات والمسارات المهنية.
-- اقتراح دورات مناسبة.
-- توضيح فكرة الدبلومات والمسارات.
-- شرح ميزة الاشتراك العام.
+- الرد على الأسئلة العامة عن المنصة.
+- اقتراح دورات فقط إذا كان ذلك مناسبًا منطقيًا.
+- لا تجعل الرد دعائيًا.
 
-مهم:
-اذكر بشكل طبيعي أن داخل كل كورس يوجد مساعد ذكي يساعد الطالب أثناء الدراسة 24/7.
-لا تجعل الرد دعائي.
-كن محفزًا واحترافيًا.
+كن احترافيًا ومباشرًا.
 `;
   }
 
-  // 🔵 Student
   if (mode === "student") {
     return `
 أنت مساعد ذكي داخل الكورس الحالي في منصة easyT.
@@ -99,25 +133,21 @@ function getSystemPrompt(mode, course_id) {
 - شرح أي نقطة غير مفهومة.
 - تبسيط المفاهيم بأمثلة.
 - تشجيع الطالب.
-- مساعدته على التطبيق العملي.
+- مساعدته عمليًا.
 
-مهم:
-لا تروج للاشتراك.
-تصرف كأنك مدرب مساعد شخصي.
+لا تقترح اشتراكات.
 `;
   }
 
-  // 🟣 Support
   if (mode === "support") {
     return `
 أنت مساعد دعم فني لمنصة easyT.
 
 ساعد في:
 - مشاكل تسجيل الدخول
-- طرق الدفع
-- الاشتراك العام
+- الدفع
+- الاشتراك
 - الوصول للدورات
-- الأسئلة العامة عن المنصة
 
 كن واضحًا ومباشرًا.
 `;
@@ -132,11 +162,7 @@ function getSystemPrompt(mode, course_id) {
 
 function cleanHTML(reply) {
   if (!reply) return "";
-
-  reply = reply.replace(/\n/g, "<br>");
-  reply = reply.trim();
-
-  return reply;
+  return reply.replace(/\n/g, "<br>").trim();
 }
 
 /* ==============================
@@ -165,6 +191,7 @@ app.post("/chat", async (req, res) => {
 
     const systemPrompt = getSystemPrompt(mode, course_id);
 
+    /* ✅ Step 1: Main AI Response */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
@@ -179,13 +206,19 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ اقتراح كورسات فقط في visitor */
+    /* ✅ Step 2: Smart Suggestion Only in Visitor Mode */
     let courses = [];
 
     if (mode === "visitor") {
-      courses = await searchCourses(message);
+
+      const shouldSuggest = await shouldSuggestCourses(message, reply);
+
+      if (shouldSuggest) {
+        courses = await searchCourses(message);
+      }
     }
 
+    /* ✅ Step 3: Attach Suggestions If Logical */
     if (courses.length > 0) {
 
       reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
@@ -205,7 +238,7 @@ ${course.title}
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error(error);
+    console.error("Server Error:", error);
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
