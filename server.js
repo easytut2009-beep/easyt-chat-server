@@ -178,11 +178,11 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ STEP 1: CLASSIFY INTENT */
+    /* ✅ STEP 1: INTENT */
     const pageIntent = await classifyPageIntent(message);
     console.log("🧠 Intent:", pageIntent);
 
-    /* ✅ STEP 2: RETRIEVE CONTENT */
+    /* ✅ STEP 2: FETCH CONTENT */
     let pages = [];
 
     if (pageIntent === "SUBSCRIPTION") {
@@ -206,7 +206,7 @@ app.post("/chat", async (req, res) => {
       pageContext = pages.map(p => p.content).join("\n\n");
     }
 
-    /* ✅ STEP 3: GENERATE RESPONSE */
+    /* ✅ STEP 3: GENERATE ANSWER */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -214,13 +214,17 @@ app.post("/chat", async (req, res) => {
         {
           role: "system",
           content: `
-أنت مستشار لمنصة easyT.
-أجب فقط بناءً على المعلومات التالية من الموقع.
-إذا لم تجد معلومة واضحة قل أنك لا تملك معلومات كافية.
-لا تخترع معلومات.
+أنت مستشار رسمي لمنصة easyT.
+
+استخدم المعلومات التالية للإجابة بشكل مباشر.
+إذا كانت المعلومات موجودة في النص، لا تقل أنك لا تملك معلومات.
+لا تخترع معلومات خارج النص.
 `
         },
-        ...(pageContext ? [{ role: "system", content: `معلومات من الموقع:\n${pageContext}` }] : []),
+        ...(pageContext ? [{
+          role: "system",
+          content: `محتوى رسمي من الموقع:\n${pageContext}`
+        }] : []),
         ...history
       ]
     });
