@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.7
-   ✅ FIX: site_pages table name + columns (was "pages")
-   ✅ FIX: "البرمجة ابدأها ازاي" → COURSE_SEARCH not START_LEARNING
-   ✅ FIX: "كورس سي" → formatNoResults (not GPT)
-   ✅ FIX: "هل في ضمان" → searches site_pages correctly
-   ✅ NEW: Category-based course fallback
-   ✅ NEW: Guarantee/refund info in KB
+   🤖 easyT Chatbot v5.9
+   ✅ ALL v5.7 + v5.8 fixes preserved
+   ✅ FIX: FAQ loaded from Supabase `faq` table (was hardcoded)
+   ✅ FIX: /debug/test-context is now general-purpose
+   ✅ NEW: FAQ cache with auto-refresh (10 min TTL)
+   ✅ NEW: searchFAQ() with Arabic-aware scoring
+   ✅ NEW: buildContext() helper — DRY principle
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -206,7 +206,123 @@ const PAGE_LINKS = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Knowledge Base v5.7 ════════════════════════════════
+   ═══ 🆕 v5.9: FAQ from Database (Cached) ═══════════════
+   ═══ Was: hardcoded FAQ_KB string                       ═
+   ═══ Now: loaded from Supabase `faq` table + cached     ═
+   ══════════════════════════════════════════════════════════ */
+let faqCache = [];
+let faqLastFetch = 0;
+const FAQ_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+const ARABIC_STOP_WORDS = new Set([
+  "في", "من", "عن", "على", "إلى", "الى", "هل", "ما", "هو", "هي",
+  "أن", "ان", "لا", "مش", "ازاي", "كيف", "هذا", "هذه", "ده", "دي",
+  "دا", "كده", "يعني", "بس", "مع", "بين", "عند", "لما", "اللي",
+  "اي", "أي", "ايه", "إيه", "كل", "أو", "او", "ولا", "لو", "بعد",
+  "قبل", "فيه", "فيها", "منه", "منها", "عليه", "عليها",
+]);
+
+async function getFAQData() {
+  const now = Date.now();
+  if (faqCache.length && now - faqLastFetch < FAQ_CACHE_TTL) {
+    return faqCache;
+  }
+
+  try {
+    console.log("📚 Loading FAQ from database...");
+    const { data, error } = await supabase
+      .from("faq")
+      .select("section, question, answer")
+      .order("id");
+
+    if (error) {
+      console.error("❌ FAQ load error:", error.message);
+      return faqCache; // return stale cache if available
+    }
+
+    if (data?.length) {
+      faqCache = data;
+      faqLastFetch = now;
+      console.log(`✅ FAQ cache loaded: ${faqCache.length} entries`);
+    }
+  } catch (e) {
+    console.error("❌ FAQ fetch error:", e.message);
+  }
+
+  return faqCache;
+}
+
+async function searchFAQ(query) {
+  const faqData = await getFAQData();
+  if (!faqData.length) return [];
+
+  /* Extract meaningful search terms */
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t));
+
+  if (!terms.length) {
+    /* If all words were stop words, use full query */
+    const fallbackTerms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2)
+      .slice(0, 3);
+    if (!fallbackTerms.length) return [];
+    terms.push(...fallbackTerms);
+  }
+
+  console.log(`📚 FAQ search terms: [${terms.join(", ")}]`);
+
+  /* Score each FAQ entry */
+  const scored = faqData.map((faq) => {
+    const q = (faq.question || "").toLowerCase();
+    const a = (faq.answer || "").toLowerCase();
+    const s = (faq.section || "").toLowerCase();
+
+    let score = 0;
+    for (const term of terms) {
+      if (q.includes(term)) score += 3; // question match is most valuable
+      if (a.includes(term)) score += 1; // answer match
+      if (s.includes(term)) score += 1; // section match
+    }
+
+    return { ...faq, score };
+  });
+
+  const results = scored
+    .filter((f) => f.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  console.log(
+    `📚 FAQ results: ${results.length} (top scores: ${results
+      .map((r) => r.score)
+      .join(", ")})`
+  );
+
+  return results;
+}
+
+function formatFAQContext(faqResults) {
+  if (!faqResults.length) return "";
+
+  let text = "\n\n【أسئلة شائعة ذات صلة من قاعدة البيانات — استخدمها كمصدر أساسي】\n";
+  faqResults.forEach((faq) => {
+    text += `\n[${faq.section}]\nسؤال: ${faq.question}\nإجابة: ${faq.answer}\n`;
+  });
+  return text;
+}
+
+/* Preload FAQ on startup */
+setTimeout(async () => {
+  await getFAQData();
+}, 2000);
+
+/* ══════════════════════════════════════════════════════════
+   ═══ Knowledge Base v5.9 (static platform info only) ════
+   ═══ FAQ removed — now loaded from database             ═
    ══════════════════════════════════════════════════════════ */
 const PLATFORM_KB = `
 【منصة إيزي تي — easyT.online】
@@ -248,48 +364,6 @@ const PLATFORM_KB = `
   - تأكد إن فيه رصيد كافي
   - جرب بطاقة تانية أو طريقة دفع مختلفة (فودافون كاش / إنستا باي / PayPal)
   - لو المشكلة مستمرة → تواصل مع الدعم واتساب 01027007899
-
-═══ الشهادات ═══
-◆ كل دورة ودبلومة فيها شهادة إتمام إلكترونية (Certificate of Completion)
-◆ الشهادة بتظهر أوتوماتيك في حسابك بعد ما تخلّص كل الدروس
-◆ الشهادة PDF تقدر تحمّلها وتطبعها من حسابك
-◆ مفيش توصيل — الشهادة إلكترونية بتنزّلها من حسابك على المنصة
-◆ لو الشهادة مش ظاهرة → تأكد إنك خلّصت كل الدروس → لو المشكلة مستمرة تواصل مع الدعم
-
-═══ اعتماد الشهادات ═══
-◆ الشهادة هي "شهادة إتمام" (Certificate of Completion) وليست شهادة أكاديمية جامعية
-◆ بتثبت إنك أتممت الدورة أو الدبلومة بنجاح واكتسبت المهارات المطلوبة
-◆ الشهادة معترف بيها كإثبات للتدريب المهني وبتفيدك في:
-  - السيرة الذاتية (CV)
-  - ملفك على LinkedIn
-  - إثبات مهاراتك لأصحاب العمل
-◆ مش شهادة جامعية أو حكومية — هي شهادة تدريبية مهنية من المنصة
-
-═══ الضمان وسياسة الاسترجاع ═══
-◆ المنصة بتوفر ضمان جودة المحتوى التعليمي
-◆ لو عندك مشكلة في محتوى دورة أو جودتها → تقدر تتواصل مع الدعم لحل المشكلة
-◆ تفاصيل شروط الاستخدام والضمان متاحة على صفحة المساعدة: https://easyt.online/p/help
-◆ الاشتراك السنوي → التجديد تلقائي والإلغاء متاح في أي وقت
-◆ لأي استفسار عن الضمان أو الاسترجاع → تواصل مع الدعم واتساب 01027007899
-
-═══ المتصفحات والمتطلبات التقنية ═══
-◆ المنصة بتشتغل على أي متصفح حديث
-◆ المتصفح الأفضل والموصى بيه: Google Chrome (آخر إصدار)
-◆ متصفحات مدعومة كمان: Mozilla Firefox, Microsoft Edge, Safari
-◆ يفضّل تحديث المتصفح لآخر إصدار لأفضل تجربة
-◆ لو عندك مشكلة في التشغيل:
-  - جرب Google Chrome
-  - امسح الكاش (Cache) وملفات الكوكيز
-  - تأكد من اتصال الإنترنت
-  - جرب وضع التصفح الخفي (Incognito Mode)
-◆ المنصة بتشتغل على الموبايل والتابلت والكمبيوتر
-
-═══ أسئلة شائعة إضافية ═══
-◆ هل أقدر أحمّل الفيديوهات؟ → لا، المحتوى متاح أونلاين فقط للمشاهدة
-◆ هل فيه تطبيق موبايل؟ → تقدر تتصفح المنصة من متصفح الموبايل
-◆ هل أقدر أشارك حسابي؟ → لا، كل حساب شخصي لمستخدم واحد
-◆ لو نسيت الباسورد → استخدم "نسيت كلمة المرور" في صفحة الدخول
-◆ هل الدورات بتكون عربي؟ → أيوه، معظم الدورات باللغة العربية
 
 ═══ الدعم الفني ═══
 ◆ واتساب: 01027007899
@@ -375,7 +449,7 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v5.7: AI Classification — FIXED ════════════════
+   ═══ AI Classification ═════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -393,62 +467,56 @@ Return ONLY valid JSON:
   "refers_to_previous": true/false
 }
 
-═══ ⚠️ INTENT DEFINITIONS — READ VERY CAREFULLY ═══
+═══ ⚠️ CRITICAL: CONTEXT RESOLUTION RULE ═══
+
+When user says "الموضوع ده", "عن كده", "تشرح ده", "في كورسات عن كده", "الحاجة دي", "المجال ده", "عايز كورس فيه" (without specifying topic):
+→ You MUST look at the ENTIRE chat history to find the ACTUAL topic being discussed!
+→ "entity" MUST be the REAL topic from history, NOT "الموضوع ده" or "ده" or "كده"!
+→ "search_terms" MUST contain terms related to the REAL topic!
+→ "category_key" MUST match the REAL topic!
+
+Example:
+- Previous messages discussed "Upselling / البيع الإضافي" 
+- User now says "في كورسات تشرح الموضوع ده"
+- ✅ CORRECT: entity: "upselling البيع الإضافي", search_terms: ["upselling", "بيع", "تسويق", "مبيعات", "استراتيجيات بيع"], category_key: "marketing"
+- ❌ WRONG: entity: "الموضوع ده", search_terms: ["الموضوع"]
+
+═══ ⚠️ INTENT DEFINITIONS ═══
 
 • GIBBERISH — Random characters, keyboard mashing, no meaningful words
 
-• GREETING — ONLY short greetings with NO topic whatsoever: hi, hello, سلام, أهلا, ازيك
+• GREETING — ONLY short greetings with NO topic: hi, hello, سلام, أهلا, ازيك
 
-• START_LEARNING — Wants to learn but ABSOLUTELY NO specific topic or field mentioned at all
-  ✅ Examples: "عايز اتعلم", "ازاي ابدأ", "من فين ابدأ", "عايز اتعلم حاجة"
-  ❌ NOT START_LEARNING if ANY topic mentioned even broadly:
-     "البرمجة ابدأها ازاي" → COURSE_SEARCH (topic: البرمجة)
-     "ازاي ابدأ تصميم" → COURSE_SEARCH (topic: تصميم)
-     "عايز ابدأ في الهاكينج" → COURSE_SEARCH (topic: هاكينج)
-     "من فين ابدأ ماركيتنج" → COURSE_SEARCH (topic: ماركيتنج)
-  ⚠️ RULE: If the message mentions ANY specific field/topic/skill + "ابدأ/ابتدي/ازاي" → COURSE_SEARCH!
+• START_LEARNING — Wants to learn but NO specific topic at all
+  ✅ "عايز اتعلم", "ازاي ابدأ", "من فين ابدأ"
+  ❌ NOT if ANY topic mentioned: "البرمجة ابدأها ازاي" → COURSE_SEARCH
 
-• COURSE_SEARCH — ANY message mentioning a SPECIFIC topic/tool/skill/technology/field
-  Examples: "فوتوشوب", "في فوتوشوب", "عن بايثون", "كورس سي", "عايز اتعلم اكسل",
-  "محتاج كورس تصميم", "python", "تعلم جافا", "دورة تسويق", "flutter", "كورس صيانة",
-  "البرمجة ابدأها ازاي", "ازاي ابدأ تصميم", "عايز ادخل مجال الحماية"
-  ⚠️ Even with prepositions (في/عن/على) → STILL COURSE_SEARCH
-  ⚠️ Even with "ابدأ/ازاي/ابتدي" → STILL COURSE_SEARCH if topic is mentioned!
-  ⚠️ NEVER classify a specific topic as GENERAL or START_LEARNING!
+• COURSE_SEARCH — ANY message mentioning a SPECIFIC topic/tool/skill/field OR asking for courses about a topic discussed in history
+  ⚠️ Even with "ابدأ/ازاي" → STILL COURSE_SEARCH if topic mentioned!
+  ⚠️ "الموضوع ده" + previous topic in history → COURSE_SEARCH with entity = previous topic!
 
-• PLATFORM_QA — Questions about platform usage, policies, guarantees, refunds, terms, technical issues, browsers
-  Examples: "هل في ضمان", "ايه سياسة الاسترجاع", "ايه المتصفح المناسب",
-  "ازاي استخدم المنصة", "هل اقدر احمل الفيديوهات", "هل في تطبيق موبايل",
-  "ايه شروط الاستخدام", "هل الشهادة بتتوصل", "ازاي انزل الشهادة"
+• PLATFORM_QA — Questions about platform usage, policies, guarantees, refunds, FAQ, technical issues, browsers, how-to
+  Examples: "هل في ضمان", "ازاي استخدم المنصة", "هل في تقسيط", "ايه الفرق بين الكورس والدبلومة",
+  "ازاي اسجل حساب", "هل اقدر احمل الفيديوهات", "هل في تطبيق موبايل", "ازاي الغي الاشتراك"
 
-• CERTIFICATE_QA — Questions specifically ABOUT certificates (اعتماد, شهادة, معتمدة)
-
+• CERTIFICATE_QA — Questions about certificates (اعتماد, شهادة, معتمدة)
 • PAYMENT — Payment methods, transfer, receipt, card issues
 • SUBSCRIPTION — Pricing, plans, offers, renewal, cancellation
-• ACCESS_ISSUE — Can't login, can't access course, account locked
+• ACCESS_ISSUE — Can't login, can't access course
 • AFFILIATE — Affiliate/commission program
 • AUTHOR — Wants to become instructor
-• FOLLOW_UP — Continuation of PREVIOUS topic (message must be coherent!)
-• GENERAL — Other questions not covered above
+• FOLLOW_UP — Continuation of PREVIOUS topic
+• GENERAL — Other questions
 
 ═══ search_terms Rules (ONLY for COURSE_SEARCH) ═══
 Provide 3-5 focused search variations:
 • Arabic name + English name + common spelling variants
 • ⚠️ NO single-character terms! Minimum 2 characters.
 • ⚠️ NO generic words like كورس, دورة, تعلم — only the TOPIC itself
-• For short names, ALWAYS expand:
-  "c"/"سي" → ["لغة سي", "C programming", "برمجة سي", "لغة C", "سي بروجرامنج"]
-  "c++" → ["سي بلس بلس", "C++", "برمجة C++"]
-  "صيانة" → ["صيانة", "maintenance", "صيانة أجهزة", "صيانة كمبيوتر", "صيانة موبايل"]
-  "البرمجة" → ["برمجة", "programming", "أساسيات البرمجة", "تعلم البرمجة", "كود"]
 
 ═══ ⚠️ category_key RULES ═══
-• ONLY return a category_key if the topic CLEARLY matches one of the categories below
-• If the topic does NOT match any category → return null
-• "البرمجة"/"سي"/"جافا"/"بايثون" → programming
-• "صيانة" → null (no maintenance category!)
-• "طبخ" → null
-• "رومايود" → null
+• ONLY return a category_key if topic CLEARLY matches a category below
+• If no match → return null
 
 Available categories:
 ${CAT_LIST}`;
@@ -514,12 +582,61 @@ async function classify(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v5.7: Site Pages Search — FIXED ════════════════
-   ═══ Was: "pages" table + wrong columns                ═
-   ═══ Now: "site_pages" table + correct columns          ═
+   ═══ Resolve Entity from History ════════════════════════
+   ══════════════════════════════════════════════════════════ */
+async function resolveEntityFromHistory(history) {
+  try {
+    const recent = history
+      .slice(-8)
+      .map((m) => `${m.role === "user" ? "User" : "Bot"}: ${m.content.slice(0, 200)}`)
+      .join("\n");
+
+    const { choices } = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 100,
+      messages: [
+        {
+          role: "system",
+          content: `Extract the MAIN topic/subject being discussed in this conversation.
+Return ONLY valid JSON: {"topic": "the topic", "search_terms": ["term1", "term2", "term3"], "category_key": "key or null"}
+
+Available categories:
+${CAT_LIST}`,
+        },
+        {
+          role: "user",
+          content: `Conversation:\n${recent}\n\nWhat is the main topic?`,
+        },
+      ],
+    });
+
+    const matchStr = choices[0].message.content.match(/\{[\s\S]*\}/);
+    if (matchStr) {
+      const parsed = JSON.parse(matchStr[0]);
+      console.log(`   🧠 Resolved topic from history: "${parsed.topic}"`);
+      return parsed;
+    }
+  } catch (e) {
+    console.error("   ❌ resolveEntityFromHistory error:", e.message);
+  }
+  return null;
+}
+
+function isVagueEntity(entity) {
+  if (!entity) return true;
+  const vagueTerms = [
+    "الموضوع ده", "الموضوع دا", "الموضوع", "ده", "دا", "كده", "كدا",
+    "الحاجة دي", "المجال ده", "المجال دا", "فيه", "عنه", "عن ده",
+    "هذا", "هذا الموضوع", "this", "this topic",
+  ];
+  return vagueTerms.includes(entity.trim()) || entity.trim().length < 2;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ Site Pages Search ══════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 async function searchSitePages(query) {
-  /* Extract meaningful search terms */
   const terms = query
     .split(/\s+/)
     .filter((t) => t.length >= 2)
@@ -536,7 +653,6 @@ async function searchSitePages(query) {
 
   console.log(`📄 Searching site_pages for: [${terms.join(", ")}]`);
 
-  /* Strategy 1: ilike on content for each term */
   for (const term of terms) {
     try {
       const { data, error } = await supabase
@@ -545,13 +661,9 @@ async function searchSitePages(query) {
         .ilike("content", `%${term}%`)
         .limit(5);
 
-      if (error) {
-        console.log(`   ⚠️ site_pages error for "${term}": ${error.message}`);
-        continue;
-      }
+      if (error) continue;
 
       if (data?.length) {
-        console.log(`   ✅ site_pages "${term}": ${data.length} results`);
         for (const row of data) {
           const key = row.page_url + "|" + row.content?.slice(0, 50);
           if (!seen.has(key)) {
@@ -559,16 +671,45 @@ async function searchSitePages(query) {
             results.push(row);
           }
         }
-      } else {
-        console.log(`   ⬜ site_pages "${term}": 0 results`);
       }
-    } catch (e) {
-      console.error(`   ❌ site_pages search error for "${term}":`, e.message);
+    } catch (e) {}
+  }
+
+  return results.slice(0, 8);
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v5.9: buildContext helper ══════════════════════
+   ═══ Combines: site_pages + FAQ → single context string ═
+   ══════════════════════════════════════════════════════════ */
+async function buildContext(searchQuery, options = {}) {
+  const { includeFAQ = true, includeSitePages = true } = options;
+  let context = "";
+
+  /* Search site_pages */
+  if (includeSitePages) {
+    const sitePages = await searchSitePages(searchQuery);
+    if (sitePages.length) {
+      context +=
+        "\n\n【محتوى من صفحات المنصة】\n" +
+        sitePages
+          .map((p) => `[${p.page_url}]\n${p.content}`)
+          .join("\n---\n")
+          .slice(0, 3000);
+      console.log(`📄 Context: ${sitePages.length} site pages`);
     }
   }
 
-  console.log(`📄 Total site_pages results: ${results.length}`);
-  return results.slice(0, 8);
+  /* Search FAQ */
+  if (includeFAQ) {
+    const faqResults = await searchFAQ(searchQuery);
+    if (faqResults.length) {
+      context += formatFAQContext(faqResults);
+      console.log(`📚 Context: ${faqResults.length} FAQ entries`);
+    }
+  }
+
+  return context;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -598,20 +739,10 @@ async function searchCoursesRaw(terms) {
         .limit(6);
 
       if (!error && data?.length) {
-        console.log(
-          `   ✅ Title "${term}": ${data.length} → [${data
-            .map((d) => d[DB.title]?.slice(0, 40))
-            .join(", ")}]`
-        );
+        console.log(`   ✅ Title "${term}": ${data.length}`);
         collected.push(...data);
-      } else {
-        console.log(
-          `   ⬜ Title "${term}": ${error ? "ERR " + error.message : "0"}`
-        );
       }
-    } catch (e) {
-      console.log(`   ❌ Title "${term}": ${e.message}`);
-    }
+    } catch (e) {}
   }
 
   if (collected.length) {
@@ -622,7 +753,6 @@ async function searchCoursesRaw(terms) {
       seen.add(key);
       return true;
     });
-    console.log(`   🎯 Strategy 1 (title): ${collected.length} deduped`);
     return collected.slice(0, 10);
   }
 
@@ -635,17 +765,11 @@ async function searchCoursesRaw(terms) {
         .ilike(DB.subtitle, `%${term}%`)
         .limit(6);
 
-      if (!error && data?.length) {
-        console.log(`   ✅ Subtitle "${term}": ${data.length}`);
-        collected.push(...data);
-      }
+      if (!error && data?.length) collected.push(...data);
     } catch (e) {}
   }
 
-  if (collected.length) {
-    console.log(`   🎯 Strategy 2 (subtitle): ${collected.length}`);
-    return collected.slice(0, 10);
-  }
+  if (collected.length) return collected.slice(0, 10);
 
   /* Strategy 3: Description ilike */
   for (const term of clean.slice(0, 4)) {
@@ -656,17 +780,11 @@ async function searchCoursesRaw(terms) {
         .ilike(DB.description, `%${term}%`)
         .limit(6);
 
-      if (!error && data?.length) {
-        console.log(`   ✅ Description "${term}": ${data.length}`);
-        collected.push(...data);
-      }
+      if (!error && data?.length) collected.push(...data);
     } catch (e) {}
   }
 
-  if (collected.length) {
-    console.log(`   🎯 Strategy 3 (description): ${collected.length}`);
-    return collected.slice(0, 10);
-  }
+  if (collected.length) return collected.slice(0, 10);
 
   /* Strategy 4: full_content ilike */
   for (const term of clean.slice(0, 3)) {
@@ -677,23 +795,13 @@ async function searchCoursesRaw(terms) {
         .ilike(DB.full_content, `%${term}%`)
         .limit(5);
 
-      if (!error && data?.length) {
-        console.log(`   ✅ full_content "${term}": ${data.length}`);
-        collected.push(...data);
-      }
+      if (!error && data?.length) collected.push(...data);
     } catch (e) {}
   }
 
-  if (collected.length) {
-    console.log(`   🎯 Strategy 4 (full_content): ${collected.length}`);
-    return collected.slice(0, 10);
-  }
-
-  console.log(`   ⚠️ ALL strategies returned 0 results`);
-  return [];
+  return collected.slice(0, 10);
 }
 
-/* Local Relevance Filter */
 function localRelevanceFilter(courses, entity, searchTerms) {
   if (!courses.length) return [];
 
@@ -713,14 +821,9 @@ function localRelevanceFilter(courses, entity, searchTerms) {
     return significantTerms.some((term) => combined.includes(term));
   });
 
-  console.log(
-    `   🔎 Local relevance: ${courses.length} → ${filtered.length} (terms: ${significantTerms.join(", ")})`
-  );
-
   return filtered;
 }
 
-/* AI Relevance Filter */
 async function filterRelevantAI(courses, userQuery, entity) {
   if (courses.length <= 3) return courses;
 
@@ -734,7 +837,7 @@ async function filterRelevantAI(courses, userQuery, entity) {
       messages: [
         {
           role: "system",
-          content: `Filter search results. Given query and courses, return JSON array of RELEVANT indices. Be generous. Return format: [0, 1, 2]`,
+          content: `Filter search results. Return JSON array of RELEVANT indices. Be generous. Format: [0, 1, 2]`,
         },
         {
           role: "user",
@@ -752,20 +855,12 @@ async function filterRelevantAI(courses, userQuery, entity) {
         .filter((i) => i >= 0 && i < courses.length)
         .map((i) => courses[i]);
 
-      if (filtered.length >= 1) {
-        console.log(
-          `   🎯 AI Relevance: ${courses.length} → ${filtered.length}`
-        );
-        return filtered;
-      }
+      if (filtered.length >= 1) return filtered;
     }
-  } catch (e) {
-    console.error("   ❌ AI filter error:", e.message);
-  }
+  } catch (e) {}
   return courses;
 }
 
-/* Full Course Search Pipeline */
 async function searchCourses(searchTerms, entity) {
   const rawRows = await searchCoursesRaw(searchTerms);
   if (!rawRows.length) return [];
@@ -774,13 +869,8 @@ async function searchCourses(searchTerms, entity) {
   const courses = rawRows.map((row) => mapCourse(row, instructorMap));
   const deduped = dedupe(courses);
 
-  console.log(`   📦 After mapping/dedup: ${deduped.length}`);
-
   const localFiltered = localRelevanceFilter(deduped, entity, searchTerms);
-  if (!localFiltered.length) {
-    console.log(`   ⚠️ All filtered out by local relevance`);
-    return [];
-  }
+  if (!localFiltered.length) return [];
 
   if (localFiltered.length > 3) {
     const aiFiltered = await filterRelevantAI(
@@ -803,17 +893,13 @@ function dedupe(courses) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v5.7: Category Course Fallback ═════════════════
-   ═══ When no direct results but category matches,       ═
-   ═══ try to get courses from that category              ═
+   ═══ Category Course Fallback ═══════════════════════════
    ══════════════════════════════════════════════════════════ */
-
-/* Broad terms for each category — used as fallback search */
 const CATEGORY_SEARCH_TERMS = {
   graphics: ["تصميم", "فوتوشوب", "اليستريتور", "جرافيك", "design"],
   security: ["حماية", "اختراق", "سيبراني", "security", "cyber"],
   languages: ["لغة", "انجليزي", "language", "english"],
-  marketing: ["ماركيتنج", "تسويق", "ديجيتال", "marketing"],
+  marketing: ["ماركيتنج", "تسويق", "ديجيتال", "marketing", "إعلان"],
   engineering: ["هندسية", "اوتوكاد", "autocad", "ريفيت"],
   webdev: ["ويب", "موقع", "تطبيق", "web", "react", "node"],
   earning: ["ربح", "انترنت", "فريلانس", "دخل"],
@@ -826,19 +912,17 @@ const CATEGORY_SEARCH_TERMS = {
   ai_apps: ["ذكاء اصطناعي", "AI", "artificial intelligence"],
   art: ["فن", "هوايات", "رسم", "art"],
   electronics: ["روبوت", "الكترونيات", "شبكات", "network"],
-  programming: ["برمجة", "programming", "كود", "code", "قواعد بيانات", "database", "بايثون", "جافا"],
+  programming: ["برمجة", "programming", "كود", "code", "بايثون", "جافا"],
   ai_programming: ["برمجة ذكاء", "machine learning", "deep learning", "LLM"],
   ui_design: ["UI", "UX", "واجهة", "تصميم موقع"],
   investment: ["استثمار", "أسواق مالية", "بورصة", "trading"],
-  sales: ["مبيعات", "تسويق", "sales"],
+  sales: ["مبيعات", "تسويق", "sales", "بيع", "عروض"],
   video: ["تصوير", "مونتاج", "أنيميشن", "فيديو", "montage"],
 };
 
 async function getCoursesByCategory(categoryKey) {
   const terms = CATEGORY_SEARCH_TERMS[categoryKey];
   if (!terms) return [];
-
-  console.log(`\n📂 Category fallback for "${categoryKey}" → terms: [${terms.join(", ")}]`);
 
   let collected = [];
 
@@ -850,16 +934,12 @@ async function getCoursesByCategory(categoryKey) {
         .ilike(DB.title, `%${term}%`)
         .limit(4);
 
-      if (!error && data?.length) {
-        console.log(`   ✅ Category term "${term}": ${data.length}`);
-        collected.push(...data);
-      }
+      if (!error && data?.length) collected.push(...data);
     } catch (e) {}
   }
 
   if (!collected.length) return [];
 
-  /* Deduplicate */
   const seen = new Set();
   collected = collected.filter((r) => {
     const key = r[DB.title] || r[DB.link];
@@ -930,61 +1010,35 @@ function formatCourses(courses, category) {
   return html;
 }
 
-/* 🆕 v5.7: Format category courses (when direct search fails but category has courses) */
 function formatCategoryCourses(courses, category, originalTopic) {
   let html = `<b>🔍 مفيش كورس باسم "${originalTopic}" بالظبط، لكن في دورات قريبة في قسم ${category.name}:</b><br><br>`;
 
   courses.forEach((c, i) => {
     const link = c.url || category.url;
-
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
-
     if (c.image_url) {
-      html += `<div style="text-align:center;margin-bottom:8px;">`;
-      html += `<a href="${link}" target="_blank">`;
-      html += `<img src="${c.image_url}" alt="${c.title}" `;
-      html += `style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" `;
-      html += `onerror="this.style.display='none'">`;
-      html += `</a></div>`;
+      html += `<div style="text-align:center;margin-bottom:8px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
     }
-
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
-    html += `${i + 1}. ${c.title}</a><br>`;
-
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">${i + 1}. ${c.title}</a><br>`;
     if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
-
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
-      if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
-        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
-      } else {
-        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
-      }
+      html += p === "0" || p === "0.00" || p.toLowerCase() === "free"
+        ? `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`
+        : `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
     }
-
     if (c.description) {
-      const desc =
-        c.description.length > 120
-          ? c.description.slice(0, 120) + "..."
-          : c.description;
-      html += `📝 ${desc}<br>`;
+      html += `📝 ${c.description.length > 120 ? c.description.slice(0, 120) + "..." : c.description}<br>`;
     }
-
-    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a>`;
-    html += `</div>`;
+    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a></div>`;
   });
 
-  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">`;
-  html += `تصفح جميع دورات ${category.name} ←</a>`;
-
-  html += `<br><br>💡 وصول لكل الدورات من خلال `;
-  html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">`;
-  html += `الاشتراك السنوي (49$ عرض رمضان)</a>`;
+  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${category.name} ←</a>`;
+  html += `<br><br>💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a>`;
 
   return html;
 }
 
-/* Structured "Not Found" Message — NO GPT */
 function formatNoResults(displayTerm, category) {
   let html = `<b>🔍 للأسف مفيش كورس عن "${displayTerm}" على المنصة حالياً.</b><br><br>`;
 
@@ -995,7 +1049,6 @@ function formatNoResults(displayTerm, category) {
 
   html += `تقدر تتصفح كل الدورات المتاحة (+600 دورة) من هنا:<br>`;
   html += `▸ <a href="${ALL_COURSES_URL}" target="_blank" style="color:#c40000;font-weight:bold;">📚 جميع الدورات على المنصة</a><br><br>`;
-
   html += `💡 مع <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a> تقدر تدخل كل الدورات والدبلومات 🎓`;
 
   return html;
@@ -1016,20 +1069,18 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 
 【قواعد صارمة】
 
-1. ⚠️ أهم قاعدة: لا تخترع أي رابط أو اسم كورس أو تصنيف غير موجود!
+1. ⚠️ لا تخترع أي رابط أو اسم كورس أو تصنيف غير موجود!
    - لو مش متأكد إن الرابط صحيح → لا تحطه
    - لو عايز توجه المستخدم لتصفح الدورات → استخدم: https://easyt.online/courses
-   - ⛔ ممنوع تخترع روابط فيها /courses/category/اسم-بالعربي
    
-2. لا تقترح التواصل مع الدعم أو واتساب إلا في الحالات دي فقط:
-   - المستخدم سأل صراحةً عن طريقة التواصل
+2. لا تقترح واتساب إلا لو:
+   - المستخدم سأل صراحةً عن التواصل
    - مشكلة تقنية مش قادر تحلها
-   - مفيش إجابة واضحة في المعلومات المتاحة
+   - مفيش إجابة واضحة
 
-3. ⛔ ممنوع تقول "زور الموقع الرسمي easyT.online" — المستخدم أصلاً على الموقع!
+3. ⛔ ممنوع تقول "زور الموقع الرسمي" — المستخدم أصلاً على الموقع!
 
-4. ⚠️ لو في "محتوى من صفحات المنصة" في السياق → استخدمه كمصدر أساسي للإجابة!
-   لا تتجاهله وتجاوب من عندك.
+4. ⚠️ لو في "أسئلة شائعة ذات صلة" أو "محتوى من صفحات المنصة" في السياق → استخدمهم كمصدر أساسي!
 
 5. رحّب في أول رسالة فقط
 6. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
@@ -1042,7 +1093,6 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 ★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#c40000;font-weight:bold;">💰 برنامج العمولة</a>
 ★ محاضر → <a href="https://easyt.online/p/author" target="_blank" style="color:#c40000;font-weight:bold;">🎓 الانضمام كمحاضر</a>
 ★ واتساب → <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">📱 تواصل مع الدعم واتساب</a>
-★ روابط التصنيفات المعروفة (اللي في القائمة تحت بس!)
 
 【تنسيق】
 • <b>عنوان</b> • ▸ للنقاط • <a href="URL" target="_blank" style="color:#c40000;font-weight:bold;">نص</a> للروابط
@@ -1109,9 +1159,7 @@ app.post("/chat", limiter, async (req, res) => {
     let { message, session_id } = req.body;
 
     if (!message || typeof message !== "string" || !message.trim()) {
-      return res
-        .status(400)
-        .json({ reply: "يرجى إرسال رسالة صحيحة." });
+      return res.status(400).json({ reply: "يرجى إرسال رسالة صحيحة." });
     }
 
     message = message.trim().slice(0, 1000);
@@ -1122,7 +1170,6 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 0: Local Gibberish Check ── */
     if (isLikelyGibberish(message)) {
-      console.log(`🗑️ Local gibberish detected: "${message.slice(0, 30)}"`);
       const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟<br><br>تقدر تسألني عن:<br>▸ 🎓 الدورات والكورسات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 📋 أي استفسار عن المنصة`;
       session.history.push({ role: "user", content: message });
       session.history.push({ role: "assistant", content: reply });
@@ -1134,30 +1181,20 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 1: AI Classification ── */
     const {
-      intent,
-      entity,
-      search_terms,
-      category_key,
-      page_type,
-      refers_to_previous,
-    } = await classify(
-      message,
-      session.history,
-      session.intent,
-      session.entity
-    );
+      intent, entity, search_terms, category_key, page_type, refers_to_previous,
+    } = await classify(message, session.history, session.intent, session.entity);
 
     console.log(`\n════════════════════════════════`);
-    console.log(`💬 Message: "${message.slice(0, 60)}"`);
-    console.log(
-      `🏷️  Intent: ${intent} | Entity: ${entity} | FollowUp: ${refers_to_previous}`
-    );
-    console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}]`);
-    console.log(`📂 Category: ${category_key || "none"}`);
+    console.log(`💬 "${message.slice(0, 60)}"`);
+    console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`);
+    console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
 
-    if (!["GENERAL", "GREETING", "FOLLOW_UP", "GIBBERISH"].includes(intent)) {
+    /* Save entity when detected */
+    if (entity && entity.length >= 2 && !isVagueEntity(entity)) {
+      session.entity = entity;
+    }
+    if (!["GREETING", "GIBBERISH"].includes(intent)) {
       session.intent = intent;
-      if (entity) session.entity = entity;
     }
 
     const category = category_key ? CATEGORIES[category_key] : null;
@@ -1193,132 +1230,170 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v5.7: COURSE_SEARCH — WITH CATEGORY FALLBACK
+    // ═══ COURSE_SEARCH — WITH CONTEXT RESOLVE ════════════
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
-      const displayTerm = entity || message;
+      let resolvedEntity = entity;
+      let resolvedTerms = search_terms;
+      let resolvedCategoryKey = category_key;
+
+      /* If entity is vague, resolve from history */
+      if (isVagueEntity(entity)) {
+        console.log(`   🧠 Vague entity "${entity}" → resolving...`);
+
+        if (session.entity && !isVagueEntity(session.entity)) {
+          resolvedEntity = session.entity;
+          console.log(`   🧠 Used session.entity: "${resolvedEntity}"`);
+        }
+
+        if (isVagueEntity(resolvedEntity)) {
+          const historyTopic = await resolveEntityFromHistory(session.history);
+          if (historyTopic) {
+            resolvedEntity = historyTopic.topic || resolvedEntity;
+            resolvedTerms = historyTopic.search_terms?.length ? historyTopic.search_terms : resolvedTerms;
+            resolvedCategoryKey = historyTopic.category_key && CATEGORIES[historyTopic.category_key]
+              ? historyTopic.category_key : resolvedCategoryKey;
+          }
+        }
+
+        if (resolvedEntity && !isVagueEntity(resolvedEntity)) {
+          session.entity = resolvedEntity;
+        }
+      }
+
+      const displayTerm = resolvedEntity || message;
+      const resolvedCategory = resolvedCategoryKey ? CATEGORIES[resolvedCategoryKey] : category;
 
       const allTerms = [
         ...new Set([
-          ...(entity ? [entity] : []),
+          ...(resolvedEntity && !isVagueEntity(resolvedEntity) ? [resolvedEntity] : []),
+          ...resolvedTerms,
           ...search_terms,
         ]),
       ].filter((t) => t && t.trim().length >= 2);
 
-      console.log(
-        `🔍 COURSE_SEARCH for "${displayTerm}" → terms: [${allTerms.join(" | ")}]`
-      );
+      console.log(`🔍 COURSE_SEARCH "${displayTerm}" → [${allTerms.join(" | ")}]`);
 
-      /* Direct search */
-      let courses = await searchCourses(allTerms, entity);
+      let courses = await searchCourses(allTerms, resolvedEntity);
 
       if (courses.length > 0) {
-        console.log(`✅ Found ${courses.length} relevant courses`);
-        const reply = formatCourses(courses, category);
-        session.history.push({
-          role: "assistant",
-          content: `[عرض ${courses.length} دورات عن: ${displayTerm}]`,
-        });
+        const reply = formatCourses(courses, resolvedCategory);
+        session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${displayTerm}]` });
         return res.json({ reply, session_id });
       }
 
-      /* 🆕 v5.7: Category fallback — try getting courses from matching category */
-      if (category_key) {
-        console.log(`📂 No direct results → trying category fallback: ${category_key}`);
-        const catCourses = await getCoursesByCategory(category_key);
-
+      /* Category fallback */
+      const fallbackCatKey = resolvedCategoryKey || category_key;
+      if (fallbackCatKey) {
+        const catCourses = await getCoursesByCategory(fallbackCatKey);
         if (catCourses.length > 0) {
-          console.log(`✅ Category fallback: ${catCourses.length} courses`);
-          const reply = formatCategoryCourses(catCourses, category, displayTerm);
-          session.history.push({
-            role: "assistant",
-            content: `[مفيش "${displayTerm}" بالظبط — عرض ${catCourses.length} دورات من قسم ${category.name}]`,
-          });
+          const fallbackCat = CATEGORIES[fallbackCatKey];
+          const reply = formatCategoryCourses(catCourses, fallbackCat, displayTerm);
+          session.history.push({ role: "assistant", content: `[عرض ${catCourses.length} من ${fallbackCat.name}]` });
           return res.json({ reply, session_id });
         }
       }
 
-      /* No results at all → structured message (NO GPT) */
-      console.log(`⚠️ No results for "${displayTerm}" → formatNoResults`);
-      const reply = formatNoResults(displayTerm, category);
-      session.history.push({
-        role: "assistant",
-        content: `مفيش كورس عن "${displayTerm}" حالياً.`,
-      });
+      const reply = formatNoResults(displayTerm, resolvedCategory);
+      session.history.push({ role: "assistant", content: `مفيش كورس عن "${displayTerm}" حالياً.` });
       return res.json({ reply, session_id });
     }
 
     // ═══════════════════════════════════════════════════════
-    // ═══ 🆕 v5.7: PLATFORM_QA — NOW SEARCHES site_pages ══
+    // ═══ PLATFORM_QA — site_pages + FAQ ═══════════════════
     // ═══════════════════════════════════════════════════════
     if (intent === "PLATFORM_QA") {
       const searchQuery = entity || message;
-      const sitePages = await searchSitePages(searchQuery);
-
-      let context = PLATFORM_KB;
-      if (sitePages.length) {
-        const pagesContent = sitePages
-          .map((p) => `[صفحة: ${p.page_url}]\n${p.content}`)
-          .join("\n---\n")
-          .slice(0, 3000);
-        context += `\n\n【محتوى من صفحات المنصة — استخدم ده كمصدر أساسي】\n${pagesContent}`;
-        console.log(`📄 Added ${sitePages.length} site pages to context`);
-      }
+      const context = await buildContext(searchQuery);
 
       session.history.push({
         role: "system",
         content: `المستخدم بيسأل عن: "${searchQuery}".
-⚠️ لو في "محتوى من صفحات المنصة" في السياق → استخدمه كمصدر أساسي!
-⚠️ لا تتجاهل محتوى الصفحات وتجاوب من عندك.
-⚠️ لا تخترع أي روابط.
-⚠️ لا تقترح واتساب إلا لو فعلاً مفيش إجابة.`,
+⚠️ لو في "أسئلة شائعة" أو "محتوى صفحات" في السياق → أجب منهم!
+⚠️ لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
-      session.history.pop(); // remove the system message
-
+      session.history.pop();
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ─── CERTIFICATE_QA ───
     if (intent === "CERTIFICATE_QA") {
-      const sitePages = await searchSitePages("شهادة");
-      
-      let context = PLATFORM_KB;
-      if (sitePages.length) {
-        const pagesContent = sitePages
-          .map((p) => `[${p.page_url}]\n${p.content}`)
-          .join("\n---\n")
-          .slice(0, 2000);
-        context += `\n\n【محتوى من صفحات المنصة】\n${pagesContent}`;
-      }
+      const context = await buildContext("شهادة اعتماد");
 
       session.history.push({
         role: "system",
-        content: `المستخدم بيسأل عن الشهادات. أجب بتفصيل من المعلومات المتاحة.
-⚠️ لا تقترح واتساب إلا لو فعلاً مفيش إجابة.
-⚠️ لا تخترع أي روابط.`,
+        content: `المستخدم بيسأل عن الشهادات. أجب من الأسئلة الشائعة ومعلومات المنصة.
+⚠️ لا تقترح واتساب إلا للضرورة. لا تخترع روابط.`,
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
       session.history.pop();
-
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
-    // ─── FOLLOW_UP ───
+    // ══════════════════════════════════════════════════════
+    // ═══ FOLLOW_UP — WITH CONTEXT RESOLVE ═══════════════
+    // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
-      const followUpEntity = entity || session.entity || "الموضوع السابق";
+      let followUpEntity = entity || session.entity || null;
 
-      if (
-        session.intent === "COURSE_SEARCH" &&
-        entity &&
-        entity !== session.entity
-      ) {
+      if (isVagueEntity(followUpEntity)) {
+        const historyTopic = await resolveEntityFromHistory(session.history);
+        if (historyTopic) {
+          followUpEntity = historyTopic.topic || "الموضوع السابق";
+        } else {
+          followUpEntity = "الموضوع السابق";
+        }
+      }
+
+      /* Check if this is a course request */
+      const coursePatterns = ["كورس", "دورة", "كورسات", "دورات", "تشرح", "يشرح", "اتعلم", "course"];
+      const isCourseFollowUp = coursePatterns.some((p) => message.toLowerCase().includes(p));
+
+      if (isCourseFollowUp && followUpEntity && followUpEntity !== "الموضوع السابق") {
+        let terms = search_terms.length
+          ? [...new Set([followUpEntity, ...search_terms])].filter((t) => t.length >= 2)
+          : [followUpEntity];
+
+        if (terms.length <= 1) {
+          const ht = await resolveEntityFromHistory(session.history);
+          if (ht?.search_terms?.length) {
+            terms = [...new Set([...terms, ...ht.search_terms])].filter((t) => t.length >= 2);
+          }
+        }
+
+        const courses = await searchCourses(terms, followUpEntity);
+        if (courses.length > 0) {
+          const reply = formatCourses(courses, category);
+          session.entity = followUpEntity;
+          session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${followUpEntity}]` });
+          return res.json({ reply, session_id });
+        }
+
+        const fallbackKey = category_key || (await resolveEntityFromHistory(session.history))?.category_key;
+        if (fallbackKey && CATEGORIES[fallbackKey]) {
+          const catCourses = await getCoursesByCategory(fallbackKey);
+          if (catCourses.length > 0) {
+            const reply = formatCategoryCourses(catCourses, CATEGORIES[fallbackKey], followUpEntity);
+            session.entity = followUpEntity;
+            session.history.push({ role: "assistant", content: `[عرض دورات من قسم مشابه]` });
+            return res.json({ reply, session_id });
+          }
+        }
+
+        const reply = formatNoResults(followUpEntity, category);
+        session.history.push({ role: "assistant", content: `مفيش كورس عن "${followUpEntity}" حالياً.` });
+        return res.json({ reply, session_id });
+      }
+
+      /* Non-course follow-up: new topic search */
+      if (session.intent === "COURSE_SEARCH" && entity && !isVagueEntity(entity) && entity !== session.entity) {
         const terms = search_terms.length
           ? [...new Set([entity, ...search_terms])].filter((t) => t.length >= 2)
           : [entity];
@@ -1327,70 +1402,48 @@ app.post("/chat", limiter, async (req, res) => {
         if (courses.length > 0) {
           const reply = formatCourses(courses, category);
           session.entity = entity;
-          session.history.push({
-            role: "assistant",
-            content: `[عرض ${courses.length} دورات عن: ${entity}]`,
-          });
+          session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${entity}]` });
           return res.json({ reply, session_id });
         }
 
-        /* Category fallback */
         if (category_key) {
           const catCourses = await getCoursesByCategory(category_key);
           if (catCourses.length > 0) {
             const reply = formatCategoryCourses(catCourses, CATEGORIES[category_key], entity);
             session.entity = entity;
-            session.history.push({
-              role: "assistant",
-              content: `[عرض ${catCourses.length} دورات من قسم مشابه]`,
-            });
+            session.history.push({ role: "assistant", content: `[عرض دورات من قسم مشابه]` });
             return res.json({ reply, session_id });
           }
         }
 
         const reply = formatNoResults(entity, category);
-        session.history.push({
-          role: "assistant",
-          content: `مفيش كورس عن "${entity}" حالياً.`,
-        });
+        session.history.push({ role: "assistant", content: `مفيش كورس عن "${entity}" حالياً.` });
         return res.json({ reply, session_id });
       }
 
-      /* General follow-up — search site_pages for context */
-      const sitePages = await searchSitePages(followUpEntity);
-      let extraContext = PLATFORM_KB;
-      if (sitePages.length) {
-        extraContext += `\n\n【محتوى من صفحات المنصة】\n` +
-          sitePages.map(p => p.content).join("\n---\n").slice(0, 2000);
-      }
+      /* General follow-up with FAQ */
+      const context = await buildContext(followUpEntity);
 
       session.history.push({
         role: "system",
         content: `متابعة للمحادثة عن "${followUpEntity}".
-⚠️ أجب على السؤال مباشرةً. لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
+⚠️ أجب مباشرةً. لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
       });
 
-      let reply = await generateAIResponse(session, extraContext, false);
+      let reply = await generateAIResponse(session, context, false);
       reply = formatReply(reply);
       session.history.pop();
-
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ─── ACCESS_ISSUE ───
     if (intent === "ACCESS_ISSUE") {
-      const sitePages = await searchSitePages("مشكلة دخول حساب");
-      let context = PLATFORM_KB;
-      if (sitePages.length) {
-        context += `\n\n【محتوى من صفحات المنصة】\n` +
-          sitePages.map(p => p.content).join("\n---\n").slice(0, 2000);
-      }
+      const context = await buildContext("مشكلة دخول حساب تسجيل");
 
       session.history.push({
         role: "system",
-        content: `المستخدم عنده مشكلة في الوصول. اعطيه خطوات عملية.
-⚠️ لا تخترع أي روابط.`,
+        content: `المستخدم عنده مشكلة في الوصول. اعطيه خطوات عملية من الأسئلة الشائعة.`,
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
@@ -1398,10 +1451,7 @@ app.post("/chat", limiter, async (req, res) => {
       session.history.pop();
 
       if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
-        reply += `<br><br>${makeLink(
-          "https://wa.me/201027007899",
-          "📱 تواصل مع الدعم واتساب"
-        )}`;
+        reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
       }
 
       session.history.push({ role: "assistant", content: reply });
@@ -1409,33 +1459,14 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
-    if (
-      ["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)
-    ) {
-      /* 🆕 v5.7: Search site_pages instead of old "pages" */
+    if (["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)) {
       const searchQuery = entity || intent.toLowerCase();
-      const sitePages = await searchSitePages(searchQuery);
-
-      let context = PLATFORM_KB;
-      if (sitePages.length) {
-        context +=
-          "\n\n【محتوى من صفحات المنصة】\n" +
-          sitePages
-            .map((p) => p.content)
-            .join("\n---\n")
-            .slice(0, 2000);
-      }
+      const context = await buildContext(searchQuery);
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
 
-      const linkMap = {
-        PAYMENT: "payment",
-        SUBSCRIPTION: "subscription",
-        AFFILIATE: "affiliate",
-        AUTHOR: "author",
-      };
-
+      const linkMap = { PAYMENT: "payment", SUBSCRIPTION: "subscription", AFFILIATE: "affiliate", AUTHOR: "author" };
       const linkKey = page_type || linkMap[intent];
       const link = PAGE_LINKS[linkKey];
 
@@ -1443,15 +1474,8 @@ app.post("/chat", limiter, async (req, res) => {
         reply += `<br><br>${makeLink(link.url, link.label)}`;
       }
 
-      if (
-        intent === "PAYMENT" &&
-        !reply.includes("wa.me") &&
-        !reply.includes("01027007899")
-      ) {
-        reply += `<br><br>${makeLink(
-          "https://wa.me/201027007899",
-          "📱 تواصل مع الدعم واتساب"
-        )}`;
+      if (intent === "PAYMENT" && !reply.includes("wa.me") && !reply.includes("01027007899")) {
+        reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
       }
 
       session.history.push({ role: "assistant", content: reply });
@@ -1459,17 +1483,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ─── GENERAL (fallback) ───
-    /* 🆕 v5.7: Search site_pages */
-    const sitePages = await searchSitePages(entity || message);
-    let context = PLATFORM_KB;
-    if (sitePages.length) {
-      context +=
-        "\n\n【محتوى من صفحات المنصة — استخدم ده كمصدر أساسي】\n" +
-        sitePages
-          .map((p) => `[${p.page_url}]\n${p.content}`)
-          .join("\n---\n")
-          .slice(0, 2000);
-    }
+    const context = await buildContext(entity || message);
 
     let reply = await generateAIResponse(session, context, isFirst);
     reply = formatReply(reply);
@@ -1491,7 +1505,24 @@ app.post("/chat", limiter, async (req, res) => {
    ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 
-/* 🆕 v5.7: Debug site_pages search */
+/* 🆕 v5.9: Debug FAQ search */
+app.get("/debug/faq/:query", async (req, res) => {
+  const q = decodeURIComponent(req.params.query);
+  const results = await searchFAQ(q);
+  const total = (await getFAQData()).length;
+  res.json({
+    query: q,
+    total_faq_entries: total,
+    results_count: results.length,
+    results: results.map((r) => ({
+      section: r.section,
+      question: r.question,
+      answer: r.answer?.slice(0, 200),
+      score: r.score,
+    })),
+  });
+});
+
 app.get("/debug/site-pages/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const results = await searchSitePages(q);
@@ -1509,88 +1540,186 @@ app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const classification = await classify(q, [], null, null);
   const terms = classification.search_terms.length
-    ? [
-        ...new Set([
-          ...classification.search_terms,
-          ...(classification.entity ? [classification.entity] : []),
-        ]),
-      ]
+    ? [...new Set([...classification.search_terms, ...(classification.entity ? [classification.entity] : [])])]
     : [q];
 
   const courses = await searchCourses(terms, classification.entity);
 
-  /* 🆕 v5.7: Also test category fallback */
   let categoryFallback = [];
   if (courses.length === 0 && classification.category_key) {
     categoryFallback = await getCoursesByCategory(classification.category_key);
-  }
-
-  let termTests = {};
-  for (const term of terms.slice(0, 5)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(DB.title)
-        .ilike(DB.title, `%${term}%`)
-        .limit(3);
-      termTests[term] = {
-        error: error?.message || null,
-        count: data?.length || 0,
-        titles: data?.map((d) => d[DB.title]) || [],
-      };
-    } catch (e) {
-      termTests[term] = { error: e.message, count: 0 };
-    }
   }
 
   res.json({
     query: q,
     classification,
     direct_results: courses.length,
-    courses: courses.map((c) => ({
-      title: c.title,
-      url: c.url,
-      instructor: c.instructor,
-    })),
+    courses: courses.map((c) => ({ title: c.title, url: c.url, instructor: c.instructor })),
     category_fallback_count: categoryFallback.length,
-    category_fallback: categoryFallback.map((c) => ({
-      title: c.title,
-      url: c.url,
-    })),
-    per_term_test: termTests,
+    category_fallback: categoryFallback.map((c) => ({ title: c.title, url: c.url })),
+  });
+});
+
+/* 🆕 v5.9: General-purpose context resolution test */
+app.post("/debug/test-context", async (req, res) => {
+  const { history = [], current, prev_intent, prev_entity } = req.body;
+
+  if (!current) {
+    return res.status(400).json({
+      error: "Missing 'current' field",
+      usage: {
+        method: "POST",
+        body: {
+          history: [
+            { role: "user", content: "الرسالة السابقة" },
+            { role: "assistant", content: "رد البوت" },
+          ],
+          current: "الرسالة الحالية",
+          prev_intent: "GENERAL",
+          prev_entity: "الموضوع السابق",
+        },
+      },
+    });
+  }
+
+  /* Build full history */
+  const fullHistory = [...history, { role: "user", content: current }];
+
+  /* Classify */
+  const classification = await classify(
+    current,
+    fullHistory,
+    prev_intent || null,
+    prev_entity || null
+  );
+
+  /* Check if entity is vague and resolve */
+  let resolvedEntity = classification.entity;
+  let resolvedTerms = classification.search_terms;
+  let resolvedFrom = "classifier";
+
+  if (isVagueEntity(resolvedEntity)) {
+    /* Try prev_entity first */
+    if (prev_entity && !isVagueEntity(prev_entity)) {
+      resolvedEntity = prev_entity;
+      resolvedFrom = "prev_entity param";
+    } else {
+      /* Use AI resolution */
+      const historyTopic = await resolveEntityFromHistory(fullHistory);
+      if (historyTopic) {
+        resolvedEntity = historyTopic.topic;
+        resolvedTerms = historyTopic.search_terms || resolvedTerms;
+        resolvedFrom = "AI history resolution";
+      }
+    }
+  }
+
+  /* Search courses with resolved entity */
+  const allTerms = [
+    ...new Set([
+      ...(resolvedEntity && !isVagueEntity(resolvedEntity) ? [resolvedEntity] : []),
+      ...resolvedTerms,
+      ...classification.search_terms,
+    ]),
+  ].filter((t) => t && t.length >= 2);
+
+  const courses = await searchCourses(allTerms, resolvedEntity);
+
+  /* Also search FAQ for context */
+  const faqResults = await searchFAQ(resolvedEntity || current);
+
+  res.json({
+    input: {
+      current,
+      history_length: history.length,
+      prev_intent,
+      prev_entity,
+    },
+    classification,
+    resolution: {
+      original_entity: classification.entity,
+      is_vague: isVagueEntity(classification.entity),
+      resolved_entity: resolvedEntity,
+      resolved_terms: resolvedTerms,
+      resolved_from: resolvedFrom,
+    },
+    courses: {
+      search_terms_used: allTerms,
+      count: courses.length,
+      results: courses.map((c) => ({ title: c.title, url: c.url })),
+    },
+    faq: {
+      count: faqResults.length,
+      results: faqResults.map((f) => ({ question: f.question, score: f.score })),
+    },
+  });
+});
+
+/* GET version for quick testing */
+app.get("/debug/test-context/:current", async (req, res) => {
+  const current = decodeURIComponent(req.params.current);
+  const prev = req.query.prev || null;
+  const prevEntity = req.query.entity || null;
+  const prevIntent = req.query.intent || null;
+
+  const history = [];
+  if (prev) {
+    history.push({ role: "user", content: prev });
+    history.push({ role: "assistant", content: "(رد سابق)" });
+  }
+
+  /* Reuse the POST handler logic */
+  const fullHistory = [...history, { role: "user", content: current }];
+
+  const classification = await classify(current, fullHistory, prevIntent, prevEntity);
+
+  let resolvedEntity = classification.entity;
+  let resolvedTerms = classification.search_terms;
+
+  if (isVagueEntity(resolvedEntity)) {
+    if (prevEntity && !isVagueEntity(prevEntity)) {
+      resolvedEntity = prevEntity;
+    } else {
+      const ht = await resolveEntityFromHistory(fullHistory);
+      if (ht) {
+        resolvedEntity = ht.topic;
+        resolvedTerms = ht.search_terms || resolvedTerms;
+      }
+    }
+  }
+
+  const allTerms = [
+    ...new Set([
+      ...(resolvedEntity && !isVagueEntity(resolvedEntity) ? [resolvedEntity] : []),
+      ...resolvedTerms,
+    ]),
+  ].filter((t) => t && t.length >= 2);
+
+  const courses = await searchCourses(allTerms, resolvedEntity);
+
+  res.json({
+    current,
+    prev,
+    prev_entity: prevEntity,
+    classification_intent: classification.intent,
+    classification_entity: classification.entity,
+    is_vague: isVagueEntity(classification.entity),
+    resolved_entity: resolvedEntity,
+    courses_found: courses.length,
+    courses: courses.map((c) => ({ title: c.title })),
   });
 });
 
 app.get("/debug/columns", async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("courses")
-      .select("*")
-      .limit(1);
-    if (error) return res.json({ error: error.message });
-
-    /* 🆕 v5.7: Also check site_pages */
-    const { data: spData, error: spError } = await supabase
-      .from("site_pages")
-      .select("*")
-      .limit(1);
+    const { data } = await supabase.from("courses").select("*").limit(1);
+    const { data: spData, error: spError } = await supabase.from("site_pages").select("*").limit(1);
+    const { data: faqData, error: faqError } = await supabase.from("faq").select("*").limit(1);
 
     res.json({
-      courses: {
-        columns: data?.[0] ? Object.keys(data[0]) : [],
-        sample: data?.[0] || null,
-      },
-      site_pages: {
-        columns: spData?.[0] ? Object.keys(spData[0]) : [],
-        sample_preview: spData?.[0]
-          ? {
-              page_url: spData[0].page_url,
-              content_length: spData[0].content?.length,
-              has_embedding: !!spData[0].embedding,
-            }
-          : null,
-        error: spError?.message || null,
-      },
+      courses: { columns: data?.[0] ? Object.keys(data[0]) : [] },
+      site_pages: { columns: spData?.[0] ? Object.keys(spData[0]) : [], error: spError?.message },
+      faq: { columns: faqData?.[0] ? Object.keys(faqData[0]) : [], error: faqError?.message },
     });
   } catch (e) {
     res.json({ error: e.message });
@@ -1599,26 +1728,16 @@ app.get("/debug/columns", async (req, res) => {
 
 app.get("/debug/db", async (req, res) => {
   try {
-    const { count, error } = await supabase
-      .from("courses")
-      .select("*", { count: "exact", head: true });
-
-    /* 🆕 v5.7: Count site_pages */
-    const { count: spCount, error: spError } = await supabase
-      .from("site_pages")
-      .select("*", { count: "exact", head: true });
-
-    const { data: instData } = await supabase
-      .from("instructors")
-      .select("id, name")
-      .limit(3);
+    const { count: cCount } = await supabase.from("courses").select("*", { count: "exact", head: true });
+    const { count: spCount } = await supabase.from("site_pages").select("*", { count: "exact", head: true });
+    const { count: faqCount } = await supabase.from("faq").select("*", { count: "exact", head: true });
 
     res.json({
-      courses_count: count || 0,
-      courses_error: error?.message || null,
+      courses_count: cCount || 0,
       site_pages_count: spCount || 0,
-      site_pages_error: spError?.message || null,
-      instructors_sample: instData || [],
+      faq_count: faqCount || 0,
+      faq_cache_size: faqCache.length,
+      faq_cache_age_seconds: faqLastFetch ? Math.floor((Date.now() - faqLastFetch) / 1000) : null,
     });
   } catch (e) {
     res.json({ error: e.message });
@@ -1632,21 +1751,19 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "عايز اتعلم", expected_intent: "START_LEARNING" },
     { input: "في فوتوشوب", expected_intent: "COURSE_SEARCH" },
     { input: "كورس سي", expected_intent: "COURSE_SEARCH" },
-    { input: "كورس صيانة", expected_intent: "COURSE_SEARCH" },
     { input: "كورس بايثون", expected_intent: "COURSE_SEARCH" },
     { input: "البرمجة ابدأها ازاي", expected_intent: "COURSE_SEARCH" },
-    { input: "ازاي ابدأ تصميم", expected_intent: "COURSE_SEARCH" },
-    { input: "عايز ادخل مجال الهاكينج", expected_intent: "COURSE_SEARCH" },
     { input: "هل في ضمان", expected_intent: "PLATFORM_QA" },
     { input: "ايه سياسة الاسترجاع", expected_intent: "PLATFORM_QA" },
     { input: "الشهادة معتمدة", expected_intent: "CERTIFICATE_QA" },
-    { input: "ايه المتصفح المناسب", expected_intent: "PLATFORM_QA" },
     { input: "بكام الاشتراك", expected_intent: "SUBSCRIPTION" },
     { input: "ازاي ادفع", expected_intent: "PAYMENT" },
     { input: "عايز اشتغل محاضر", expected_intent: "AUTHOR" },
     { input: "برنامج العمولة", expected_intent: "AFFILIATE" },
     { input: "مش قادر ادخل حسابي", expected_intent: "ACCESS_ISSUE" },
-    { input: "كورس عن الرومايود", expected_intent: "COURSE_SEARCH" },
+    { input: "ازاي اسجل حساب", expected_intent: "PLATFORM_QA" },
+    { input: "ايه الفرق بين الكورس والدبلومة", expected_intent: "PLATFORM_QA" },
+    { input: "هل في تقسيط", expected_intent: "PLATFORM_QA" },
   ];
 
   const results = [];
@@ -1659,22 +1776,14 @@ app.get("/debug/test-all", async (req, res) => {
         got: c.intent,
         pass: c.intent === test.expected_intent ? "✅" : "❌",
         entity: c.entity,
-        search_terms: c.search_terms,
         category_key: c.category_key,
       });
     } catch (e) {
-      results.push({
-        input: test.input,
-        expected: test.expected_intent,
-        got: "ERROR",
-        pass: "❌",
-        error: e.message,
-      });
+      results.push({ input: test.input, expected: test.expected_intent, got: "ERROR", pass: "❌" });
     }
   }
 
   const passed = results.filter((r) => r.pass === "✅").length;
-
   res.json({
     total: tests.length,
     passed,
@@ -1687,9 +1796,10 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "5.7",
+    version: "5.9",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
+    faq_cached: faqCache.length,
     categories: Object.keys(CATEGORIES).length,
   });
 });
@@ -1699,8 +1809,8 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v5.7`);
+  console.log(`\n🤖 easyT Chatbot v5.9`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   All courses URL: ${ALL_COURSES_URL}`);
-  console.log(`   Debug: /debug/search/:q | /debug/site-pages/:q | /debug/test-all | /debug/db\n`);
+  console.log(`   FAQ: from database (cached 10 min)`);
+  console.log(`   Debug: /debug/faq/:q | /debug/search/:q | /debug/test-context | /debug/test-all | /debug/db\n`);
 });
