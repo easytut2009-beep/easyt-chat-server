@@ -30,7 +30,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.UPABASE_SERVICE_KEY
 );
 
 /* ══════════════════════════════════════
