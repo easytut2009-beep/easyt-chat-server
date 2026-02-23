@@ -9,10 +9,7 @@ import crypto from "crypto";
 ============================== */
 
 const app = express();
-
-console.log("🔥 VERSION 12 STABLE PRO 🔥");
-
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json());
 
 if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
@@ -31,139 +28,6 @@ const supabase = createClient(
 const conversations = new Map();
 
 /* ==============================
-   ✅ TEST ROUTES
-============================== */
-
-app.get("/", (req, res) => {
-  res.send("SERVER ROOT ✅");
-});
-
-app.get("/test", (req, res) => {
-  res.send("SERVER WORKING ✅");
-});
-
-/* ==============================
-   ✅ TEACHABLE WEBHOOK (ANTI-DUPLICATE PRO)
-============================== */
-
-app.post("/teachable-webhook", async (req, res) => {
-  try {
-    console.log("🔥 TEACHABLE WEBHOOK RECEIVED");
-
-    const data = req.body;
-    const object = data?.object;
-
-    if (!object) {
-      return res.status(200).send("No object ✅");
-    }
-
-    /* ✅ ID فريد لكل عملية بيع */
-    const saleId = object?.id || data?.id;
-
-    if (!saleId) {
-      console.log("⚠ No sale ID");
-      return res.status(200).send("No sale id ✅");
-    }
-
-    /* ✅ منع تكرار نفس العملية نهائيًا */
-    const { data: existingSale } = await supabase
-      .from("recent_activity")
-      .select("id")
-      .eq("sale_id", saleId)
-      .limit(1);
-
-    if (existingSale && existingSale.length > 0) {
-      console.log("⚠ Duplicate webhook ignored:", saleId);
-      return res.status(200).send("Duplicate ✅");
-    }
-
-    /* ✅ الاسم */
-    const fullName =
-      object?.user?.name ||
-      object?.user?.full_name ||
-      object?.user_name ||
-      null;
-
-    /* ✅ اسم الكورس */
-    const productName =
-      object?.course?.name ||
-      object?.product?.name ||
-      null;
-
-    if (!fullName || !productName) {
-      console.log("⛔ Not purchase-related webhook");
-      return res.status(200).send("Ignored ✅");
-    }
-
-    /* ✅ الدولة */
-    let countryCode =
-      object?.shipping_address?.country ||
-      object?.user?.country ||
-      object?.user?.address?.country ||
-      null;
-
-    if (countryCode) {
-      countryCode = countryCode.toUpperCase();
-    }
-
-    const country = countryCode || "Unknown";
-
-    const firstName = fullName.trim().split(" ")[0];
-
-    /* ✅ إدخال العملية */
-    const { error } = await supabase
-      .from("recent_activity")
-      .insert([
-        {
-          sale_id: saleId,
-          name: firstName,
-          product: productName,
-          type: "purchase",
-          country: country
-        }
-      ]);
-
-    if (error) {
-      console.log("❌ Supabase error:", error.message);
-    } else {
-      console.log("✅ Real activity inserted:", saleId);
-    }
-
-    return res.status(200).send("OK ✅");
-
-  } catch (error) {
-    console.error("Webhook error:", error.message);
-    return res.status(500).send("Error");
-  }
-});
-
-/* ==============================
-   ✅ GET RECENT ACTIVITY (INSTANT DISPLAY)
-============================== */
-
-app.get("/recent-activity", async (req, res) => {
-  try {
-
-    const { data, error } = await supabase
-      .from("recent_activity")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    if (error) {
-      console.log("Recent activity error:", error.message);
-      return res.json([]);
-    }
-
-    return res.json(data);
-
-  } catch (err) {
-    console.log("Recent activity crash:", err.message);
-    return res.json([]);
-  }
-});
-
-/* ==============================
    ✅ EMBEDDING
 ============================== */
 
@@ -172,6 +36,7 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text
   });
+
   return response.data[0].embedding;
 }
 
@@ -180,6 +45,7 @@ async function createEmbedding(text) {
 ============================== */
 
 async function detectIntent(message) {
+
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -188,14 +54,18 @@ async function detectIntent(message) {
       {
         role: "system",
         content: `
-learning_intent
-comparison
-informational_question
-preference_statement
+أنت مصنف نوايا.
+
+learning_intent: يريد تعلم أو دراسة مجال
+comparison: يقارن بين مجالين
+informational_question: شرح فقط
+preference_statement: يذكر تفضيل شخصي
 other
 
-Return JSON:
-{ "intent": "learning_intent" }
+أعد JSON فقط بالشكل:
+{
+  "intent": "learning_intent"
+}
 `
       },
       { role: "user", content: message }
@@ -204,8 +74,10 @@ Return JSON:
 
   try {
     const result = JSON.parse(completion.choices[0].message.content);
+    console.log("Intent:", result.intent);
     return result.intent;
   } catch {
+    console.log("Intent parsing failed");
     return "other";
   }
 }
@@ -215,21 +87,28 @@ Return JSON:
 ============================== */
 
 async function searchCourses(message) {
+
   try {
+
     const queryEmbedding = await createEmbedding(message);
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
-      match_count: 2
+      match_count: 5
     });
 
-    if (error || !data) return [];
+    if (error) {
+      console.log("Semantic search error:", error.message);
+      return [];
+    }
 
-    return data
-      .filter(c => c.similarity >= 0.60)
-      .sort((a, b) => b.similarity - a.similarity);
+    console.log("Search results:", data);
 
-  } catch {
+    // ✅ بدون فلترة similarity عشان نتأكد إنها بترجع
+    return data || [];
+
+  } catch (err) {
+    console.log("Search crash:", err.message);
     return [];
   }
 }
@@ -239,13 +118,19 @@ async function searchCourses(message) {
 ============================== */
 
 function cleanHTML(reply) {
+
   if (!reply) return "";
+
   reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
   reply = reply.replace(/\n\s*\n+/g, "\n");
   reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
   reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
   reply = reply.replace(/\n/g, "<br>");
   reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
+  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
+  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
+  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
+
   return reply.trim();
 }
 
@@ -254,6 +139,7 @@ function cleanHTML(reply) {
 ============================== */
 
 app.post("/chat", async (req, res) => {
+
   try {
 
     let { message, session_id } = req.body;
@@ -271,8 +157,10 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
+    /* ✅ 1️⃣ Detect Intent */
     const intent = await detectIntent(message);
 
+    /* ✅ 2️⃣ Generate Chat Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -281,7 +169,7 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار أكاديمي.
-اشرح المجال بوضوح.
+اشرح المجال بشكل واضح.
 لا تذكر أسماء دورات.
 `
         },
@@ -294,13 +182,14 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
+    /* ✅ 3️⃣ Recommendation Logic */
     let courses = [];
 
-    if (intent === "learning_intent" || intent === "comparison") {
-      courses = await searchCourses(message);
-    }
+    // ✅ مؤقتًا: هنجيب اقتراحات في كل الحالات عشان نتأكد إن البحث شغال
+    courses = await searchCourses(message);
 
     if (courses.length > 0) {
+
       reply += `<div class="courses-title">الدورات المقترحة:</div>`;
       reply += `<div class="courses-container">`;
 
@@ -314,6 +203,29 @@ ${course.title}
       reply += `</div>`;
     }
 
+    reply = `
+<style>
+.chat-wrapper{font-size:14px;line-height:1.5;}
+.chat-wrapper ul{margin:0;padding-right:18px;}
+.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
+.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
+.courses-container{display:flex;flex-direction:column;gap:12px;}
+.course-btn{
+display:block;
+width:100%;
+max-width:420px;
+padding:12px 14px;
+background:#c40000;
+color:#fff;
+font-size:14px;
+border-radius:8px;
+text-decoration:none;
+text-align:center;
+}
+</style>
+<div class="chat-wrapper">${reply}</div>
+`;
+
     return res.json({ reply, session_id });
 
   } catch (error) {
@@ -326,8 +238,8 @@ ${course.title}
    ✅ START SERVER
 ============================== */
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
   console.log("✅ Server Running on port " + PORT);
 });
