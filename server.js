@@ -27,6 +27,21 @@ const conversations = new Map();
 const MAX_HISTORY = 6;
 
 /* ==============================
+   ✅ BUILD CONTEXT MEMORY (NEW)
+============================== */
+
+function buildContextualMessage(history, currentMessage) {
+
+  const recentUserMessages = history
+    .filter(m => m.role === "user")
+    .slice(-3)
+    .map(m => m.content)
+    .join(" ");
+
+  return `${recentUserMessages} ${currentMessage}`;
+}
+
+/* ==============================
    ✅ EMBEDDING
 ============================== */
 
@@ -215,13 +230,18 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = conversations.get(session_id);
+
     history.push({ role: "user", content: message });
 
     if (history.length > MAX_HISTORY) {
       history.shift();
     }
 
-    const intent = await classifyPageIntent(message);
+    /* ✅ NEW: BUILD CONTEXTUAL MESSAGE */
+    const contextualMessage = buildContextualMessage(history, message);
+
+    /* ✅ INTENT WITH CONTEXT */
+    const intent = await classifyPageIntent(contextualMessage);
 
     let pages = [];
     let courses = [];
@@ -240,8 +260,9 @@ app.post("/chat", async (req, res) => {
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
-      /* ✅ STEP 2: SEARCH COURSES FIRST */
-      courses = await searchCourses(message);
+
+      /* ✅ SEARCH COURSES WITH CONTEXT */
+      courses = await searchCourses(contextualMessage);
 
       if (courses.length > 0) {
 
@@ -258,14 +279,14 @@ ${course.title}
         return res.json({ reply, session_id });
       }
 
-      /* ✅ STEP 3: THEN RAG SEARCH */
-      pages = await searchPages(message);
+      /* ✅ RAG SEARCH WITH CONTEXT */
+      pages = await searchPages(contextualMessage);
     }
 
     let pageContext = "";
 
     if (pages.length > 0) {
-      pageContext = filterRelevantContent(pages, message);
+      pageContext = filterRelevantContent(pages, contextualMessage);
     }
 
     if (!pageContext) {
