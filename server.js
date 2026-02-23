@@ -24,13 +24,43 @@ const supabase = createClient(
 );
 
 const conversations = new Map();
+const sessionIntentMemory = new Map();
+const sessionEntityMemory = new Map();
+
 const MAX_HISTORY = 6;
 
 /* ==============================
-   ✅ BUILD CONTEXT MEMORY (NEW)
+   ✅ ENTITY EXTRACTION
 ============================== */
 
-function buildContextualMessage(history, currentMessage) {
+function extractEntityFromMessage(message) {
+
+  const keywords = [
+    "اشتراك",
+    "الدفع",
+    "طرق الدفع",
+    "Odoo",
+    "Oracle",
+    "AI Automation",
+    "Business Model",
+    "التسويق بالعمولة",
+    "محاضر"
+  ];
+
+  for (let key of keywords) {
+    if (message.toLowerCase().includes(key.toLowerCase())) {
+      return key;
+    }
+  }
+
+  return null;
+}
+
+/* ==============================
+   ✅ BUILD CONTEXT MEMORY
+============================== */
+
+function buildContextualMessage(history, currentMessage, entity) {
 
   const recentUserMessages = history
     .filter(m => m.role === "user")
@@ -38,7 +68,9 @@ function buildContextualMessage(history, currentMessage) {
     .map(m => m.content)
     .join(" ");
 
-  return `${recentUserMessages} ${currentMessage}`;
+  let entityContext = entity ? ` الموضوع الحالي هو: ${entity}. ` : "";
+
+  return `${entityContext} ${recentUserMessages} ${currentMessage}`;
 }
 
 /* ==============================
@@ -237,16 +269,34 @@ app.post("/chat", async (req, res) => {
       history.shift();
     }
 
-    /* ✅ NEW: BUILD CONTEXTUAL MESSAGE */
-    const contextualMessage = buildContextualMessage(history, message);
+    /* ✅ ENTITY MEMORY */
+    const detectedEntity = extractEntityFromMessage(message);
+    if (detectedEntity) {
+      sessionEntityMemory.set(session_id, detectedEntity);
+    }
 
-    /* ✅ INTENT WITH CONTEXT */
-    const intent = await classifyPageIntent(contextualMessage);
+    const currentEntity = sessionEntityMemory.get(session_id) || null;
+
+    const contextualMessage = buildContextualMessage(
+      history,
+      message,
+      currentEntity
+    );
+
+    /* ✅ INTENT MEMORY */
+    let intent = await classifyPageIntent(contextualMessage);
+
+    const lastIntent = sessionIntentMemory.get(session_id);
+
+    if (intent === "GENERAL" && lastIntent) {
+      intent = lastIntent;
+    } else {
+      sessionIntentMemory.set(session_id, intent);
+    }
 
     let pages = [];
     let courses = [];
 
-    /* ✅ STEP 1: DIRECT PAGE ROUTING */
     if (intent === "SUBSCRIPTION") {
       pages = await getPageByURL("https://easyt.online/p/subscriptions");
     }
@@ -261,7 +311,6 @@ app.post("/chat", async (req, res) => {
     }
     else {
 
-      /* ✅ SEARCH COURSES WITH CONTEXT */
       courses = await searchCourses(contextualMessage);
 
       if (courses.length > 0) {
@@ -279,7 +328,6 @@ ${course.title}
         return res.json({ reply, session_id });
       }
 
-      /* ✅ RAG SEARCH WITH CONTEXT */
       pages = await searchPages(contextualMessage);
     }
 
