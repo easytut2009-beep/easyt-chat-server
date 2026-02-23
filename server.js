@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.1 — AI-First + Smart OR Search
-   ✅ No keyword dictionaries — GPT handles everything
-   ✅ No TERM_EXPANSIONS — GPT provides search_terms[]
-   ✅ OR-based search (one query catches all terms)
-   ✅ Debug endpoint to diagnose DB issues
+   🤖 easyT Chatbot v5.2 — AI-First + Smart OR Search
+   ✅ Instructor names fetched from instructors table
+   ✅ Image rendering improved
+   ✅ Payment issues correctly classified (not ACCESS_ISSUE)
+   ✅ ACCESS_ISSUE uses GPT instead of hardcoded response
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -40,14 +40,14 @@ const limiter = rateLimit({
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Column Mapping (غيّر لو أسماء أعمدتك مختلفة) ═══
+   ═══ DB Column Mapping ═══════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const DB = {
   title:        "title",
   description:  "description",
   link:         "link",
   price:        "price",
-   instructor:   "instructor_id",
+  instructor:   "instructor_id",
   image:        "image",
   subtitle:     "subtitle",
   domain:       "domain",
@@ -65,19 +65,42 @@ const SELECT = [
   DB.domain
 ].join(", ");
 
-function mapCourse(row) {
+/* ═══ [FIX 1] — Map course + resolve instructor name ═══ */
+function mapCourse(row, instructorMap) {
   return {
     title:       row[DB.title] || "",
     description: row[DB.description] || row[DB.subtitle] || "",
     url:         row[DB.link] || null,
     price:       row[DB.price],
-    instructor:  row[DB.instructor] || "",
+    instructor:  instructorMap.get(row[DB.instructor]) || "",
     image_url:   row[DB.image] || null
   };
 }
 
+/* ═══ [FIX 1] — Batch fetch instructor names ═══ */
+async function getInstructorMap(rows) {
+  const ids = [...new Set(rows.map(r => r[DB.instructor]).filter(Boolean))];
+  if (!ids.length) return new Map();
+
+  try {
+    const { data, error } = await supabase
+      .from("instructors")
+      .select("id, name")
+      .in("id", ids);
+
+    if (error) {
+      console.error("❌ Instructor lookup error:", error.message);
+      return new Map();
+    }
+    return new Map((data || []).map(i => [i.id, i.name]));
+  } catch (e) {
+    console.error("❌ Instructor lookup exception:", e.message);
+    return new Map();
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
-   ═══ Categories — name + URL only (AI handles matching) ══
+   ═══ Categories ═════════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CATEGORIES = {
   graphics:       { name: "الجرافيكس والتصميم",              url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2" },
@@ -150,6 +173,13 @@ const PLATFORM_KB = `
 ◆ Skrill — info@easyt.online
 ★ بعد التحويل: ادخل https://easyt.online/p/Payments → املأ الفورم + ارفع صورة الإيصال → التفعيل خلال 24 ساعة
 
+═══ مشاكل الدفع الشائعة ═══
+◆ لو البطاقة بترفض:
+  - تأكد إن البطاقة مفعّلة للشراء أونلاين (اتصل بالبنك)
+  - تأكد إن فيه رصيد كافي
+  - جرب بطاقة تانية أو طريقة دفع مختلفة (فودافون كاش / إنستا باي / PayPal)
+  - لو المشكلة مستمرة → تواصل مع الدعم واتساب 01027007899
+
 ═══ الدعم الفني ═══
 ◆ واتساب: 01027007899
 
@@ -198,7 +228,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification (replaces ALL keyword logic) ══════
+   ═══ [FIX 3] AI Classification — Better PAYMENT vs ACCESS
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -215,16 +245,24 @@ Return ONLY valid JSON:
   "page_type": "payment|subscription|affiliate|author|null"
 }
 
-═══ Intent Rules ═══
+═══ Intent Rules (IMPORTANT — read carefully) ═══
 • GREETING — hi, hello, سلام, أهلا (short greetings only)
 • START_LEARNING — wants to learn but NO specific topic mentioned
-• PAYMENT — payment methods, transfer, receipt, فودافون كاش, instapay
-• SUBSCRIPTION — pricing, plans, offers, بكام, اشتراك
+• PAYMENT — payment methods, transfer, receipt, فودافون كاش, instapay,
+  AND any payment PROBLEMS: البطاقة بترفض, البطاقة مش شغالة, card declined,
+  مشكلة في الدفع, الفيزا مش بتمشي, رفض الدفع, مش قادر أدفع,
+  الدفع مش شغال, payment failed, payment error
+• SUBSCRIPTION — pricing, plans, offers, بكام, اشتراك, عرض رمضان, الأسعار
 • COURSE_SEARCH — ANY specific topic, skill, tool, or course
-• ACCESS_ISSUE — login/password/account problems
+• ACCESS_ISSUE — login/password/account problems ONLY (NOT payment):
+  مش قادر أدخل حسابي, نسيت كلمة السر, نسيت الباسورد, 
+  الكورس مش بيفتح, مش قادر أفتح الكورس, مش بيحمّل
 • AFFILIATE — affiliate/commission program
 • AUTHOR — wants to become instructor
 • GENERAL — other platform questions
+
+⚠️ CRITICAL: "البطاقة بترفض" or any card/payment issue = PAYMENT (NOT ACCESS_ISSUE)
+⚠️ ACCESS_ISSUE is ONLY for login/password/account access problems
 
 ═══ search_terms Rules (CRITICAL for COURSE_SEARCH) ═══
 Provide 4-8 search variations that the DATABASE might contain:
@@ -294,9 +332,9 @@ async function classify(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Search v2 — OR-based multi-column search ════════
+   ═══ DB Search v3 — Returns raw rows, enriches later ════
    ══════════════════════════════════════════════════════════ */
-async function searchCourses(terms) {
+async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
 
   const cleanTerms = [...new Set(terms.filter(t => t && t.trim().length >= 2))];
@@ -322,13 +360,13 @@ async function searchCourses(terms) {
       console.error("❌ OR search error:", error.message);
     } else if (data?.length) {
       console.log(`✅ Strategy 1 (OR multi-column): ${data.length} results`);
-      return dedupe(data.map(mapCourse));
+      return data;
     }
   } catch (e) {
     console.error("❌ Strategy 1 exception:", e.message);
   }
 
-  /* ── Strategy 2: title-only OR (simpler query) ── */
+  /* ── Strategy 2: title-only OR ── */
   try {
     const titleOr = cleanTerms
       .map(t => `${DB.title}.ilike.%${t}%`)
@@ -344,13 +382,13 @@ async function searchCourses(terms) {
       console.error("❌ Title OR error:", error.message);
     } else if (data?.length) {
       console.log(`✅ Strategy 2 (title OR): ${data.length} results`);
-      return dedupe(data.map(mapCourse));
+      return data;
     }
   } catch (e) {
     console.error("❌ Strategy 2 exception:", e.message);
   }
 
-  /* ── Strategy 3: full_content fallback (one term at a time) ── */
+  /* ── Strategy 3: full_content fallback ── */
   for (const term of cleanTerms.slice(0, 4)) {
     try {
       const { data, error } = await supabase
@@ -361,7 +399,7 @@ async function searchCourses(terms) {
 
       if (!error && data?.length) {
         console.log(`✅ Strategy 3 (full_content "${term}"): ${data.length} results`);
-        return dedupe(data.map(mapCourse));
+        return data;
       }
     } catch (e) { /* skip */ }
   }
@@ -379,7 +417,7 @@ async function searchCourses(terms) {
 
         if (!error && data?.length) {
           console.log(`✅ Strategy 4 (${col} ilike "${term}"): ${data.length} results`);
-          return dedupe(data.map(mapCourse));
+          return data;
         }
       } catch (e) { /* skip */ }
     }
@@ -396,13 +434,26 @@ async function searchCourses(terms) {
 
       if (!error && data?.length) {
         console.log(`✅ Strategy 5 (textSearch "${term}"): ${data.length} results`);
-        return dedupe(data.map(mapCourse));
+        return data;
       }
     } catch (e) { /* skip */ }
   }
 
   console.log(`⚠️ ALL strategies failed for: [${cleanTerms.slice(0, 4).join(", ")}]`);
   return [];
+}
+
+/* ═══ [FIX 1] Search + Enrich with instructor names ═══ */
+async function searchCourses(terms) {
+  const rawRows = await searchCoursesRaw(terms);
+  if (!rawRows.length) return [];
+
+  // Batch-fetch instructor names
+  const instructorMap = await getInstructorMap(rawRows);
+
+  // Map and dedupe
+  const courses = rawRows.map(row => mapCourse(row, instructorMap));
+  return dedupe(courses);
 }
 
 function dedupe(courses) {
@@ -414,7 +465,7 @@ function dedupe(courses) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Page Search (for platform info) ════════════════════
+   ═══ Page Search ════════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 async function searchPages(query) {
   try {
@@ -430,7 +481,7 @@ async function searchPages(query) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Results as HTML ══════════════════════
+   ═══ [FIX 2] Format Course Results — Better images ══════
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category) {
   let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -440,15 +491,20 @@ function formatCourses(courses, category) {
 
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
+    // [FIX 2] Image with proper error handling
     if (c.image_url) {
+      html += `<div style="text-align:center;margin-bottom:8px;">`;
       html += `<a href="${link}" target="_blank">`;
-      html += `<img src="${c.image_url}" style="width:100%;max-width:300px;border-radius:8px;margin-bottom:8px;">`;
-      html += `</a><br>`;
+      html += `<img src="${c.image_url}" alt="${c.title}" `;
+      html += `style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" `;
+      html += `onerror="this.style.display='none'">`;
+      html += `</a></div>`;
     }
 
     html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
     html += `${i + 1}. ${c.title}</a><br>`;
 
+    // [FIX 1] Instructor name now shows correctly
     if (c.instructor) {
       html += `👤 المحاضر: ${c.instructor}<br>`;
     }
@@ -509,6 +565,7 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 ★ اشتراك → <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">📋 صفحة الاشتراكات</a>
 ★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#c40000;font-weight:bold;">💰 برنامج العمولة</a>
 ★ محاضر → <a href="https://easyt.online/p/author" target="_blank" style="color:#c40000;font-weight:bold;">🎓 الانضمام كمحاضر</a>
+★ واتساب → <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">📱 تواصل مع الدعم واتساب</a>
 
 【تنسيق】
 • <b>عنوان</b> • ▸ للنقاط • <a href="URL" target="_blank" style="color:#c40000;font-weight:bold;">نص</a> للروابط
@@ -594,7 +651,6 @@ app.post("/chat", limiter, async (req, res) => {
     console.log(`   Terms: [${search_terms.slice(0, 5).join(", ")}]`);
     console.log(`   Category: ${category_key}`);
 
-    // Update session context
     if (intent !== "GENERAL" && intent !== "GREETING") {
       session.intent = intent;
       if (entity) session.entity = entity;
@@ -636,8 +692,6 @@ app.post("/chat", limiter, async (req, res) => {
     // ────────────────────────────────
     if (intent === "COURSE_SEARCH") {
       const displayTerm = entity || message;
-
-      // Combine AI terms + original message as fallback
       const allTerms = [...new Set([...search_terms, message])];
 
       let courses = await searchCourses(allTerms);
@@ -651,7 +705,7 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      // ── No DB results → GPT fallback ──
+      // No DB results → GPT fallback
       console.log(`⚠️ No DB results for "${displayTerm}" → GPT fallback`);
 
       let context = PLATFORM_KB;
@@ -667,15 +721,12 @@ app.post("/chat", limiter, async (req, res) => {
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
 
-      // Remove the system hint from history
       session.history.pop();
 
-      // Ensure category link exists
       if (category && !reply.includes(category.url)) {
         reply += `<br><br>🔗 ${makeLink(category.url, `تصفح جميع دورات ${category.name}`)}`;
       }
 
-      // Ensure subscription link exists
       if (!reply.includes("subscriptions")) {
         reply += `<br><br>💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")}`;
       }
@@ -685,16 +736,24 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ────────────────────────────────
-    // 2D. ACCESS_ISSUE
+    // 2D. [FIX 3] ACCESS_ISSUE — GPT-based (not hardcoded)
     // ────────────────────────────────
     if (intent === "ACCESS_ISSUE") {
-      let reply = `<b>🔧 حل مشاكل الوصول:</b><br><br>`;
-      reply += `▸ تأكد إنك مسجل دخول بنفس الإيميل اللي اشتركت بيه<br>`;
-      reply += `▸ جرب تسجيل خروج وتدخل تاني<br>`;
-      reply += `▸ لو نسيت كلمة السر، استخدم "نسيت كلمة المرور"<br>`;
-      reply += `▸ جرب متصفح تاني أو امسح الكاش<br><br>`;
-      reply += `لو المشكلة لسه موجودة:<br>`;
-      reply += `${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+      let context = PLATFORM_KB;
+
+      session.history.push({
+        role: "system",
+        content: `المستخدم عنده مشكلة في الوصول أو مشكلة تقنية. حلل رسالته واعطيه خطوات عملية مناسبة لمشكلته بالتحديد. في النهاية وجّهه للدعم واتساب 01027007899.`
+      });
+
+      let reply = await generateAIResponse(session, context, isFirst);
+      reply = formatReply(reply);
+
+      session.history.pop();
+
+      if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
+        reply += `<br><br>لو المشكلة لسه موجودة:<br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+      }
 
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
@@ -706,7 +765,6 @@ app.post("/chat", limiter, async (req, res) => {
     if (["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)) {
       let context = PLATFORM_KB;
 
-      // Try to get specific page content
       try {
         const pages = await searchPages(intent.toLowerCase());
         if (pages?.length) {
@@ -717,7 +775,6 @@ app.post("/chat", limiter, async (req, res) => {
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
 
-      // Map intent to page link key
       const linkMap = {
         PAYMENT: "payment",
         SUBSCRIPTION: "subscription",
@@ -728,9 +785,13 @@ app.post("/chat", limiter, async (req, res) => {
       const linkKey = page_type || linkMap[intent];
       const link = PAGE_LINKS[linkKey];
 
-      // Ensure relevant link is included
       if (link && !reply.includes(link.url)) {
         reply += `<br><br>${makeLink(link.url, link.label)}`;
+      }
+
+      // [FIX 3] For PAYMENT, also add WhatsApp support link
+      if (intent === "PAYMENT" && !reply.includes("wa.me") && !reply.includes("01027007899")) {
+        reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
       }
 
       session.history.push({ role: "assistant", content: reply });
@@ -738,7 +799,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ────────────────────────────────
-    // 2F. GENERAL (fallback to GPT)
+    // 2F. GENERAL
     // ────────────────────────────────
     let context = PLATFORM_KB;
 
@@ -774,16 +835,13 @@ app.post("/chat", limiter, async (req, res) => {
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
 
-  // 1. AI Classification
   const classification = await classify(q, [], null, null);
 
-  // 2. Search with AI terms
   const terms = classification.search_terms.length
     ? [...classification.search_terms, q]
     : [q];
   const courses = await searchCourses(terms);
 
-  // 3. Raw DB check — verify columns exist
   let rawCheck = null;
   try {
     const { data, error } = await supabase
@@ -802,7 +860,6 @@ app.get("/debug/search/:query", async (req, res) => {
     rawCheck = { error: e.message };
   }
 
-  // 4. Direct ilike test for each term
   let directTests = {};
   for (const term of terms.slice(0, 5)) {
     try {
@@ -826,11 +883,13 @@ app.get("/debug/search/:query", async (req, res) => {
     query: q,
     classification,
     search_results: courses.length,
+    // [FIX] Now includes instructor name and image_url
     courses: courses.map(c => ({
       title: c.title,
       url: c.url,
       instructor: c.instructor,
-      price: c.price
+      price: c.price,
+      image_url: c.image_url
     })),
     raw_db_check: rawCheck,
     direct_tests: directTests,
@@ -856,8 +915,7 @@ app.get("/debug/columns", async (req, res) => {
       column_count: columns.length,
       columns,
       sample,
-      current_db_config: DB,
-      instructions: "قارن 'columns' بـ 'current_db_config' — لو مختلفين غيّر الـ DB object في الكود"
+      current_db_config: DB
     });
   } catch (e) {
     res.json({ error: e.message });
@@ -868,7 +926,7 @@ app.get("/debug/columns", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "5.1",
+    version: "5.2",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     categories: Object.keys(CATEGORIES).length
@@ -884,7 +942,7 @@ app.use((req, res) => {
    ═══ Start Server ═══════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v5.1 (AI-First + OR Search)`);
+  console.log(`\n🤖 easyT Chatbot v5.2 (AI-First + Instructor Join + Image Fix)`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Categories: ${Object.keys(CATEGORIES).length}`);
   console.log(`   Debug: /debug/columns & /debug/search/:query\n`);
