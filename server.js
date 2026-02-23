@@ -28,6 +28,7 @@ const sessionIntentMemory = new Map();
 const sessionEntityMemory = new Map();
 
 const MAX_HISTORY = 8;
+const MAX_CONTEXT_CHARS = 12000;
 
 /* ==============================
    ✅ ENTITY EXTRACTION
@@ -109,7 +110,7 @@ async function searchCourses(searchText) {
 }
 
 /* ==============================
-   ✅ SEARCH PAGES
+   ✅ SEARCH PAGES (✅ FIXED)
 ============================== */
 
 async function searchPages(searchText) {
@@ -118,8 +119,8 @@ async function searchPages(searchText) {
 
     const { data } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.50,
-      match_count: 10
+      match_threshold: 0.35, // ✅ lowered for better recall
+      match_count: 15        // ✅ increased for better coverage
     });
 
     return data || [];
@@ -142,7 +143,7 @@ async function getPageByURL(url) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER (Improved)
+   ✅ INTENT CLASSIFIER
 ============================== */
 
 async function classifyPageIntent(message) {
@@ -156,8 +157,8 @@ async function classifyPageIntent(message) {
           content: `
 حدد نية المستخدم من القائمة التالية:
 
-COURSE_SEARCH (يبحث عن دورات جديدة)
-ACCESS_ISSUE (مشكلة في الوصول أو عدم ظهور دورة)
+COURSE_SEARCH
+ACCESS_ISSUE
 SUBSCRIPTION
 PAYMENT
 AUTHOR
@@ -289,7 +290,6 @@ app.post("/chat", async (req, res) => {
     let pages = [];
     let courses = [];
 
-    /* ✅ Prevent showing courses if access issue */
     if (intent === "COURSE_SEARCH") {
 
       courses = await searchCourses(contextualMessage);
@@ -325,7 +325,10 @@ ${course.title}
       pages = await searchPages(contextualMessage);
     }
 
-    const pageContext = pages.map(p => p.content).join(" ");
+    const pageContext = pages
+      .map(p => p.content)
+      .join("\n\n---\n\n")
+      .slice(0, MAX_CONTEXT_CHARS);
 
     if (!pageContext) {
       return res.json({
