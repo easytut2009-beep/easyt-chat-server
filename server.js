@@ -79,6 +79,35 @@ function buildContextualMessage(history, currentMessage, entity) {
 }
 
 /* ==============================
+   ✅ QUERY REWRITING (✅ NEW)
+============================== */
+
+async function rewriteUserQuery(message) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+أعد صياغة السؤال التالي بلغة عربية واضحة ومصححة إملائياً.
+لا تجب على السؤال.
+أعد كتابته فقط بصيغة رسمية مفهومة.
+`
+        },
+        { role: "user", content: message }
+      ]
+    });
+
+    return response.choices[0].message.content.trim();
+
+  } catch {
+    return message;
+  }
+}
+
+/* ==============================
    ✅ EMBEDDING
 ============================== */
 
@@ -110,7 +139,7 @@ async function searchCourses(searchText) {
 }
 
 /* ==============================
-   ✅ SEARCH PAGES (✅ FIXED)
+   ✅ SEARCH PAGES
 ============================== */
 
 async function searchPages(searchText) {
@@ -119,8 +148,8 @@ async function searchPages(searchText) {
 
     const { data } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.35, // ✅ lowered for better recall
-      match_count: 15        // ✅ increased for better coverage
+      match_threshold: 0.35,
+      match_count: 15
     });
 
     return data || [];
@@ -322,7 +351,8 @@ ${course.title}
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
-      pages = await searchPages(contextualMessage);
+      const rewrittenQuery = await rewriteUserQuery(contextualMessage);
+      pages = await searchPages(rewrittenQuery);
     }
 
     const pageContext = pages
