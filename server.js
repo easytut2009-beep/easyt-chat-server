@@ -330,8 +330,16 @@ app.post("/chat", async (req, res) => {
       history.shift();
     }
 
-    /* ✅ ENTITY MEMORY (AI BASED) */
-    const detectedEntity = await extractEntityFromMessage(message);
+    /* ✅ ENTITY MEMORY (FIXED CONTEXTUAL EXTRACTION) */
+
+    const previousEntity = sessionEntityMemory.get(session_id) || null;
+
+    const entityContextForExtraction = previousEntity
+      ? `السياق السابق كان عن: ${previousEntity}. الرسالة الحالية: ${message}`
+      : message;
+
+    const detectedEntity = await extractEntityFromMessage(entityContextForExtraction);
+
     if (detectedEntity) {
       sessionEntityMemory.set(session_id, detectedEntity);
     }
