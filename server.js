@@ -27,14 +27,13 @@ const conversations = new Map();
 const sessionIntentMemory = new Map();
 const sessionEntityMemory = new Map();
 
-const MAX_HISTORY = 6;
+const MAX_HISTORY = 8;
 
 /* ==============================
-   ✅ SMART ENTITY EXTRACTION (AI BASED)
+   ✅ ENTITY EXTRACTION
 ============================== */
 
 async function extractEntityFromMessage(message) {
-
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -43,19 +42,9 @@ async function extractEntityFromMessage(message) {
         {
           role: "system",
           content: `
-استخرج الكيان الأساسي الذي يتحدث عنه المستخدم داخل منصة easyT.
-
-قد يكون:
-- اسم دورة
-- اشتراك
-- طرق الدفع
-- اسم محاضر
-- برنامج داخل المنصة
-
-إذا لم يوجد كيان واضح اكتب:
-NONE
-
-أجب باسم الكيان فقط بدون أي شرح.
+استخرج الكيان الأساسي المرتبط بمنصة easyT.
+إذا لم يوجد كيان واضح اكتب NONE.
+أجب باسم الكيان فقط.
 `
         },
         { role: "user", content: message }
@@ -63,9 +52,7 @@ NONE
     });
 
     const entity = response.choices[0].message.content.trim();
-
     if (entity === "NONE") return null;
-
     return entity;
 
   } catch {
@@ -74,7 +61,7 @@ NONE
 }
 
 /* ==============================
-   ✅ BUILD CONTEXT MEMORY
+   ✅ BUILD CONTEXT
 ============================== */
 
 function buildContextualMessage(history, currentMessage, entity) {
@@ -85,9 +72,9 @@ function buildContextualMessage(history, currentMessage, entity) {
     .map(m => m.content)
     .join(" ");
 
-  let entityContext = entity ? ` الموضوع الحالي هو: ${entity}. ` : "";
+  let entityContext = entity ? `الموضوع الحالي: ${entity}. ` : "";
 
-  return `${entityContext} ${recentUserMessages} ${currentMessage}`;
+  return `${entityContext}${recentUserMessages} ${currentMessage}`;
 }
 
 /* ==============================
@@ -122,7 +109,7 @@ async function searchCourses(searchText) {
 }
 
 /* ==============================
-   ✅ SEARCH PAGES (RAG)
+   ✅ SEARCH PAGES
 ============================== */
 
 async function searchPages(searchText) {
@@ -131,8 +118,8 @@ async function searchPages(searchText) {
 
     const { data } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.55,
-      match_count: 8
+      match_threshold: 0.50,
+      match_count: 10
     });
 
     return data || [];
@@ -155,7 +142,7 @@ async function getPageByURL(url) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER
+   ✅ INTENT CLASSIFIER (Improved)
 ============================== */
 
 async function classifyPageIntent(message) {
@@ -167,8 +154,10 @@ async function classifyPageIntent(message) {
         {
           role: "system",
           content: `
-حدد نية المستخدم:
+حدد نية المستخدم من القائمة التالية:
 
+COURSE_SEARCH (يبحث عن دورات جديدة)
+ACCESS_ISSUE (مشكلة في الوصول أو عدم ظهور دورة)
 SUBSCRIPTION
 PAYMENT
 AUTHOR
@@ -189,7 +178,7 @@ GENERAL
 }
 
 /* ==============================
-   ✅ SMART GROUNDING VERIFIER
+   ✅ GROUNDING CHECK
 ============================== */
 
 async function verifyGrounding(question, answer, officialContext) {
@@ -201,29 +190,17 @@ async function verifyGrounding(question, answer, officialContext) {
       {
         role: "system",
         content: `
-أنت نظام تدقيق.
-حدد هل الإجابة تعتمد فقط على النص الرسمي أم تحتوي على معلومات غير موجودة فيه.
-
-إذا كانت الإجابة تحتوي على أي معلومة غير موجودة في النص الرسمي اكتب:
-UNSUPPORTED
-
-إذا كانت مدعومة بالكامل بالنص الرسمي اكتب:
-SUPPORTED
-
-أجب بكلمة واحدة فقط.
+هل الإجابة تعتمد فقط على النص الرسمي؟
+إذا نعم اكتب SUPPORTED
+إذا تحتوي معلومات خارج النص اكتب UNSUPPORTED
 `
       },
       {
         role: "user",
         content: `
-السؤال:
-${question}
-
-النص الرسمي:
-${officialContext}
-
-الإجابة:
-${answer}
+السؤال: ${question}
+النص: ${officialContext}
+الإجابة: ${answer}
 `
       }
     ]
@@ -233,36 +210,11 @@ ${answer}
 }
 
 /* ==============================
-   ✅ FILTER CONTEXT
+   ✅ CLEAN HTML
 ============================== */
 
-function filterRelevantContent(pageData, message) {
-
-  const fullText = pageData.map(p => p.content).join(" ");
-  const sentences = fullText.split(/[.!؟]/);
-
-  const words = message
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(w => w.length > 2);
-
-  const scored = sentences.map(sentence => {
-    const s = sentence.toLowerCase();
-    let score = 0;
-    for (let word of words) {
-      if (s.includes(word)) score++;
-    }
-    return { sentence: sentence.trim(), score };
-  });
-
-  const top = scored
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(s => s.sentence)
-    .filter(s => s.length > 20);
-
-  return top.join(". ");
+function cleanHTML(reply) {
+  return reply.replace(/\n/g, "<br>").trim();
 }
 
 /* ==============================
@@ -271,35 +223,19 @@ function filterRelevantContent(pageData, message) {
 
 function appendSmartLink(reply, intent) {
 
-  if (intent === "SUBSCRIPTION") {
-    reply += `<br><br><a href="https://easyt.online/p/subscriptions" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 الاشتراك العام</a>`;
-  }
+  const links = {
+    SUBSCRIPTION: "https://easyt.online/p/subscriptions",
+    PAYMENT: "https://easyt.online/p/Payments",
+    AUTHOR: "https://easyt.online/p/author",
+    AFFILIATE: "https://easyt.online/p/affiliate"
+  };
 
-  if (intent === "PAYMENT") {
-    reply += `<br><br><a href="https://easyt.online/p/Payments" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 طرق الدفع</a>`;
-  }
-
-  if (intent === "AUTHOR") {
-    reply += `<br><br><a href="https://easyt.online/p/author" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 انضم كمحاضر</a>`;
-  }
-
-  if (intent === "AFFILIATE") {
-    reply += `<br><br><a href="https://easyt.online/p/affiliate" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 برنامج التسويق بالعمولة</a>`;
+  if (links[intent]) {
+    reply += `<br><br><a href="${links[intent]}" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 عرض التفاصيل</a>`;
   }
 
   return reply;
-}
-
-/* ==============================
-   ✅ CLEAN HTML
-============================== */
-
-function cleanHTML(reply) {
-  return reply.replace(/\n/g, "<br>").trim();
 }
 
 /* ==============================
@@ -323,32 +259,22 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = conversations.get(session_id);
-
     history.push({ role: "user", content: message });
 
-    if (history.length > MAX_HISTORY) {
-      history.shift();
-    }
+    if (history.length > MAX_HISTORY) history.shift();
 
     const previousEntity = sessionEntityMemory.get(session_id) || null;
 
     const entityContextForExtraction = previousEntity
-      ? `السياق السابق كان عن: ${previousEntity}. الرسالة الحالية: ${message}`
+      ? `السياق السابق: ${previousEntity}. الرسالة: ${message}`
       : message;
 
     const detectedEntity = await extractEntityFromMessage(entityContextForExtraction);
-
-    if (detectedEntity) {
-      sessionEntityMemory.set(session_id, detectedEntity);
-    }
+    if (detectedEntity) sessionEntityMemory.set(session_id, detectedEntity);
 
     const currentEntity = sessionEntityMemory.get(session_id) || null;
 
-    const contextualMessage = buildContextualMessage(
-      history,
-      message,
-      currentEntity
-    );
+    const contextualMessage = buildContextualMessage(history, message, currentEntity);
 
     let intent = await classifyPageIntent(contextualMessage);
 
@@ -363,6 +289,26 @@ app.post("/chat", async (req, res) => {
     let pages = [];
     let courses = [];
 
+    /* ✅ Prevent showing courses if access issue */
+    if (intent === "COURSE_SEARCH") {
+
+      courses = await searchCourses(contextualMessage);
+
+      if (courses.length > 0) {
+        let reply = "لدينا الدورات التالية على منصة easyT:<br><br>";
+
+        courses.forEach(course => {
+          reply += `
+<a href="${course.link}" target="_blank"
+style="background:#c40000;color:white;padding:8px;border-radius:6px;text-decoration:none;display:block;margin-bottom:8px;">
+${course.title}
+</a>`;
+        });
+
+        return res.json({ reply, session_id });
+      }
+    }
+
     if (intent === "SUBSCRIPTION") {
       pages = await getPageByURL("https://easyt.online/p/subscriptions");
     }
@@ -376,46 +322,14 @@ app.post("/chat", async (req, res) => {
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
-
-      courses = await searchCourses(contextualMessage);
-
-      if (courses.length > 0) {
-
-        let reply = "لدينا الدورات التالية على منصة easyT:<br><br>";
-
-        courses.forEach(course => {
-          reply += `
-<a href="${course.link}" target="_blank"
-style="background:#c40000;color:white;padding:8px;border-radius:6px;text-decoration:none;display:block;margin-bottom:8px;">
-${course.title}
-</a>`;
-        });
-
-        return res.json({ reply, session_id });
-      }
-
       pages = await searchPages(contextualMessage);
     }
 
-    let pageContext = "";
-
-    if (pages.length > 0) {
-
-      if (
-        intent === "SUBSCRIPTION" ||
-        intent === "PAYMENT" ||
-        intent === "AUTHOR" ||
-        intent === "AFFILIATE"
-      ) {
-        pageContext = pages.map(p => p.content).join(" ");
-      } else {
-        pageContext = filterRelevantContent(pages, contextualMessage);
-      }
-    }
+    const pageContext = pages.map(p => p.content).join(" ");
 
     if (!pageContext) {
       return res.json({
-        reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT."
+        reply: "حالياً لا توجد معلومات دقيقة داخل منصة easyT حول هذا الطلب."
       });
     }
 
@@ -426,11 +340,9 @@ ${course.title}
         {
           role: "system",
           content: `
-أنت مستشار رسمي داخل منصة easyT فقط.
-ممنوع اقتراح أي منصة خارج easyT.
-استخدم المعلومات التالية للإجابة.
-لا تقل قم بزيارة الموقع.
-لا تخترع معلومات.
+أنت مستشار رسمي داخل منصة easyT.
+استخدم المعلومات الرسمية فقط.
+قدم إجابة واضحة ومهنية.
 `
         },
         { role: "system", content: `محتوى رسمي:\n${pageContext}` },
@@ -448,7 +360,7 @@ ${course.title}
 
     if (verification === "UNSUPPORTED") {
       return res.json({
-        reply: "حالياً لا توجد معلومات واضحة داخل منصة easyT للإجابة على هذا الطلب."
+        reply: "حالياً لا توجد معلومات دقيقة داخل منصة easyT للإجابة على هذا الطلب."
       });
     }
 
