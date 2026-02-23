@@ -16,9 +16,7 @@ if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -43,9 +41,9 @@ async function createEmbedding(text) {
    ✅ SEMANTIC SEARCH
 ============================== */
 
-async function searchCourses(message) {
+async function searchCourses(searchText) {
   try {
-    const queryEmbedding = await createEmbedding(message);
+    const queryEmbedding = await createEmbedding(searchText);
 
     const { data, error } = await supabase.rpc("match_courses", {
       query_embedding: queryEmbedding,
@@ -65,46 +63,70 @@ async function searchCourses(message) {
 }
 
 /* ==============================
-   ✅ INTENT DETECTION (Smart)
+   ✅ INTENT CLASSIFICATION
 ============================== */
 
-async function shouldSuggestCourses(userMessage, assistantReply) {
+async function classifyIntent(message) {
   try {
-    const check = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
       messages: [
         {
           role: "system",
           content: `
-أجب فقط بكلمة YES أو NO.
-هل من المناسب اقتراح دورات تعليمية من منصة تعليمية بناءً على سؤال المستخدم والسياق؟
-لا تقترح في حالات التحية أو الأسئلة العامة غير التعليمية.
+صنف رسالة المستخدم إلى واحدة فقط من القيم التالية:
+
+NONE → لا علاقة لها بمجال تعليمي
+DOMAIN → سؤال تعليمي عام (شرح مفهوم أو موضوع)
+DIRECT → طلب كورسات أو تعلم مجال
+
+أجب فقط بكلمة واحدة.
 `
         },
-        {
-          role: "user",
-          content: `
-سؤال المستخدم:
-${userMessage}
-
-رد المساعد:
-${assistantReply}
-`
-        }
+        { role: "user", content: message }
       ]
     });
 
-    const answer = check.choices[0].message.content.trim().toUpperCase();
-    return answer.includes("YES");
+    return response.choices[0].message.content.trim();
   } catch (err) {
-    console.log("Intent detection error:", err.message);
-    return false;
+    console.log("Intent error:", err.message);
+    return "NONE";
   }
 }
 
 /* ==============================
-   ✅ SYSTEM PROMPTS
+   ✅ EXTRACT DOMAIN FOR SEARCH
+============================== */
+
+async function extractSearchTopic(message) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `
+استخرج المجال التعليمي الأنسب للبحث عن دورات بناءً على رسالة المستخدم.
+أجب فقط باسم المجال المختصر.
+مثال:
+"يعني ايه ROAS" → "التسويق الرقمي"
+`
+        },
+        { role: "user", content: message }
+      ]
+    });
+
+    return response.choices[0].message.content.trim();
+  } catch (err) {
+    console.log("Topic extraction error:", err.message);
+    return message;
+  }
+}
+
+/* ==============================
+   ✅ SYSTEM PROMPT
 ============================== */
 
 function getSystemPrompt(mode, course_id) {
@@ -112,48 +134,26 @@ function getSystemPrompt(mode, course_id) {
   if (mode === "visitor") {
     return `
 أنت مستشار ذكي لمنصة easyT التعليمية.
-
-دورك:
-- شرح المجالات والمسارات المهنية.
-- الرد على الأسئلة العامة عن المنصة.
-- اقتراح دورات فقط إذا كان ذلك مناسبًا منطقيًا.
-- لا تجعل الرد دعائيًا.
-
-كن احترافيًا ومباشرًا.
+اشرح المفاهيم بوضوح.
+كن احترافيًا وغير دعائي.
 `;
   }
 
   if (mode === "student") {
     return `
-أنت مساعد ذكي داخل الكورس الحالي في منصة easyT.
-
-الكورس ID: ${course_id || "غير محدد"}
-
-دورك:
-- شرح أي نقطة غير مفهومة.
-- تبسيط المفاهيم بأمثلة.
-- تشجيع الطالب.
-- مساعدته عمليًا.
-
-لا تقترح اشتراكات.
+أنت مساعد داخل الكورس.
+اشرح ودرّب الطالب عمليًا.
 `;
   }
 
   if (mode === "support") {
     return `
-أنت مساعد دعم فني لمنصة easyT.
-
-ساعد في:
-- مشاكل تسجيل الدخول
-- الدفع
-- الاشتراك
-- الوصول للدورات
-
-كن واضحًا ومباشرًا.
+أنت مساعد دعم فني.
+كن مباشرًا وواضحًا.
 `;
   }
 
-  return `أنت مساعد ذكي لمنصة تعليمية.`;
+  return `أنت مساعد ذكي.`;
 }
 
 /* ==============================
@@ -191,7 +191,7 @@ app.post("/chat", async (req, res) => {
 
     const systemPrompt = getSystemPrompt(mode, course_id);
 
-    /* ✅ Step 1: Main AI Response */
+    /* ✅ Step 1: Main AI Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
@@ -206,19 +206,24 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ Step 2: Smart Suggestion Only in Visitor Mode */
+    /* ✅ Step 2: Smart Suggestion Logic */
     let courses = [];
 
     if (mode === "visitor") {
 
-      const shouldSuggest = await shouldSuggestCourses(message, reply);
+      const intent = await classifyIntent(message);
 
-      if (shouldSuggest) {
+      if (intent === "DIRECT") {
         courses = await searchCourses(message);
+      }
+
+      if (intent === "DOMAIN") {
+        const topic = await extractSearchTopic(message);
+        courses = await searchCourses(topic);
       }
     }
 
-    /* ✅ Step 3: Attach Suggestions If Logical */
+    /* ✅ Step 3: Attach Suggestions */
     if (courses.length > 0) {
 
       reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
