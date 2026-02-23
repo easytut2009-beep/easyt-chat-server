@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.0 — AI-First Architecture
+   🤖 easyT Chatbot v5.1 — AI-First + Smart OR Search
    ✅ No keyword dictionaries — GPT handles everything
    ✅ No TERM_EXPANSIONS — GPT provides search_terms[]
-   ✅ No detectCategory() — GPT classifies directly
-   ✅ ~50% less code, 100% smarter
+   ✅ OR-based search (one query catches all terms)
+   ✅ Debug endpoint to diagnose DB issues
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -23,41 +23,62 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 /* ═══ Middleware ═══ */
 app.use(cors({
-  origin: ["https://easyt.online", "https://www.easyt.online", process.env.ALLOWED_ORIGIN].filter(Boolean),
-  methods: ["POST", "GET"], credentials: true
+  origin: [
+    "https://easyt.online",
+    "https://www.easyt.online",
+    process.env.ALLOWED_ORIGIN
+  ].filter(Boolean),
+  methods: ["POST", "GET"],
+  credentials: true
 }));
 app.use(express.json({ limit: "5kb" }));
+
 const limiter = rateLimit({
-  windowMs: 60000, max: 20,
+  windowMs: 60000,
+  max: 20,
   message: { reply: "استنى شوية وحاول تاني 🙏" }
 });
 
-/* ═══ DB Column Mapping (غيّر لو أسماء أعمدتك مختلفة) ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ DB Column Mapping (غيّر لو أسماء أعمدتك مختلفة) ═══
+   ══════════════════════════════════════════════════════════ */
 const DB = {
-  title: "title",
-  description: "description",
-  link: "link",
-  price: "price",
-  instructor: "instructor_name",
-  image: "image",
-  subtitle: "subtitle",
-  domain: "domain",
+  title:        "title",
+  description:  "description",
+  link:         "link",
+  price:        "price",
+  instructor:   "instructor_name",
+  image:        "image",
+  subtitle:     "subtitle",
+  domain:       "domain",
   full_content: "full_content"
 };
-const SELECT = [DB.title, DB.description, DB.link, DB.price, DB.instructor, DB.image, DB.subtitle, DB.domain].join(", ");
+
+const SELECT = [
+  DB.title,
+  DB.description,
+  DB.link,
+  DB.price,
+  DB.instructor,
+  DB.image,
+  DB.subtitle,
+  DB.domain
+].join(", ");
 
 function mapCourse(row) {
   return {
-    title: row[DB.title] || "",
+    title:       row[DB.title] || "",
     description: row[DB.description] || row[DB.subtitle] || "",
-    url: row[DB.link] || null,
-    price: row[DB.price],
-    instructor: row[DB.instructor] || "",
-    image_url: row[DB.image] || null
+    url:         row[DB.link] || null,
+    price:       row[DB.price],
+    instructor:  row[DB.instructor] || "",
+    image_url:   row[DB.image] || null
   };
 }
 
-/* ═══ Categories — name + URL only (AI handles classification) ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Categories — name + URL only (AI handles matching) ══
+   ══════════════════════════════════════════════════════════ */
 const CATEGORIES = {
   graphics:       { name: "الجرافيكس والتصميم",              url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2" },
   security:       { name: "الحماية والاختراق",               url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001" },
@@ -87,13 +108,15 @@ const CATEGORIES = {
 
 /* ═══ Platform Links ═══ */
 const PAGE_LINKS = {
-  payment:      { url: "https://easyt.online/p/Payments",      label: "💳 صفحة طرق الدفع ورفع الإيصال" },
-  subscription: { url: "https://easyt.online/p/subscriptions",  label: "📋 صفحة الاشتراكات والعروض" },
-  affiliate:    { url: "https://easyt.online/p/affiliate",      label: "💰 برنامج التسويق بالعمولة" },
-  author:       { url: "https://easyt.online/p/author",         label: "🎓 الانضمام كمحاضر" }
+  payment:      { url: "https://easyt.online/p/Payments",     label: "💳 صفحة طرق الدفع ورفع الإيصال" },
+  subscription: { url: "https://easyt.online/p/subscriptions", label: "📋 صفحة الاشتراكات والعروض" },
+  affiliate:    { url: "https://easyt.online/p/affiliate",     label: "💰 برنامج التسويق بالعمولة" },
+  author:       { url: "https://easyt.online/p/author",        label: "🎓 الانضمام كمحاضر" }
 };
 
-/* ═══ Knowledge Base ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Knowledge Base ═══════════════════════════════════════
+   ══════════════════════════════════════════════════════════ */
 const PLATFORM_KB = `
 【منصة إيزي تي — easyT.online】
 
@@ -142,7 +165,9 @@ const PLATFORM_KB = `
 ◆ رابط التقديم: https://easyt.online/p/author
 `;
 
-/* ═══ Sessions ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Sessions ═════════════════════════════════════════════
+   ══════════════════════════════════════════════════════════ */
 const sessions = new Map();
 const SESSION_TTL = 30 * 60 * 1000;
 const MAX_HISTORY = 20;
@@ -154,18 +179,30 @@ function getSession(id) {
     s.count++;
     return s;
   }
-  const s = { history: [], intent: null, entity: null, count: 1, lastAccess: Date.now() };
+  const s = {
+    history: [],
+    intent: null,
+    entity: null,
+    count: 1,
+    lastAccess: Date.now()
+  };
   sessions.set(id, s);
   return s;
 }
 
 setInterval(() => {
   const now = Date.now();
-  for (const [id, s] of sessions) if (now - s.lastAccess > SESSION_TTL) sessions.delete(id);
+  for (const [id, s] of sessions) {
+    if (now - s.lastAccess > SESSION_TTL) sessions.delete(id);
+  }
 }, 5 * 60 * 1000);
 
-/* ═══ AI Classification (the brain — replaces all keyword logic) ═══ */
-const CAT_LIST = Object.entries(CATEGORIES).map(([k, v]) => `  ${k}: ${v.name}`).join("\n");
+/* ══════════════════════════════════════════════════════════
+   ═══ AI Classification (replaces ALL keyword logic) ══════
+   ══════════════════════════════════════════════════════════ */
+const CAT_LIST = Object.entries(CATEGORIES)
+  .map(([k, v]) => `  ${k}: ${v.name}`)
+  .join("\n");
 
 const CLASSIFY_SYSTEM = `You classify messages for easyT educational platform chatbot.
 
@@ -192,13 +229,16 @@ Return ONLY valid JSON:
 ═══ search_terms Rules (CRITICAL for COURSE_SEARCH) ═══
 Provide 4-8 search variations that the DATABASE might contain:
 • Arabic name + English name + brand name + common misspellings
+• Include partial words too (e.g. "فوتو" for "فوتوشوب")
 • Examples:
-  "فوتوشوب" → ["فوتوشوب", "فتوشوب", "photoshop", "Photoshop", "Adobe Photoshop"]
+  "فوتوشوب" → ["فوتوشوب", "فتوشوب", "photoshop", "Photoshop", "Adobe Photoshop", "فوتو"]
   "اليستريتور" → ["اليستريتور", "اليستراتور", "illustrator", "Illustrator", "Adobe Illustrator"]
-  "برمجة" → ["برمجة", "programming", "كود", "coding"]
+  "برمجة" → ["برمجة", "programming", "كود", "coding", "code"]
   "تسويق" → ["تسويق", "marketing", "ماركيتنج", "digital marketing", "ديجيتال ماركيتنج"]
   "اختراق" → ["اختراق", "hacking", "حماية", "security", "سيبراني", "cyber"]
-  "مونتاج" → ["مونتاج", "premiere", "بريمير", "editing", "فيديو"]
+  "مونتاج" → ["مونتاج", "premiere", "بريمير", "editing", "فيديو", "montage"]
+  "بايثون" → ["بايثون", "python", "Python", "بايثن"]
+  "اكسل" → ["اكسل", "excel", "Excel", "إكسل"]
 
 ═══ category_key — closest match from: ═══
 ${CAT_LIST}
@@ -214,7 +254,10 @@ async function classify(message, history, prevIntent, prevEntity) {
     const recent = history.slice(-4)
       .map(m => `${m.role === "user" ? "User" : "Bot"}: ${m.content.slice(0, 80)}`)
       .join("\n");
-    const ctx = prevIntent ? `\nPrev: ${prevIntent}${prevEntity ? ` (${prevEntity})` : ""}` : "";
+
+    const ctx = prevIntent
+      ? `\nPrev: ${prevIntent}${prevEntity ? ` (${prevEntity})` : ""}`
+      : "";
 
     const { choices } = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -230,47 +273,135 @@ async function classify(message, history, prevIntent, prevEntity) {
     if (match) {
       const p = JSON.parse(match[0]);
       return {
-        intent: p.intent || "GENERAL",
-        entity: p.entity || null,
+        intent:       p.intent || "GENERAL",
+        entity:       p.entity || null,
         search_terms: Array.isArray(p.search_terms) ? p.search_terms.filter(Boolean) : [],
         category_key: (p.category_key && CATEGORIES[p.category_key]) ? p.category_key : null,
-        page_type: p.page_type || null
+        page_type:    p.page_type || null
       };
     }
   } catch (e) {
-    console.error("❌ Classify:", e.message);
+    console.error("❌ Classify error:", e.message);
   }
-  return { intent: "GENERAL", entity: null, search_terms: [message], category_key: null, page_type: null };
+
+  return {
+    intent: "GENERAL",
+    entity: null,
+    search_terms: [message],
+    category_key: null,
+    page_type: null
+  };
 }
 
-/* ═══ DB Search (uses AI-provided search terms) ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ DB Search v2 — OR-based multi-column search ════════
+   ══════════════════════════════════════════════════════════ */
 async function searchCourses(terms) {
   if (!terms?.length) return [];
 
-  const strategies = [
-    { col: DB.title,        terms: terms,           limit: 5 },
-    { col: DB.description,  terms: terms.slice(0,4), limit: 5 },
-    { col: DB.subtitle,     terms: terms.slice(0,3), limit: 5 },
-    { col: DB.full_content, terms: terms.slice(0,2), limit: 5 }
-  ];
+  const cleanTerms = [...new Set(terms.filter(t => t && t.trim().length >= 2))];
+  if (!cleanTerms.length) return [];
 
-  for (const { col, terms: t, limit } of strategies) {
-    for (const term of t) {
-      if (!term || term.length < 2) continue;
+  console.log(`🔍 Search terms: [${cleanTerms.join(", ")}]`);
+
+  /* ── Strategy 1: OR search across title + subtitle + description ── */
+  try {
+    const orConditions = cleanTerms.flatMap(t => [
+      `${DB.title}.ilike.%${t}%`,
+      `${DB.subtitle}.ilike.%${t}%`,
+      `${DB.description}.ilike.%${t}%`
+    ]).join(",");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(orConditions)
+      .limit(6);
+
+    if (error) {
+      console.error("❌ OR search error:", error.message);
+    } else if (data?.length) {
+      console.log(`✅ Strategy 1 (OR multi-column): ${data.length} results`);
+      return dedupe(data.map(mapCourse));
+    }
+  } catch (e) {
+    console.error("❌ Strategy 1 exception:", e.message);
+  }
+
+  /* ── Strategy 2: title-only OR (simpler query) ── */
+  try {
+    const titleOr = cleanTerms
+      .map(t => `${DB.title}.ilike.%${t}%`)
+      .join(",");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(titleOr)
+      .limit(6);
+
+    if (error) {
+      console.error("❌ Title OR error:", error.message);
+    } else if (data?.length) {
+      console.log(`✅ Strategy 2 (title OR): ${data.length} results`);
+      return dedupe(data.map(mapCourse));
+    }
+  } catch (e) {
+    console.error("❌ Strategy 2 exception:", e.message);
+  }
+
+  /* ── Strategy 3: full_content fallback (one term at a time) ── */
+  for (const term of cleanTerms.slice(0, 4)) {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(SELECT)
+        .ilike(DB.full_content, `%${term}%`)
+        .limit(5);
+
+      if (!error && data?.length) {
+        console.log(`✅ Strategy 3 (full_content "${term}"): ${data.length} results`);
+        return dedupe(data.map(mapCourse));
+      }
+    } catch (e) { /* skip */ }
+  }
+
+  /* ── Strategy 4: single ilike per column per term ── */
+  const columns = [DB.title, DB.description, DB.subtitle];
+  for (const col of columns) {
+    for (const term of cleanTerms) {
       try {
         const { data, error } = await supabase
-          .from("courses").select(SELECT)
-          .ilike(col, `%${term}%`).limit(limit);
+          .from("courses")
+          .select(SELECT)
+          .ilike(col, `%${term}%`)
+          .limit(5);
 
         if (!error && data?.length) {
-          console.log(`✅ "${term}" in ${col}: ${data.length} results`);
+          console.log(`✅ Strategy 4 (${col} ilike "${term}"): ${data.length} results`);
           return dedupe(data.map(mapCourse));
         }
       } catch (e) { /* skip */ }
     }
   }
 
-  console.log(`⚠️ No results for: ${terms.slice(0, 3).join(", ")}`);
+  /* ── Strategy 5: textSearch on title ── */
+  for (const term of cleanTerms.slice(0, 3)) {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(SELECT)
+        .textSearch(DB.title, term, { type: "websearch" })
+        .limit(5);
+
+      if (!error && data?.length) {
+        console.log(`✅ Strategy 5 (textSearch "${term}"): ${data.length} results`);
+        return dedupe(data.map(mapCourse));
+      }
+    } catch (e) { /* skip */ }
+  }
+
+  console.log(`⚠️ ALL strategies failed for: [${cleanTerms.slice(0, 4).join(", ")}]`);
   return [];
 }
 
@@ -282,19 +413,27 @@ function dedupe(courses) {
   });
 }
 
-/* ═══ Page Search (for platform info) ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Page Search (for platform info) ════════════════════
+   ══════════════════════════════════════════════════════════ */
 async function searchPages(query) {
   try {
-    const { data } = await supabase.from("pages").select("title, url, content")
+    const { data } = await supabase
+      .from("pages")
+      .select("title, url, content")
       .textSearch("content", query.split(" ").join(" & "), { type: "websearch", config: "arabic" })
       .limit(3);
     return data || [];
-  } catch (e) { return []; }
+  } catch (e) {
+    return [];
+  }
 }
 
-/* ═══ Format Course Results ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Format Course Results as HTML ══════════════════════
+   ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category) {
-  let html = `<b>إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
+  let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
 
   courses.forEach((c, i) => {
     const link = c.url || (category ? category.url : "https://easyt.online");
@@ -302,38 +441,56 @@ function formatCourses(courses, category) {
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
     if (c.image_url) {
-      html += `<a href="${link}" target="_blank"><img src="${c.image_url}" style="width:100%;max-width:300px;border-radius:8px;margin-bottom:8px;"></a><br>`;
+      html += `<a href="${link}" target="_blank">`;
+      html += `<img src="${c.image_url}" style="width:100%;max-width:300px;border-radius:8px;margin-bottom:8px;">`;
+      html += `</a><br>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">${i + 1}. ${c.title}</a><br>`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
+    html += `${i + 1}. ${c.title}</a><br>`;
 
-    if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
+    if (c.instructor) {
+      html += `👤 المحاضر: ${c.instructor}<br>`;
+    }
 
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
-      html += (p === "0" || p === "0.00" || p.toLowerCase() === "free")
-        ? `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`
-        : `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+      if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
+        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+      } else {
+        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+      }
     }
 
     if (c.description) {
-      html += `📝 ${c.description.length > 120 ? c.description.slice(0, 120) + "..." : c.description}<br>`;
+      const desc = c.description.length > 120
+        ? c.description.slice(0, 120) + "..."
+        : c.description;
+      html += `📝 ${desc}<br>`;
     }
 
-    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a></div>`;
+    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a>`;
+    html += `</div>`;
   });
 
   if (category) {
-    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${category.name} ←</a>`;
+    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">`;
+    html += `تصفح جميع دورات ${category.name} ←</a>`;
   }
 
-  html += `<br><br>💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a>`;
+  html += `<br><br>💡 وصول لكل الدورات من خلال `;
+  html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">`;
+  html += `الاشتراك السنوي (49$ عرض رمضان)</a>`;
 
   return html;
 }
 
-/* ═══ GPT Response Generator ═══ */
-const CATEGORY_LINKS_TEXT = Object.values(CATEGORIES).map(c => `• ${c.name}: ${c.url}`).join("\n");
+/* ══════════════════════════════════════════════════════════
+   ═══ GPT Response Generator ═════════════════════════════
+   ══════════════════════════════════════════════════════════ */
+const CATEGORY_LINKS_TEXT = Object.values(CATEGORIES)
+  .map(c => `• ${c.name}: ${c.url}`)
+  .join("\n");
 
 const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار الذكي الرسمي لمنصة easyT.online.
 
@@ -347,7 +504,7 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 3. رحّب في أول رسالة فقط
 4. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
 
-【قواعد الروابط】
+【قواعد الروابط — HTML فقط】
 ★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#c40000;font-weight:bold;">💳 صفحة طرق الدفع</a>
 ★ اشتراك → <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">📋 صفحة الاشتراكات</a>
 ★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#c40000;font-weight:bold;">💰 برنامج العمولة</a>
@@ -364,20 +521,32 @@ ${PLATFORM_KB}`;
 
 async function generateAIResponse(session, extraContext, isFirst) {
   const messages = [{ role: "system", content: SYSTEM_PROMPT }];
-  if (extraContext) messages.push({ role: "system", content: `【مرجع إضافي】\n${extraContext}` });
-  if (isFirst) messages.push({ role: "system", content: "أول رسالة — رحّب ترحيب قصير ثم أجب." });
+
+  if (extraContext) {
+    messages.push({ role: "system", content: `【مرجع إضافي】\n${extraContext}` });
+  }
+  if (isFirst) {
+    messages.push({ role: "system", content: "أول رسالة — رحّب ترحيب قصير ثم أجب." });
+  }
+
   messages.push(...session.history);
 
   const { choices } = await openai.chat.completions.create({
-    model: "gpt-4o-mini", temperature: 0.4, max_tokens: 800, messages
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    max_tokens: 800,
+    messages
   });
+
   return choices[0].message.content;
 }
 
+/* ═══ Format Helpers ═══ */
 function formatReply(text) {
   if (!text) return "";
   return text
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#c40000;font-weight:bold;">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+      '<a href="$2" target="_blank" style="color:#c40000;font-weight:bold;">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
     .replace(/\*([^*]+)\*/g, "<i>$1</i>")
     .replace(/\n\n/g, "<br><br>")
@@ -391,7 +560,9 @@ function makeLink(url, text) {
   return `<a href="${url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">${text}</a>`;
 }
 
-/* ═══ Main Chat Route ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Main Chat Route ════════════════════════════════════
+   ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
     let { message, session_id } = req.body;
@@ -399,6 +570,7 @@ app.post("/chat", limiter, async (req, res) => {
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ reply: "يرجى إرسال رسالة صحيحة." });
     }
+
     message = message.trim().slice(0, 1000);
     if (!session_id) session_id = crypto.randomUUID();
 
@@ -408,12 +580,19 @@ app.post("/chat", limiter, async (req, res) => {
     session.history.push({ role: "user", content: message });
     while (session.history.length > MAX_HISTORY) session.history.shift();
 
-    /* ── 1. AI Classification ── */
-    const { intent, entity, search_terms, category_key, page_type } = await classify(
-      message, session.history, session.intent, session.entity
-    );
+    /* ── Step 1: AI Classification ── */
+    const {
+      intent,
+      entity,
+      search_terms,
+      category_key,
+      page_type
+    } = await classify(message, session.history, session.intent, session.entity);
 
-    console.log(`🏷️ "${message.slice(0, 40)}" → ${intent} | terms: [${search_terms.slice(0, 3).join(", ")}] | cat: ${category_key}`);
+    console.log(`\n🏷️ Message: "${message.slice(0, 50)}"`);
+    console.log(`   Intent: ${intent} | Entity: ${entity}`);
+    console.log(`   Terms: [${search_terms.slice(0, 5).join(", ")}]`);
+    console.log(`   Category: ${category_key}`);
 
     // Update session context
     if (intent !== "GENERAL" && intent !== "GREETING") {
@@ -423,56 +602,80 @@ app.post("/chat", limiter, async (req, res) => {
 
     const category = category_key ? CATEGORIES[category_key] : null;
 
-    /* ── 2. GREETING ── */
+    /* ── Step 2: Handle by Intent ── */
+
+    // ────────────────────────────────
+    // 2A. GREETING
+    // ────────────────────────────────
     if (intent === "GREETING") {
       const reply = isFirst
         ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>• 🎓 الدورات والكورسات<br>• 💳 طرق الدفع والاشتراك<br>• 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`
         : `أهلاً بيك تاني! 😊 إزاي أقدر أساعدك؟`;
+
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
-    /* ── 3. START_LEARNING ── */
+    // ────────────────────────────────
+    // 2B. START_LEARNING
+    // ────────────────────────────────
     if (intent === "START_LEARNING") {
-      const fields = Object.values(CATEGORIES).map(c => `• ${c.name}`).join("<br>");
+      const fields = Object.values(CATEGORIES)
+        .map(c => `• ${c.name}`)
+        .join("<br>");
+
       const reply = `أهلاً! 😊 حلو إنك عايز تبدأ رحلة التعلم 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو قولي أي مجال تاني وأنا هساعدك! 💪`;
+
       session.intent = "START_LEARNING";
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
-    /* ── 4. COURSE_SEARCH ── */
+    // ────────────────────────────────
+    // 2C. COURSE_SEARCH
+    // ────────────────────────────────
     if (intent === "COURSE_SEARCH") {
       const displayTerm = entity || message;
 
-      // Add message itself as fallback search term
+      // Combine AI terms + original message as fallback
       const allTerms = [...new Set([...search_terms, message])];
 
       let courses = await searchCourses(allTerms);
 
       if (courses.length > 0) {
         const reply = formatCourses(courses, category);
-        session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات: ${displayTerm}]` });
+        session.history.push({
+          role: "assistant",
+          content: `[عرض ${courses.length} دورات عن: ${displayTerm}]`
+        });
         return res.json({ reply, session_id });
       }
 
-      // No DB results → GPT fallback
-      console.log(`⚠️ No DB results → GPT fallback`);
+      // ── No DB results → GPT fallback ──
+      console.log(`⚠️ No DB results for "${displayTerm}" → GPT fallback`);
+
       let context = PLATFORM_KB;
-      if (category) context += `\n\nالمستخدم مهتم بـ: ${category.name}\nرابط التصنيف: ${category.url}`;
+      if (category) {
+        context += `\n\nالمستخدم مهتم بـ: ${category.name}\nرابط التصنيف: ${category.url}`;
+      }
 
       session.history.push({
         role: "system",
-        content: `المستخدم يبحث عن "${displayTerm}". لو مش لاقي دورات محددة وجّهه لرابط التصنيف أو الموقع.`
+        content: `المستخدم يبحث عن "${displayTerm}" ولم يتم العثور على دورات محددة في قاعدة البيانات. وجّهه لرابط التصنيف المناسب أو الموقع الرئيسي. لا تخترع أسماء دورات.`
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
-      session.history.pop(); // remove hint
 
+      // Remove the system hint from history
+      session.history.pop();
+
+      // Ensure category link exists
       if (category && !reply.includes(category.url)) {
         reply += `<br><br>🔗 ${makeLink(category.url, `تصفح جميع دورات ${category.name}`)}`;
       }
+
+      // Ensure subscription link exists
       if (!reply.includes("subscriptions")) {
         reply += `<br><br>💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")}`;
       }
@@ -481,35 +684,51 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    /* ── 5. ACCESS_ISSUE ── */
+    // ────────────────────────────────
+    // 2D. ACCESS_ISSUE
+    // ────────────────────────────────
     if (intent === "ACCESS_ISSUE") {
-      let reply = `لو عندك مشكلة في الوصول:<br><br>`;
-      reply += `• تأكد إنك مسجل دخول بنفس الإيميل<br>`;
-      reply += `• جرب تسجيل خروج وتدخل تاني<br>`;
-      reply += `• لو نسيت كلمة السر، استخدم "نسيت كلمة المرور"<br><br>`;
-      reply += `لو المشكلة لسه:<br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+      let reply = `<b>🔧 حل مشاكل الوصول:</b><br><br>`;
+      reply += `▸ تأكد إنك مسجل دخول بنفس الإيميل اللي اشتركت بيه<br>`;
+      reply += `▸ جرب تسجيل خروج وتدخل تاني<br>`;
+      reply += `▸ لو نسيت كلمة السر، استخدم "نسيت كلمة المرور"<br>`;
+      reply += `▸ جرب متصفح تاني أو امسح الكاش<br><br>`;
+      reply += `لو المشكلة لسه موجودة:<br>`;
+      reply += `${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
-    /* ── 6. PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ── */
+    // ────────────────────────────────
+    // 2E. PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR
+    // ────────────────────────────────
     if (["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)) {
       let context = PLATFORM_KB;
 
       // Try to get specific page content
-      const pageKey = intent.toLowerCase();
-      const pageLink = PAGE_LINKS[pageKey] || PAGE_LINKS[page_type];
-      if (pageLink) {
+      try {
         const pages = await searchPages(intent.toLowerCase());
-        if (pages?.length) context += "\n\n" + pages.map(p => p.content).join("\n").slice(0, 2000);
-      }
+        if (pages?.length) {
+          context += "\n\n【محتوى الصفحة】\n" + pages.map(p => p.content).join("\n").slice(0, 2000);
+        }
+      } catch (e) { /* skip */ }
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
 
+      // Map intent to page link key
+      const linkMap = {
+        PAYMENT: "payment",
+        SUBSCRIPTION: "subscription",
+        AFFILIATE: "affiliate",
+        AUTHOR: "author"
+      };
+
+      const linkKey = page_type || linkMap[intent];
+      const link = PAGE_LINKS[linkKey];
+
       // Ensure relevant link is included
-      const linkKey = page_type || intent.toLowerCase();
-      const link = PAGE_LINKS[linkKey] || PAGE_LINKS[intent === "PAYMENT" ? "payment" : intent === "SUBSCRIPTION" ? "subscription" : intent === "AFFILIATE" ? "affiliate" : "author"];
       if (link && !reply.includes(link.url)) {
         reply += `<br><br>${makeLink(link.url, link.label)}`;
       }
@@ -518,48 +737,155 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    /* ── 7. GENERAL (fallback to GPT) ── */
+    // ────────────────────────────────
+    // 2F. GENERAL (fallback to GPT)
+    // ────────────────────────────────
     let context = PLATFORM_KB;
-    const pages = await searchPages(entity || message);
-    if (pages?.length) context += "\n\n" + pages.map(p => `[${p.title}]\n${p.content}`).join("\n---\n").slice(0, 2000);
+
+    try {
+      const pages = await searchPages(entity || message);
+      if (pages?.length) {
+        context += "\n\n【صفحات ذات صلة】\n" +
+          pages.map(p => `[${p.title}]\n${p.content}`).join("\n---\n").slice(0, 2000);
+      }
+    } catch (e) { /* skip */ }
 
     let reply = await generateAIResponse(session, context, isFirst);
     reply = formatReply(reply);
+
     session.history.push({ role: "assistant", content: reply });
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("❌ Error:", error);
-    return res.status(error?.status === 429 ? 429 : 500).json({
-      reply: error?.status === 429
-        ? "فيه ضغط كبير. حاول تاني بعد شوية 🙏"
+    console.error("❌ Chat Error:", error);
+
+    const isRateLimit = error?.status === 429;
+    return res.status(isRateLimit ? 429 : 500).json({
+      reply: isRateLimit
+        ? "فيه ضغط كبير دلوقتي. حاول تاني بعد شوية 🙏"
         : "عذراً، حصل خطأ مؤقت. حاول تاني 🙏"
     });
   }
 });
 
-/* ═══ Debug Endpoint ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Debug Endpoint — Full Diagnosis ════════════════════
+   ══════════════════════════════════════════════════════════ */
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
+
+  // 1. AI Classification
   const classification = await classify(q, [], null, null);
-  const courses = await searchCourses(classification.search_terms.length ? classification.search_terms : [q]);
+
+  // 2. Search with AI terms
+  const terms = classification.search_terms.length
+    ? [...classification.search_terms, q]
+    : [q];
+  const courses = await searchCourses(terms);
+
+  // 3. Raw DB check — verify columns exist
+  let rawCheck = null;
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("*")
+      .limit(1);
+
+    rawCheck = {
+      error: error?.message || null,
+      columns: data?.[0] ? Object.keys(data[0]) : [],
+      sample_title: data?.[0]?.[DB.title] || null,
+      sample_link: data?.[0]?.[DB.link] || null,
+      total_columns: data?.[0] ? Object.keys(data[0]).length : 0
+    };
+  } catch (e) {
+    rawCheck = { error: e.message };
+  }
+
+  // 4. Direct ilike test for each term
+  let directTests = {};
+  for (const term of terms.slice(0, 5)) {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(DB.title)
+        .ilike(DB.title, `%${term}%`)
+        .limit(3);
+
+      directTests[term] = {
+        error: error?.message || null,
+        count: data?.length || 0,
+        titles: data?.map(d => d[DB.title]) || []
+      };
+    } catch (e) {
+      directTests[term] = { error: e.message, count: 0 };
+    }
+  }
 
   res.json({
     query: q,
     classification,
-    results: courses.length,
-    courses: courses.map(c => ({ title: c.title, url: c.url, instructor: c.instructor }))
+    search_results: courses.length,
+    courses: courses.map(c => ({
+      title: c.title,
+      url: c.url,
+      instructor: c.instructor,
+      price: c.price
+    })),
+    raw_db_check: rawCheck,
+    direct_tests: directTests,
+    db_config: DB
   });
+});
+
+/* ═══ Column Discovery Endpoint ═══ */
+app.get("/debug/columns", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("*")
+      .limit(1);
+
+    if (error) return res.json({ error: error.message });
+
+    const columns = data?.[0] ? Object.keys(data[0]) : [];
+    const sample = data?.[0] || null;
+
+    res.json({
+      table: "courses",
+      column_count: columns.length,
+      columns,
+      sample,
+      current_db_config: DB,
+      instructions: "قارن 'columns' بـ 'current_db_config' — لو مختلفين غيّر الـ DB object في الكود"
+    });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
 });
 
 /* ═══ Health Check ═══ */
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", sessions: sessions.size, uptime: Math.floor(process.uptime()) });
+  res.json({
+    status: "ok",
+    version: "5.1",
+    sessions: sessions.size,
+    uptime: Math.floor(process.uptime()),
+    categories: Object.keys(CATEGORIES).length
+  });
 });
 
-app.use((req, res) => res.status(404).json({ error: "Not Found" }));
+/* ═══ 404 ═══ */
+app.use((req, res) => {
+  res.status(404).json({ error: "Not Found" });
+});
 
-/* ═══ Start ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ Start Server ═══════════════════════════════════════
+   ══════════════════════════════════════════════════════════ */
 app.listen(PORT, () => {
-  console.log(`🤖 easyT v5.0 (AI-First) | Port ${PORT} | ${Object.keys(CATEGORIES).length} categories`);
+  console.log(`\n🤖 easyT Chatbot v5.1 (AI-First + OR Search)`);
+  console.log(`   Port: ${PORT}`);
+  console.log(`   Categories: ${Object.keys(CATEGORIES).length}`);
+  console.log(`   Debug: /debug/columns & /debug/search/:query\n`);
 });
