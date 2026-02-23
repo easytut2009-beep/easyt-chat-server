@@ -1,72 +1,131 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import crypto from "crypto";
+import dotenv from "dotenv";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
-import rateLimit from "express-rate-limit";
 
-/* =====================================================
+dotenv.config();
+
+/* ================================
+   ✅ ENV VALIDATION
+================================ */
+
+const requiredEnv = [
+  "OPENAI_API_KEY",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_KEY"
+];
+
+requiredEnv.forEach((key) => {
+  if (!process.env[key]) {
+    throw new Error(`Missing environment variable: ${key}`);
+  }
+});
+
+/* ================================
    ✅ INIT
-===================================================== */
+================================ */
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: "1mb" }));
 
+/* ================================
+   ✅ SECURITY MIDDLEWARE
+================================ */
+
+// Helmet MUST be first (per best practice) ([grizzlypeaksoftware.com](https://www.grizzlypeaksoftware.com/library/security-hardening-expressjs-applications-zfu5rr9i?utm_source=openai))
+app.use(helmet());
+
+// Disable fingerprinting ([expressjs.com](https://expressjs.com/en/advanced/best-practice-security?utm_source=openai))
+app.disable("x-powered-by");
+
+// Strict CORS
 app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 50
+  cors({
+    origin: ["https://easyt.online"],
+    methods: ["POST"],
   })
 );
 
-if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-if (!process.env.SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
-if (!process.env.SUPABASE_SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_KEY");
+// Body limit to prevent resource abuse ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
+app.use(express.json({ limit: "1mb" }));
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Rate limiting (OWASP API4) ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 40,
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+);
+
+/* ================================
+   ✅ SERVICES
+================================ */
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: { persistSession: false }
+  }
 );
 
-/* =====================================================
-   ✅ MEMORY
-===================================================== */
+/* ================================
+   ✅ MEMORY (Isolated Per Session)
+================================ */
 
-const conversations = new Map();
-const MAX_HISTORY = 10;
+const sessions = new Map();
+const MAX_HISTORY = 8;
 
-function getSession(session_id) {
-  if (!conversations.has(session_id)) {
-    conversations.set(session_id, []);
-  }
-  return conversations.get(session_id);
+function getSession(id) {
+  if (!sessions.has(id)) sessions.set(id, []);
+  return sessions.get(id);
 }
 
-function updateMemory(history, message) {
-  history.push({ role: "user", content: message });
+function pushMessage(history, role, content) {
+  history.push({ role, content });
   if (history.length > MAX_HISTORY) history.shift();
 }
 
-/* =====================================================
-   ✅ EMBEDDING
-===================================================== */
+/* ================================
+   ✅ SAFE EMBEDDING
+================================ */
 
 async function createEmbedding(text) {
+  const safeText = text.slice(0, 3000);
+
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text.slice(0, 4000)
+    input: safeText
   });
+
   return response.data[0].embedding;
 }
 
-/* =====================================================
-   ✅ TOOLS
-===================================================== */
+/* ================================
+   ✅ DATA ACCESS LAYER
+   Prevents BOLA & Data Exposure ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
+================================ */
 
-async function search_courses(query) {
+async function getSubscription() {
+  const { data } = await supabase
+    .from("site_pages")
+    .select("page_url, content") // no overexposure
+    .ilike("page_url", "%/p/subscriptions%")
+    .limit(1);
+
+  return data || [];
+}
+
+async function searchCourses(query) {
   const embedding = await createEmbedding(query);
 
   const { data } = await supabase.rpc("match_courses", {
@@ -77,75 +136,52 @@ async function search_courses(query) {
   return data || [];
 }
 
-async function get_subscription_info() {
-
-  const { data, error } = await supabase
-    .from("site_pages")
-    .select("page_url, content")
-    .ilike("page_url", "%/p/subscriptions%")
-    .limit(1);
-
-  if (error) {
-    console.error("Subscription error:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-/* =====================================================
+/* ================================
    ✅ FORMATTERS
-===================================================== */
+================================ */
 
-function cleanMarkdown(text) {
+function sanitize(text) {
   return text
-    .replace(/###/g, "")
-    .replace(/##/g, "")
-    .replace(/#/g, "")
-    .trim();
-}
-
-function formatCourses(courses) {
-
-  let formatted = "";
-
-  courses.forEach((course, index) => {
-
-    const title = course.title || "الدورة";
-    const url = course.url || course.page_url || "#";
-
-    formatted += `
-${index + 1}. 🔗 <a href="${url}" target="_blank" 
-style="text-decoration:none;font-weight:bold;">
-${title}
-</a><br><br>
-    `;
-  });
-
-  return formatted;
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function formatSubscription(data) {
+  if (!data.length) return "الاشتراك غير متاح حالياً.";
 
-  const subscription = data[0];
+  const page = data[0];
 
   return `
-🔗 <a href="${subscription.page_url}" target="_blank" 
+🔗 <a href="${page.page_url}" target="_blank" 
 style="text-decoration:none;font-weight:bold;">
 الاشتراك الشامل في easyT
 </a><br><br>
-${subscription.content}
-  `;
+${sanitize(page.content)}
+  `.replace(/\n/g, "<br>");
 }
 
-/* =====================================================
-   ✅ MAIN ROUTE
-===================================================== */
+function formatCourses(courses) {
+  if (!courses.length) return "لا توجد دورات مطابقة حالياً.";
+
+  return courses
+    .map((c, i) => {
+      const title = sanitize(c.title || "الدورة");
+      const url = sanitize(c.url || c.page_url || "#");
+
+      return `${i + 1}. 🔗 <a href="${url}" target="_blank"
+style="text-decoration:none;font-weight:bold;">
+${title}
+</a><br><br>`;
+    })
+    .join("");
+}
+
+/* ================================
+   ✅ CHAT ENDPOINT
+================================ */
 
 app.post("/chat", async (req, res) => {
-
   try {
-
     let { message, session_id } = req.body;
 
     if (!message || typeof message !== "string" || message.length > 1000) {
@@ -155,25 +191,20 @@ app.post("/chat", async (req, res) => {
     if (!session_id) session_id = crypto.randomUUID();
 
     const history = getSession(session_id);
-    updateMemory(history, message);
+    pushMessage(history, "user", message);
 
-    const agentResponse = await openai.chat.completions.create({
+    const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
       messages: [
         {
           role: "system",
           content: `
-أنت مساعد داخل منصة easyT.
-
-إذا طلب المستخدم جميع الدورات أو باقة شاملة
-استخدم get_subscription_info.
-
-إذا طلب كورسات محددة
-استخدم search_courses.
-
-لا تكتب روابط كنص مباشر.
-لا تشير لأي موقع خارجي.
+أنت مساعد رسمي داخل منصة easyT.
+لا تخترع روابط.
+لا تشير لمواقع خارج المنصة.
+إذا طلب المستخدم اشتراك شامل استخدم getSubscription.
+إذا طلب كورسات محددة استخدم searchCourses.
 `
         },
         ...history
@@ -182,7 +213,7 @@ app.post("/chat", async (req, res) => {
         {
           type: "function",
           function: {
-            name: "search_courses",
+            name: "searchCourses",
             parameters: {
               type: "object",
               properties: { query: { type: "string" } },
@@ -193,74 +224,46 @@ app.post("/chat", async (req, res) => {
         {
           type: "function",
           function: {
-            name: "get_subscription_info",
-            parameters: {
-              type: "object",
-              properties: {}
-            }
+            name: "getSubscription",
+            parameters: { type: "object", properties: {} }
           }
         }
-      ],
-      tool_choice: "auto"
+      ]
     });
 
-    const messageResponse = agentResponse.choices[0].message;
+    const msg = ai.choices[0].message;
 
-    if (messageResponse.tool_calls) {
-
-      const toolCall = messageResponse.tool_calls[0];
-      const toolName = toolCall.function.name;
-      const args = toolCall.function.arguments
-        ? JSON.parse(toolCall.function.arguments)
+    if (msg.tool_calls) {
+      const call = msg.tool_calls[0];
+      const args = call.function.arguments
+        ? JSON.parse(call.function.arguments)
         : {};
 
-      let toolResult = [];
-
-      if (toolName === "search_courses") {
-        toolResult = await search_courses(args.query);
-
-        if (!toolResult.length) {
-          return res.json({
-            reply: "لا توجد دورات مطابقة حالياً.",
-            session_id
-          });
-        }
-
-        const reply = formatCourses(toolResult);
-        return res.json({ reply, session_id });
+      if (call.function.name === "getSubscription") {
+        const data = await getSubscription();
+        return res.json({ reply: formatSubscription(data), session_id });
       }
 
-      if (toolName === "get_subscription_info") {
-
-        toolResult = await get_subscription_info();
-
-        if (!toolResult.length) {
-          return res.json({
-            reply: "صفحة الاشتراك غير متاحة حالياً.",
-            session_id
-          });
-        }
-
-        const reply = formatSubscription(toolResult).replace(/\n/g, "<br>");
-        return res.json({ reply, session_id });
+      if (call.function.name === "searchCourses") {
+        const data = await searchCourses(args.query);
+        return res.json({ reply: formatCourses(data), session_id });
       }
     }
 
-    let reply = cleanMarkdown(messageResponse.content);
-    reply = reply.replace(/\n/g, "<br>");
+    const cleanReply = sanitize(msg.content).replace(/\n/g, "<br>");
+    return res.json({ reply: cleanReply, session_id });
 
-    return res.json({ reply, session_id });
-
-  } catch (error) {
-    console.error("AI ERROR:", error);
-    return res.status(500).json({
-      reply: "حدث خطأ مؤقت."
-    });
+  } catch (err) {
+    console.error("SECURE SERVER ERROR:", err);
+    return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+/* ================================
+   ✅ START
+================================ */
 
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 EasyT AI Final Production Server Running");
+  console.log("✅ EasyT Secure AI Server Running");
 });
