@@ -1,6 +1,8 @@
 /* ══════════════════════════════════════════════════════════════
-   🤖 easyT Chatbot — Full Backend (server.js) v3.0
-   Fix: Static course catalog fallback + smarter search
+   🤖 easyT Chatbot — Full Backend (server.js) v4.0
+   ✅ Fixed DB column names (link, image, instructor_name)
+   ✅ Removed KNOWN_COURSES — DB is the single source of truth
+   ✅ Course links now go to actual course page
    ══════════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -53,12 +55,50 @@ app.use(express.json({ limit: "5kb" }));
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
-  message: {
-    reply: "أنت بتبعت رسائل كتير. استنى شوية وحاول تاني 🙏"
-  },
+  message: { reply: "أنت بتبعت رسائل كتير. استنى شوية وحاول تاني 🙏" },
   standardHeaders: true,
   legacyHeaders: false
 });
+
+/* ══════════════════════════════════════
+   🗄️ DB COLUMN MAPPING
+   ⚠️ غيّر الأسماء دي لو مختلفة في Supabase
+══════════════════════════════════════ */
+
+const DB_COL = {
+  title: "title",
+  description: "description",
+  link: "link",                 // ← كان url
+  price: "price",
+  instructor: "instructor_name", // ← كان instructor
+  image: "image",               // ← كان image_url
+  subtitle: "subtitle",
+  domain: "domain",
+  full_content: "full_content"
+};
+
+const COURSE_SELECT = [
+  DB_COL.title,
+  DB_COL.description,
+  DB_COL.link,
+  DB_COL.price,
+  DB_COL.instructor,
+  DB_COL.image,
+  DB_COL.subtitle,
+  DB_COL.domain
+].join(", ");
+
+function mapCourse(row) {
+  return {
+    title: row[DB_COL.title] || "",
+    description: row[DB_COL.description] || row[DB_COL.subtitle] || "",
+    url: row[DB_COL.link] || null,
+    price: row[DB_COL.price],
+    instructor: row[DB_COL.instructor] || "",
+    image_url: row[DB_COL.image] || null,
+    domain: row[DB_COL.domain] || ""
+  };
+}
 
 /* ══════════════════════════════════════
    📚 KNOWLEDGE BASE
@@ -153,6 +193,7 @@ const CATEGORY_MAP = {
   graphics: {
     name: "الجرافيكس والتصميم",
     url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2",
+    domain: "design",
     keywords: ["تصميم", "جرافيك", "جرافيكس", "فوتوشوب", "فتوشوب", "اليستريتور", "اليستراتور", "كانفا",
       "لوجو", "شعار", "هوية بصرية", "انفوجرافيك", "إنديزاين", "انديزاين",
       "photoshop", "illustrator", "canva", "graphic", "design", "indesign",
@@ -163,6 +204,7 @@ const CATEGORY_MAP = {
   security: {
     name: "الحماية والاختراق",
     url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001",
+    domain: "security",
     keywords: ["اختراق", "حماية", "سيبراني", "أمن معلومات", "هاكر", "هاكينج",
       "hacking", "security", "cyber", "كالي لينكس", "كالي", "kali",
       "penetration", "اختراق أخلاقي", "ethical hacking", "wireshark",
@@ -173,6 +215,7 @@ const CATEGORY_MAP = {
   languages: {
     name: "تعليم اللغات",
     url: "https://easyt.online/courses/category/08769726-0fae-4442-9519-3b178e2ec04a",
+    domain: "language",
     keywords: ["لغة", "لغات", "انجليزي", "إنجليزي", "فرنسي", "ألماني", "المانى", "صيني",
       "english", "french", "german", "chinese",
       "توفل", "ايلتس", "toefl", "ielts", "نطق", "محادثة"],
@@ -181,6 +224,7 @@ const CATEGORY_MAP = {
   marketing: {
     name: "الديجيتال ماركيتنج",
     url: "https://easyt.online/courses/category/19606855-bae8-4588-98a6-b52819ff48d9",
+    domain: "marketing",
     keywords: ["ديجيتال ماركيتنج", "تسويق رقمي", "تسويق الكتروني", "تسويق",
       "إعلانات فيسبوك", "إعلانات جوجل", "سيو", "seo",
       "ماركيتنج", "digital marketing", "إعلان", "إعلانات", "سوشيال ميديا",
@@ -194,6 +238,7 @@ const CATEGORY_MAP = {
   engineering: {
     name: "البرامج الهندسية",
     url: "https://easyt.online/courses/category/f3870633-bfcb-47a0-9c54-c2e71224571a",
+    domain: "engineering",
     keywords: ["هندسي", "هندسية", "أوتوكاد", "اوتوكاد", "autocad", "ريفت", "revit",
       "ثري دي ماكس", "3ds max", "3d max", "سكتش اب", "sketchup",
       "ماتلاب", "matlab", "سوليد ووركس", "solidworks",
@@ -205,6 +250,7 @@ const CATEGORY_MAP = {
   webdev: {
     name: "تطوير وبرمجة المواقع والتطبيقات",
     url: "https://easyt.online/courses/category/124745a9-cc19-4524-886d-46b8d96a71eb",
+    domain: "web",
     keywords: ["تطوير مواقع", "برمجة مواقع", "برمجة تطبيقات",
       "html", "css", "javascript", "react", "flutter", "node.js", "node",
       "php", "laravel", "django", "angular", "أندرويد ستوديو",
@@ -217,6 +263,7 @@ const CATEGORY_MAP = {
   earning: {
     name: "الربح من الانترنت",
     url: "https://easyt.online/courses/category/7e3693f7-036e-4f16-a1ad-ef30a3678a43",
+    domain: "internet",
     keywords: ["ربح من الانترنت", "فريلانس", "عمل حر",
       "دروب شيبنج", "dropshipping", "دروب سيرفس",
       "أمازون", "امازون", "amazon", "شوبيفاي", "shopify",
@@ -228,6 +275,7 @@ const CATEGORY_MAP = {
   basics: {
     name: "تعليم أساسيات الكمبيوتر",
     url: "https://easyt.online/courses/category/0a28e8e3-c783-4e65-af69-7736cb4b1140",
+    domain: "basics",
     keywords: ["أساسيات كمبيوتر", "ويندوز", "وورد", "اكسيل", "إكسيل", "بوربوينت", "اكسيس",
       "windows", "word", "excel", "powerpoint", "access",
       "مايكروسوفت أوفيس", "microsoft office", "كمبيوتر للمبتدئين"],
@@ -236,6 +284,7 @@ const CATEGORY_MAP = {
   business: {
     name: "الإدارة العامة وإدارة الأعمال",
     url: "https://easyt.online/courses/category/2f7d934f-28a0-45c5-8212-7d27151585fc",
+    domain: "leadership",
     keywords: ["إدارة أعمال", "إدارة", "بيزنس", "business",
       "مشروع", "ريادة أعمال", "startup",
       "إدارة مشروعات", "agile", "scrum",
@@ -246,6 +295,7 @@ const CATEGORY_MAP = {
   kids: {
     name: "تربية وتعليم الأطفال",
     url: "https://easyt.online/courses/category/a02f9974-a95f-410f-a338-a1cd83ab658a",
+    domain: "kids",
     keywords: ["أطفال", "طفل", "تربية", "أولاد", "kids", "children",
       "سكراتش", "scratch", "تعليم أطفال", "تعديل سلوك"],
     searchTerms: ["أطفال", "تربية", "سكراتش", "scratch", "kids"]
@@ -253,24 +303,28 @@ const CATEGORY_MAP = {
   accounting: {
     name: "الاقتصاد والمحاسبة والاحصاء",
     url: "https://easyt.online/courses/category/19b919fe-ee58-4971-b525-ff1693b309b2",
+    domain: "accounting",
     keywords: ["محاسبة", "اقتصاد", "إحصاء", "accounting", "مالية", "ضرائب", "ميزانية"],
     searchTerms: ["محاسبة", "accounting", "اقتصاد", "إحصاء", "مالية"]
   },
   skills: {
     name: "المهارات الشخصية وتطوير الذات",
     url: "https://easyt.online/courses/category/6d089e8e-8cdf-4fa8-8244-5c128bd16805",
+    domain: "skills",
     keywords: ["مهارات شخصية", "تطوير ذات", "تنمية بشرية", "soft skills", "تواصل", "عرض تقديمي", "مهارات"],
     searchTerms: ["مهارات", "soft skills", "تطوير ذات", "تنمية"]
   },
   psychology: {
     name: "علم النفس",
     url: "https://easyt.online/courses/category/8ed523c6-b088-4e63-807e-8fe325c1dd88",
+    domain: "psychology",
     keywords: ["علم نفس", "نفسي", "psychology", "سيكولوجي"],
     searchTerms: ["علم نفس", "نفسي", "psychology"]
   },
   ai_apps: {
     name: "الذكاء الاصطناعى وتطبيقاته",
     url: "https://easyt.online/courses/category/98dc1962-99df-45fe-8ea6-c334260f279a",
+    domain: "ai",
     keywords: ["ذكاء اصطناعي", "ai tools", "chatgpt", "شات جي بي تي",
       "midjourney", "أدوات ذكاء اصطناعي", "تطبيقات ذكاء اصطناعي"],
     searchTerms: ["ذكاء اصطناعي", "ai", "chatgpt", "شات جي بي تي"]
@@ -278,12 +332,14 @@ const CATEGORY_MAP = {
   art: {
     name: "الفن والهوايات",
     url: "https://easyt.online/courses/category/d00d3c49-7ef3-4041-8e71-4c6b6ce5026d",
+    domain: "art",
     keywords: ["فن", "رسم يدوي", "هواية", "art", "drawing", "خط عربي", "موسيقى", "هوايات"],
     searchTerms: ["فن", "رسم", "art", "خط عربي"]
   },
   electronics: {
     name: "الروبوت والالكترونيات والشبكات",
     url: "https://easyt.online/courses/category/9a58b6bd-bf96-4a95-b87d-77b2a742c1b4",
+    domain: "electronics",
     keywords: ["روبوت", "الكترونيات", "شبكات", "arduino", "أردوينو", "اردوينو",
       "network", "networking", "robot", "إلكترونيات", "ccna"],
     searchTerms: ["روبوت", "robot", "أردوينو", "arduino", "شبكات", "network", "ccna"]
@@ -291,6 +347,7 @@ const CATEGORY_MAP = {
   programming: {
     name: "أساسيات البرمجة وقواعد البيانات",
     url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
+    domain: "programming",
     keywords: ["أساسيات برمجة", "بايثون", "python", "جافا", "java",
       "c++", "c#", "قواعد بيانات", "database", "sql", "oracle",
       "برمجة للمبتدئين", "برمجة", "كود", "coding", "programming"],
@@ -299,6 +356,7 @@ const CATEGORY_MAP = {
   ai_programming: {
     name: "برمجة الذكاء الاصطناعي",
     url: "https://easyt.online/courses/category/90b79ad7-0d90-4b7c-ba87-6c222ac6f22f",
+    domain: "ai-programming",
     keywords: ["برمجة ذكاء اصطناعي", "machine learning", "deep learning",
       "تعلم آلة", "تعلم الة", "تعلم عميق", "neural network", "شبكات عصبية"],
     searchTerms: ["machine learning", "deep learning", "تعلم آلة", "تعلم عميق"]
@@ -306,6 +364,7 @@ const CATEGORY_MAP = {
   ui_design: {
     name: "تصميم المواقع والتطبيقات",
     url: "https://easyt.online/courses/category/28a781a3-88fb-4460-bc68-7ea69aa2168d",
+    domain: "ui-design",
     keywords: ["تصميم مواقع", "تصميم تطبيقات", "ui", "ux",
       "واجهة مستخدم", "تجربة مستخدم", "figma", "فيجما", "adobe xd",
       "ووردبريس", "wordpress"],
@@ -314,650 +373,45 @@ const CATEGORY_MAP = {
   investment: {
     name: "الاستثمار والأسواق المالية",
     url: "https://easyt.online/courses/category/957e7f0d-ac31-49e6-939e-ead6134ccc3a",
+    domain: "investment",
     keywords: ["استثمار", "أسواق مالية", "بورصة", "تداول", "أسهم", "فوركس", "forex", "عملات رقمية", "كريبتو", "crypto"],
     searchTerms: ["استثمار", "بورصة", "تداول", "فوركس", "forex", "crypto"]
   },
   sales: {
     name: "التسويق والمبيعات",
     url: "https://easyt.online/courses/category/f3ee963c-5e2d-44c3-b77e-1b118a438ee5",
+    domain: "sales",
     keywords: ["مبيعات", "sales", "تسويق ومبيعات", "بيع", "فن البيع"],
     searchTerms: ["مبيعات", "sales", "بيع"]
   },
   video: {
     name: "التصوير والمونتاج والأنيميشن",
     url: "https://easyt.online/courses/category/119ae93c-aade-459c-93df-6c6fb8c2e095",
+    domain: "video",
     keywords: ["تصوير", "مونتاج", "أنيميشن", "انيميشن", "فيديو",
       "بريمير", "بريميير", "أفتر إفكتس", "افتر افكتس", "premiere", "after effects",
       "animation", "موشن جرافيك", "motion graphic",
       "دافنشي", "davinci", "moho", "تحريك شخصيات"],
     searchTerms: ["مونتاج", "بريمير", "premiere", "أفتر إفكتس", "after effects", "تصوير", "أنيميشن", "animation", "moho"]
+  },
+  data: {
+    name: "تحليل البيانات",
+    url: "https://easyt.online/courses/category/data",
+    domain: "data",
+    keywords: ["تحليل بيانات", "data analysis", "data science", "بيانات", "power bi", "tableau"],
+    searchTerms: ["تحليل بيانات", "data", "power bi"]
+  },
+  mobile: {
+    name: "تطوير تطبيقات الموبايل",
+    url: "https://easyt.online/courses/category/mobile",
+    domain: "mobile",
+    keywords: ["تطبيقات موبايل", "أندرويد", "android", "ios", "swift", "kotlin", "react native", "flutter"],
+    searchTerms: ["أندرويد", "android", "ios", "swift", "kotlin", "flutter"]
   }
 };
 
 /* ══════════════════════════════════════
-   📦 KNOWN COURSES CATALOG (STATIC FALLBACK)
-══════════════════════════════════════ */
-
-const KNOWN_COURSES = [
-
-  // ═══════════════════════════════════
-  // 🎨 الجرافيكس والتصميم
-  // ═══════════════════════════════════
-  {
-    title: "فوتوشوب Adobe Photoshop",
-    description: "تعلم فوتوشوب بتحديثات الذكاء الاصطناعى — الكورس الأكثر مبيعاً",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["فوتوشوب", "فتوشوب", "photoshop", "adobe photoshop", "تصميم", "design", "adobe"],
-    bestseller: true
-  },
-  {
-    title: "اليستريتور Adobe illustrator",
-    description: "تعلم التصميم الاحترافى باستخدام اليستريتور — الأكثر مبيعاً",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["اليستريتور", "اليستراتور", "الستريتور", "illustrator", "adobe illustrator", "تصميم", "design", "adobe"],
-    bestseller: true
-  },
-  {
-    title: "الانفوجرافيك الاحترافى Infographic Design",
-    description: "حوّل المعلومات إلى تصميمات تخطف الأنظار وتبهر جمهورك",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["انفوجرافيك", "إنفوجرافيك", "infographic", "تصميم معلومات"]
-  },
-  {
-    title: "انديزاين Adobe InDesign",
-    description: "صمم مطبوعات إبداعية باحترافية تنافس المحترفين",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["انديزاين", "إنديزاين", "indesign", "adobe indesign", "مطبوعات"]
-  },
-  {
-    title: "الفيجوال كونتنت (أسرار تصميمات السوشيال ميديا)",
-    description: "عوامل وأفكار إبداعية لجعل إعلاناتك تخطف الأنظار وتحقق نتائج مذهلة",
-    instructor: "أحمد حسن خميس",
-    price: 12.99,
-    category_key: "graphics",
-    tags: ["فيجوال كونتنت", "visual content", "سوشيال ميديا", "تصميم إعلانات", "تصميمات"],
-    bestseller: true
-  },
-  {
-    title: "قوة الذكاء الاصطناعي داخل فوتوشوب",
-    description: "استخدام Firefly و Nano banana Pro و FLUX Kontext Pro داخل فوتوشوب لتصميمات احترافية",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["فوتوشوب", "photoshop", "ذكاء اصطناعي", "ai", "firefly"]
-  },
-  {
-    title: "قوة الذكاء الاصطناعي داخل اليستريتور",
-    description: "استخدام Firefly و Nano banana Pro و Ideagram داخل اليستريتور لتصميمات احترافية",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["اليستريتور", "اليستراتور", "illustrator", "ذكاء اصطناعي", "ai", "firefly"]
-  },
-  {
-    title: "اسطورة الذكاء الاصطناعي ComfyUI",
-    description: "الدمج بين جميع نماذج الذكاء الاصطناعي لإنتاج صور وفيديوهات احترافية",
-    instructor: "م/أحمد عباس",
-    price: 12.99,
-    category_key: "graphics",
-    tags: ["comfyui", "ذكاء اصطناعي", "ai", "صور", "فيديو"]
-  },
-  {
-    title: "أسرار الجذب في التصميم الإعلاني",
-    description: "اكتشف كيف تصمم إعلانًا يخطف الأنظار باستخدام فوتوشوب",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["تصميم إعلاني", "فوتوشوب", "photoshop", "إعلان"]
-  },
-  {
-    title: "تصميم المطبوعات التجارية",
-    description: "اتقان تصميم الكروت والبروشورات وأوراق الشركات باستخدام اليستريتور",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["مطبوعات", "كروت", "بروشور", "اليستريتور", "illustrator"]
-  },
-  {
-    title: "الفوتوشوب المعماري",
-    description: "إتقان مهارات الإظهار المعماري باحترافية باستخدام الفوتوشوب",
-    instructor: "م/خالد حسني",
-    price: 12.99,
-    category_key: "graphics",
-    tags: ["فوتوشوب", "photoshop", "معماري", "إظهار"]
-  },
-  {
-    title: "التيبوجرافي Typography",
-    description: "تعلم فن تصميم الحروف وتنسيق النصوص لإبداع بصري جذاب",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["تيبوجرافي", "typography", "حروف", "خطوط", "نصوص"]
-  },
-  {
-    title: "أساسيات ومبادئ التصميم",
-    description: "اكتشف أساسيات تصميم الجرافيك وتعلم المبادئ الضرورية لتصاميم احترافية",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["أساسيات تصميم", "مبادئ", "جرافيك", "مبتدئ", "design basics"]
-  },
-  {
-    title: "التصميم الاحترافى والربح من كانفا Canva",
-    description: "تعلم مهارات التصميم باستخدام Canva واجعلها مصدر ثابت لزيادة الدخل",
-    instructor: "مقبل محمد",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["كانفا", "canva", "تصميم", "ربح"]
-  },
-  {
-    title: "الأدوات المتقدمة والذكاء الاصطناعى فى كانفا",
-    description: "اكتشف أسرار العمل الحر بالأدوات المتقدمة والذكاء الاصطناعى فى كانفا",
-    instructor: "مقبل محمد",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["كانفا", "canva", "ذكاء اصطناعي", "ai", "عمل حر"]
-  },
-  {
-    title: "لايت رووم كلاسيك Lightroom Classic",
-    description: "فن تحرير الصور من الأساسيات إلى التقنيات المتقدمة",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["لايتروم", "لايت رووم", "lightroom", "تحرير صور", "صور"]
-  },
-  {
-    title: "تصميم أغلفة الكتب والروايات",
-    description: "احترف استخدام فوتوشوب لتصميم الأغلفة من الفكرة إلى التنفيذ",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["أغلفة", "كتب", "فوتوشوب", "photoshop", "تصميم"]
-  },
-  {
-    title: "صناعة أفلام الكرتون بالذكاء الاصطناعى",
-    description: "كيف تستخدم أدوات الذكاء الاصطناعى لصناعة أفلام كرتون عالية الجودة",
-    instructor: "م/أحمد عباس",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["كرتون", "أفلام", "ذكاء اصطناعي", "ai", "أنيميشن"]
-  },
-  {
-    title: "تصميم الهوية البصرية على السوشيال ميديا",
-    description: "هوية بصرية فريدة تميزك على السوشيال ميديا عن كل منافسيك",
-    instructor: "عبد السلام صفوت",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["هوية بصرية", "سوشيال ميديا", "براند", "brand"]
-  },
-  {
-    title: "رسم الشخصيات الكرتونية للمبتدئين",
-    description: "تعلم رسم الشخصيات الكرتونية باستخدام برنامج إليستريتور",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["رسم", "كرتون", "شخصيات", "اليستريتور", "illustrator", "مبتدئ"]
-  },
-  {
-    title: "تصميم الشعارات للمبتدئين Logos Design",
-    description: "تعلم تصميم الشعارات مع تطبيقات عملية متنوعة على اليستريتور",
-    instructor: "م/حمزة منير",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["شعار", "شعارات", "لوجو", "logo", "logos", "اليستريتور", "illustrator"]
-  },
-  {
-    title: "تصميم واجهة وتجربة المستخدم UX/UI باستخدام FIGMA",
-    description: "احترف تصميم تجربة المستخدم UX وتصميم واجهات المواقع والتطبيقات UI",
-    instructor: "ضياء أحمد",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["ui", "ux", "فيجما", "figma", "واجهة مستخدم", "تجربة مستخدم"]
-  },
-  {
-    title: "دمج الصور Photo Manipulations",
-    description: "المهارات الاحترافية للدمج والتلاعب بالصور",
-    instructor: "م/على فودة",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["دمج صور", "فوتوشوب", "photoshop", "manipulation", "صور"]
-  },
-  {
-    title: "تصميم هوية بصرية متكاملة",
-    description: "اختيار الألوان وتصميم الشعار والسلوجان وجميع عناصر الهوية البصرية",
-    instructor: "أحمد فهمى",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["هوية بصرية", "شعار", "لوجو", "ألوان", "براند", "brand identity"]
-  },
-  {
-    title: "تصميم واجهة وتجربة المستخدم UX/UI باستخدام Adobe XD",
-    description: "احترف تصميم تجربة المستخدم UX وتصميم واجهات المواقع والتطبيقات UI",
-    instructor: "م/أحمد العصار",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["ui", "ux", "adobe xd", "xd", "واجهة مستخدم"]
-  },
-  {
-    title: "التصميم باستخدام الموبايل",
-    description: "احترف تطبيق PicsArt لتصميم وتعديل الصور باستخدام الموبايل",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["موبايل", "picsart", "تصميم", "تعديل صور", "هاتف"]
-  },
-  {
-    title: "تصميم الألعاب التعليمية",
-    description: "تعلم كيف يمكن تحويل جميع المواد الدراسية إلى ألعاب مثيرة وممتعة",
-    instructor: "د/أبانوب خلف",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["ألعاب تعليمية", "تصميم ألعاب", "تعليم"]
-  },
-  {
-    title: "الرسم وتجهيز المشاهد للأنيميشن",
-    description: "احتراف رسم المشاهد وبنائها بصريًا لإنتاج أعمال أنيميشن مميزة",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 9.99,
-    category_key: "graphics",
-    tags: ["رسم", "أنيميشن", "animation", "مشاهد"]
-  },
-
-  // ═══════════════════════════════════
-  // 🛡️ الحماية والاختراق
-  // ═══════════════════════════════════
-  {
-    title: "أساسيات الأمن السيبرانى Cyber Security",
-    description: "الكورس الاحترافى الشامل فى أمن المعلومات",
-    instructor: "م/مؤمن محمد",
-    price: 9.99,
-    category_key: "security",
-    tags: ["أمن سيبراني", "سيبراني", "cyber security", "cyber", "أمن معلومات", "حماية", "security"],
-    bestseller: true
-  },
-  {
-    title: "الاختراق الأخلاقى Ethical hacking",
-    description: "استكشف عالم الاختراق والأمان الرقمى بطريقة أخلاقية",
-    instructor: "م/مؤمن محمد",
-    price: 9.99,
-    category_key: "security",
-    tags: ["اختراق أخلاقي", "اختراق", "ethical hacking", "hacking", "هاكر", "هاكينج"]
-  },
-  {
-    title: "كالي لينكس للاختراق KALI Linux For Hacking",
-    description: "تعلم كالي لينكس لتطوير مهاراتك في الأمن والاختراق",
-    instructor: "م/أحمد فهيم",
-    price: 9.99,
-    category_key: "security",
-    tags: ["كالي", "كالي لينكس", "kali", "kali linux", "لينكس", "linux", "اختراق"]
-  },
-  {
-    title: "اختراق وحماية شبكات الواى فاى - WiFi Hacking",
-    description: "احترف اكتشاف ثغرات الشبكات المؤهلة للاختراق",
-    instructor: "م/كنعان الحلاج",
-    price: 9.99,
-    category_key: "security",
-    tags: ["واي فاي", "wifi", "شبكات", "اختراق شبكات", "hacking"]
-  },
-  {
-    title: "اختراق وحماية أجهزة أندرويد Android Hacking",
-    description: "تعرف على الثغرات التى يستغلها المخترقون للحصول على بياناتك",
-    instructor: "م/كنعان الحلاج",
-    price: 9.99,
-    category_key: "security",
-    tags: ["أندرويد", "android", "اختراق", "hacking", "موبايل"]
-  },
-  {
-    title: "اختراق وحماية المواقع Burp Suite",
-    description: "احترف اكتشاف ثغرات المواقع المؤهلة للاختراق",
-    instructor: "م/كنعان الحلاج",
-    price: 9.99,
-    category_key: "security",
-    tags: ["مواقع", "burp suite", "burp", "ثغرات", "اختراق مواقع", "web hacking"]
-  },
-  {
-    title: "اختراق حسابات التواصل الاجتماعى Social Media Hacking",
-    description: "احترف اكتشاف ثغرات شبكات التواصل الاجتماعى",
-    instructor: "م/كنعان الحلاج",
-    price: 9.99,
-    category_key: "security",
-    tags: ["تواصل اجتماعي", "سوشيال ميديا", "اختراق حسابات", "social media", "hacking"]
-  },
-  {
-    title: "Wireshark Mastery for Ethical Hackers",
-    description: "تحليل ومراقبة حركة البيانات داخل الشبكات واكتشاف الهجمات",
-    instructor: "م/مؤمن محمد",
-    price: 12.99,
-    category_key: "security",
-    tags: ["wireshark", "واير شارك", "شبكات", "تحليل", "بيانات"]
-  },
-  {
-    title: "Cyber AI Hunter",
-    description: "تحليل التهديدات السيبرانية وصيد الهجمات باستخدام الذكاء الاصطناعي",
-    instructor: "م/مؤمن محمد",
-    price: 19.99,
-    category_key: "security",
-    tags: ["cyber", "ai", "ذكاء اصطناعي", "تهديدات", "هجمات"]
-  },
-  {
-    title: "الأمن السيبراني التطبيقي (اختبار الهجوم والدفاع)",
-    description: "Red vs Blue Penetration Testing",
-    instructor: "م/مؤمن محمد",
-    price: 19.99,
-    category_key: "security",
-    tags: ["penetration testing", "red team", "blue team", "هجوم", "دفاع", "pentest"]
-  },
-  {
-    title: "Advanced Network Security",
-    description: "دليلك العملي لتأمين الشبكات المتقدمة ومواجهة الهجمات السيبرانية",
-    instructor: "م/مؤمن محمد",
-    price: 19.99,
-    category_key: "security",
-    tags: ["network security", "شبكات", "تأمين", "advanced"]
-  },
-  {
-    title: "التشفير وأمن المعلومات Cryptography & Security",
-    description: "تقنيات التشفير وأمن المعلومات: دليل شامل لحماية البيانات",
-    instructor: "م/زياد محمود",
-    price: 12.99,
-    category_key: "security",
-    tags: ["تشفير", "cryptography", "أمن معلومات", "حماية بيانات"]
-  },
-  {
-    title: "الهندسة العكسية Reverse Engineering",
-    description: "كسر حماية البرامج وفك شفراتها",
-    instructor: "م/كنعان الحلاج",
-    price: 12.99,
-    category_key: "security",
-    tags: ["هندسة عكسية", "reverse engineering", "كسر حماية"]
-  },
-  {
-    title: "الويب المظلم Dark Web",
-    description: "المحتوى الذي لا يمكن الوصول إليه عبر محركات البحث التقليدية",
-    instructor: "م/وليد عماد",
-    price: 9.99,
-    category_key: "security",
-    tags: ["ويب مظلم", "dark web", "دارك ويب"]
-  },
-  {
-    title: "الطب الشرعى للكمبيوتر",
-    description: "جمع وتحليل الأدلة الرقمية لإثبات الجرائم الالكترونية",
-    instructor: "د/مدحت هاشم",
-    price: 9.99,
-    category_key: "security",
-    tags: ["طب شرعي", "forensics", "أدلة رقمية", "جرائم"]
-  },
-  {
-    title: "تصميم برامج التجسس Key Logger",
-    description: "تصميم برامج التجسس باستخدام لغة ++C مع شرح كامل لأساسيات اللغة",
-    instructor: "م/محمد على منصور",
-    price: 9.99,
-    category_key: "security",
-    tags: ["تجسس", "keylogger", "key logger", "c++", "برامج تجسس"]
-  },
-
-  // ═══════════════════════════════════
-  // 🌍 تعليم اللغات
-  // ═══════════════════════════════════
-  {
-    title: "تعلم اللغة الانجليزية English",
-    description: "14 مستوى فى المحادثة - القواعد - القراءة - الكتابة - الفونتكس",
-    instructor: "E-Academy",
-    price: 19.99,
-    category_key: "languages",
-    tags: ["انجليزي", "إنجليزي", "english", "إنجليزية", "لغة إنجليزية"],
-    bestseller: true
-  },
-  {
-    title: "تعلم اللغة الفرنسية French",
-    description: "12 مستوى فى المحادثة - القواعد - القراءة - الكتابة - الفونتكس",
-    instructor: "E-Academy",
-    price: 19.99,
-    category_key: "languages",
-    tags: ["فرنسي", "فرنسية", "french", "لغة فرنسية"]
-  },
-  {
-    title: "تعلم اللغة الالمانية Deutsch",
-    description: "4 مستويات من الصفر فى المحادثة - القواعد - القراءة - الكتابة",
-    instructor: "E-Academy",
-    price: 19.99,
-    category_key: "languages",
-    tags: ["ألماني", "المانى", "german", "deutsch", "لغة ألمانية"]
-  },
-  {
-    title: "تعلم أساسيات اللغة الصينية Chinese",
-    description: "المحادثة - القواعد - القراءة - الكتابة - قواعد النطق",
-    instructor: "هاجر رشوان",
-    price: 9.99,
-    category_key: "languages",
-    tags: ["صيني", "صينية", "chinese", "لغة صينية"]
-  },
-  {
-    title: "التحضير لإمتحان التوفل Preparing for the TOEFL exam",
-    description: "التدريب على الاستماع - القراءة - القواعد - المحادثة",
-    instructor: "إيناس السيد على",
-    price: 9.99,
-    category_key: "languages",
-    tags: ["توفل", "toefl", "امتحان", "اختبار"]
-  },
-  {
-    title: "التحضير لإمتحان أيلتس Preparing for the IELTS exam",
-    description: "التدريب على الاستماع - القراءة - القواعد - المحادثة",
-    instructor: "إيناس السيد على",
-    price: 9.99,
-    category_key: "languages",
-    tags: ["ايلتس", "أيلتس", "ielts", "امتحان"]
-  },
-  {
-    title: "تحسين نطق اللغة الإنجليزية Ice Breaker",
-    description: "تعلم أسرار النطق ومخارج الألفاظ لتتحدث مثل الأجانب",
-    instructor: "أحمد المقدم",
-    price: 9.99,
-    category_key: "languages",
-    tags: ["نطق", "إنجليزي", "english", "pronunciation"]
-  },
-  {
-    title: "الانجليزية للأعمال Business English",
-    description: "مفتاح النجاح والتعامل بثقة وكفاءة في بيئة الأعمال",
-    instructor: "أميرة طلعت",
-    price: 9.99,
-    category_key: "languages",
-    tags: ["إنجليزي أعمال", "business english", "بيزنس إنجلش"]
-  },
-
-  // ═══════════════════════════════════
-  // 📣 الديجيتال ماركيتنج
-  // ═══════════════════════════════════
-  {
-    title: "احترف إعلانات فيسبوك وانستجرام 2025",
-    description: "الكورس الاحترافى الشامل لإعلانات فيسبوك وانستجرام مع تقنيات الذكاء الاصطناعى",
-    instructor: "أحمد حسن خميس",
-    price: 12.99,
-    category_key: "marketing",
-    tags: ["فيسبوك", "انستجرام", "facebook", "instagram", "إعلانات", "ads"],
-    bestseller: true
-  },
-  {
-    title: "احترف إعلانات جوجل ويوتيوب",
-    description: "الكورس الاحترافى الشامل لعمل إعلانات جوجل ويوتيوب مع تقنيات الذكاء الاصطناعى",
-    instructor: "أحمد حسن خميس",
-    price: 12.99,
-    category_key: "marketing",
-    tags: ["جوجل", "يوتيوب", "google", "youtube", "إعلانات", "google ads"],
-    bestseller: true
-  },
-  {
-    title: "السيو الاحترافى للمواقع واليوتيوب SEO",
-    description: "On Page SEO - Technical SEO - Backlinks - YouTube SEO",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["سيو", "seo", "محركات بحث", "يوتيوب", "backlinks"],
-    bestseller: true
-  },
-  {
-    title: "الكوبى رايتنج Copywriting",
-    description: "أسرار صياغة المحتوى وفن كتابة الإعلانات",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["كوبي رايتنج", "كوبيرايتنج", "copywriting", "كتابة إعلانات"],
-    bestseller: true
-  },
-  {
-    title: "خطط التسويق الالكترونى Digital Marketing Plans",
-    description: "خطط محكمة لحملاتك الاعلانية فى المراحل المختلفة لقمع المبيعات",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["خطط تسويق", "تسويق الكتروني", "digital marketing", "قمع مبيعات"],
-    bestseller: true
-  },
-  {
-    title: "الايميل ماركيتنج Email Marketing",
-    description: "تسويق المنتجات والخدمات مجانا عبر البريد الالكترونى",
-    instructor: "أحمد حسن خميس",
-    price: 12.99,
-    category_key: "marketing",
-    tags: ["ايميل", "إيميل ماركيتنج", "email marketing", "بريد إلكتروني"],
-    bestseller: true
-  },
-  {
-    title: "إعلانات تيكتوك TikTok Ads 2025",
-    description: "الكورس الاحترافي الشامل لإعلانات تيكتوك بتقنيات الذكاء الاصطناعي",
-    instructor: "أحمد حسن خميس",
-    price: 12.99,
-    category_key: "marketing",
-    tags: ["تيكتوك", "tiktok", "إعلانات", "ads"]
-  },
-  {
-    title: "جوجل أناليتكس Google Analytics GA4",
-    description: "احترف ربط وتحليل البيانات وتتبع التفاعلات على مواقع الويب",
-    instructor: "محمد خلف",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["جوجل أناليتكس", "google analytics", "ga4", "تحليل بيانات"]
-  },
-  {
-    title: "جوجل تاج مانجر Google Tag Manager",
-    description: "احترف استخدام Google Tag Manager وإنشاء Web and Server Containers",
-    instructor: "محمد خلف",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["تاج مانجر", "tag manager", "gtm", "جوجل"]
-  },
-  {
-    title: "إنشاء شات بوت احترافى باستخدام ManyChat",
-    description: "تعلم انشاء شات بوت احترفى لمنصات التواصل الاجتماعى",
-    instructor: "م/زياد محمود",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["شات بوت", "manychat", "chatbot", "بوت"]
-  },
-  {
-    title: "التسويق بالأداء Performance Marketing",
-    description: "ادفع للإعلانات فقط عندما تحقق النتائج المطلوبة فعلاً",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["performance marketing", "تسويق بالأداء", "إعلانات"]
-  },
-  {
-    title: "كتابة المحتوى الاحترافى للسوشيال ميديا",
-    description: "تعلم من الصفر إلى الاحتراف كتابة محتوى جاذب لجمهور السوشيال ميديا",
-    instructor: "علاء صلاح الرفاعى",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["كتابة محتوى", "سوشيال ميديا", "محتوى", "content"]
-  },
-  {
-    title: "التسويق على واتساب Whatsapp Marketing",
-    description: "احترف التسويق وجذب عملاء جدد من خلال واتساب بيزنس",
-    instructor: "أحمد حنفى",
-    price: 0,
-    category_key: "marketing",
-    tags: ["واتساب", "whatsapp", "واتس اب", "تسويق"]
-  },
-  {
-    title: "بناء البراند الشخصى على لينكد ان Linkedin",
-    description: "انشئ شبكتك الاجتماعية باحترافية على لينكد ان",
-    instructor: "د/محمد شعبان",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["لينكد ان", "linkedin", "براند شخصي", "personal brand"]
-  },
-  {
-    title: "إدارة علاقات العملاء ZOHO CRM",
-    description: "الردود التلقائية على العملاء وإدارة عمليات البيع تلقائيًا",
-    instructor: "م/كنعان الحلاج",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["crm", "zoho", "إدارة عملاء", "علاقات عملاء"]
-  },
-  {
-    title: "إنشاء سيلز فانل ديناميكية Dynamic Sales Funnel",
-    description: "إنشاء سيلز فانل لتتبع رحلة العميل تلقائيًا وتقديم عروض تحفزه",
-    instructor: "م/أحمد عباس",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["سيلز فانل", "sales funnel", "قمع مبيعات"]
-  },
-  {
-    title: "استراتيجيات العروض والخصومات",
-    description: "تعرف على طرق وأفكار العروض والخصومات والأدوات المستخدمة",
-    instructor: "أحمد حسن خميس",
-    price: 9.99,
-    category_key: "marketing",
-    tags: ["عروض", "خصومات", "offers", "discounts"]
-  },
-
-  // ═══════════════════════════════════
-  // 💻 تطوير وبرمجة المواقع
-  // ═══════════════════════════════════
-  {
-    title: "الدليل الشامل لتعلم Node.js",
-    description: "من الأساسيات حتى بناء REST API وتطبيق مفاهيم الخادم عمليًا",
-    instructor: "م/عمرو عبد الفتاح",
-    price: 14.99,
-    category_key: "webdev",
-    tags: ["node", "node.js", "نود", "rest api", "سيرفر", "backend", "javascript"]
-  },
-
-  // ═══════════════════════════════════
-  // 🎬 التصوير والمونتاج والأنيميشن
-  // ═══════════════════════════════════
-  {
-    title: "احتراف تحريك الشخصيات باستخدام MOHO",
-    description: "ابدأ من الصفر واصنع شخصيات كرتونية نابضة بالحياة",
-    instructor: "م/مصطفى أبوالفضل",
-    price: 12.99,
-    category_key: "video",
-    tags: ["moho", "موهو", "تحريك", "أنيميشن", "animation", "شخصيات كرتونية"]
-  },
-
-  // ═══════════════════════════════════
-  // 🚀 الإدارة والأعمال
-  // ═══════════════════════════════════
-  {
-    title: "بيزنس صح (معادلة المشروع الناجح)",
-    description: "تحويل فكرتك إلى منظومة عمل تحقق ربح واستمرارية",
-    instructor: "أحمد إبرهيم",
-    price: 12.99,
-    category_key: "business",
-    tags: ["بيزنس", "مشروع", "business", "ريادة أعمال", "startup"]
-  }
-];
-
-/* ══════════════════════════════════════
-   🔄 TERM EXPANSIONS (Arabic ↔ English)
+   🔄 TERM EXPANSIONS
 ══════════════════════════════════════ */
 
 const TERM_EXPANSIONS = {
@@ -965,75 +419,56 @@ const TERM_EXPANSIONS = {
   "فتوشوب": ["photoshop", "فوتوشوب", "فتوشوب", "Photoshop"],
   "photoshop": ["photoshop", "فوتوشوب", "فتوشوب", "Photoshop", "Adobe Photoshop"],
   "اليستريتور": ["illustrator", "اليستريتور", "اليستراتور", "الستريتور", "Illustrator", "Adobe illustrator"],
-  "اليستراتور": ["illustrator", "اليستريتور", "اليستراتور", "الستريتور", "Illustrator", "Adobe illustrator"],
-  "الستريتور": ["illustrator", "اليستريتور", "اليستراتور", "الستريتور", "Illustrator"],
+  "اليستراتور": ["illustrator", "اليستريتور", "اليستراتور", "الستريتور", "Illustrator"],
   "illustrator": ["illustrator", "اليستريتور", "اليستراتور", "Illustrator", "Adobe illustrator"],
   "كانفا": ["canva", "كانفا", "Canva"],
   "canva": ["canva", "كانفا", "Canva"],
-  "إنديزاين": ["indesign", "إنديزاين", "انديزاين", "InDesign", "Adobe InDesign"],
+  "إنديزاين": ["indesign", "إنديزاين", "انديزاين", "InDesign"],
   "انديزاين": ["indesign", "إنديزاين", "انديزاين", "InDesign"],
   "indesign": ["indesign", "إنديزاين", "انديزاين", "InDesign"],
-  "لايتروم": ["lightroom", "لايت رووم", "لايتروم", "Lightroom Classic"],
-  "لايت رووم": ["lightroom", "لايت رووم", "لايتروم", "Lightroom Classic"],
-  "lightroom": ["lightroom", "لايتروم", "لايت رووم", "Lightroom Classic"],
+  "لايتروم": ["lightroom", "لايت رووم", "لايتروم", "Lightroom"],
+  "lightroom": ["lightroom", "لايتروم", "Lightroom"],
   "فيجما": ["figma", "فيجما", "Figma", "FIGMA"],
   "figma": ["figma", "فيجما", "Figma", "FIGMA"],
-  "تصميم": ["تصميم", "design", "جرافيك", "graphic", "تصميمات"],
+  "تصميم": ["تصميم", "design", "جرافيك", "graphic"],
   "جرافيك": ["جرافيك", "جرافيكس", "graphic", "graphics", "تصميم"],
-  "لوجو": ["لوجو", "logo", "شعار", "شعارات", "Logos"],
-  "شعار": ["شعار", "لوجو", "logo", "شعارات", "Logos"],
-  "هوية بصرية": ["هوية بصرية", "هوية", "brand", "branding", "علامة تجارية"],
-  "انفوجرافيك": ["انفوجرافيك", "إنفوجرافيك", "infographic", "Infographic"],
-  "تيبوجرافي": ["تيبوجرافي", "typography", "Typography"],
-  "بريمير": ["premiere", "بريمير", "بريميير", "Premiere", "Adobe Premiere"],
-  "premiere": ["premiere", "بريمير", "Premiere", "Adobe Premiere"],
+  "لوجو": ["لوجو", "logo", "شعار", "شعارات"],
+  "شعار": ["شعار", "لوجو", "logo", "شعارات"],
+  "هوية بصرية": ["هوية بصرية", "brand", "branding"],
+  "بريمير": ["premiere", "بريمير", "بريميير", "Premiere"],
+  "premiere": ["premiere", "بريمير", "Premiere"],
   "أفتر إفكتس": ["after effects", "أفتر إفكتس", "افتر افكتس", "After Effects"],
-  "افتر افكتس": ["after effects", "أفتر إفكتس", "افتر افكتس", "After Effects"],
   "after effects": ["after effects", "أفتر إفكتس", "After Effects"],
   "مونتاج": ["مونتاج", "montage", "editing", "فيديو"],
-  "موشن جرافيك": ["موشن جرافيك", "motion graphic", "motion graphics"],
   "أنيميشن": ["أنيميشن", "انيميشن", "animation", "تحريك"],
   "animation": ["أنيميشن", "animation", "تحريك"],
-  "moho": ["moho", "MOHO", "موهو", "تحريك شخصيات"],
+  "moho": ["moho", "MOHO", "موهو"],
   "بايثون": ["python", "بايثون", "Python"],
   "python": ["python", "بايثون", "Python"],
   "جافا": ["java", "جافا", "Java"],
   "java": ["java", "جافا", "Java"],
-  "جافاسكريبت": ["javascript", "جافاسكريبت", "JavaScript", "JS"],
   "javascript": ["javascript", "جافاسكريبت", "JavaScript", "JS"],
-  "سي شارب": ["c#", "سي شارب", "C#"],
   "c#": ["c#", "سي شارب", "C#"],
   "c++": ["c++", "سي بلس بلس", "C++"],
   "برمجة": ["برمجة", "programming", "كود", "coding"],
-  "ريأكت": ["react", "ريأكت", "رياكت", "React"],
   "react": ["react", "ريأكت", "React", "React Native"],
-  "فلاتر": ["flutter", "فلاتر", "Flutter"],
   "flutter": ["flutter", "فلاتر", "Flutter"],
-  "نود": ["node", "نود", "Node", "node.js", "Node.js"],
   "node": ["node", "نود", "Node", "node.js", "Node.js"],
   "node.js": ["node", "نود", "Node.js", "node.js"],
-  "لارافيل": ["laravel", "لارافيل", "Laravel"],
   "laravel": ["laravel", "لارافيل", "Laravel"],
   "ووردبريس": ["wordpress", "ووردبريس", "WordPress"],
   "wordpress": ["wordpress", "ووردبريس", "WordPress"],
-  "html": ["html", "HTML"],
-  "css": ["css", "CSS"],
   "أوتوكاد": ["autocad", "أوتوكاد", "اوتوكاد", "AutoCAD"],
   "autocad": ["autocad", "أوتوكاد", "AutoCAD"],
   "ريفت": ["revit", "ريفت", "Revit"],
   "revit": ["revit", "ريفت", "Revit"],
-  "3ds max": ["3ds max", "3d max", "ثري دي ماكس"],
   "بلندر": ["blender", "بلندر", "Blender"],
   "blender": ["blender", "بلندر", "Blender"],
-  "إكسيل": ["excel", "إكسيل", "اكسيل", "Excel"],
   "اكسيل": ["excel", "إكسيل", "اكسيل", "Excel"],
   "excel": ["excel", "إكسيل", "اكسيل", "Excel"],
-  "وورد": ["word", "وورد", "Word"],
-  "word": ["word", "وورد", "Word"],
-  "كالي لينكس": ["kali", "كالي", "كالي لينكس", "Kali Linux", "KALI"],
   "كالي": ["kali", "كالي", "كالي لينكس", "KALI"],
   "kali": ["kali", "كالي", "Kali", "KALI Linux"],
-  "اختراق": ["اختراق", "hacking", "hack", "ethical hacking", "Hacking"],
+  "اختراق": ["اختراق", "hacking", "hack", "ethical hacking"],
   "hacking": ["اختراق", "hacking", "hack", "Hacking"],
   "حماية": ["حماية", "security", "سيبراني", "cyber"],
   "سيبراني": ["سيبراني", "cyber", "حماية", "security", "Cyber Security"],
@@ -1042,38 +477,34 @@ const TERM_EXPANSIONS = {
   "seo": ["seo", "سيو", "SEO"],
   "تسويق": ["تسويق", "marketing", "ماركيتنج"],
   "marketing": ["تسويق", "marketing", "ماركيتنج"],
-  "ماركيتنج": ["تسويق", "marketing", "ماركيتنج"],
-  "إعلانات": ["إعلانات", "اعلانات", "ads", "إعلان"],
   "كوبي رايتنج": ["كوبي رايتنج", "copywriting", "Copywriting"],
   "copywriting": ["كوبي رايتنج", "copywriting", "Copywriting"],
   "chatgpt": ["chatgpt", "شات جي بي تي", "ChatGPT"],
-  "شات جي بي تي": ["chatgpt", "شات جي بي تي", "ChatGPT"],
   "ذكاء اصطناعي": ["ذكاء اصطناعي", "ai", "AI"],
   "انجليزي": ["انجليزي", "إنجليزي", "english", "English"],
-  "إنجليزي": ["انجليزي", "إنجليزي", "english", "English"],
   "english": ["انجليزي", "إنجليزي", "english", "English"],
   "فرنسي": ["فرنسي", "french", "French", "فرنسية"],
   "french": ["فرنسي", "french", "French"],
   "ألماني": ["ألماني", "المانى", "german", "deutsch"],
-  "المانى": ["ألماني", "المانى", "german", "deutsch"],
-  "ايلتس": ["ielts", "ايلتس", "أيلتس", "IELTS"],
   "ielts": ["ielts", "ايلتس", "IELTS"],
-  "توفل": ["toefl", "توفل", "TOEFL"],
   "toefl": ["toefl", "توفل", "TOEFL"],
   "فريلانس": ["فريلانس", "freelance", "عمل حر"],
-  "freelance": ["فريلانس", "freelance", "عمل حر"],
   "أمازون": ["amazon", "أمازون", "امازون", "Amazon"],
   "amazon": ["amazon", "أمازون", "Amazon"],
   "يوتيوب": ["youtube", "يوتيوب", "YouTube"],
   "youtube": ["youtube", "يوتيوب", "YouTube"],
   "بيزنس": ["بيزنس", "business", "أعمال"],
-  "business": ["بيزنس", "business", "Business"],
   "أردوينو": ["arduino", "أردوينو", "اردوينو", "Arduino"],
   "arduino": ["arduino", "أردوينو", "Arduino"],
   "شبكات": ["شبكات", "network", "networking", "ccna"],
-  "ccna": ["ccna", "CCNA", "شبكات"],
   "sql": ["sql", "SQL", "قواعد بيانات"],
   "comfyui": ["comfyui", "ComfyUI", "كومفي"],
+  "burp": ["burp suite", "burp", "Burp Suite"],
+  "إعلانات": ["إعلانات", "اعلانات", "ads", "إعلان"],
+  "swift": ["swift", "Swift", "سويفت"],
+  "kotlin": ["kotlin", "Kotlin", "كوتلن"],
+  "agile": ["agile", "Agile", "أجايل", "scrum", "Scrum"],
+  "iso": ["iso", "ISO", "أيزو", "جودة"],
 };
 
 function expandSearchTerms(query) {
@@ -1081,7 +512,6 @@ function expandSearchTerms(query) {
   const terms = new Set();
   const cleaned = query.trim();
   terms.add(cleaned);
-
   const lower = cleaned.toLowerCase();
 
   if (TERM_EXPANSIONS[lower]) TERM_EXPANSIONS[lower].forEach(t => terms.add(t));
@@ -1142,12 +572,7 @@ const INTENT_PAGES = {
   PAYMENT: "/p/Payments",
   SUBSCRIPTION: "/p/subscriptions",
   AFFILIATE: "/p/affiliate",
-  AUTHOR: "/p/author",
-  COURSE_SEARCH: null,
-  START_LEARNING: null,
-  ACCESS_ISSUE: null,
-  GREETING: null,
-  GENERAL: null
+  AUTHOR: "/p/author"
 };
 
 /* ══════════════════════════════════════
@@ -1319,7 +744,7 @@ async function classifyMessage(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════
-   🔍 KEYWORD-BASED INTENT DETECTION (FALLBACK)
+   🔍 KEYWORD INTENT DETECTION (FALLBACK)
 ══════════════════════════════════════ */
 
 function detectIntentFromKeywords(message) {
@@ -1366,12 +791,13 @@ function detectCategory(text) {
     "video", "graphics", "art",
     "earning", "investment", "accounting",
     "business", "skills", "psychology",
-    "languages", "kids", "electronics", "basics"
+    "languages", "kids", "electronics", "basics",
+    "data", "mobile"
   ];
 
   for (const key of orderedKeys) {
     const cat = CATEGORY_MAP[key];
-    if (cat.keywords.some(k => msg.includes(k))) return { ...cat, key };
+    if (cat && cat.keywords.some(k => msg.includes(k))) return { ...cat, key };
   }
   return null;
 }
@@ -1401,28 +827,144 @@ function cleanSearchTerm(raw) {
 }
 
 /* ══════════════════════════════════════
-   🔗 SMART LINK INJECTION
+   🔍 DATABASE: SEARCH COURSES (FIXED v4)
 ══════════════════════════════════════ */
 
-function appendLink(reply, intent) {
-  const config = INTENT_LINKS[intent];
-  if (!config) return reply;
-  if (reply.includes(config.url)) return reply;
-  reply += `<br><br><a href="${config.url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">${config.text}</a>`;
-  return reply;
+async function searchCoursesDB(query) {
+  try {
+    if (!query || query.trim().length === 0) return [];
+    const allTerms = expandSearchTerms(query);
+
+    console.log(`🔎 DB Search: "${query}" → ${allTerms.length} expanded terms`);
+
+    // Strategy 1: ilike on title
+    for (const term of allTerms) {
+      if (term.length < 2) continue;
+      try {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT)
+          .ilike(DB_COL.title, `%${term}%`)
+          .limit(5);
+
+        if (error) {
+          console.error(`❌ DB title error "${term}":`, error.message);
+          continue;
+        }
+        if (data && data.length > 0) {
+          console.log(`✅ DB title "${term}": ${data.length} results`);
+          return deduplicateCourses(data.map(mapCourse));
+        }
+      } catch (e) {
+        console.error(`❌ DB title exception "${term}":`, e.message);
+      }
+    }
+
+    // Strategy 2: ilike on description
+    for (const term of allTerms.slice(0, 5)) {
+      if (term.length < 2) continue;
+      try {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT)
+          .ilike(DB_COL.description, `%${term}%`)
+          .limit(5);
+
+        if (error) continue;
+        if (data && data.length > 0) {
+          console.log(`✅ DB desc "${term}": ${data.length} results`);
+          return deduplicateCourses(data.map(mapCourse));
+        }
+      } catch (e) {}
+    }
+
+    // Strategy 3: ilike on subtitle
+    for (const term of allTerms.slice(0, 5)) {
+      if (term.length < 2) continue;
+      try {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT)
+          .ilike(DB_COL.subtitle, `%${term}%`)
+          .limit(5);
+
+        if (error) continue;
+        if (data && data.length > 0) {
+          console.log(`✅ DB subtitle "${term}": ${data.length} results`);
+          return deduplicateCourses(data.map(mapCourse));
+        }
+      } catch (e) {}
+    }
+
+    // Strategy 4: filter by domain (category)
+    const category = detectCategory(query);
+    if (category && category.domain) {
+      try {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT)
+          .ilike(DB_COL.domain, `%${category.domain}%`)
+          .limit(5);
+
+        if (!error && data && data.length > 0) {
+          console.log(`✅ DB domain "${category.domain}": ${data.length} results`);
+          return deduplicateCourses(data.map(mapCourse));
+        }
+      } catch (e) {}
+    }
+
+    // Strategy 5: category searchTerms on title
+    if (category && category.searchTerms) {
+      for (const catTerm of category.searchTerms) {
+        try {
+          const { data, error } = await supabase
+            .from("courses")
+            .select(COURSE_SELECT)
+            .ilike(DB_COL.title, `%${catTerm}%`)
+            .limit(5);
+
+          if (!error && data && data.length > 0) {
+            console.log(`✅ DB catTerm "${catTerm}": ${data.length} results`);
+            return deduplicateCourses(data.map(mapCourse));
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Strategy 6: ilike on full_content (last resort)
+    for (const term of allTerms.slice(0, 3)) {
+      if (term.length < 3) continue;
+      try {
+        const { data, error } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT)
+          .ilike(DB_COL.full_content, `%${term}%`)
+          .limit(5);
+
+        if (error) continue;
+        if (data && data.length > 0) {
+          console.log(`✅ DB full_content "${term}": ${data.length} results`);
+          return deduplicateCourses(data.map(mapCourse));
+        }
+      } catch (e) {}
+    }
+
+    console.log(`⚠️ DB: No results for "${query}"`);
+    return [];
+  } catch (err) {
+    console.error("❌ DB search exception:", err.message);
+    return [];
+  }
 }
 
-function appendMultipleLinks(reply, intent, userMessage) {
-  const msg = userMessage.toLowerCase();
-  reply = appendLink(reply, intent);
-  for (const [linkIntent, config] of Object.entries(INTENT_LINKS)) {
-    if (linkIntent === intent) continue;
-    const mentioned = config.keywords.some(k => msg.includes(k) || reply.toLowerCase().includes(k));
-    if (mentioned && !reply.includes(config.url)) {
-      reply += `<br><a href="${config.url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">${config.text}</a>`;
-    }
-  }
-  return reply;
+function deduplicateCourses(courses) {
+  const seen = new Set();
+  return courses.filter(c => {
+    const key = c.url || c.title;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /* ══════════════════════════════════════
@@ -1451,130 +993,10 @@ async function getPageByURL(urlPath) {
 }
 
 /* ══════════════════════════════════════
-   🔍 DATABASE: SEARCH COURSES
+   🎨 FORMAT COURSE RESULTS (v4)
 ══════════════════════════════════════ */
 
-async function searchCoursesDB(query) {
-  try {
-    if (!query || query.trim().length === 0) return [];
-    const allTerms = expandSearchTerms(query);
-
-    // Strategy 1: ilike on title
-    for (const term of allTerms) {
-      try {
-        const { data, error } = await supabase
-          .from("courses")
-          .select("title, description, url, price, instructor, image_url")
-          .ilike("title", `%${term}%`).limit(5);
-        if (!error && data && data.length > 0) {
-          console.log(`✅ DB title ilike "${term}": ${data.length} results`);
-          return deduplicateCourses(data);
-        }
-      } catch (e) {}
-    }
-
-    // Strategy 2: ilike on description
-    for (const term of allTerms) {
-      try {
-        const { data, error } = await supabase
-          .from("courses")
-          .select("title, description, url, price, instructor, image_url")
-          .ilike("description", `%${term}%`).limit(5);
-        if (!error && data && data.length > 0) {
-          console.log(`✅ DB desc ilike "${term}": ${data.length} results`);
-          return deduplicateCourses(data);
-        }
-      } catch (e) {}
-    }
-
-    // Strategy 3: category searchTerms
-    const category = detectCategory(query);
-    if (category && category.searchTerms) {
-      for (const catTerm of category.searchTerms) {
-        try {
-          const { data, error } = await supabase
-            .from("courses")
-            .select("title, description, url, price, instructor, image_url")
-            .ilike("title", `%${catTerm}%`).limit(5);
-          if (!error && data && data.length > 0) {
-            console.log(`✅ DB catTerm "${catTerm}": ${data.length} results`);
-            return deduplicateCourses(data);
-          }
-        } catch (e) {}
-      }
-    }
-
-    return [];
-  } catch (err) {
-    console.error("❌ DB search exception:", err.message);
-    return [];
-  }
-}
-
-function deduplicateCourses(courses) {
-  const seen = new Set();
-  return courses.filter(c => {
-    const key = c.url || c.title;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-/* ══════════════════════════════════════
-   🔍 KNOWN COURSES: LOCAL SEARCH (FALLBACK)
-══════════════════════════════════════ */
-
-function searchKnownCourses(query) {
-  if (!query) return [];
-
-  const allTerms = expandSearchTerms(query);
-  const allTermsLower = allTerms.map(t => t.toLowerCase());
-  const results = [];
-
-  for (const course of KNOWN_COURSES) {
-    const titleLower = course.title.toLowerCase();
-    const descLower = (course.description || "").toLowerCase();
-    const tagsLower = course.tags.map(t => t.toLowerCase());
-    const searchPool = `${titleLower} ${descLower} ${tagsLower.join(" ")}`;
-
-    let matched = false;
-
-    // Check if any expanded term appears in title, description, or tags
-    for (const term of allTermsLower) {
-      if (term.length < 2) continue;
-
-      // Direct pool search
-      if (searchPool.includes(term)) {
-        matched = true;
-        break;
-      }
-
-      // Tag exact match
-      if (tagsLower.some(tag => tag === term || tag.includes(term) || term.includes(tag))) {
-        matched = true;
-        break;
-      }
-    }
-
-    if (matched) results.push(course);
-  }
-
-  // Sort: bestsellers first
-  results.sort((a, b) => {
-    if (a.bestseller && !b.bestseller) return -1;
-    if (!a.bestseller && b.bestseller) return 1;
-    return 0;
-  });
-
-  return results.slice(0, 5);
-}
-
-/* ══════════════════════════════════════
-   🎨 FORMAT COURSE RESULTS (v3 — handles known courses)
-══════════════════════════════════════ */
-
-function formatCourseResults(courses, category, fromKnown = false) {
+function formatCourseResults(courses, category) {
   if (!courses || courses.length === 0) return null;
 
   let html = `<b>إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -1582,29 +1004,34 @@ function formatCourseResults(courses, category, fromKnown = false) {
   courses.forEach((course, index) => {
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
-    // Image (if available from DB)
+    // Course link — uses actual course URL from DB
+    const courseLink = course.url || (category ? category.url : "https://easyt.online");
+
+    // Image
     if (course.image_url) {
-      const link = course.url || (category ? category.url : "https://easyt.online");
-      html += `<a href="${link}" target="_blank">`;
+      html += `<a href="${courseLink}" target="_blank">`;
       html += `<img src="${course.image_url}" alt="${course.title}" style="width:100%;max-width:300px;border-radius:8px;margin-bottom:8px;">`;
       html += `</a><br>`;
     }
 
-    // Title
-    const courseLink = course.url || (category ? category.url : "https://easyt.online");
+    // Title with link to actual course page
     html += `<a href="${courseLink}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
     html += `${index + 1}. ${course.title}`;
     html += `</a><br>`;
 
     // Instructor
-    if (course.instructor) html += `👤 المحاضر: ${course.instructor}<br>`;
+    if (course.instructor) {
+      html += `👤 المحاضر: ${course.instructor}<br>`;
+    }
 
     // Price
     if (course.price !== undefined && course.price !== null) {
-      if (course.price === 0) {
+      const priceStr = String(course.price).trim();
+      if (priceStr === "0" || priceStr === "0.00" || priceStr.toLowerCase() === "free" || priceStr === "$0") {
         html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
       } else {
-        html += `💰 السعر: <b>$${course.price}</b><br>`;
+        const displayPrice = priceStr.startsWith("$") ? priceStr : `$${priceStr}`;
+        html += `💰 السعر: <b>${displayPrice}</b><br>`;
       }
     }
 
@@ -1616,7 +1043,7 @@ function formatCourseResults(courses, category, fromKnown = false) {
       html += `📝 ${shortDesc}<br>`;
     }
 
-    // CTA
+    // CTA Button — links to actual course
     html += `<br><a href="${courseLink}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a>`;
 
     html += `</div>`;
@@ -1624,7 +1051,7 @@ function formatCourseResults(courses, category, fromKnown = false) {
 
   // Category link
   if (category) {
-    html += `<br>🔗 <b>لمعرفة كل دورات ${category.name}:</b><br>`;
+    html += `<br>🔗 <b>تصفح كل دورات ${category.name}:</b><br>`;
     html += `<a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تصفح جميع دورات ${category.name} ←</a>`;
   } else {
     html += `<br><a href="https://easyt.online" target="_blank" style="color:#c40000;font-weight:bold;">🌐 تصفح جميع الدورات</a>`;
@@ -1635,6 +1062,31 @@ function formatCourseResults(courses, category, fromKnown = false) {
   html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك العام (49$ بس في عرض رمضان)</a>`;
 
   return html;
+}
+
+/* ══════════════════════════════════════
+   🔗 SMART LINK INJECTION
+══════════════════════════════════════ */
+
+function appendLink(reply, intent) {
+  const config = INTENT_LINKS[intent];
+  if (!config) return reply;
+  if (reply.includes(config.url)) return reply;
+  reply += `<br><br><a href="${config.url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">${config.text}</a>`;
+  return reply;
+}
+
+function appendMultipleLinks(reply, intent, userMessage) {
+  const msg = userMessage.toLowerCase();
+  reply = appendLink(reply, intent);
+  for (const [linkIntent, config] of Object.entries(INTENT_LINKS)) {
+    if (linkIntent === intent) continue;
+    const mentioned = config.keywords.some(k => msg.includes(k) || reply.toLowerCase().includes(k));
+    if (mentioned && !reply.includes(config.url)) {
+      reply += `<br><a href="${config.url}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">${config.text}</a>`;
+    }
+  }
+  return reply;
 }
 
 /* ══════════════════════════════════════
@@ -1786,12 +1238,7 @@ app.post("/chat", chatLimiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    /* ══════════════════════════════════════
-       Step 4: COURSE_SEARCH — 3-TIER FALLBACK
-       Tier 1: Database (Supabase)
-       Tier 2: KNOWN_COURSES (static catalog)
-       Tier 3: GPT with KB context
-    ══════════════════════════════════════ */
+    /* ── Step 4: COURSE_SEARCH (DB → GPT) ── */
     if (intent === "COURSE_SEARCH") {
       const rawTerm = search_query || entity || message;
       const searchTerm = cleanSearchTerm(rawTerm);
@@ -1804,94 +1251,67 @@ app.post("/chat", chatLimiter, async (req, res) => {
       }
       if (!category) category = detectCategory(rawTerm) || detectCategory(message);
 
-      console.log(`🔎 COURSE_SEARCH: raw="${rawTerm}" → clean="${searchTerm}" | category=${category?.name || "none"}`);
+      console.log(`🔎 COURSE_SEARCH: "${rawTerm}" → clean="${searchTerm}" | category=${category?.name || "none"}`);
 
       // ── TIER 1: Database Search ──
       let courses = await searchCoursesDB(searchTerm);
 
-      // Retry with original message
-      if ((!courses || courses.length === 0) && searchTerm !== message) {
+      // Retry with original message if different
+      if (courses.length === 0 && searchTerm !== message) {
         courses = await searchCoursesDB(cleanSearchTerm(message));
       }
 
-      if (courses && courses.length > 0) {
-        console.log(`✅ TIER 1 (DB): Found ${courses.length} courses`);
-        const reply = formatCourseResults(courses, category, false);
-        session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات من DB عن: ${displayTerm}]` });
+      // Retry with entity
+      if (courses.length === 0 && entity && entity !== searchTerm) {
+        courses = await searchCoursesDB(entity);
+      }
+
+      // Retry with domain directly
+      if (courses.length === 0 && category && category.domain) {
+        try {
+          const { data, error } = await supabase
+            .from("courses")
+            .select(COURSE_SELECT)
+            .ilike(DB_COL.domain, `%${category.domain}%`)
+            .limit(5);
+
+          if (!error && data && data.length > 0) {
+            console.log(`✅ Domain fallback "${category.domain}": ${data.length} results`);
+            courses = deduplicateCourses(data.map(mapCourse));
+          }
+        } catch (e) {}
+      }
+
+      if (courses.length > 0) {
+        console.log(`✅ Found ${courses.length} courses from DB`);
+        const reply = formatCourseResults(courses, category);
+        session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${displayTerm}]` });
         return res.json({ reply, session_id });
       }
 
-      // ── TIER 2: KNOWN_COURSES (Static Catalog) ──
-      console.log(`⚠️ DB returned 0. Trying KNOWN_COURSES...`);
-
-      let knownCourses = searchKnownCourses(searchTerm);
-
-      // Retry with entity or message
-      if (knownCourses.length === 0 && entity) {
-        knownCourses = searchKnownCourses(entity);
-      }
-      if (knownCourses.length === 0) {
-        knownCourses = searchKnownCourses(message);
-      }
-
-      // Also try category searchTerms
-      if (knownCourses.length === 0 && category && category.searchTerms) {
-        for (const t of category.searchTerms) {
-          knownCourses = searchKnownCourses(t);
-          if (knownCourses.length > 0) break;
-        }
-      }
-
-      if (knownCourses.length > 0) {
-        console.log(`✅ TIER 2 (KNOWN): Found ${knownCourses.length} courses`);
-
-        // Add category URL as fallback link for known courses
-        const formattedCourses = knownCourses.map(c => ({
-          title: c.title,
-          description: c.description,
-          instructor: c.instructor,
-          price: c.price,
-          url: null, // No direct URL — formatCourseResults will use category link
-          image_url: null
-        }));
-
-        // Use course's category if we don't have one
-        if (!category && knownCourses[0].category_key && CATEGORY_MAP[knownCourses[0].category_key]) {
-          category = { ...CATEGORY_MAP[knownCourses[0].category_key], key: knownCourses[0].category_key };
-        }
-
-        const reply = formatCourseResults(formattedCourses, category, true);
-        session.history.push({ role: "assistant", content: `[عرض ${knownCourses.length} دورات من الكتالوج عن: ${displayTerm}]` });
-        return res.json({ reply, session_id });
-      }
-
-      // ── TIER 3: GPT Fallback with KB ──
-      console.log(`⚠️ KNOWN_COURSES returned 0. Falling back to GPT...`);
+      // ── TIER 2: GPT Fallback ──
+      console.log(`⚠️ DB returned 0. Falling back to GPT...`);
 
       let context = PLATFORM_KB;
       if (category) {
         context += `\n\nالمستخدم مهتم بمجال: ${category.name}\nرابط التصنيف: ${category.url}`;
       }
 
-      // Add a system hint to guide GPT
-      const gptHintMsg = {
+      const gptHint = {
         role: "system",
-        content: `المستخدم يبحث عن دورات في "${displayTerm}". حاول تقترح دورات من المعلومات المتاحة لك. لو مش لاقي دورات محددة، وجّهه لرابط التصنيف المناسب لو موجود، أو لصفحة الدورات الرئيسية.`
+        content: `المستخدم يبحث عن دورات في "${displayTerm}". لو مش لاقي دورات محددة، وجّهه لرابط التصنيف المناسب لو موجود، أو لصفحة الموقع الرئيسية.`
       };
-      session.history.push(gptHintMsg);
+      session.history.push(gptHint);
 
       let reply = await generateResponse(session, context, isFirstMessage);
       reply = formatReply(reply);
 
-      // Remove the hint from history
-      session.history.pop();
+      session.history.pop(); // Remove hint
 
-      // Make sure category link is there
       if (category && !reply.includes(category.url)) {
         reply += `<br><br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${category.name}</a>`;
       }
 
-      // Make sure subscription link is there
       if (!reply.includes("subscriptions")) {
         reply += `<br><br>💡 تقدر توصل لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك العام (49$ بس في عرض رمضان)</a>`;
       }
@@ -1949,9 +1369,31 @@ app.get("/health", (req, res) => {
   res.json({
     status: "ok",
     activeSessions: sessions.size,
-    knownCourses: KNOWN_COURSES.length,
+    categories: Object.keys(CATEGORY_MAP).length,
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
+  });
+});
+
+/* ══════════════════════════════════════
+   🔧 DEBUG: Test DB Search (remove in production)
+══════════════════════════════════════ */
+
+app.get("/debug/search/:query", async (req, res) => {
+  const query = decodeURIComponent(req.params.query);
+  console.log(`🧪 Debug search: "${query}"`);
+
+  const courses = await searchCoursesDB(query);
+  res.json({
+    query,
+    results: courses.length,
+    courses: courses.map(c => ({
+      title: c.title,
+      url: c.url,
+      instructor: c.instructor,
+      price: c.price,
+      hasImage: !!c.image_url
+    }))
   });
 });
 
@@ -1962,11 +1404,11 @@ app.use((req, res) => { res.status(404).json({ error: "Not Found" }); });
 ══════════════════════════════════════ */
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot Server v3.0`);
+  console.log(`\n🤖 easyT Chatbot Server v4.0`);
   console.log(`📡 Port ${PORT}`);
-  console.log(`📦 Known courses: ${KNOWN_COURSES.length}`);
   console.log(`📂 Categories: ${Object.keys(CATEGORY_MAP).length}`);
   console.log(`🔄 Term expansions: ${Object.keys(TERM_EXPANSIONS).length}`);
+  console.log(`🗄️  DB columns: ${Object.values(DB_COL).join(", ")}`);
   console.log(`⏰ ${new Date().toLocaleString("ar-EG")}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 });
