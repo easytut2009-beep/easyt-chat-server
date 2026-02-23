@@ -36,50 +36,7 @@ async function createEmbedding(text) {
     model: "text-embedding-3-small",
     input: text
   });
-
   return response.data[0].embedding;
-}
-
-/* ==============================
-   ✅ INTENT CLASSIFIER
-============================== */
-
-async function detectIntent(message) {
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `
-أنت مصنف نوايا.
-
-learning_intent: يريد تعلم أو دراسة مجال
-comparison: يقارن بين مجالين
-informational_question: شرح فقط
-preference_statement: يذكر تفضيل شخصي
-other
-
-أعد JSON فقط بالشكل:
-{
-  "intent": "learning_intent"
-}
-`
-      },
-      { role: "user", content: message }
-    ]
-  });
-
-  try {
-    const result = JSON.parse(completion.choices[0].message.content);
-    console.log("Intent:", result.intent);
-    return result.intent;
-  } catch {
-    console.log("Intent parsing failed");
-    return "other";
-  }
 }
 
 /* ==============================
@@ -87,9 +44,7 @@ other
 ============================== */
 
 async function searchCourses(message) {
-
   try {
-
     const queryEmbedding = await createEmbedding(message);
 
     const { data, error } = await supabase.rpc("match_courses", {
@@ -102,11 +57,7 @@ async function searchCourses(message) {
       return [];
     }
 
-    console.log("Search results:", data);
-
-    // ✅ بدون فلترة similarity عشان نتأكد إنها بترجع
     return data || [];
-
   } catch (err) {
     console.log("Search crash:", err.message);
     return [];
@@ -114,41 +65,96 @@ async function searchCourses(message) {
 }
 
 /* ==============================
+   ✅ SYSTEM PROMPTS
+============================== */
+
+function getSystemPrompt(mode, course_id) {
+
+  // 🟢 Visitor
+  if (mode === "visitor") {
+    return `
+أنت مستشار ذكي لمنصة easyT التعليمية.
+
+دورك:
+- شرح المجالات والمسارات المهنية.
+- اقتراح دورات مناسبة.
+- توضيح فكرة الدبلومات والمسارات.
+- شرح ميزة الاشتراك العام.
+
+مهم:
+اذكر بشكل طبيعي أن داخل كل كورس يوجد مساعد ذكي يساعد الطالب أثناء الدراسة 24/7.
+لا تجعل الرد دعائي.
+كن محفزًا واحترافيًا.
+`;
+  }
+
+  // 🔵 Student
+  if (mode === "student") {
+    return `
+أنت مساعد ذكي داخل الكورس الحالي في منصة easyT.
+
+الكورس ID: ${course_id || "غير محدد"}
+
+دورك:
+- شرح أي نقطة غير مفهومة.
+- تبسيط المفاهيم بأمثلة.
+- تشجيع الطالب.
+- مساعدته على التطبيق العملي.
+
+مهم:
+لا تروج للاشتراك.
+تصرف كأنك مدرب مساعد شخصي.
+`;
+  }
+
+  // 🟣 Support
+  if (mode === "support") {
+    return `
+أنت مساعد دعم فني لمنصة easyT.
+
+ساعد في:
+- مشاكل تسجيل الدخول
+- طرق الدفع
+- الاشتراك العام
+- الوصول للدورات
+- الأسئلة العامة عن المنصة
+
+كن واضحًا ومباشرًا.
+`;
+  }
+
+  return `أنت مساعد ذكي لمنصة تعليمية.`;
+}
+
+/* ==============================
    ✅ CLEAN HTML
 ============================== */
 
 function cleanHTML(reply) {
-
   if (!reply) return "";
 
-  reply = reply.replace(/^(\s|<br\s*\/?>)+/gi, "");
-  reply = reply.replace(/\n\s*\n+/g, "\n");
-  reply = reply.replace(/<h[1-6].*?>/gi, "<strong>");
-  reply = reply.replace(/<\/h[1-6]>/gi, "</strong>");
   reply = reply.replace(/\n/g, "<br>");
-  reply = reply.replace(/(<br>\s*){2,}/g, "<br>");
-  reply = reply.replace(/<li>\s*<br>/gi, "<li>");
-  reply = reply.replace(/<br>\s*<\/li>/gi, "</li>");
-  reply = reply.replace(/<\/li>\s*<br>/gi, "</li>");
+  reply = reply.trim();
 
-  return reply.trim();
+  return reply;
 }
 
 /* ==============================
-   ✅ MAIN CHAT ROUTE
+   ✅ MAIN ROUTE
 ============================== */
 
 app.post("/chat", async (req, res) => {
 
   try {
 
-    let { message, session_id } = req.body;
+    let { message, session_id, mode, course_id } = req.body;
 
     if (!message) {
       return res.status(400).json({ reply: "لم يتم إرسال رسالة." });
     }
 
     if (!session_id) session_id = crypto.randomUUID();
+    if (!mode) mode = "visitor";
 
     if (!conversations.has(session_id)) {
       conversations.set(session_id, []);
@@ -157,22 +163,13 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    /* ✅ 1️⃣ Detect Intent */
-    const intent = await detectIntent(message);
+    const systemPrompt = getSystemPrompt(mode, course_id);
 
-    /* ✅ 2️⃣ Generate Chat Reply */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.3,
+      temperature: 0.4,
       messages: [
-        {
-          role: "system",
-          content: `
-أنت مستشار أكاديمي.
-اشرح المجال بشكل واضح.
-لا تذكر أسماء دورات.
-`
-        },
+        { role: "system", content: systemPrompt },
         ...history
       ]
     });
@@ -182,49 +179,28 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ 3️⃣ Recommendation Logic */
+    /* ✅ اقتراح كورسات فقط في visitor */
     let courses = [];
 
-    // ✅ مؤقتًا: هنجيب اقتراحات في كل الحالات عشان نتأكد إن البحث شغال
-    courses = await searchCourses(message);
+    if (mode === "visitor") {
+      courses = await searchCourses(message);
+    }
 
     if (courses.length > 0) {
 
-      reply += `<div class="courses-title">الدورات المقترحة:</div>`;
-      reply += `<div class="courses-container">`;
+      reply += `<div style="margin-top:15px;font-weight:bold;color:#c40000;">الدورات المقترحة:</div>`;
+      reply += `<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">`;
 
       courses.forEach(course => {
         reply += `
-<a href="${course.link}" target="_blank" class="course-btn">
+<a href="${course.link}" target="_blank"
+style="background:#c40000;color:white;padding:10px;border-radius:8px;text-align:center;text-decoration:none;">
 ${course.title}
 </a>`;
       });
 
       reply += `</div>`;
     }
-
-    reply = `
-<style>
-.chat-wrapper{font-size:14px;line-height:1.5;}
-.chat-wrapper ul{margin:0;padding-right:18px;}
-.chat-wrapper li{margin:0;padding:0;line-height:1.4;}
-.courses-title{margin-top:16px;margin-bottom:8px;color:#c40000;font-weight:bold;}
-.courses-container{display:flex;flex-direction:column;gap:12px;}
-.course-btn{
-display:block;
-width:100%;
-max-width:420px;
-padding:12px 14px;
-background:#c40000;
-color:#fff;
-font-size:14px;
-border-radius:8px;
-text-decoration:none;
-text-align:center;
-}
-</style>
-<div class="chat-wrapper">${reply}</div>
-`;
 
     return res.json({ reply, session_id });
 
