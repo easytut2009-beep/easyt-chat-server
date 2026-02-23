@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.4 — Robust Search Fix
-   ✅ Search: Simple per-term queries (no complex OR)
-   ✅ Classification: Topic names always = COURSE_SEARCH
-   ✅ Follow-up detection preserved
-   ✅ AI Relevance filter (safe mode)
-   ✅ Instructor names from instructors table
-   ✅ Full debug logging
+   🤖 easyT Chatbot v5.5 — Comprehensive Bug Fixes
+   ✅ Gibberish detection (local + AI)
+   ✅ Search: no raw message in terms + local relevance filter
+   ✅ KB: certificates, browsers, common Q&A
+   ✅ WhatsApp only when truly needed
+   ✅ Better classification for edge cases
+   ✅ Self-test endpoint /debug/test-all
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -19,14 +19,12 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ═══ External Services ═══ */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-/* ═══ Middleware ═══ */
 app.use(
   cors({
     origin: [
@@ -61,20 +59,12 @@ const DB = {
   full_content: "full_content",
 };
 
-/* ═══ Build SELECT — only include columns that exist ═══ */
-let SELECT_COLUMNS = [
-  DB.title,
-  DB.description,
-  DB.link,
-  DB.price,
-  DB.instructor,
-  DB.image,
-  DB.subtitle,
-  DB.domain,
+const SELECT_COLUMNS = [
+  DB.title, DB.description, DB.link, DB.price,
+  DB.instructor, DB.image, DB.subtitle, DB.domain,
 ];
 const SELECT = SELECT_COLUMNS.join(", ");
 
-/* ═══ Map course + resolve instructor name ═══ */
 function mapCourse(row, instructorMap) {
   return {
     title: row[DB.title] || "",
@@ -86,24 +76,17 @@ function mapCourse(row, instructorMap) {
   };
 }
 
-/* ═══ Batch fetch instructor names ═══ */
 async function getInstructorMap(rows) {
   const ids = [...new Set(rows.map((r) => r[DB.instructor]).filter(Boolean))];
   if (!ids.length) return new Map();
-
   try {
     const { data, error } = await supabase
       .from("instructors")
       .select("id, name")
       .in("id", ids);
-
-    if (error) {
-      console.error("❌ Instructor lookup error:", error.message);
-      return new Map();
-    }
+    if (error) return new Map();
     return new Map((data || []).map((i) => [i.id, i.name]));
   } catch (e) {
-    console.error("❌ Instructor lookup exception:", e.message);
     return new Map();
   }
 }
@@ -210,7 +193,6 @@ const CATEGORIES = {
   },
 };
 
-/* ═══ Platform Links ═══ */
 const PAGE_LINKS = {
   payment: {
     url: "https://easyt.online/p/Payments",
@@ -231,7 +213,7 @@ const PAGE_LINKS = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Knowledge Base ═══════════════════════════════════════
+   ═══ Knowledge Base v5.5 — EXPANDED ════════════════════
    ══════════════════════════════════════════════════════════ */
 const PLATFORM_KB = `
 【منصة إيزي تي — easyT.online】
@@ -274,11 +256,40 @@ const PLATFORM_KB = `
   - لو المشكلة مستمرة → تواصل مع الدعم واتساب 01027007899
 
 ═══ الشهادات ═══
-◆ كل دورة ودبلومة فيها شهادة إتمام إلكترونية
+◆ كل دورة ودبلومة فيها شهادة إتمام إلكترونية (Certificate of Completion)
 ◆ الشهادة بتظهر أوتوماتيك في حسابك بعد ما تخلّص كل الدروس
 ◆ الشهادة PDF تقدر تحمّلها وتطبعها من حسابك
 ◆ مفيش توصيل — الشهادة إلكترونية بتنزّلها من حسابك على المنصة
 ◆ لو الشهادة مش ظاهرة → تأكد إنك خلّصت كل الدروس → لو المشكلة مستمرة تواصل مع الدعم
+
+═══ اعتماد الشهادات ═══
+◆ الشهادة هي "شهادة إتمام" (Certificate of Completion) وليست شهادة أكاديمية جامعية
+◆ بتثبت إنك أتممت الدورة أو الدبلومة بنجاح واكتسبت المهارات المطلوبة
+◆ الشهادة معترف بيها كإثبات للتدريب المهني وبتفيدك في:
+  - السيرة الذاتية (CV)
+  - ملفك على LinkedIn
+  - إثبات مهاراتك لأصحاب العمل
+◆ مش شهادة جامعية أو حكومية — هي شهادة تدريبية مهنية من المنصة
+◆ لتفاصيل أكتر عن اعتماد أو توثيق الشهادات → تواصل مع الدعم واتساب 01027007899
+
+═══ المتصفحات والمتطلبات التقنية ═══
+◆ المنصة بتشتغل على أي متصفح حديث
+◆ المتصفح الأفضل والموصى بيه: Google Chrome (آخر إصدار)
+◆ متصفحات مدعومة كمان: Mozilla Firefox, Microsoft Edge, Safari
+◆ يفضّل تحديث المتصفح لآخر إصدار لأفضل تجربة
+◆ لو عندك مشكلة في التشغيل:
+  - جرب Google Chrome
+  - امسح الكاش (Cache) وملفات الكوكيز
+  - تأكد من اتصال الإنترنت
+  - جرب وضع التصفح الخفي (Incognito Mode)
+◆ المنصة بتشتغل على الموبايل والتابلت والكمبيوتر
+
+═══ أسئلة شائعة إضافية ═══
+◆ هل أقدر أحمّل الفيديوهات؟ → لا، المحتوى متاح أونلاين فقط للمشاهدة
+◆ هل فيه تطبيق موبايل؟ → تقدر تتصفح المنصة من متصفح الموبايل
+◆ هل أقدر أشارك حسابي؟ → لا، كل حساب شخصي لمستخدم واحد
+◆ لو نسيت الباسورد → استخدم "نسيت كلمة المرور" في صفحة الدخول
+◆ هل الدورات بتكون عربي؟ → أيوه، معظم الدورات باللغة العربية
 
 ═══ الدعم الفني ═══
 ◆ واتساب: 01027007899
@@ -328,7 +339,59 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification v5.4 ═════════════════════════════
+   ═══ 🆕 Gibberish Detection (Local Pre-check) ═══════════
+   ══════════════════════════════════════════════════════════
+   
+   Catches obvious gibberish BEFORE sending to AI classifier.
+   This prevents the classifier from interpreting random chars
+   as a follow-up to the previous topic.
+   
+   ══════════════════════════════════════════════════════════ */
+function isLikelyGibberish(text) {
+  const clean = text.trim();
+  if (clean.length < 1) return true;
+
+  /* ── Short text (1-3 chars) → allow, might be "C", "AI", "لا" ── */
+  if (clean.length <= 3) return false;
+
+  /* ── Has spaces = multiple words = likely real ── */
+  const words = clean.split(/\s+/);
+  if (words.length >= 3) return false;
+
+  /* ── Single long "word" with no spaces → suspicious ── */
+  if (words.length === 1 && clean.length > 10) {
+    /* Check if it's a known long term */
+    const knownLong = [
+      "فوتوشوب", "اليستريتور", "بروجرامنج", "ماركيتينج",
+      "subscription", "photoshop", "illustrator", "javascript",
+      "programming", "الاشتراك", "المحاضرين", "الكورسات",
+      "typescript", "bootstrap", "الاستثمار", "wordpress",
+      "البرمجة", "الشهادات", "flutter", "python",
+    ];
+    const lower = clean.toLowerCase();
+    if (knownLong.some((w) => lower.includes(w))) return false;
+
+    /* Check if it has vowels/common patterns suggesting real word */
+    const arabicVowels = /[اوي]/g;
+    const vowelCount = (clean.match(arabicVowels) || []).length;
+    const ratio = vowelCount / clean.length;
+    
+    /* Real Arabic words typically have 15-40% vowel letters */
+    if (ratio < 0.08) return true;
+  }
+
+  /* ── Same character repeated 4+ times ── */
+  if (/(.)\1{3,}/u.test(clean.replace(/\s/g, ""))) {
+    /* Allow laughing patterns */
+    if (/^[هحخح]+$/u.test(clean) || /^ha+$/i.test(clean)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ AI Classification v5.5 ═════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -338,70 +401,57 @@ const CLASSIFY_SYSTEM = `You classify messages for easyT educational platform ch
 
 Return ONLY valid JSON:
 {
-  "intent": "GREETING|START_LEARNING|PAYMENT|SUBSCRIPTION|COURSE_SEARCH|ACCESS_ISSUE|AFFILIATE|AUTHOR|FOLLOW_UP|GENERAL",
+  "intent": "GIBBERISH|GREETING|START_LEARNING|PAYMENT|SUBSCRIPTION|COURSE_SEARCH|ACCESS_ISSUE|CERTIFICATE_QA|PLATFORM_QA|AFFILIATE|AUTHOR|FOLLOW_UP|GENERAL",
   "entity": "topic or null",
-  "search_terms": ["term1", "term2", "term3"],
+  "search_terms": ["term1", "term2"],
   "category_key": "key or null",
   "page_type": "payment|subscription|affiliate|author|null",
   "refers_to_previous": true/false
 }
 
-═══ ⚠️ MOST IMPORTANT RULE — COURSE_SEARCH DETECTION ═══
-ANY message that mentions a SPECIFIC topic, tool, software, skill, language, 
-framework, or technology name → MUST be COURSE_SEARCH.
+═══ ⚠️ INTENT DEFINITIONS ═══
 
-Even with Arabic prepositions like في, عن, على, عايز, محتاج:
-• "في فوتوشوب" → COURSE_SEARCH (entity: فوتوشوب)
-• "عن بايثون" → COURSE_SEARCH (entity: بايثون)
-• "في كورس سي" → COURSE_SEARCH (entity: لغة C)
-• "عايز اتعلم اكسل" → COURSE_SEARCH (entity: اكسل)
-• "محتاج كورس تصميم" → COURSE_SEARCH (entity: تصميم)
-• "فوتوشوب" → COURSE_SEARCH
-• "python" → COURSE_SEARCH
-• "كورس سي" → COURSE_SEARCH
-• "تعلم جافا" → COURSE_SEARCH
-• "دورة تسويق" → COURSE_SEARCH
+• GIBBERISH — Random characters, keyboard mashing, no meaningful words
+  Examples: "صفقلصقفصتقفصثف", "asdfghjkl", "ثيبليتلينتي", "kkkkkkk", "قثصثقفصثق"
+  ⚠️ Even if there's chat history — if the message itself is MEANINGLESS → GIBBERISH
 
-⚠️ NEVER classify a specific topic as GENERAL or START_LEARNING!
-⚠️ NEVER ask "ممكن توضح أكتر" if the topic is clear!
+• GREETING — ONLY short greetings with NO topic: hi, hello, سلام, أهلا, ازيك
 
-═══ FOLLOW-UP DETECTION ═══
-SHORT messages (1-6 words) with pronouns/references AFTER a previous topic = FOLLOW_UP.
+• START_LEARNING — Wants to learn but NO specific topic mentioned at all
 
-Examples:
-• After شهادة → "هتوصلني ازاي" → FOLLOW_UP (about certificate delivery)
-• After كورس → "بكام" → FOLLOW_UP (about that course price)
-• After subscription → "وبعد السنة" → FOLLOW_UP (about renewal)
+• COURSE_SEARCH — ANY message mentioning a SPECIFIC topic/tool/skill/technology
+  Examples: "فوتوشوب", "في فوتوشوب", "عن بايثون", "كورس سي", "عايز اتعلم اكسل",
+  "محتاج كورس تصميم", "python", "تعلم جافا", "دورة تسويق", "flutter"
+  ⚠️ Even with Arabic prepositions (في/عن/على) → STILL COURSE_SEARCH if topic is clear!
+  ⚠️ NEVER classify a specific topic as GENERAL or START_LEARNING!
 
-⚠️ BUT: If message contains a SPECIFIC NEW topic → COURSE_SEARCH, NOT FOLLOW_UP
-• After شهادة → "فوتوشوب" → COURSE_SEARCH (new topic, not follow-up)
-• After كورس سي → "وكمان بايثون" → COURSE_SEARCH (new topic)
+• CERTIFICATE_QA — Questions ABOUT certificates (accreditation, delivery, validity)
+  Examples: "الشهادة معتمدة", "هل الشهادة معترف بيها", "الشهادة بتوصل ازاي",
+  "الشهادة هتنفعني", "فين الشهادة", "شهادة الدورة", "الشهادة معتمدة ولا لا"
 
-═══ Intent Rules ═══
-• GREETING — hi, hello, سلام, أهلا (ONLY short greetings with NO topic)
-• START_LEARNING — wants to learn but NO specific topic at all
-• PAYMENT — payment methods, transfer, receipt, card issues, البطاقة بترفض
-• SUBSCRIPTION — pricing, plans, offers, بكام الاشتراك
-• COURSE_SEARCH — ANY specific topic/tool/skill/technology (SEE ABOVE)
-• ACCESS_ISSUE — login/password/account problems ONLY
-• AFFILIATE — affiliate/commission program
-• AUTHOR — wants to become instructor
-• FOLLOW_UP — continuation of previous topic (NO new topic mentioned)
-• GENERAL — other platform questions
+• PLATFORM_QA — Questions about platform usage, technical issues, how things work
+  Examples: "ايه المتصفح المناسب", "بيشتغل على الموبايل", "أقدر أحمل الفيديو",
+  "ازاي أدخل الكورس", "نسيت الباسورد", "الموقع مش بيشتغل",
+  "هل فيه تطبيق", "ازاي أشوف الدورات", "الفيديو مش بيشتغل"
 
-═══ search_terms Rules (for COURSE_SEARCH) ═══
+• PAYMENT — Payment methods, transfer, receipt, card issues
+• SUBSCRIPTION — Pricing, plans, offers, renewal
+• ACCESS_ISSUE — Can't login, can't access course, account locked
+• AFFILIATE — Affiliate/commission program
+• AUTHOR — Wants to become instructor
+• FOLLOW_UP — Continuation of PREVIOUS topic, NO new topic, message must be COHERENT
+  ⚠️ FOLLOW_UP requires: the message must be meaningful text + refers to previous context
+  ⚠️ If message is gibberish/random → GIBBERISH, NOT FOLLOW_UP!
+• GENERAL — Other questions not covered above
+
+═══ search_terms Rules (ONLY for COURSE_SEARCH) ═══
 Provide 3-5 focused search variations:
-• Arabic name + English name + common spelling
+• Arabic name + English name + common spelling variants
 • ⚠️ NO single-character terms! Minimum 2 characters.
+• ⚠️ NO generic words like كورس, دورة, تعلم — only the TOPIC itself
 • For short names, ALWAYS expand:
-  "c"/"سي" → ["لغة سي", "C programming", "برمجة سي", "لغة C"]
+  "c"/"سي" → ["لغة سي", "C programming", "برمجة سي", "لغة C", "سي بروجرامنج"]
   "c++" → ["سي بلس بلس", "C++", "برمجة C++"]
-  "c#" → ["سي شارب", "C#", "c sharp"]
-
-Examples:
-  "فوتوشوب" → ["فوتوشوب", "photoshop", "فوتو شوب", "Photoshop"]
-  "بايثون" → ["بايثون", "python", "Python", "بايثن"]
-  "اكسل" → ["اكسل", "excel", "Excel", "إكسل"]
 
 ═══ category_key — closest match from: ═══
 ${CAT_LIST}`;
@@ -422,11 +472,6 @@ async function classify(message, history, prevIntent, prevEntity) {
         }`
       : "";
 
-    const shortMsgHint =
-      message.trim().split(/\s+/).length <= 4 && history.length >= 2
-        ? `\n⚠️ Short message with history — if it contains a SPECIFIC topic → COURSE_SEARCH. Only FOLLOW_UP if NO new topic.`
-        : "";
-
     const { choices } = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
@@ -435,7 +480,7 @@ async function classify(message, history, prevIntent, prevEntity) {
         { role: "system", content: CLASSIFY_SYSTEM },
         {
           role: "user",
-          content: `Chat history:\n${recent}${ctx}${shortMsgHint}\n\nNew message: "${message}"`,
+          content: `Chat history:\n${recent}${ctx}\n\nNew message: "${message}"`,
         },
       ],
     });
@@ -445,7 +490,7 @@ async function classify(message, history, prevIntent, prevEntity) {
       const p = JSON.parse(match[0]);
       return {
         intent: p.intent || "GENERAL",
-        entity: p.entity || prevEntity || null,
+        entity: p.entity || null,
         search_terms: Array.isArray(p.search_terms)
           ? p.search_terms.filter(Boolean)
           : [],
@@ -464,7 +509,7 @@ async function classify(message, history, prevIntent, prevEntity) {
   return {
     intent: "GENERAL",
     entity: null,
-    search_terms: [message],
+    search_terms: [],
     category_key: null,
     page_type: null,
     refers_to_previous: false,
@@ -472,17 +517,13 @@ async function classify(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🔧 DB Search v5.4 — SIMPLIFIED & ROBUST ═══════════
-   ══════════════════════════════════════════════════════════
-   
-   ✅ v5.3 Problem: Complex .or() with 18+ conditions failed silently
-   ✅ v5.4 Fix: Search term-by-term, accumulate results, then dedupe
-   
+   ═══ 🔧 DB Search v5.5 — With Local Relevance Check ════
    ══════════════════════════════════════════════════════════ */
+
+/* ═══ Raw DB search — per term, simple & reliable ═══ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
 
-  /* ── Clean terms: minimum 2 chars, max 8 terms ── */
   const clean = [
     ...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2)),
   ].slice(0, 8);
@@ -492,11 +533,9 @@ async function searchCoursesRaw(terms) {
   console.log(`\n🔍 ═══ Search Start ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  /* ═══════════════════════════════════════════════
-     Strategy 1: Title ilike — per term (MOST RELIABLE)
-     ═══════════════════════════════════════════════ */
   let collected = [];
 
+  /* ═══ Strategy 1: Title ilike per term ═══ */
   for (const term of clean) {
     try {
       const { data, error } = await supabase
@@ -505,27 +544,24 @@ async function searchCoursesRaw(terms) {
         .ilike(DB.title, `%${term}%`)
         .limit(6);
 
-      if (error) {
-        console.log(`   ❌ Title "${term}": ${error.message}`);
-        continue;
-      }
-
-      if (data?.length) {
+      if (!error && data?.length) {
         console.log(
           `   ✅ Title "${term}": ${data.length} → [${data
-            .map((d) => d[DB.title])
+            .map((d) => d[DB.title]?.slice(0, 40))
             .join(", ")}]`
         );
         collected.push(...data);
       } else {
-        console.log(`   ⬜ Title "${term}": 0`);
+        console.log(
+          `   ⬜ Title "${term}": ${error ? "ERR " + error.message : "0"}`
+        );
       }
     } catch (e) {
-      console.log(`   ❌ Title "${term}" exception: ${e.message}`);
+      console.log(`   ❌ Title "${term}": ${e.message}`);
     }
   }
 
-  /* Deduplicate by title */
+  /* Deduplicate */
   if (collected.length) {
     const seen = new Set();
     collected = collected.filter((r) => {
@@ -534,13 +570,11 @@ async function searchCoursesRaw(terms) {
       seen.add(key);
       return true;
     });
-    console.log(`   🎯 Strategy 1 total (deduped): ${collected.length}`);
-    return collected.slice(0, 8);
+    console.log(`   🎯 Strategy 1 (title): ${collected.length} deduped`);
+    return collected.slice(0, 10);
   }
 
-  /* ═══════════════════════════════════════════════
-     Strategy 2: Subtitle ilike — per term
-     ═══════════════════════════════════════════════ */
+  /* ═══ Strategy 2: Subtitle ilike per term ═══ */
   for (const term of clean.slice(0, 5)) {
     try {
       const { data, error } = await supabase
@@ -551,16 +585,19 @@ async function searchCoursesRaw(terms) {
 
       if (!error && data?.length) {
         console.log(`   ✅ Subtitle "${term}": ${data.length}`);
-        return data;
+        collected.push(...data);
       }
     } catch (e) {
-      /* subtitle column might not exist — skip silently */
+      /* subtitle column might not exist */
     }
   }
 
-  /* ═══════════════════════════════════════════════
-     Strategy 3: Description ilike — per term
-     ═══════════════════════════════════════════════ */
+  if (collected.length) {
+    console.log(`   🎯 Strategy 2 (subtitle): ${collected.length}`);
+    return collected.slice(0, 10);
+  }
+
+  /* ═══ Strategy 3: Description ilike per term ═══ */
   for (const term of clean.slice(0, 4)) {
     try {
       const { data, error } = await supabase
@@ -571,38 +608,17 @@ async function searchCoursesRaw(terms) {
 
       if (!error && data?.length) {
         console.log(`   ✅ Description "${term}": ${data.length}`);
-        return data;
+        collected.push(...data);
       }
     } catch (e) {}
   }
 
-  /* ═══════════════════════════════════════════════
-     Strategy 4: Small OR on title + subtitle (max 2 terms)
-     ═══════════════════════════════════════════════ */
-  try {
-    const top2 = clean.slice(0, 2);
-    const orStr = top2
-      .map((t) => `${DB.title}.ilike.%${t}%`)
-      .join(",");
-
-    const { data, error } = await supabase
-      .from("courses")
-      .select(SELECT)
-      .or(orStr)
-      .limit(6);
-
-    if (!error && data?.length) {
-      console.log(`   ✅ Small OR: ${data.length}`);
-      return data;
-    }
-    if (error) console.log(`   ❌ Small OR: ${error.message}`);
-  } catch (e) {
-    console.log(`   ❌ Small OR exception: ${e.message}`);
+  if (collected.length) {
+    console.log(`   🎯 Strategy 3 (description): ${collected.length}`);
+    return collected.slice(0, 10);
   }
 
-  /* ═══════════════════════════════════════════════
-     Strategy 5: full_content — per term
-     ═══════════════════════════════════════════════ */
+  /* ═══ Strategy 4: full_content ilike (last resort) ═══ */
   for (const term of clean.slice(0, 3)) {
     try {
       const { data, error } = await supabase
@@ -613,37 +629,60 @@ async function searchCoursesRaw(terms) {
 
       if (!error && data?.length) {
         console.log(`   ✅ full_content "${term}": ${data.length}`);
-        return data;
+        collected.push(...data);
       }
     } catch (e) {}
   }
 
-  /* ═══════════════════════════════════════════════
-     Strategy 6: textSearch — per term
-     ═══════════════════════════════════════════════ */
-  for (const term of clean.slice(0, 3)) {
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select(SELECT)
-        .textSearch(DB.title, term, { type: "websearch" })
-        .limit(5);
-
-      if (!error && data?.length) {
-        console.log(`   ✅ textSearch "${term}": ${data.length}`);
-        return data;
-      }
-    } catch (e) {}
+  if (collected.length) {
+    console.log(`   🎯 Strategy 4 (full_content): ${collected.length}`);
+    return collected.slice(0, 10);
   }
 
-  console.log(`   ⚠️ ALL 6 strategies failed!`);
+  console.log(`   ⚠️ ALL strategies returned 0 results`);
   console.log(`🔍 ═══ Search End (empty) ═══\n`);
   return [];
 }
 
-/* ═══ AI Relevance Filter (SAFE MODE) ═══ */
-async function filterRelevant(courses, userQuery, entity) {
-  /* Skip filter if 3 or fewer results — show all */
+/* ═══ 🆕 Local Relevance Filter — NO AI needed ═══
+   Checks if course title/description actually contains 
+   any of the search terms. Prevents showing Flutter 
+   for a "C language" search.
+   ═══════════════════════════════════════════════════ */
+function localRelevanceFilter(courses, entity, searchTerms) {
+  if (!courses.length) return [];
+
+  /* Build check terms */
+  const checkTerms = new Set();
+  if (entity) checkTerms.add(entity.toLowerCase());
+  if (searchTerms?.length) {
+    searchTerms.forEach((t) => {
+      if (t.length >= 2) checkTerms.add(t.toLowerCase());
+    });
+  }
+
+  /* Only filter with terms of 3+ chars (short terms are too ambiguous) */
+  const significantTerms = [...checkTerms].filter((t) => t.length >= 3);
+
+  if (!significantTerms.length) {
+    console.log(`   ⚠️ No significant terms for local filter — returning all`);
+    return courses;
+  }
+
+  const filtered = courses.filter((course) => {
+    const combined = `${course.title} ${course.description}`.toLowerCase();
+    return significantTerms.some((term) => combined.includes(term));
+  });
+
+  console.log(
+    `   🔎 Local relevance: ${courses.length} → ${filtered.length} (terms: ${significantTerms.join(", ")})`
+  );
+
+  return filtered;
+}
+
+/* ═══ AI Relevance Filter (for 4+ results) ═══ */
+async function filterRelevantAI(courses, userQuery, entity) {
   if (courses.length <= 3) return courses;
 
   try {
@@ -656,11 +695,8 @@ async function filterRelevant(courses, userQuery, entity) {
       messages: [
         {
           role: "system",
-          content: `Filter search results for relevance. Given user query and course list, return JSON array of RELEVANT indices.
-Be generous — include anything that MIGHT be related. When in doubt, INCLUDE it.
-If user asks for "C programming" → include C, C++, programming courses. Exclude clearly unrelated (music, cooking, etc).
-Return format: [0, 1, 2]
-If most seem relevant, return all indices.`,
+          content: `Filter search results. Given query and courses, return JSON array of RELEVANT indices.
+Be generous — include anything related. Return format: [0, 1, 2]`,
         },
         {
           role: "user",
@@ -678,31 +714,23 @@ If most seem relevant, return all indices.`,
         .filter((i) => i >= 0 && i < courses.length)
         .map((i) => courses[i]);
 
-      console.log(
-        `   🎯 Relevance: ${courses.length} → ${filtered.length}`
-      );
-
-      /* Safety: if filter removes too much, return original */
-      if (filtered.length >= 1) return filtered;
+      if (filtered.length >= 1) {
+        console.log(
+          `   🎯 AI Relevance: ${courses.length} → ${filtered.length}`
+        );
+        return filtered;
+      }
     }
   } catch (e) {
-    console.error("   ❌ Relevance filter error:", e.message);
+    console.error("   ❌ AI filter error:", e.message);
   }
-
-  /* On any failure → return original results (never lose data) */
   return courses;
 }
 
-/* ═══ Search + Enrich + Filter ═══ */
-async function searchCourses(terms, userQuery, entity) {
-  const rawRows = await searchCoursesRaw(terms);
-
-  if (!rawRows.length) {
-    console.log(`   📭 searchCourses: 0 raw results`);
-    return [];
-  }
-
-  console.log(`   📦 searchCourses: ${rawRows.length} raw results`);
+/* ═══ Full Search Pipeline ═══ */
+async function searchCourses(searchTerms, entity) {
+  const rawRows = await searchCoursesRaw(searchTerms);
+  if (!rawRows.length) return [];
 
   const instructorMap = await getInstructorMap(rawRows);
   const courses = rawRows.map((row) => mapCourse(row, instructorMap));
@@ -710,13 +738,24 @@ async function searchCourses(terms, userQuery, entity) {
 
   console.log(`   📦 After mapping/dedup: ${deduped.length}`);
 
-  /* AI relevance filter — only if 4+ results */
-  if (deduped.length > 3) {
-    const filtered = await filterRelevant(deduped, userQuery || "", entity);
-    return filtered.slice(0, 6);
+  /* Step 1: Local relevance filter (fast, no API call) */
+  const localFiltered = localRelevanceFilter(deduped, entity, searchTerms);
+  if (!localFiltered.length) {
+    console.log(`   ⚠️ All filtered out by local relevance`);
+    return [];
   }
 
-  return deduped.slice(0, 6);
+  /* Step 2: AI relevance filter (only for 4+ results) */
+  if (localFiltered.length > 3) {
+    const aiFiltered = await filterRelevantAI(
+      localFiltered,
+      entity || searchTerms[0] || "",
+      entity
+    );
+    return aiFiltered.slice(0, 6);
+  }
+
+  return localFiltered.slice(0, 6);
 }
 
 function dedupe(courses) {
@@ -747,14 +786,13 @@ async function searchPages(query) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Cards (with images) ══════════════════
+   ═══ Format Course Cards ════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category) {
   let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
 
   courses.forEach((c, i) => {
-    const link =
-      c.url || (category ? category.url : "https://easyt.online");
+    const link = c.url || (category ? category.url : "https://easyt.online");
 
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
@@ -770,9 +808,7 @@ function formatCourses(courses, category) {
     html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
     html += `${i + 1}. ${c.title}</a><br>`;
 
-    if (c.instructor) {
-      html += `👤 المحاضر: ${c.instructor}<br>`;
-    }
+    if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
 
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
@@ -822,12 +858,17 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 
 【قواعد صارمة】
 1. أجب فقط من المحتوى الرسمي — لا تخترع معلومات
-2. لو مش متأكد → "تقدر تتواصل مع الدعم واتساب 01027007899 😊"
+2. ⚠️ لا تقترح التواصل مع الدعم أو واتساب إلا في الحالات دي فقط:
+   - المستخدم سأل صراحةً عن طريقة التواصل مع الدعم
+   - المستخدم عنده مشكلة تقنية مش قادر تحلها من المعلومات المتاحة
+   - مفيش إجابة واضحة في المعلومات المتاحة
+   ⚠️ لا تقول "تواصل مع الدعم" في نهاية كل رسالة!
 3. رحّب في أول رسالة فقط — بعد كده لا ترحّب
 4. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
-5. ⚠️ لو المستخدم قال اسم موضوع معين (فوتوشوب، بايثون، اكسل) → ده يبقى بيدور على كورس. ما تقولش "ممكن توضح أكتر"!
+5. ⚠️ لو المستخدم قال اسم موضوع معين → ده بيدور على كورس. ما تقولش "ممكن توضح أكتر"!
 6. ⚠️ اقرأ المحادثة السابقة — لو بيكمّل موضوع قبل كده، ردّ في نفس السياق
-7. ⚠️ "ازاي" / "هتوصلني ازاي" / "فين" = سؤال متابعة عن آخر موضوع
+7. ⚠️ لو سألك سؤال عن الشهادة أو المتصفح أو أي حاجة عن المنصة → أجب من المعلومات المتاحة مباشرةً وبتفصيل
+8. ⚠️ لو سأل "الشهادة معتمدة" → أجب إنها شهادة إتمام تدريبية (Certificate of Completion) ومش شهادة أكاديمية جامعية، وبتفيد في CV وLinkedIn
 
 【قواعد الروابط — HTML فقط】
 ★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#c40000;font-weight:bold;">💳 صفحة طرق الدفع</a>
@@ -902,7 +943,9 @@ app.post("/chat", limiter, async (req, res) => {
     let { message, session_id } = req.body;
 
     if (!message || typeof message !== "string" || !message.trim()) {
-      return res.status(400).json({ reply: "يرجى إرسال رسالة صحيحة." });
+      return res
+        .status(400)
+        .json({ reply: "يرجى إرسال رسالة صحيحة." });
     }
 
     message = message.trim().slice(0, 1000);
@@ -910,6 +953,15 @@ app.post("/chat", limiter, async (req, res) => {
 
     const session = getSession(session_id);
     const isFirst = session.count === 1;
+
+    /* ── 🆕 Step 0: Local Gibberish Check ── */
+    if (isLikelyGibberish(message)) {
+      console.log(`🗑️ Local gibberish detected: "${message.slice(0, 30)}"`);
+      const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟<br><br>تقدر تسألني عن:<br>▸ 🎓 الدورات والكورسات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 📋 أي استفسار عن المنصة`;
+      session.history.push({ role: "user", content: message });
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
 
     session.history.push({ role: "user", content: message });
     while (session.history.length > MAX_HISTORY) session.history.shift();
@@ -941,11 +993,7 @@ app.post("/chat", limiter, async (req, res) => {
     );
 
     /* Update session context */
-    if (
-      intent !== "GENERAL" &&
-      intent !== "GREETING" &&
-      intent !== "FOLLOW_UP"
-    ) {
+    if (!["GENERAL", "GREETING", "FOLLOW_UP", "GIBBERISH"].includes(intent)) {
       session.intent = intent;
       if (entity) session.entity = entity;
     }
@@ -954,12 +1002,18 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 2: Handle by Intent ── */
 
+    // ─── GIBBERISH ───
+    if (intent === "GIBBERISH") {
+      const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟<br><br>تقدر تسألني عن:<br>▸ 🎓 الدورات والكورسات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 📋 أي استفسار عن المنصة`;
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
+
     // ─── GREETING ───
     if (intent === "GREETING") {
       const reply = isFirst
-        ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>• 🎓 الدورات والكورسات<br>• 💳 طرق الدفع والاشتراك<br>• 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`
+        ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>▸ 🎓 الدورات والكورسات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`
         : `أهلاً بيك تاني! 😊 إزاي أقدر أساعدك؟`;
-
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
@@ -967,11 +1021,9 @@ app.post("/chat", limiter, async (req, res) => {
     // ─── START_LEARNING ───
     if (intent === "START_LEARNING") {
       const fields = Object.values(CATEGORIES)
-        .map((c) => `• ${c.name}`)
+        .map((c) => `▸ ${c.name}`)
         .join("<br>");
-
-      const reply = `أهلاً! 😊 حلو إنك عايز تبدأ رحلة التعلم 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو قولي أي مجال تاني وأنا هساعدك! 💪`;
-
+      const reply = `حلو إنك عايز تبدأ رحلة التعلم 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو قولي أي مجال تاني وأنا هساعدك! 💪`;
       session.intent = "START_LEARNING";
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
@@ -981,27 +1033,23 @@ app.post("/chat", limiter, async (req, res) => {
     if (intent === "COURSE_SEARCH") {
       const displayTerm = entity || message;
 
-      /* Build search terms — include entity, search_terms, and message */
+      /* 🆕 v5.5: Only use AI-extracted terms, NOT the raw message */
       const allTerms = [
         ...new Set([
           ...(entity ? [entity] : []),
           ...search_terms,
-          message,
         ]),
       ].filter((t) => t && t.trim().length >= 2);
 
       console.log(
-        `🔍 COURSE_SEARCH for "${displayTerm}" → allTerms: [${allTerms.join(
-          " | "
-        )}]`
+        `🔍 COURSE_SEARCH for "${displayTerm}" → terms: [${allTerms.join(" | ")}]`
       );
 
-      let courses = await searchCourses(allTerms, message, entity);
+      /* 🆕 v5.5: Pass entity and search_terms for local relevance check */
+      let courses = await searchCourses(allTerms, entity);
 
       if (courses.length > 0) {
-        console.log(
-          `✅ Found ${courses.length} courses → showing cards`
-        );
+        console.log(`✅ Found ${courses.length} relevant courses`);
         const reply = formatCourses(courses, category);
         session.history.push({
           role: "assistant",
@@ -1010,10 +1058,8 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* ── No DB results → GPT fallback with category link ── */
-      console.log(
-        `⚠️ No DB results for "${displayTerm}" → GPT fallback`
-      );
+      /* ── No results → GPT fallback ── */
+      console.log(`⚠️ No results for "${displayTerm}" → fallback`);
 
       let context = PLATFORM_KB;
       if (category) {
@@ -1027,8 +1073,7 @@ app.post("/chat", limiter, async (req, res) => {
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
-
-      session.history.pop(); // remove temp system msg
+      session.history.pop();
 
       if (category && !reply.includes(category.url)) {
         reply += `<br><br>🔗 ${makeLink(
@@ -1048,29 +1093,63 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
+    // ─── 🆕 CERTIFICATE_QA ───
+    if (intent === "CERTIFICATE_QA") {
+      session.history.push({
+        role: "system",
+        content: `المستخدم بيسأل عن الشهادات. أجب بتفصيل من المعلومات المتاحة:
+- الشهادة شهادة إتمام (Certificate of Completion) — مش شهادة أكاديمية جامعية
+- بتثبت إنك أتممت الدورة بنجاح
+- بتفيدك في CV وLinkedIn
+- إلكترونية PDF بتتحمل من حسابك بعد إتمام كل الدروس
+- مفيش توصيل — الشهادة بتنزل من حسابك
+⚠️ أجب على السؤال المحدد اللي سأله المستخدم. لا تقترح واتساب إلا لو فعلاً مفيش إجابة.`,
+      });
+
+      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
+      reply = formatReply(reply);
+      session.history.pop();
+
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
+
+    // ─── 🆕 PLATFORM_QA ───
+    if (intent === "PLATFORM_QA") {
+      session.history.push({
+        role: "system",
+        content: `المستخدم بيسأل سؤال عن استخدام المنصة أو حاجة تقنية. أجب من المعلومات المتاحة بتفصيل.
+⚠️ أجب على السؤال المحدد مباشرةً. لو سأل عن المتصفح → Chrome أفضل متصفح، وبتشتغل كمان على Firefox وEdge وSafari.
+⚠️ لا تقترح واتساب إلا لو فعلاً مفيش إجابة في المعلومات المتاحة.`,
+      });
+
+      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
+      reply = formatReply(reply);
+      session.history.pop();
+
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
+
     // ─── FOLLOW_UP ───
     if (intent === "FOLLOW_UP") {
       console.log(
-        `🔗 Follow-up | Prev: ${session.intent}/${session.entity} | Entity: ${entity}`
+        `🔗 Follow-up | Prev: ${session.intent}/${session.entity}`
       );
 
-      let context = PLATFORM_KB;
-      const followUpEntity =
-        entity || session.entity || "الموضوع السابق";
+      const followUpEntity = entity || session.entity || "الموضوع السابق";
 
       session.history.push({
         role: "system",
         content: `⚠️ هذه متابعة للمحادثة السابقة عن "${followUpEntity}".
 الرد لازم يكون مرتبط بالموضوع اللي كان بيتكلم عنه.
-- شهادة + "هتوصلني ازاي" → الشهادة إلكترونية بتتحمل من حسابه
-- كورس + "بكام" → سعر الكورس
-- اشتراك + "وبعد السنة" → التجديد تلقائي`,
+أجب على السؤال مباشرةً من المعلومات المتاحة.
+⚠️ لا تقترح واتساب إلا لو مفيش إجابة.`,
       });
 
-      let reply = await generateAIResponse(session, context, false);
+      let reply = await generateAIResponse(session, PLATFORM_KB, false);
       reply = formatReply(reply);
-
-      session.history.pop(); // remove temp system msg
+      session.history.pop();
 
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
@@ -1080,14 +1159,10 @@ app.post("/chat", limiter, async (req, res) => {
     if (intent === "ACCESS_ISSUE") {
       session.history.push({
         role: "system",
-        content: `المستخدم عنده مشكلة في الوصول أو مشكلة تقنية. اعطيه خطوات عملية + وجّهه للدعم واتساب 01027007899.`,
+        content: `المستخدم عنده مشكلة في الوصول. اعطيه خطوات عملية + وجّهه للدعم واتساب 01027007899 لأنه فعلاً محتاج مساعدة بشرية.`,
       });
 
-      let reply = await generateAIResponse(
-        session,
-        PLATFORM_KB,
-        isFirst
-      );
+      let reply = await generateAIResponse(session, PLATFORM_KB, isFirst);
       reply = formatReply(reply);
       session.history.pop();
 
@@ -1137,6 +1212,7 @@ app.post("/chat", limiter, async (req, res) => {
         reply += `<br><br>${makeLink(link.url, link.label)}`;
       }
 
+      /* Only add WhatsApp for PAYMENT issues */
       if (
         intent === "PAYMENT" &&
         !reply.includes("wa.me") &&
@@ -1174,7 +1250,6 @@ app.post("/chat", limiter, async (req, res) => {
     return res.json({ reply, session_id });
   } catch (error) {
     console.error("❌ Chat Error:", error);
-
     const isRateLimit = error?.status === 429;
     return res.status(isRateLimit ? 429 : 500).json({
       reply: isRateLimit
@@ -1188,37 +1263,15 @@ app.post("/chat", limiter, async (req, res) => {
    ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 
-/* 🔧 Test search for any query */
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
-
   const classification = await classify(q, [], null, null);
-
   const terms = classification.search_terms.length
-    ? [...new Set([...classification.search_terms, q])]
+    ? [...new Set([...classification.search_terms, ...(classification.entity ? [classification.entity] : [])])]
     : [q];
 
-  const courses = await searchCourses(terms, q, classification.entity);
+  const courses = await searchCourses(terms, classification.entity);
 
-  /* Also test raw DB access */
-  let rawTest = {};
-  try {
-    const { data, error } = await supabase
-      .from("courses")
-      .select(DB.title)
-      .limit(3);
-
-    rawTest = {
-      ok: !error,
-      error: error?.message || null,
-      count: data?.length || 0,
-      sample_titles: data?.map((d) => d[DB.title]) || [],
-    };
-  } catch (e) {
-    rawTest = { ok: false, error: e.message };
-  }
-
-  /* Test each term directly */
   let termTests = {};
   for (const term of terms.slice(0, 5)) {
     try {
@@ -1227,7 +1280,6 @@ app.get("/debug/search/:query", async (req, res) => {
         .select(DB.title)
         .ilike(DB.title, `%${term}%`)
         .limit(3);
-
       termTests[term] = {
         error: error?.message || null,
         count: data?.length || 0,
@@ -1246,89 +1298,121 @@ app.get("/debug/search/:query", async (req, res) => {
       title: c.title,
       url: c.url,
       instructor: c.instructor,
-      price: c.price,
       has_image: !!c.image_url,
     })),
-    raw_db_test: rawTest,
     per_term_test: termTests,
   });
 });
 
-/* 🔧 Show all DB columns */
 app.get("/debug/columns", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("courses")
       .select("*")
       .limit(1);
-
     if (error) return res.json({ error: error.message });
-
-    const columns = data?.[0] ? Object.keys(data[0]) : [];
-    const sample = data?.[0] || null;
-
     res.json({
       table: "courses",
-      column_count: columns.length,
-      columns,
-      sample,
-      current_db_config: DB,
+      columns: data?.[0] ? Object.keys(data[0]) : [],
+      sample: data?.[0] || null,
+      db_config: DB,
     });
   } catch (e) {
     res.json({ error: e.message });
   }
 });
 
-/* 🔧 Quick DB health check */
 app.get("/debug/db", async (req, res) => {
   try {
     const { count, error } = await supabase
       .from("courses")
       .select("*", { count: "exact", head: true });
-
-    const { data: instData, error: instError } = await supabase
+    const { data: instData } = await supabase
       .from("instructors")
       .select("id, name")
       .limit(3);
-
     res.json({
       courses_count: count || 0,
       courses_error: error?.message || null,
       instructors_sample: instData || [],
-      instructors_error: instError?.message || null,
     });
   } catch (e) {
     res.json({ error: e.message });
   }
+});
+
+/* ═══ 🆕 Self-Test Endpoint ═══ */
+app.get("/debug/test-all", async (req, res) => {
+  const tests = [
+    { input: "صفقلصقفصتقفصثف", expected_intent: "GIBBERISH" },
+    { input: "اهلا", expected_intent: "GREETING" },
+    { input: "عايز اتعلم", expected_intent: "START_LEARNING" },
+    { input: "في فوتوشوب", expected_intent: "COURSE_SEARCH" },
+    { input: "كورس سي", expected_intent: "COURSE_SEARCH" },
+    { input: "كورس بايثون", expected_intent: "COURSE_SEARCH" },
+    { input: "الشهادة معتمدة", expected_intent: "CERTIFICATE_QA" },
+    { input: "ايه المتصفح المناسب", expected_intent: "PLATFORM_QA" },
+    { input: "بكام الاشتراك", expected_intent: "SUBSCRIPTION" },
+    { input: "ازاي ادفع", expected_intent: "PAYMENT" },
+    { input: "عايز اشتغل محاضر", expected_intent: "AUTHOR" },
+    { input: "برنامج العمولة", expected_intent: "AFFILIATE" },
+    { input: "مش قادر ادخل حسابي", expected_intent: "ACCESS_ISSUE" },
+    { input: "بيشتغل على الموبايل", expected_intent: "PLATFORM_QA" },
+    { input: "الشهادة بتوصل ازاي", expected_intent: "CERTIFICATE_QA" },
+  ];
+
+  const results = [];
+  for (const test of tests) {
+    try {
+      const c = await classify(test.input, [], null, null);
+      results.push({
+        input: test.input,
+        expected: test.expected_intent,
+        got: c.intent,
+        pass: c.intent === test.expected_intent ? "✅" : "❌",
+        entity: c.entity,
+        search_terms: c.search_terms,
+      });
+    } catch (e) {
+      results.push({
+        input: test.input,
+        expected: test.expected_intent,
+        got: "ERROR",
+        pass: "❌",
+        error: e.message,
+      });
+    }
+  }
+
+  const passed = results.filter((r) => r.pass === "✅").length;
+
+  res.json({
+    total: tests.length,
+    passed,
+    failed: tests.length - passed,
+    score: `${Math.round((passed / tests.length) * 100)}%`,
+    results,
+  });
 });
 
 /* ═══ Health Check ═══ */
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "5.4",
+    version: "5.5",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     categories: Object.keys(CATEGORIES).length,
   });
 });
 
-/* ═══ 404 ═══ */
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" });
 });
 
-/* ══════════════════════════════════════════════════════════
-   ═══ Start Server ═══════════════════════════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Start ═══ */
 app.listen(PORT, () => {
-  console.log(
-    `\n🤖 easyT Chatbot v5.4 — Robust Search + Smart Classification`
-  );
+  console.log(`\n🤖 easyT Chatbot v5.5`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   Categories: ${Object.keys(CATEGORIES).length}`);
-  console.log(`   Debug endpoints:`);
-  console.log(`     /debug/search/:query`);
-  console.log(`     /debug/columns`);
-  console.log(`     /debug/db\n`);
+  console.log(`   Debug: /debug/search/:q | /debug/test-all | /debug/db\n`);
 });
