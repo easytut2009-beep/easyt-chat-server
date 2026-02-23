@@ -1,70 +1,37 @@
 import express from "express";
-import cors from "cors";
 import helmet from "helmet";
+import cors from "cors";
 import rateLimit from "express-rate-limit";
-import crypto from "crypto";
 import dotenv from "dotenv";
+import crypto from "crypto";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
-/* ================================
+/* =====================================================
    ✅ ENV VALIDATION
-================================ */
+===================================================== */
 
-const requiredEnv = [
-  "OPENAI_API_KEY",
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_KEY"
-];
-
-requiredEnv.forEach((key) => {
-  if (!process.env[key]) {
-    throw new Error(`Missing environment variable: ${key}`);
-  }
+["OPENAI_API_KEY","SUPABASE_URL","SUPABASE_SERVICE_KEY"]
+.forEach(k=>{
+  if(!process.env[k]) throw new Error(`Missing ${k}`);
 });
 
-/* ================================
+/* =====================================================
    ✅ INIT
-================================ */
+===================================================== */
 
 const app = express();
-
-/* ================================
-   ✅ SECURITY MIDDLEWARE
-================================ */
-
-// Helmet MUST be first (per best practice) ([grizzlypeaksoftware.com](https://www.grizzlypeaksoftware.com/library/security-hardening-expressjs-applications-zfu5rr9i?utm_source=openai))
 app.use(helmet());
-
-// Disable fingerprinting ([expressjs.com](https://expressjs.com/en/advanced/best-practice-security?utm_source=openai))
 app.disable("x-powered-by");
+app.use(cors({ origin: "https://easyt.online" }));
+app.use(express.json({ limit:"1mb" }));
 
-// Strict CORS
-app.use(
-  cors({
-    origin: ["https://easyt.online"],
-    methods: ["POST"],
-  })
-);
-
-// Body limit to prevent resource abuse ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
-app.use(express.json({ limit: "1mb" }));
-
-// Rate limiting (OWASP API4) ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 40,
-    standardHeaders: true,
-    legacyHeaders: false
-  })
-);
-
-/* ================================
-   ✅ SERVICES
-================================ */
+app.use(rateLimit({
+  windowMs: 60000,
+  max: 60
+}));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -73,197 +40,244 @@ const openai = new OpenAI({
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY,
-  {
-    auth: { persistSession: false }
-  }
+  { auth:{ persistSession:false }}
 );
 
-/* ================================
-   ✅ MEMORY (Isolated Per Session)
-================================ */
+/* =====================================================
+   ✅ MEMORY (Persistent in DB not RAM)
+===================================================== */
 
-const sessions = new Map();
-const MAX_HISTORY = 8;
-
-function getSession(id) {
-  if (!sessions.has(id)) sessions.set(id, []);
-  return sessions.get(id);
-}
-
-function pushMessage(history, role, content) {
-  history.push({ role, content });
-  if (history.length > MAX_HISTORY) history.shift();
-}
-
-/* ================================
-   ✅ SAFE EMBEDDING
-================================ */
-
-async function createEmbedding(text) {
-  const safeText = text.slice(0, 3000);
-
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: safeText
+async function saveMessage(session_id, role, content){
+  await supabase.from("chat_history").insert({
+    session_id,
+    role,
+    content
   });
-
-  return response.data[0].embedding;
 }
 
-/* ================================
-   ✅ DATA ACCESS LAYER
-   Prevents BOLA & Data Exposure ([owasp.org](https://owasp.org/API-Security/editions/2023/en/0x11-t10/?utm_source=openai))
-================================ */
-
-async function getSubscription() {
+async function getRecentHistory(session_id){
   const { data } = await supabase
-    .from("site_pages")
-    .select("page_url, content") // no overexposure
-    .ilike("page_url", "%/p/subscriptions%")
-    .limit(1);
+    .from("chat_history")
+    .select("role,content")
+    .eq("session_id",session_id)
+    .order("created_at",{ ascending:true })
+    .limit(10);
 
   return data || [];
 }
 
-async function searchCourses(query) {
+/* =====================================================
+   ✅ CONTEXT BUILDER
+===================================================== */
+
+function buildContext(history,currentMessage){
+  const recent = history
+    .filter(m=>m.role==="user")
+    .slice(-3)
+    .map(m=>m.content)
+    .join(" ");
+
+  return `${recent} ${currentMessage}`;
+}
+
+/* =====================================================
+   ✅ EMBEDDING
+===================================================== */
+
+async function createEmbedding(text){
+  const r = await openai.embeddings.create({
+    model:"text-embedding-3-small",
+    input:text.slice(0,3000)
+  });
+  return r.data[0].embedding;
+}
+
+/* =====================================================
+   ✅ HYBRID SEARCH
+===================================================== */
+
+async function searchDocuments(query){
+
   const embedding = await createEmbedding(query);
 
-  const { data } = await supabase.rpc("match_courses", {
+  const { data } = await supabase.rpc("match_documents",{
     query_embedding: embedding,
-    match_count: 5
+    match_count: 8
   });
 
   return data || [];
 }
 
-/* ================================
-   ✅ FORMATTERS
-================================ */
+/* =====================================================
+   ✅ RERANK (Lightweight)
+===================================================== */
 
-function sanitize(text) {
+function rerank(query,docs){
+  return docs.sort((a,b)=>{
+    const scoreA = (a.content||"").includes(query)?1:0;
+    const scoreB = (b.content||"").includes(query)?1:0;
+    return scoreB-scoreA;
+  });
+}
+
+/* =====================================================
+   ✅ SANITIZATION
+===================================================== */
+
+function sanitize(text){
   return text
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
 }
 
-function formatSubscription(data) {
-  if (!data.length) return "الاشتراك غير متاح حالياً.";
+/* =====================================================
+   ✅ LINK EXTRACTION
+===================================================== */
 
-  const page = data[0];
+function injectLinks(answer,docs){
 
-  return `
-🔗 <a href="${page.page_url}" target="_blank" 
+  let linksBlock = "";
+
+  docs.forEach(doc=>{
+    if(doc.page_url){
+      linksBlock += `
+🔗 <a href="${sanitize(doc.page_url)}" target="_blank"
 style="text-decoration:none;font-weight:bold;">
-الاشتراك الشامل في easyT
-</a><br><br>
-${sanitize(page.content)}
-  `.replace(/\n/g, "<br>");
-}
-
-function formatCourses(courses) {
-  if (!courses.length) return "لا توجد دورات مطابقة حالياً.";
-
-  return courses
-    .map((c, i) => {
-      const title = sanitize(c.title || "الدورة");
-      const url = sanitize(c.url || c.page_url || "#");
-
-      return `${i + 1}. 🔗 <a href="${url}" target="_blank"
-style="text-decoration:none;font-weight:bold;">
-${title}
+عرض الصفحة المرتبطة
 </a><br><br>`;
-    })
-    .join("");
+    }
+  });
+
+  return sanitize(answer).replace(/\n/g,"<br>") + "<br><br>" + linksBlock;
 }
 
-/* ================================
-   ✅ CHAT ENDPOINT
-================================ */
+/* =====================================================
+   ✅ ANTI PROMPT INJECTION
+===================================================== */
 
-app.post("/chat", async (req, res) => {
-  try {
+function detectPromptInjection(text){
+  const blacklist = [
+    "ignore previous instructions",
+    "system prompt",
+    "developer message",
+    "override"
+  ];
+  return blacklist.some(w=>text.toLowerCase().includes(w));
+}
+
+/* =====================================================
+   ✅ CHAT ROUTE
+===================================================== */
+
+app.post("/chat", async (req,res)=>{
+
+  try{
+
     let { message, session_id } = req.body;
 
-    if (!message || typeof message !== "string" || message.length > 1000) {
-      return res.status(400).json({ reply: "رسالة غير صالحة." });
+    if(!message || message.length>1000){
+      return res.status(400).json({ reply:"رسالة غير صالحة" });
     }
 
-    if (!session_id) session_id = crypto.randomUUID();
+    if(detectPromptInjection(message)){
+      return res.json({
+        reply:"لا يمكن تنفيذ هذا الطلب."
+      });
+    }
 
-    const history = getSession(session_id);
-    pushMessage(history, "user", message);
+    if(!session_id) session_id = crypto.randomUUID();
 
-    const ai = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
+    /* =========================
+       ✅ LOAD HISTORY
+    ========================= */
+
+    const history = await getRecentHistory(session_id);
+
+    /* =========================
+       ✅ BUILD CONTEXT
+    ========================= */
+
+    const fullContext = buildContext(history,message);
+
+    /* =========================
+       ✅ RETRIEVE
+    ========================= */
+
+    let documents = await searchDocuments(fullContext);
+
+    if(!documents.length){
+      return res.json({
+        reply:"لا توجد معلومات متاحة حالياً داخل المنصة.",
+        session_id
+      });
+    }
+
+    documents = rerank(message,documents);
+
+    const knowledge = documents
+      .map(d=>d.content)
+      .join("\n\n");
+
+    /* =========================
+       ✅ GROUNDED GPT
+    ========================= */
+
+    const completion = await openai.chat.completions.create({
+      model:"gpt-4o-mini",
+      temperature:0.1,
+      messages:[
         {
-          role: "system",
-          content: `
-أنت مساعد رسمي داخل منصة easyT.
-لا تخترع روابط.
-لا تشير لمواقع خارج المنصة.
-إذا طلب المستخدم اشتراك شامل استخدم getSubscription.
-إذا طلب كورسات محددة استخدم searchCourses.
+          role:"system",
+          content:`
+أنت مساعد رسمي لمنصة easyT.
+أجب فقط من المعلومات المتاحة.
+لا تضف معلومات خارج النص.
+إذا لم تجد إجابة صريحة قل:
+لا توجد معلومات داخل المنصة حالياً.
 `
         },
-        ...history
-      ],
-      tools: [
         {
-          type: "function",
-          function: {
-            name: "searchCourses",
-            parameters: {
-              type: "object",
-              properties: { query: { type: "string" } },
-              required: ["query"]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "getSubscription",
-            parameters: { type: "object", properties: {} }
-          }
+          role:"user",
+          content:`
+السؤال:
+${message}
+
+المعلومات المتاحة:
+${knowledge}
+`
         }
       ]
     });
 
-    const msg = ai.choices[0].message;
+    const answer = completion.choices[0].message.content;
 
-    if (msg.tool_calls) {
-      const call = msg.tool_calls[0];
-      const args = call.function.arguments
-        ? JSON.parse(call.function.arguments)
-        : {};
+    const finalReply = injectLinks(answer,documents);
 
-      if (call.function.name === "getSubscription") {
-        const data = await getSubscription();
-        return res.json({ reply: formatSubscription(data), session_id });
-      }
+    /* =========================
+       ✅ SAVE MEMORY
+    ========================= */
 
-      if (call.function.name === "searchCourses") {
-        const data = await searchCourses(args.query);
-        return res.json({ reply: formatCourses(data), session_id });
-      }
-    }
+    await saveMessage(session_id,"user",message);
+    await saveMessage(session_id,"assistant",answer);
 
-    const cleanReply = sanitize(msg.content).replace(/\n/g, "<br>");
-    return res.json({ reply: cleanReply, session_id });
+    return res.json({
+      reply: finalReply,
+      session_id
+    });
 
-  } catch (err) {
-    console.error("SECURE SERVER ERROR:", err);
-    return res.status(500).json({ reply: "حدث خطأ مؤقت." });
+  }catch(err){
+    console.error("AI ERROR:",err);
+    return res.status(500).json({
+      reply:"حدث خطأ مؤقت."
+    });
   }
 });
 
-/* ================================
+/* =====================================================
    ✅ START
-================================ */
+===================================================== */
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("✅ EasyT Secure AI Server Running");
+app.listen(PORT,()=>{
+  console.log("✅ EasyT Enterprise AI Running");
 });
