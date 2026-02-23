@@ -79,7 +79,7 @@ function buildContextualMessage(history, currentMessage, entity) {
 }
 
 /* ==============================
-   ✅ QUERY REWRITING (✅ NEW)
+   ✅ QUERY REWRITING
 ============================== */
 
 async function rewriteUserQuery(message) {
@@ -306,7 +306,10 @@ app.post("/chat", async (req, res) => {
 
     const contextualMessage = buildContextualMessage(history, message, currentEntity);
 
-    let intent = await classifyPageIntent(contextualMessage);
+    // ✅ rewrite once and use everywhere
+    const rewrittenQuery = await rewriteUserQuery(contextualMessage);
+
+    let intent = await classifyPageIntent(rewrittenQuery);
 
     const lastIntent = sessionIntentMemory.get(session_id);
 
@@ -321,7 +324,7 @@ app.post("/chat", async (req, res) => {
 
     if (intent === "COURSE_SEARCH") {
 
-      courses = await searchCourses(contextualMessage);
+      courses = await searchCourses(rewrittenQuery);
 
       if (courses.length > 0) {
         let reply = "لدينا الدورات التالية على منصة easyT:<br><br>";
@@ -351,7 +354,6 @@ ${course.title}
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
-      const rewrittenQuery = await rewriteUserQuery(contextualMessage);
       pages = await searchPages(rewrittenQuery);
     }
 
@@ -386,7 +388,7 @@ ${course.title}
     let reply = completion.choices[0].message.content;
 
     const verification = await verifyGrounding(
-      contextualMessage,
+      rewrittenQuery,
       reply,
       pageContext
     );
