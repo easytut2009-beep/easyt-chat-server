@@ -172,7 +172,7 @@ async function getPageByURL(url) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER (✅ IMPROVED)
+   ✅ INTENT CLASSIFIER
 ============================== */
 
 async function classifyPageIntent(message) {
@@ -186,16 +186,13 @@ async function classifyPageIntent(message) {
           content: `
 حدد نية المستخدم من القائمة التالية:
 
-COURSE_SEARCH (مثال: عايز دورة – في كورسات ايه – ابحث عن دورة)
-ACCESS_ISSUE (مثال: مش لاقي الدورة – الدورة مش ظاهرة – دخلت ومش لاقيها)
-SUBSCRIPTION (مثال: الاشتراك العام – سعر الاشتراك – العضوية – عرض رمضان – تفاصيل الاشتراك)
-PAYMENT (مثال: طرق الدفع – ازاي ادفع – تحويل بنكي – انستا باي)
-AUTHOR (مثال: عايز ابقى محاضر – شروط الانضمام كمحاضر)
-AFFILIATE (مثال: التسويق بالعمولة – عمولة كام – ازاي اسجل افلييت)
+COURSE_SEARCH
+ACCESS_ISSUE
+SUBSCRIPTION
+PAYMENT
+AUTHOR
+AFFILIATE
 GENERAL
-
-إذا ذكر المستخدم أي كلمة تشير إلى اشتراك أو عضوية حتى لو مكتوبة بخطأ إملائي
-فصنّفها SUBSCRIPTION.
 
 أجب بكلمة واحدة فقط.
 `
@@ -315,7 +312,12 @@ app.post("/chat", async (req, res) => {
 
     const lastIntent = sessionIntentMemory.get(session_id);
 
-    if (intent === "GENERAL" && lastIntent) {
+    // ✅ Conversation Continuation Logic
+    const isShortFollowUp = rewrittenQuery.split(" ").length <= 4;
+
+    if (isShortFollowUp && lastIntent) {
+      intent = lastIntent;
+    } else if (intent === "GENERAL" && lastIntent) {
       intent = lastIntent;
     } else {
       sessionIntentMemory.set(session_id, intent);
