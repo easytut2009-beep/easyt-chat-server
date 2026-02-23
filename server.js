@@ -56,7 +56,6 @@ async function searchPages(searchText) {
       return [];
     }
 
-    console.log("🔎 Pages found:", data?.length || 0);
     return data || [];
 
   } catch (err) {
@@ -66,7 +65,25 @@ async function searchPages(searchText) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER (SMART)
+   ✅ DIRECT PAGE FETCH
+============================== */
+
+async function getPageByURL(url) {
+  const { data, error } = await supabase
+    .from("site_pages")
+    .select("content")
+    .eq("page_url", url);
+
+  if (error) {
+    console.log("Direct fetch error:", error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+/* ==============================
+   ✅ INTENT CLASSIFIER
 ============================== */
 
 async function classifyPageIntent(message) {
@@ -80,10 +97,10 @@ async function classifyPageIntent(message) {
           content: `
 حدد نية المستخدم بدقة من الخيارات التالية فقط:
 
-SUBSCRIPTION → يريد وصول كامل لكل الكورسات أو اشتراك عام
-PAYMENT → يسأل عن وسائل الدفع أو التحويل
+SUBSCRIPTION → يريد وصول كامل لكل الكورسات أو عضوية عامة
+PAYMENT → يسأل عن وسائل الدفع
 AUTHOR → يريد الانضمام كمحاضر
-AFFILIATE → يسأل عن العمولة أو التسويق بالعمولة
+AFFILIATE → يسأل عن التسويق بالعمولة
 GENERAL → سؤال عام
 
 أجب بكلمة واحدة فقط.
@@ -101,7 +118,7 @@ GENERAL → سؤال عام
 }
 
 /* ==============================
-   ✅ APPEND LINK BASED ON INTENT
+   ✅ APPEND LINK
 ============================== */
 
 function appendSmartLink(reply, intent) {
@@ -165,31 +182,31 @@ app.post("/chat", async (req, res) => {
     const pageIntent = await classifyPageIntent(message);
     console.log("🧠 Intent:", pageIntent);
 
-    /* ✅ STEP 2: SMART SEARCH BASED ON INTENT */
-    let searchQuery = message;
+    /* ✅ STEP 2: RETRIEVE CONTENT */
+    let pages = [];
 
     if (pageIntent === "SUBSCRIPTION") {
-      searchQuery = "اشتراك عام عضوية سنة كاملة 49 دولار easyT";
+      pages = await getPageByURL("https://easyt.online/p/subscriptions");
     }
     else if (pageIntent === "PAYMENT") {
-      searchQuery = "طرق الدفع انستا باي فودافون كاش تحويل بنكي easyT";
+      pages = await getPageByURL("https://easyt.online/p/Payments");
     }
     else if (pageIntent === "AUTHOR") {
-      searchQuery = "انضم الى اسرة easyT كمحاضر شروط التقديم";
+      pages = await getPageByURL("https://easyt.online/p/author");
     }
     else if (pageIntent === "AFFILIATE") {
-      searchQuery = "برنامج التسويق بالعمولة نسبة 20% صرف العمولة easyT";
+      pages = await getPageByURL("https://easyt.online/p/affiliate");
+    }
+    else {
+      pages = await searchPages(message);
     }
 
-    let pages = await searchPages(searchQuery);
-
-    /* ✅ STEP 3: BUILD CONTEXT */
     let pageContext = "";
     if (pages.length > 0) {
       pageContext = pages.map(p => p.content).join("\n\n");
     }
 
-    /* ✅ STEP 4: GENERATE ANSWER */
+    /* ✅ STEP 3: GENERATE RESPONSE */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -213,7 +230,7 @@ app.post("/chat", async (req, res) => {
 
     reply = cleanHTML(reply);
 
-    /* ✅ STEP 5: APPEND SMART LINK */
+    /* ✅ STEP 4: ADD LINK */
     reply = appendSmartLink(reply, pageIntent);
 
     return res.json({ reply, session_id });
