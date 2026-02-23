@@ -172,7 +172,7 @@ async function getPageByURL(url) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER
+   ✅ INTENT CLASSIFIER (✅ IMPROVED)
 ============================== */
 
 async function classifyPageIntent(message) {
@@ -186,13 +186,16 @@ async function classifyPageIntent(message) {
           content: `
 حدد نية المستخدم من القائمة التالية:
 
-COURSE_SEARCH
-ACCESS_ISSUE
-SUBSCRIPTION
-PAYMENT
-AUTHOR
-AFFILIATE
+COURSE_SEARCH (مثال: عايز دورة – في كورسات ايه – ابحث عن دورة)
+ACCESS_ISSUE (مثال: مش لاقي الدورة – الدورة مش ظاهرة – دخلت ومش لاقيها)
+SUBSCRIPTION (مثال: الاشتراك العام – سعر الاشتراك – العضوية – عرض رمضان – تفاصيل الاشتراك)
+PAYMENT (مثال: طرق الدفع – ازاي ادفع – تحويل بنكي – انستا باي)
+AUTHOR (مثال: عايز ابقى محاضر – شروط الانضمام كمحاضر)
+AFFILIATE (مثال: التسويق بالعمولة – عمولة كام – ازاي اسجل افلييت)
 GENERAL
+
+إذا ذكر المستخدم أي كلمة تشير إلى اشتراك أو عضوية حتى لو مكتوبة بخطأ إملائي
+فصنّفها SUBSCRIPTION.
 
 أجب بكلمة واحدة فقط.
 `
@@ -306,7 +309,6 @@ app.post("/chat", async (req, res) => {
 
     const contextualMessage = buildContextualMessage(history, message, currentEntity);
 
-    // ✅ rewrite once and use everywhere
     const rewrittenQuery = await rewriteUserQuery(contextualMessage);
 
     let intent = await classifyPageIntent(rewrittenQuery);
