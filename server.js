@@ -90,50 +90,36 @@ async function search_pages(query) {
   return data || [];
 }
 
-// ✅ أداة الاشتراك العام
 async function get_subscription_info() {
   const { data } = await supabase
     .from("site_pages")
-    .select("content")
+    .select("title, content, page_url")
     .ilike("page_url", "%subscription%");
 
   return data || [];
 }
 
 /* =====================================================
-   ✅ TIMEOUT WRAPPER
+   ✅ FORMAT RESPONSE CLEANLY
 ===================================================== */
 
-function withTimeout(promise, ms = 10000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), ms)
-    )
-  ]);
-}
-
-/* =====================================================
-   ✅ SANITIZE INPUT
-===================================================== */
-
-function sanitizeInput(text) {
+function cleanMarkdown(text) {
   return text
-    .replace(/ignore previous instructions/gi, "")
-    .replace(/system prompt/gi, "")
-    .replace(/reveal system/gi, "")
+    .replace(/###/g, "")
+    .replace(/##/g, "")
+    .replace(/#/g, "")
     .trim();
 }
 
-/* =====================================================
-   ✅ FORMAT LINKS (Clickable URLs)
-===================================================== */
-
-function formatLinks(text) {
-  return text.replace(
-    /(https?:\/\/[^\s]+)/g,
-    `<a href="$1" target="_blank" style="color:#c40000;font-weight:bold;">$1</a>`
-  );
+function formatCoursesWithLinks(text, courses) {
+  courses.forEach(course => {
+    if (course.title && course.url) {
+      const linkHTML = `🔗 <a href="${course.url}" target="_blank" style="color:#c40000;font-weight:bold;">${course.title}</a>`;
+      text = text.replace(course.url, "");
+      text += `<br><br>${linkHTML}`;
+    }
+  });
+  return text;
 }
 
 /* =====================================================
@@ -150,93 +136,67 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ reply: "رسالة غير صالحة." });
     }
 
-    message = sanitizeInput(message);
-
     if (!session_id) session_id = crypto.randomUUID();
 
     const history = getSession(session_id);
     updateMemory(history, message);
 
-    /* =====================================================
-       ✅ AGENT STEP
-    ===================================================== */
+    const agentResponse = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: `
+أنت مساعد داخل منصة easyT.
 
-    const agentResponse = await withTimeout(
-      openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content: `
-أنت مساعد ذكي داخل منصة easyT.
+إذا أراد المستخدم كل الدورات استخدم get_subscription_info.
+إذا بحث عن دورة محددة استخدم search_courses.
+إذا سؤال عام استخدم search_pages.
 
-إذا أراد المستخدم الوصول إلى جميع الدورات أو باقة شاملة،
-استخدم أداة get_subscription_info.
-
-إذا كان يبحث عن دورة محددة،
-استخدم search_courses.
-
-إذا كان يسأل عن معلومات عامة،
-استخدم search_pages.
-
-لا تخترع معلومات.
-لا تقترح أي منصة خارج easyT.
+لا تكتب روابط مباشرة داخل النص.
 `
-          },
-          ...history
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "search_courses",
-              description: "Search inside easyT courses database",
-              parameters: {
-                type: "object",
-                properties: {
-                  query: { type: "string" }
-                },
-                required: ["query"]
-              }
-            }
-          },
-          {
-            type: "function",
-            function: {
-              name: "search_pages",
-              description: "Search inside official easyT pages",
-              parameters: {
-                type: "object",
-                properties: {
-                  query: { type: "string" }
-                },
-                required: ["query"]
-              }
-            }
-          },
-          {
-            type: "function",
-            function: {
-              name: "get_subscription_info",
-              description: "Get info about general subscription giving access to all courses",
-              parameters: {
-                type: "object",
-                properties: {}
-              }
+        },
+        ...history
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "search_courses",
+            parameters: {
+              type: "object",
+              properties: { query: { type: "string" } },
+              required: ["query"]
             }
           }
-        ],
-        tool_choice: "auto"
-      }),
-      15000
-    );
+        },
+        {
+          type: "function",
+          function: {
+            name: "search_pages",
+            parameters: {
+              type: "object",
+              properties: { query: { type: "string" } },
+              required: ["query"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "get_subscription_info",
+            parameters: {
+              type: "object",
+              properties: {}
+            }
+          }
+        }
+      ],
+      tool_choice: "auto"
+    });
 
     const messageResponse = agentResponse.choices[0].message;
-
-    /* =====================================================
-       ✅ TOOL EXECUTION
-    ===================================================== */
 
     if (messageResponse.tool_calls) {
 
@@ -249,82 +209,71 @@ app.post("/chat", async (req, res) => {
       let toolResult = [];
 
       if (toolName === "search_courses") {
-        toolResult = await withTimeout(search_courses(args.query));
+        toolResult = await search_courses(args.query);
       }
 
       if (toolName === "search_pages") {
-        toolResult = await withTimeout(search_pages(args.query));
+        toolResult = await search_pages(args.query);
       }
 
       if (toolName === "get_subscription_info") {
-        toolResult = await withTimeout(get_subscription_info());
+        toolResult = await get_subscription_info();
       }
 
-      if (!toolResult || toolResult.length === 0) {
+      if (!toolResult.length) {
         return res.json({
-          reply: "حالياً لا توجد معلومات متاحة داخل منصة easyT حول هذا الطلب.",
+          reply: "حالياً لا توجد معلومات متاحة داخل منصة easyT.",
           session_id
         });
       }
 
-      let context = JSON.stringify(toolResult);
-      if (context.length > MAX_CONTEXT_LENGTH) {
-        context = context.slice(0, MAX_CONTEXT_LENGTH);
-      }
-
-      const finalResponse = await withTimeout(
-        openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          temperature: 0.2,
-          messages: [
-            {
-              role: "system",
-              content: `
-أنت مستشار رسمي داخل easyT.
-استخدم فقط البيانات القادمة من الأداة.
-لا تخترع معلومات.
+      const finalResponse = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: `
+استخدم البيانات فقط.
+لا تعرض روابط كنص مباشر.
 `
-            },
-            ...history,
-            messageResponse,
-            {
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: context
-            }
-          ]
-        }),
-        15000
-      );
+          },
+          ...history,
+          messageResponse,
+          {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(toolResult)
+          }
+        ]
+      });
 
       let reply = finalResponse.choices[0].message.content;
 
-      reply = formatLinks(reply);
+      reply = cleanMarkdown(reply);
+
+      reply = formatCoursesWithLinks(reply, toolResult);
+
       reply = reply.replace(/\n/g, "<br>");
 
       return res.json({ reply, session_id });
     }
 
-    let reply = messageResponse.content;
-    reply = formatLinks(reply);
+    let reply = cleanMarkdown(messageResponse.content);
     reply = reply.replace(/\n/g, "<br>");
 
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("AI ERROR:", error);
+    console.error(error);
     return res.status(500).json({
-      reply: "حدث خطأ مؤقت، يرجى المحاولة مرة أخرى."
+      reply: "حدث خطأ مؤقت."
     });
   }
 });
 
-/* =====================================================
-   ✅ START SERVER
-===================================================== */
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🚀 EasyT AI Production Agent Running");
+  console.log("🚀 EasyT AI Fully Fixed & Clean Running");
 });
