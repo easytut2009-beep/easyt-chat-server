@@ -243,7 +243,7 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
     const link = d.link || `https://easyt.online/p/${d.slug}`;
 
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
+html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدبلومة والاشتراك</a>`;
     html += `${i + 1}. ${d.title}</a><br>`;
 
     if (d.description) {
@@ -266,7 +266,8 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
       }
     }
 
-    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدبلومة والاشتراك</a>`;
+   html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدورة والاشتراك</a>`;
+
     html += `</div>`;
   });
 
@@ -1214,7 +1215,7 @@ function formatCategoryCourses(courses, category, originalTopic) {
     if (c.image_url) {
       html += `<div style="text-align:center;margin-bottom:8px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
     }
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">${i + 1}. ${c.title}</a><br>`;
+html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدورة والاشتراك</a></div>`;
     if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
