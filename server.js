@@ -6,6 +6,7 @@
    ⚡ Instructor cache
    ⚡ Parallel course + diploma search
    ⚡ Parallel buildContext (FAQ + site_pages)
+   🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas HTML
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -235,6 +236,7 @@ function mapDiplomaToCategory(diplomaTitle) {
 
 /**
  * Format diploma cards + optional related courses
+ * 🔧 FIXED: HTML structure, title as link, text links instead of styled buttons
  */
 function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
   let html = `<b>🎓 الدبلومات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -243,7 +245,8 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
     const link = d.link || `https://easyt.online/p/${d.slug}`;
 
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
-html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدبلومة والاشتراك</a>`;
+
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
     html += `${i + 1}. ${d.title}</a><br>`;
 
     if (d.description) {
@@ -266,8 +269,7 @@ html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;b
       }
     }
 
-   html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدورة والاشتراك</a>`;
-
+    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدبلومة والاشتراك</a>`;
     html += `</div>`;
   });
 
@@ -290,6 +292,8 @@ html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;b
           ? `💰 مجاني 🎉<br>`
           : `💰 <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
       }
+
+      html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
       html += `</div>`;
     });
   }
@@ -1146,6 +1150,7 @@ async function getCoursesByCategory(categoryKey) {
 
 /* ══════════════════════════════════════════════════════════
    ═══ Format Course Cards ════════════════════════════════
+   🔧 FIXED: text links instead of styled buttons
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category, diplomaMention = "") {
   let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -1186,7 +1191,7 @@ function formatCourses(courses, category, diplomaMention = "") {
       html += `📝 ${desc}<br>`;
     }
 
-    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a>`;
+    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
     html += `</div>`;
   });
 
@@ -1206,27 +1211,40 @@ function formatCourses(courses, category, diplomaMention = "") {
   return html;
 }
 
+/**
+ * 🔧 FIXED: Complete HTML rebuild — title, instructor, price, description, link, then </div>
+ */
 function formatCategoryCourses(courses, category, originalTopic) {
   let html = `<b>🔍 مفيش كورس باسم "${originalTopic}" بالظبط، لكن في دورات قريبة في قسم ${category.name}:</b><br><br>`;
 
   courses.forEach((c, i) => {
     const link = c.url || category.url;
     html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
+
     if (c.image_url) {
       html += `<div style="text-align:center;margin-bottom:8px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
     }
-html += `<br><a href="${link}" target="_blank" style="display:block;width:100%;background:#c40000;color:#fff !important;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;text-align:center;direction:rtl;box-sizing:border-box;">📖 تفاصيل الدورة والاشتراك</a></div>`;
+
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
+    html += `${i + 1}. ${c.title}</a><br>`;
+
     if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
+
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
-      html += p === "0" || p === "0.00" || p.toLowerCase() === "free"
-        ? `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`
-        : `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+      if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
+        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+      } else {
+        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+      }
     }
+
     if (c.description) {
       html += `📝 ${c.description.length > 120 ? c.description.slice(0, 120) + "..." : c.description}<br>`;
     }
-    html += `<br><a href="${link}" target="_blank" style="display:inline-block;background:#c40000;color:#fff;padding:6px 16px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:13px;">📖 تفاصيل الدورة والاشتراك</a></div>`;
+
+    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
+    html += `</div>`;
   });
 
   html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${category.name} ←</a>`;
@@ -2395,7 +2413,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.0-perf",
+    version: "6.0-perf-fixed",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2408,12 +2426,13 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.0 ⚡ Performance Optimized`);
+  console.log(`\n🤖 easyT Chatbot v6.0 ⚡ Performance Optimized + HTML Fixed`);
   console.log(`   Port: ${PORT}`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
   console.log(`   ⚡ Parallel course + diploma search`);
+  console.log(`   🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas`);
   console.log(
     `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
   );
