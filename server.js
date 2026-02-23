@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v5.3 — AI-First + Follow-Up + Smart Search
+   🤖 easyT Chatbot v5.4 — Robust Search Fix
+   ✅ Search: Simple per-term queries (no complex OR)
+   ✅ Classification: Topic names always = COURSE_SEARCH
+   ✅ Follow-up detection preserved
+   ✅ AI Relevance filter (safe mode)
    ✅ Instructor names from instructors table
-   ✅ Image rendering improved
-   ✅ Payment issues correctly classified
-   ✅ Follow-up detection (هتوصلني ازاي بعد سؤال الشهادة)
-   ✅ Short term protection (كورس c مش بيجيب كل حاجة)
-   ✅ AI Relevance filter for search results
+   ✅ Full debug logging
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -61,7 +61,8 @@ const DB = {
   full_content: "full_content",
 };
 
-const SELECT = [
+/* ═══ Build SELECT — only include columns that exist ═══ */
+let SELECT_COLUMNS = [
   DB.title,
   DB.description,
   DB.link,
@@ -70,7 +71,8 @@ const SELECT = [
   DB.image,
   DB.subtitle,
   DB.domain,
-].join(", ");
+];
+const SELECT = SELECT_COLUMNS.join(", ");
 
 /* ═══ Map course + resolve instructor name ═══ */
 function mapCourse(row, instructorMap) {
@@ -326,7 +328,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification — v5.3 with FOLLOW_UP ════════════
+   ═══ AI Classification v5.4 ═════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -338,74 +340,71 @@ Return ONLY valid JSON:
 {
   "intent": "GREETING|START_LEARNING|PAYMENT|SUBSCRIPTION|COURSE_SEARCH|ACCESS_ISSUE|AFFILIATE|AUTHOR|FOLLOW_UP|GENERAL",
   "entity": "topic or null",
-  "search_terms": ["term_ar", "term_en", "variation1", "variation2", "variation3"],
+  "search_terms": ["term1", "term2", "term3"],
   "category_key": "key or null",
   "page_type": "payment|subscription|affiliate|author|null",
   "refers_to_previous": true/false
 }
 
-═══ FOLLOW-UP DETECTION (CRITICAL — READ FIRST) ═══
-⚠️ SHORT messages (1-6 words) that contain pronouns, references, or continuation words
-   are ALMOST ALWAYS follow-ups to the previous conversation topic.
+═══ ⚠️ MOST IMPORTANT RULE — COURSE_SEARCH DETECTION ═══
+ANY message that mentions a SPECIFIC topic, tool, software, skill, language, 
+framework, or technology name → MUST be COURSE_SEARCH.
 
-Examples of follow-up patterns:
-• Previous: certificate/شهادة → "هتوصلني ازاي" = asking about certificate DELIVERY → FOLLOW_UP
-• Previous: course/كورس → "بكام" = asking about THAT course price → FOLLOW_UP
-• Previous: subscription → "وبعد السنة" = asking about renewal → FOLLOW_UP
-• Previous: payment → "وفودافون كاش" = asking about vodafone payment → PAYMENT
-• Previous: any topic → "ازاي", "فين", "امتى", "هي كام" = about THAT topic → FOLLOW_UP
-• Previous: certificate → "معتمدة" = about certificate accreditation → FOLLOW_UP
-• Previous: course → "فيه خصم" = about discount on THAT course → FOLLOW_UP
+Even with Arabic prepositions like في, عن, على, عايز, محتاج:
+• "في فوتوشوب" → COURSE_SEARCH (entity: فوتوشوب)
+• "عن بايثون" → COURSE_SEARCH (entity: بايثون)
+• "في كورس سي" → COURSE_SEARCH (entity: لغة C)
+• "عايز اتعلم اكسل" → COURSE_SEARCH (entity: اكسل)
+• "محتاج كورس تصميم" → COURSE_SEARCH (entity: تصميم)
+• "فوتوشوب" → COURSE_SEARCH
+• "python" → COURSE_SEARCH
+• "كورس سي" → COURSE_SEARCH
+• "تعلم جافا" → COURSE_SEARCH
+• "دورة تسويق" → COURSE_SEARCH
 
-Words that signal follow-up: هتوصلني, هيوصلني, توصلني, ازاي, فين, امتى, طيب, وبعدين, كام,
-  هي, هو, دي, ده, منها, عليها, فيها, عنها, معاها, ليها, تاني, كمان, وايه
+⚠️ NEVER classify a specific topic as GENERAL or START_LEARNING!
+⚠️ NEVER ask "ممكن توضح أكتر" if the topic is clear!
 
-RULE: If "refers_to_previous" is true → intent = "FOLLOW_UP" and entity = the PREVIOUS topic/entity
+═══ FOLLOW-UP DETECTION ═══
+SHORT messages (1-6 words) with pronouns/references AFTER a previous topic = FOLLOW_UP.
+
+Examples:
+• After شهادة → "هتوصلني ازاي" → FOLLOW_UP (about certificate delivery)
+• After كورس → "بكام" → FOLLOW_UP (about that course price)
+• After subscription → "وبعد السنة" → FOLLOW_UP (about renewal)
+
+⚠️ BUT: If message contains a SPECIFIC NEW topic → COURSE_SEARCH, NOT FOLLOW_UP
+• After شهادة → "فوتوشوب" → COURSE_SEARCH (new topic, not follow-up)
+• After كورس سي → "وكمان بايثون" → COURSE_SEARCH (new topic)
 
 ═══ Intent Rules ═══
-• GREETING — hi, hello, سلام, أهلا (short greetings ONLY, no question)
-• START_LEARNING — wants to learn but NO specific topic mentioned
-• PAYMENT — payment methods, transfer, receipt, فودافون كاش, instapay,
-  AND payment PROBLEMS: البطاقة بترفض, card declined, مشكلة في الدفع,
-  مش قادر أدفع, الفيزا مش بتمشي, رفض الدفع, payment failed
-• SUBSCRIPTION — pricing, plans, offers, بكام, اشتراك, عرض رمضان (when NOT a follow-up)
-• COURSE_SEARCH — ANY specific topic, skill, tool, or course name
-• ACCESS_ISSUE — login/password/account problems ONLY (NOT payment)
+• GREETING — hi, hello, سلام, أهلا (ONLY short greetings with NO topic)
+• START_LEARNING — wants to learn but NO specific topic at all
+• PAYMENT — payment methods, transfer, receipt, card issues, البطاقة بترفض
+• SUBSCRIPTION — pricing, plans, offers, بكام الاشتراك
+• COURSE_SEARCH — ANY specific topic/tool/skill/technology (SEE ABOVE)
+• ACCESS_ISSUE — login/password/account problems ONLY
 • AFFILIATE — affiliate/commission program
 • AUTHOR — wants to become instructor
-• FOLLOW_UP — continuation of previous topic (see rules above)
-• GENERAL — other platform questions that are NOT follow-ups
+• FOLLOW_UP — continuation of previous topic (NO new topic mentioned)
+• GENERAL — other platform questions
 
-⚠️ "البطاقة بترفض" or any card/payment issue = PAYMENT (NOT ACCESS_ISSUE)
-⚠️ ACCESS_ISSUE is ONLY for login/password/account access problems
+═══ search_terms Rules (for COURSE_SEARCH) ═══
+Provide 3-5 focused search variations:
+• Arabic name + English name + common spelling
+• ⚠️ NO single-character terms! Minimum 2 characters.
+• For short names, ALWAYS expand:
+  "c"/"سي" → ["لغة سي", "C programming", "برمجة سي", "لغة C"]
+  "c++" → ["سي بلس بلس", "C++", "برمجة C++"]
+  "c#" → ["سي شارب", "C#", "c sharp"]
 
-═══ search_terms Rules (for COURSE_SEARCH only) ═══
-Provide 4-8 search variations that the DATABASE might contain:
-• Arabic name + English name + brand name + common misspellings
-• ⚠️ NEVER include single-character search terms alone!
-• For short programming language names, ALWAYS expand:
-  "c" → ["لغة سي", "C programming", "برمجة C", "برمجة سي", "Programming in C", "لغة C"]
-  "c++" → ["سي بلس بلس", "C++", "c plus plus", "برمجة C++", "لغة سي بلس"]
-  "c#" → ["سي شارب", "C#", "c sharp", "برمجة C#"]
-  "R" → ["لغة R", "R programming", "برمجة R", "تحليل بيانات R"]
-  "Go" → ["لغة Go", "Golang", "Go programming", "جو لانج"]
-  "SQL" → ["SQL", "إس كيو إل", "قواعد بيانات SQL", "database"]
-  "AI" → ["ذكاء اصطناعي", "AI", "Artificial Intelligence", "تعلم آلة"]
-• Include partial words too (e.g. "فوتو" for "فوتوشوب")
-• Examples:
-  "فوتوشوب" → ["فوتوشوب", "photoshop", "Photoshop", "Adobe Photoshop", "فوتو"]
+Examples:
+  "فوتوشوب" → ["فوتوشوب", "photoshop", "فوتو شوب", "Photoshop"]
   "بايثون" → ["بايثون", "python", "Python", "بايثن"]
-  "اكسل" → ["اكسل", "excel", "Excel", "إكسل", "Microsoft Excel"]
-  "مونتاج" → ["مونتاج", "premiere", "بريمير", "editing", "فيديو", "montage"]
+  "اكسل" → ["اكسل", "excel", "Excel", "إكسل"]
 
 ═══ category_key — closest match from: ═══
-${CAT_LIST}
-
-═══ Context Rules ═══
-• If previous intent=START_LEARNING and user replies with any field → COURSE_SEARCH
-• Single word like "فوتوشوب" or "python" → COURSE_SEARCH
-• "عايز أعمل موقع" → COURSE_SEARCH (search: تطوير مواقع, web development)
-• If previous topic exists and current message is short/ambiguous → FOLLOW_UP`;
+${CAT_LIST}`;
 
 async function classify(message, history, prevIntent, prevEntity) {
   try {
@@ -424,8 +423,8 @@ async function classify(message, history, prevIntent, prevEntity) {
       : "";
 
     const shortMsgHint =
-      message.trim().split(/\s+/).length <= 6 && history.length >= 2
-        ? `\n⚠️ This is a SHORT message with conversation history — CHECK if it's a FOLLOW_UP to the previous topic!`
+      message.trim().split(/\s+/).length <= 4 && history.length >= 2
+        ? `\n⚠️ Short message with history — if it contains a SPECIFIC topic → COURSE_SEARCH. Only FOLLOW_UP if NO new topic.`
         : "";
 
     const { choices } = await openai.chat.completions.create({
@@ -473,115 +472,138 @@ async function classify(message, history, prevIntent, prevEntity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Search v4 — Short Term Protection ════════════════
+   ═══ 🔧 DB Search v5.4 — SIMPLIFIED & ROBUST ═══════════
+   ══════════════════════════════════════════════════════════
+   
+   ✅ v5.3 Problem: Complex .or() with 18+ conditions failed silently
+   ✅ v5.4 Fix: Search term-by-term, accumulate results, then dedupe
+   
    ══════════════════════════════════════════════════════════ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
 
-  const allClean = [
-    ...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 1)),
-  ];
+  /* ── Clean terms: minimum 2 chars, max 8 terms ── */
+  const clean = [
+    ...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2)),
+  ].slice(0, 8);
 
-  // Safe terms (3+ chars) → ok for ilike %term%
-  const safeTerms = allClean.filter((t) => t.length >= 3);
+  if (!clean.length) return [];
 
-  // Short terms (1-2 chars) → need word-boundary search
-  const shortTerms = allClean.filter((t) => t.length >= 1 && t.length < 3);
+  console.log(`\n🔍 ═══ Search Start ═══`);
+  console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  console.log(`🔍 Safe terms: [${safeTerms.join(", ")}]`);
-  if (shortTerms.length)
-    console.log(`🔍 Short terms (special): [${shortTerms.join(", ")}]`);
+  /* ═══════════════════════════════════════════════
+     Strategy 1: Title ilike — per term (MOST RELIABLE)
+     ═══════════════════════════════════════════════ */
+  let collected = [];
 
-  if (!safeTerms.length && !shortTerms.length) return [];
-
-  /* ── Strategy 1: OR search with safe terms (3+ chars) ── */
-  if (safeTerms.length) {
+  for (const term of clean) {
     try {
-      const orConditions = safeTerms
-        .flatMap((t) => [
-          `${DB.title}.ilike.%${t}%`,
-          `${DB.subtitle}.ilike.%${t}%`,
-          `${DB.description}.ilike.%${t}%`,
-        ])
-        .join(",");
-
       const { data, error } = await supabase
         .from("courses")
         .select(SELECT)
-        .or(orConditions)
+        .ilike(DB.title, `%${term}%`)
         .limit(6);
 
-      if (!error && data?.length) {
+      if (error) {
+        console.log(`   ❌ Title "${term}": ${error.message}`);
+        continue;
+      }
+
+      if (data?.length) {
         console.log(
-          `✅ Strategy 1 (OR safe terms): ${data.length} results`
+          `   ✅ Title "${term}": ${data.length} → [${data
+            .map((d) => d[DB.title])
+            .join(", ")}]`
         );
-        return data;
+        collected.push(...data);
+      } else {
+        console.log(`   ⬜ Title "${term}": 0`);
       }
     } catch (e) {
-      console.error("❌ Strategy 1 exception:", e.message);
+      console.log(`   ❌ Title "${term}" exception: ${e.message}`);
     }
   }
 
-  /* ── Strategy 2: Short terms — word boundary patterns ── */
-  if (shortTerms.length) {
-    for (const term of shortTerms) {
-      const patterns = [
-        `% ${term} %`,
-        `${term} %`,
-        `% ${term}`,
-        `%${term}++%`,
-        `%${term}#%`,
-        `% ${term}/%`,
-        `%${term}++%`,
-      ];
-
-      for (const pattern of patterns) {
-        try {
-          const { data, error } = await supabase
-            .from("courses")
-            .select(SELECT)
-            .or(
-              `${DB.title}.ilike.${pattern},${DB.subtitle}.ilike.${pattern}`
-            )
-            .limit(6);
-
-          if (!error && data?.length) {
-            console.log(
-              `✅ Strategy 2 (short "${term}" pattern "${pattern}"): ${data.length} results`
-            );
-            return data;
-          }
-        } catch (e) {
-          /* skip */
-        }
-      }
-    }
+  /* Deduplicate by title */
+  if (collected.length) {
+    const seen = new Set();
+    collected = collected.filter((r) => {
+      const key = r[DB.title] || r[DB.link];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    console.log(`   🎯 Strategy 1 total (deduped): ${collected.length}`);
+    return collected.slice(0, 8);
   }
 
-  /* ── Strategy 3: title-only OR (safe terms) ── */
-  if (safeTerms.length) {
+  /* ═══════════════════════════════════════════════
+     Strategy 2: Subtitle ilike — per term
+     ═══════════════════════════════════════════════ */
+  for (const term of clean.slice(0, 5)) {
     try {
-      const titleOr = safeTerms
-        .map((t) => `${DB.title}.ilike.%${t}%`)
-        .join(",");
-
       const { data, error } = await supabase
         .from("courses")
         .select(SELECT)
-        .or(titleOr)
+        .ilike(DB.subtitle, `%${term}%`)
         .limit(6);
 
       if (!error && data?.length) {
-        console.log(`✅ Strategy 3 (title OR): ${data.length} results`);
+        console.log(`   ✅ Subtitle "${term}": ${data.length}`);
         return data;
       }
     } catch (e) {
-      console.error("❌ Strategy 3 exception:", e.message);
+      /* subtitle column might not exist — skip silently */
     }
   }
 
-  /* ── Strategy 4: full_content fallback (safe terms) ── */
-  for (const term of safeTerms.slice(0, 4)) {
+  /* ═══════════════════════════════════════════════
+     Strategy 3: Description ilike — per term
+     ═══════════════════════════════════════════════ */
+  for (const term of clean.slice(0, 4)) {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select(SELECT)
+        .ilike(DB.description, `%${term}%`)
+        .limit(6);
+
+      if (!error && data?.length) {
+        console.log(`   ✅ Description "${term}": ${data.length}`);
+        return data;
+      }
+    } catch (e) {}
+  }
+
+  /* ═══════════════════════════════════════════════
+     Strategy 4: Small OR on title + subtitle (max 2 terms)
+     ═══════════════════════════════════════════════ */
+  try {
+    const top2 = clean.slice(0, 2);
+    const orStr = top2
+      .map((t) => `${DB.title}.ilike.%${t}%`)
+      .join(",");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select(SELECT)
+      .or(orStr)
+      .limit(6);
+
+    if (!error && data?.length) {
+      console.log(`   ✅ Small OR: ${data.length}`);
+      return data;
+    }
+    if (error) console.log(`   ❌ Small OR: ${error.message}`);
+  } catch (e) {
+    console.log(`   ❌ Small OR exception: ${e.message}`);
+  }
+
+  /* ═══════════════════════════════════════════════
+     Strategy 5: full_content — per term
+     ═══════════════════════════════════════════════ */
+  for (const term of clean.slice(0, 3)) {
     try {
       const { data, error } = await supabase
         .from("courses")
@@ -590,41 +612,16 @@ async function searchCoursesRaw(terms) {
         .limit(5);
 
       if (!error && data?.length) {
-        console.log(
-          `✅ Strategy 4 (full_content "${term}"): ${data.length} results`
-        );
+        console.log(`   ✅ full_content "${term}": ${data.length}`);
         return data;
       }
-    } catch (e) {
-      /* skip */
-    }
+    } catch (e) {}
   }
 
-  /* ── Strategy 5: single ilike per column (safe terms) ── */
-  const columns = [DB.title, DB.description, DB.subtitle];
-  for (const col of columns) {
-    for (const term of safeTerms) {
-      try {
-        const { data, error } = await supabase
-          .from("courses")
-          .select(SELECT)
-          .ilike(col, `%${term}%`)
-          .limit(5);
-
-        if (!error && data?.length) {
-          console.log(
-            `✅ Strategy 5 (${col} ilike "${term}"): ${data.length} results`
-          );
-          return data;
-        }
-      } catch (e) {
-        /* skip */
-      }
-    }
-  }
-
-  /* ── Strategy 6: textSearch on title ── */
-  for (const term of safeTerms.slice(0, 3)) {
+  /* ═══════════════════════════════════════════════
+     Strategy 6: textSearch — per term
+     ═══════════════════════════════════════════════ */
+  for (const term of clean.slice(0, 3)) {
     try {
       const { data, error } = await supabase
         .from("courses")
@@ -633,27 +630,21 @@ async function searchCoursesRaw(terms) {
         .limit(5);
 
       if (!error && data?.length) {
-        console.log(
-          `✅ Strategy 6 (textSearch "${term}"): ${data.length} results`
-        );
+        console.log(`   ✅ textSearch "${term}": ${data.length}`);
         return data;
       }
-    } catch (e) {
-      /* skip */
-    }
+    } catch (e) {}
   }
 
-  console.log(
-    `⚠️ ALL strategies failed — safe=[${safeTerms.join(
-      ", "
-    )}] short=[${shortTerms.join(", ")}]`
-  );
+  console.log(`   ⚠️ ALL 6 strategies failed!`);
+  console.log(`🔍 ═══ Search End (empty) ═══\n`);
   return [];
 }
 
-/* ═══ AI Relevance Filter ═══ */
+/* ═══ AI Relevance Filter (SAFE MODE) ═══ */
 async function filterRelevant(courses, userQuery, entity) {
-  if (courses.length <= 2) return courses;
+  /* Skip filter if 3 or fewer results — show all */
+  if (courses.length <= 3) return courses;
 
   try {
     const titles = courses.map((c, i) => `${i}: ${c.title}`).join("\n");
@@ -665,17 +656,17 @@ async function filterRelevant(courses, userQuery, entity) {
       messages: [
         {
           role: "system",
-          content: `You filter search results for relevance. Given user query and course list, return ONLY the JSON array of indices of RELEVANT courses.
-Be strict — only include courses that actually match the user's topic.
-Example: user asks "كورس c" (C programming) → only include C/C++/programming courses, exclude music/chinese/excel.
-If NONE are relevant, return empty array [].
-Return format: [0, 2, 5]`,
+          content: `Filter search results for relevance. Given user query and course list, return JSON array of RELEVANT indices.
+Be generous — include anything that MIGHT be related. When in doubt, INCLUDE it.
+If user asks for "C programming" → include C, C++, programming courses. Exclude clearly unrelated (music, cooking, etc).
+Return format: [0, 1, 2]
+If most seem relevant, return all indices.`,
         },
         {
           role: "user",
-          content: `User query: "${userQuery}"${
+          content: `Query: "${userQuery}"${
             entity ? ` (topic: ${entity})` : ""
-          }\n\nCourses:\n${titles}\n\nReturn JSON array of relevant indices:`,
+          }\n\nCourses:\n${titles}\n\nRelevant indices:`,
         },
       ],
     });
@@ -688,29 +679,44 @@ Return format: [0, 2, 5]`,
         .map((i) => courses[i]);
 
       console.log(
-        `🎯 Relevance filter: ${courses.length} → ${filtered.length}`
+        `   🎯 Relevance: ${courses.length} → ${filtered.length}`
       );
-      if (filtered.length > 0) return filtered;
+
+      /* Safety: if filter removes too much, return original */
+      if (filtered.length >= 1) return filtered;
     }
   } catch (e) {
-    console.error("❌ Relevance filter error:", e.message);
+    console.error("   ❌ Relevance filter error:", e.message);
   }
 
+  /* On any failure → return original results (never lose data) */
   return courses;
 }
 
 /* ═══ Search + Enrich + Filter ═══ */
 async function searchCourses(terms, userQuery, entity) {
   const rawRows = await searchCoursesRaw(terms);
-  if (!rawRows.length) return [];
+
+  if (!rawRows.length) {
+    console.log(`   📭 searchCourses: 0 raw results`);
+    return [];
+  }
+
+  console.log(`   📦 searchCourses: ${rawRows.length} raw results`);
 
   const instructorMap = await getInstructorMap(rawRows);
   const courses = rawRows.map((row) => mapCourse(row, instructorMap));
   const deduped = dedupe(courses);
 
-  // AI relevance filter
-  const filtered = await filterRelevant(deduped, userQuery || "", entity);
-  return filtered;
+  console.log(`   📦 After mapping/dedup: ${deduped.length}`);
+
+  /* AI relevance filter — only if 4+ results */
+  if (deduped.length > 3) {
+    const filtered = await filterRelevant(deduped, userQuery || "", entity);
+    return filtered.slice(0, 6);
+  }
+
+  return deduped.slice(0, 6);
 }
 
 function dedupe(courses) {
@@ -741,7 +747,7 @@ async function searchPages(query) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Results ══════════════════════════════
+   ═══ Format Course Cards (with images) ══════════════════
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category) {
   let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -819,9 +825,9 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 2. لو مش متأكد → "تقدر تتواصل مع الدعم واتساب 01027007899 😊"
 3. رحّب في أول رسالة فقط — بعد كده لا ترحّب
 4. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
-5. ⚠️ اقرأ المحادثة السابقة كويس — لو المستخدم بيكمّل موضوع قبل كده، ردّ في نفس السياق
-6. ⚠️ لو المستخدم قال "ازاي" أو "هتوصلني ازاي" أو "فين" — ده سؤال متابعة عن آخر موضوع اتكلمتوا فيه
-7. ⚠️ ما تعاملش رسالة قصيرة كأنها سؤال جديد مستقل — دايماً شوف السياق الأول
+5. ⚠️ لو المستخدم قال اسم موضوع معين (فوتوشوب، بايثون، اكسل) → ده يبقى بيدور على كورس. ما تقولش "ممكن توضح أكتر"!
+6. ⚠️ اقرأ المحادثة السابقة — لو بيكمّل موضوع قبل كده، ردّ في نفس السياق
+7. ⚠️ "ازاي" / "هتوصلني ازاي" / "فين" = سؤال متابعة عن آخر موضوع
 
 【قواعد الروابط — HTML فقط】
 ★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#c40000;font-weight:bold;">💳 صفحة طرق الدفع</a>
@@ -916,15 +922,30 @@ app.post("/chat", limiter, async (req, res) => {
       category_key,
       page_type,
       refers_to_previous,
-    } = await classify(message, session.history, session.intent, session.entity);
+    } = await classify(
+      message,
+      session.history,
+      session.intent,
+      session.entity
+    );
 
-    console.log(`\n🏷️ Message: "${message.slice(0, 50)}"`);
-    console.log(`   Intent: ${intent} | Entity: ${entity} | Follow-up: ${refers_to_previous}`);
-    console.log(`   Terms: [${search_terms.slice(0, 5).join(", ")}]`);
-    console.log(`   Category: ${category_key}`);
-    console.log(`   Prev intent: ${session.intent} | Prev entity: ${session.entity}`);
+    console.log(`\n════════════════════════════════`);
+    console.log(`💬 Message: "${message.slice(0, 60)}"`);
+    console.log(
+      `🏷️  Intent: ${intent} | Entity: ${entity} | FollowUp: ${refers_to_previous}`
+    );
+    console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}]`);
+    console.log(`📂 Category: ${category_key || "none"}`);
+    console.log(
+      `📌 Prev: intent=${session.intent} entity=${session.entity}`
+    );
 
-    if (intent !== "GENERAL" && intent !== "GREETING" && intent !== "FOLLOW_UP") {
+    /* Update session context */
+    if (
+      intent !== "GENERAL" &&
+      intent !== "GREETING" &&
+      intent !== "FOLLOW_UP"
+    ) {
       session.intent = intent;
       if (entity) session.entity = entity;
     }
@@ -933,9 +954,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 2: Handle by Intent ── */
 
-    // ────────────────────────────────
-    // 2A. GREETING
-    // ────────────────────────────────
+    // ─── GREETING ───
     if (intent === "GREETING") {
       const reply = isFirst
         ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>• 🎓 الدورات والكورسات<br>• 💳 طرق الدفع والاشتراك<br>• 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`
@@ -945,9 +964,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ────────────────────────────────
-    // 2B. START_LEARNING
-    // ────────────────────────────────
+    // ─── START_LEARNING ───
     if (intent === "START_LEARNING") {
       const fields = Object.values(CATEGORIES)
         .map((c) => `• ${c.name}`)
@@ -960,16 +977,31 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ────────────────────────────────
-    // 2C. COURSE_SEARCH
-    // ────────────────────────────────
+    // ─── COURSE_SEARCH ───
     if (intent === "COURSE_SEARCH") {
       const displayTerm = entity || message;
-      const allTerms = [...new Set([...search_terms, message])];
+
+      /* Build search terms — include entity, search_terms, and message */
+      const allTerms = [
+        ...new Set([
+          ...(entity ? [entity] : []),
+          ...search_terms,
+          message,
+        ]),
+      ].filter((t) => t && t.trim().length >= 2);
+
+      console.log(
+        `🔍 COURSE_SEARCH for "${displayTerm}" → allTerms: [${allTerms.join(
+          " | "
+        )}]`
+      );
 
       let courses = await searchCourses(allTerms, message, entity);
 
       if (courses.length > 0) {
+        console.log(
+          `✅ Found ${courses.length} courses → showing cards`
+        );
         const reply = formatCourses(courses, category);
         session.history.push({
           role: "assistant",
@@ -978,8 +1010,10 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      // No DB results → GPT fallback
-      console.log(`⚠️ No DB results for "${displayTerm}" → GPT fallback`);
+      /* ── No DB results → GPT fallback with category link ── */
+      console.log(
+        `⚠️ No DB results for "${displayTerm}" → GPT fallback`
+      );
 
       let context = PLATFORM_KB;
       if (category) {
@@ -988,13 +1022,13 @@ app.post("/chat", limiter, async (req, res) => {
 
       session.history.push({
         role: "system",
-        content: `المستخدم يبحث عن "${displayTerm}" ولم يتم العثور على دورات محددة في قاعدة البيانات. وجّهه لرابط التصنيف المناسب أو الموقع الرئيسي. لا تخترع أسماء دورات.`,
+        content: `المستخدم يبحث عن "${displayTerm}" ولم يتم العثور على دورات في قاعدة البيانات. وجّهه لرابط التصنيف المناسب أو الموقع الرئيسي. لا تخترع أسماء دورات. لا تقل "ممكن توضح أكتر".`,
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
 
-      session.history.pop();
+      session.history.pop(); // remove temp system msg
 
       if (category && !reply.includes(category.url)) {
         reply += `<br><br>🔗 ${makeLink(
@@ -1014,24 +1048,51 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ────────────────────────────────
-    // 2D. ACCESS_ISSUE — GPT-based
-    // ────────────────────────────────
-    if (intent === "ACCESS_ISSUE") {
+    // ─── FOLLOW_UP ───
+    if (intent === "FOLLOW_UP") {
+      console.log(
+        `🔗 Follow-up | Prev: ${session.intent}/${session.entity} | Entity: ${entity}`
+      );
+
       let context = PLATFORM_KB;
+      const followUpEntity =
+        entity || session.entity || "الموضوع السابق";
 
       session.history.push({
         role: "system",
-        content: `المستخدم عنده مشكلة في الوصول أو مشكلة تقنية. حلل رسالته واعطيه خطوات عملية مناسبة لمشكلته بالتحديد. في النهاية وجّهه للدعم واتساب 01027007899.`,
+        content: `⚠️ هذه متابعة للمحادثة السابقة عن "${followUpEntity}".
+الرد لازم يكون مرتبط بالموضوع اللي كان بيتكلم عنه.
+- شهادة + "هتوصلني ازاي" → الشهادة إلكترونية بتتحمل من حسابه
+- كورس + "بكام" → سعر الكورس
+- اشتراك + "وبعد السنة" → التجديد تلقائي`,
       });
 
-      let reply = await generateAIResponse(session, context, isFirst);
+      let reply = await generateAIResponse(session, context, false);
       reply = formatReply(reply);
 
+      session.history.pop(); // remove temp system msg
+
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
+
+    // ─── ACCESS_ISSUE ───
+    if (intent === "ACCESS_ISSUE") {
+      session.history.push({
+        role: "system",
+        content: `المستخدم عنده مشكلة في الوصول أو مشكلة تقنية. اعطيه خطوات عملية + وجّهه للدعم واتساب 01027007899.`,
+      });
+
+      let reply = await generateAIResponse(
+        session,
+        PLATFORM_KB,
+        isFirst
+      );
+      reply = formatReply(reply);
       session.history.pop();
 
       if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
-        reply += `<br><br>لو المشكلة لسه موجودة:<br>${makeLink(
+        reply += `<br><br>${makeLink(
           "https://wa.me/201027007899",
           "📱 تواصل مع الدعم واتساب"
         )}`;
@@ -1041,44 +1102,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ────────────────────────────────
-    // 2E. FOLLOW_UP — Continue previous topic
-    // ────────────────────────────────
-    if (intent === "FOLLOW_UP") {
-      console.log(
-        `🔗 Follow-up | Prev: ${session.intent}/${session.entity} | Entity: ${entity}`
-      );
-
-      let context = PLATFORM_KB;
-
-      const followUpEntity = entity || session.entity || "الموضوع السابق";
-
-      session.history.push({
-        role: "system",
-        content: `⚠️ هذه الرسالة هي تكملة/متابعة للمحادثة السابقة عن "${followUpEntity}".
-الرد لازم يكون مرتبط بالموضوع اللي كان بيتكلم عنه قبل كده.
-لا تعامل الرسالة كسؤال مستقل — اربطها بالسياق السابق.
-
-أمثلة:
-- لو كان بيسأل عن الشهادة وقال "هتوصلني ازاي" → يبقى بيسأل عن توصيل الشهادة (الشهادة إلكترونية بتتحمل من حسابه)
-- لو كان بيسأل عن كورس وقال "بكام" → يبقى بيسأل عن سعر الكورس
-- لو كان بيسأل عن الاشتراك وقال "وبعد السنة" → يبقى بيسأل عن التجديد
-- لو قال "معتمدة" بعد سؤال الشهادة → يبقى بيسأل هل الشهادة معتمدة`,
-      });
-
-      let reply = await generateAIResponse(session, context, false);
-      reply = formatReply(reply);
-
-      // Remove injected system message
-      session.history.pop();
-
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
-    }
-
-    // ────────────────────────────────
-    // 2F. PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR
-    // ────────────────────────────────
+    // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
     if (
       ["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)
     ) {
@@ -1094,9 +1118,7 @@ app.post("/chat", limiter, async (req, res) => {
               .join("\n")
               .slice(0, 2000);
         }
-      } catch (e) {
-        /* skip */
-      }
+      } catch (e) {}
 
       let reply = await generateAIResponse(session, context, isFirst);
       reply = formatReply(reply);
@@ -1130,9 +1152,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ────────────────────────────────
-    // 2G. GENERAL
-    // ────────────────────────────────
+    // ─── GENERAL (fallback) ───
     let context = PLATFORM_KB;
 
     try {
@@ -1145,9 +1165,7 @@ app.post("/chat", limiter, async (req, res) => {
             .join("\n---\n")
             .slice(0, 2000);
       }
-    } catch (e) {
-      /* skip */
-    }
+    } catch (e) {}
 
     let reply = await generateAIResponse(session, context, isFirst);
     reply = formatReply(reply);
@@ -1167,37 +1185,41 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Debug Endpoint ═════════════════════════════════════
+   ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
+
+/* 🔧 Test search for any query */
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
 
   const classification = await classify(q, [], null, null);
 
   const terms = classification.search_terms.length
-    ? [...classification.search_terms, q]
+    ? [...new Set([...classification.search_terms, q])]
     : [q];
+
   const courses = await searchCourses(terms, q, classification.entity);
 
-  let rawCheck = null;
+  /* Also test raw DB access */
+  let rawTest = {};
   try {
     const { data, error } = await supabase
       .from("courses")
-      .select("*")
-      .limit(1);
+      .select(DB.title)
+      .limit(3);
 
-    rawCheck = {
+    rawTest = {
+      ok: !error,
       error: error?.message || null,
-      columns: data?.[0] ? Object.keys(data[0]) : [],
-      sample_title: data?.[0]?.[DB.title] || null,
-      sample_link: data?.[0]?.[DB.link] || null,
-      total_columns: data?.[0] ? Object.keys(data[0]).length : 0,
+      count: data?.length || 0,
+      sample_titles: data?.map((d) => d[DB.title]) || [],
     };
   } catch (e) {
-    rawCheck = { error: e.message };
+    rawTest = { ok: false, error: e.message };
   }
 
-  let directTests = {};
+  /* Test each term directly */
+  let termTests = {};
   for (const term of terms.slice(0, 5)) {
     try {
       const { data, error } = await supabase
@@ -1206,34 +1228,33 @@ app.get("/debug/search/:query", async (req, res) => {
         .ilike(DB.title, `%${term}%`)
         .limit(3);
 
-      directTests[term] = {
+      termTests[term] = {
         error: error?.message || null,
         count: data?.length || 0,
         titles: data?.map((d) => d[DB.title]) || [],
       };
     } catch (e) {
-      directTests[term] = { error: e.message, count: 0 };
+      termTests[term] = { error: e.message, count: 0 };
     }
   }
 
   res.json({
     query: q,
     classification,
-    search_results: courses.length,
+    final_results: courses.length,
     courses: courses.map((c) => ({
       title: c.title,
       url: c.url,
       instructor: c.instructor,
       price: c.price,
-      image_url: c.image_url,
+      has_image: !!c.image_url,
     })),
-    raw_db_check: rawCheck,
-    direct_tests: directTests,
-    db_config: DB,
+    raw_db_test: rawTest,
+    per_term_test: termTests,
   });
 });
 
-/* ═══ Column Discovery ═══ */
+/* 🔧 Show all DB columns */
 app.get("/debug/columns", async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -1258,11 +1279,34 @@ app.get("/debug/columns", async (req, res) => {
   }
 });
 
+/* 🔧 Quick DB health check */
+app.get("/debug/db", async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from("courses")
+      .select("*", { count: "exact", head: true });
+
+    const { data: instData, error: instError } = await supabase
+      .from("instructors")
+      .select("id, name")
+      .limit(3);
+
+    res.json({
+      courses_count: count || 0,
+      courses_error: error?.message || null,
+      instructors_sample: instData || [],
+      instructors_error: instError?.message || null,
+    });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 /* ═══ Health Check ═══ */
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "5.3",
+    version: "5.4",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     categories: Object.keys(CATEGORIES).length,
@@ -1279,9 +1323,12 @@ app.use((req, res) => {
    ══════════════════════════════════════════════════════════ */
 app.listen(PORT, () => {
   console.log(
-    `\n🤖 easyT Chatbot v5.3 (Follow-Up + Smart Search + Relevance Filter)`
+    `\n🤖 easyT Chatbot v5.4 — Robust Search + Smart Classification`
   );
   console.log(`   Port: ${PORT}`);
   console.log(`   Categories: ${Object.keys(CATEGORIES).length}`);
-  console.log(`   Debug: /debug/columns & /debug/search/:query\n`);
+  console.log(`   Debug endpoints:`);
+  console.log(`     /debug/search/:query`);
+  console.log(`     /debug/columns`);
+  console.log(`     /debug/db\n`);
 });
