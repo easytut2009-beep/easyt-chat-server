@@ -38,28 +38,22 @@ async function createEmbedding(text) {
 }
 
 /* ==============================
-   ✅ RAG SEARCH
+   ✅ GENERAL RAG SEARCH
 ============================== */
 
 async function searchPages(searchText) {
   try {
     const queryEmbedding = await createEmbedding(searchText);
 
-    const { data, error } = await supabase.rpc("match_documents", {
+    const { data } = await supabase.rpc("match_documents", {
       query_embedding: queryEmbedding,
       match_threshold: 0.55,
-      match_count: 10
+      match_count: 8
     });
-
-    if (error) {
-      console.log("Page search error:", error.message);
-      return [];
-    }
 
     return data || [];
 
-  } catch (err) {
-    console.log("Page search crash:", err.message);
+  } catch {
     return [];
   }
 }
@@ -69,15 +63,10 @@ async function searchPages(searchText) {
 ============================== */
 
 async function getPageByURL(url) {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("site_pages")
     .select("content")
     .eq("page_url", url);
-
-  if (error) {
-    console.log("Direct fetch error:", error.message);
-    return [];
-  }
 
   return data || [];
 }
@@ -95,12 +84,12 @@ async function classifyPageIntent(message) {
         {
           role: "system",
           content: `
-حدد نية المستخدم بدقة من الخيارات التالية فقط:
+حدد نية المستخدم بدقة:
 
-SUBSCRIPTION → يريد وصول كامل لكل الكورسات أو عضوية عامة
-PAYMENT → يسأل عن وسائل الدفع
+SUBSCRIPTION → يريد وصول كامل لكل الكورسات
+PAYMENT → يسأل عن الدفع أو التحويل
 AUTHOR → يريد الانضمام كمحاضر
-AFFILIATE → يسأل عن التسويق بالعمولة
+AFFILIATE → يسأل عن العمولة
 GENERAL → سؤال عام
 
 أجب بكلمة واحدة فقط.
@@ -111,10 +100,37 @@ GENERAL → سؤال عام
     });
 
     return response.choices[0].message.content.trim();
-
-  } catch (err) {
+  } catch {
     return "GENERAL";
   }
+}
+
+/* ==============================
+   ✅ SMART CONTEXT FILTER
+============================== */
+
+function filterRelevantContent(pageData, message) {
+
+  const fullText = pageData.map(p => p.content).join(" ");
+  const sentences = fullText.split(/[.!؟]/);
+
+  const keywords = message.split(" ").filter(w => w.length > 2);
+
+  const scored = sentences.map(sentence => {
+    let score = 0;
+    for (let word of keywords) {
+      if (sentence.includes(word)) score++;
+    }
+    return { sentence, score };
+  });
+
+  const topSentences = scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(s => s.sentence.trim())
+    .filter(s => s.length > 20);
+
+  return topSentences.join(". ");
 }
 
 /* ==============================
@@ -151,7 +167,6 @@ function appendSmartLink(reply, intent) {
 ============================== */
 
 function cleanHTML(reply) {
-  if (!reply) return "";
   return reply.replace(/\n/g, "<br>").trim();
 }
 
@@ -179,22 +194,21 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "user", content: message });
 
     /* ✅ STEP 1: INTENT */
-    const pageIntent = await classifyPageIntent(message);
-    console.log("🧠 Intent:", pageIntent);
+    const intent = await classifyPageIntent(message);
 
     /* ✅ STEP 2: FETCH CONTENT */
     let pages = [];
 
-    if (pageIntent === "SUBSCRIPTION") {
+    if (intent === "SUBSCRIPTION") {
       pages = await getPageByURL("https://easyt.online/p/subscriptions");
     }
-    else if (pageIntent === "PAYMENT") {
+    else if (intent === "PAYMENT") {
       pages = await getPageByURL("https://easyt.online/p/Payments");
     }
-    else if (pageIntent === "AUTHOR") {
+    else if (intent === "AUTHOR") {
       pages = await getPageByURL("https://easyt.online/p/author");
     }
-    else if (pageIntent === "AFFILIATE") {
+    else if (intent === "AFFILIATE") {
       pages = await getPageByURL("https://easyt.online/p/affiliate");
     }
     else {
@@ -202,11 +216,12 @@ app.post("/chat", async (req, res) => {
     }
 
     let pageContext = "";
+
     if (pages.length > 0) {
-      pageContext = pages.map(p => p.content).join("\n\n");
+      pageContext = filterRelevantContent(pages, message);
     }
 
-    /* ✅ STEP 3: GENERATE ANSWER */
+    /* ✅ STEP 3: GENERATE RESPONSE */
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -215,15 +230,14 @@ app.post("/chat", async (req, res) => {
           role: "system",
           content: `
 أنت مستشار رسمي لمنصة easyT.
-
 استخدم المعلومات التالية للإجابة بشكل مباشر.
-إذا كانت المعلومات موجودة في النص، لا تقل أنك لا تملك معلومات.
+إذا كانت هناك معلومات مناسبة في النص لا تقل أنك لا تملك معلومات.
 لا تخترع معلومات خارج النص.
 `
         },
         ...(pageContext ? [{
           role: "system",
-          content: `محتوى رسمي من الموقع:\n${pageContext}`
+          content: `معلومات ذات صلة:\n${pageContext}`
         }] : []),
         ...history
       ]
@@ -235,7 +249,7 @@ app.post("/chat", async (req, res) => {
     reply = cleanHTML(reply);
 
     /* ✅ STEP 4: ADD LINK */
-    reply = appendSmartLink(reply, pageIntent);
+    reply = appendSmartLink(reply, intent);
 
     return res.json({ reply, session_id });
 
