@@ -44,10 +44,10 @@ async function createEmbedding(text) {
 
 async function searchCourses(searchText) {
   try {
-    const queryEmbedding = await createEmbedding(searchText);
+    const embedding = await createEmbedding(searchText);
 
     const { data } = await supabase.rpc("match_courses", {
-      query_embedding: queryEmbedding,
+      query_embedding: embedding,
       match_count: 5
     });
 
@@ -58,15 +58,15 @@ async function searchCourses(searchText) {
 }
 
 /* ==============================
-   ✅ SEARCH PAGES (RAG)
+   ✅ SEARCH PAGES
 ============================== */
 
 async function searchPages(searchText) {
   try {
-    const queryEmbedding = await createEmbedding(searchText);
+    const embedding = await createEmbedding(searchText);
 
     const { data } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
+      query_embedding: embedding,
       match_threshold: 0.55,
       match_count: 8
     });
@@ -81,7 +81,7 @@ async function searchPages(searchText) {
    ✅ DIRECT PAGE FETCH
 ============================== */
 
-async function getPageByURL(url) {
+async function getPage(url) {
   const { data } = await supabase
     .from("site_pages")
     .select("content")
@@ -91,10 +91,10 @@ async function getPageByURL(url) {
 }
 
 /* ==============================
-   ✅ INTENT CLASSIFIER
+   ✅ INTENT CLASSIFIER (HIERARCHY)
 ============================== */
 
-async function classifyPageIntent(message) {
+async function classifyIntent(message) {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -103,12 +103,16 @@ async function classifyPageIntent(message) {
         {
           role: "system",
           content: `
-حدد نية المستخدم:
+حدد نية المستخدم بدقة.
 
+الترتيب مهم:
+
+SUPPORT (مشاكل - لا أجد - لا يعمل - خطأ - مشكلة - لا يظهر)
 SUBSCRIPTION
 PAYMENT
 AUTHOR
 AFFILIATE
+COURSE_SEARCH (يسأل عن دورة محددة)
 GENERAL
 
 أجب بكلمة واحدة فقط.
@@ -128,70 +132,73 @@ GENERAL
    ✅ FILTER CONTEXT
 ============================== */
 
-function filterRelevantContent(pageData, message) {
+function filterContent(pageData, message) {
+  const full = pageData.map(p => p.content).join(" ");
+  const sentences = full.split(/[.!؟]/);
 
-  const fullText = pageData.map(p => p.content).join(" ");
-  const sentences = fullText.split(/[.!؟]/);
+  const words = message.toLowerCase().split(/\s+/).filter(w => w.length > 2);
 
-  const words = message
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(w => w.length > 2);
-
-  const scored = sentences.map(sentence => {
-    const s = sentence.toLowerCase();
+  const scored = sentences.map(s => {
     let score = 0;
-    for (let word of words) {
-      if (s.includes(word)) score++;
-    }
-    return { sentence: sentence.trim(), score };
+    const lower = s.toLowerCase();
+    words.forEach(w => {
+      if (lower.includes(w)) score++;
+    });
+    return { s: s.trim(), score };
   });
 
-  const top = scored
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(s => s.sentence)
-    .filter(s => s.length > 20);
-
-  return top.join(". ");
+  return scored
+    .filter(x => x.score > 0)
+    .sort((a,b) => b.score - a.score)
+    .slice(0,8)
+    .map(x => x.s)
+    .join(". ");
 }
 
 /* ==============================
-   ✅ APPEND LINK
+   ✅ SUPPORT HANDLER
 ============================== */
 
-function appendSmartLink(reply, intent) {
+function supportReply() {
+  return `
+إذا كنت تواجه مشكلة داخل easyT:
 
-  if (intent === "SUBSCRIPTION") {
-    reply += `<br><br><a href="https://easyt.online/p/subscriptions" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 الاشتراك العام</a>`;
-  }
+1️⃣ تأكد من تسجيل الدخول بنفس البريد المستخدم في الدفع.
+2️⃣ ادخل إلى قسم "الدورات" داخل حسابك.
+3️⃣ حدّث الصفحة أو سجّل الخروج ثم الدخول مرة أخرى.
+4️⃣ استخدم متصفح محدث مثل Chrome أو Edge.
 
-  if (intent === "PAYMENT") {
-    reply += `<br><br><a href="https://easyt.online/p/Payments" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 طرق الدفع</a>`;
-  }
+إذا استمرت المشكلة، تواصل مع الدعم الفني داخل المنصة.
+`;
+}
 
-  if (intent === "AUTHOR") {
-    reply += `<br><br><a href="https://easyt.online/p/author" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 انضم كمحاضر</a>`;
-  }
+/* ==============================
+   ✅ APPEND LINKS
+============================== */
 
-  if (intent === "AFFILIATE") {
-    reply += `<br><br><a href="https://easyt.online/p/affiliate" target="_blank"
-    style="color:#c40000;font-weight:bold;">🔗 برنامج التسويق بالعمولة</a>`;
+function appendLink(reply, intent) {
+
+  const links = {
+    SUBSCRIPTION: "https://easyt.online/p/subscriptions",
+    PAYMENT: "https://easyt.online/p/Payments",
+    AUTHOR: "https://easyt.online/p/author",
+    AFFILIATE: "https://easyt.online/p/affiliate"
+  };
+
+  if (links[intent]) {
+    reply += `<br><br><a href="${links[intent]}" target="_blank"
+    style="color:#c40000;font-weight:bold;">🔗 عرض التفاصيل</a>`;
   }
 
   return reply;
 }
 
 /* ==============================
-   ✅ CLEAN HTML
+   ✅ CLEAN
 ============================== */
 
-function cleanHTML(reply) {
-  return reply.replace(/\n/g, "<br>").trim();
+function clean(text) {
+  return text.replace(/\n/g, "<br>").trim();
 }
 
 /* ==============================
@@ -217,34 +224,76 @@ app.post("/chat", async (req, res) => {
     const history = conversations.get(session_id);
     history.push({ role: "user", content: message });
 
-    if (history.length > MAX_HISTORY) {
-      history.shift();
+    if (history.length > MAX_HISTORY) history.shift();
+
+    /* ✅ CLASSIFY FIRST */
+    const intent = await classifyIntent(message);
+
+    /* ==============================
+       ✅ SUPPORT FIRST
+    ============================== */
+
+    if (intent === "SUPPORT") {
+      return res.json({
+        reply: clean(supportReply()),
+        session_id
+      });
     }
 
-    const intent = await classifyPageIntent(message);
+    /* ==============================
+       ✅ TRANSACTIONAL PAGES
+    ============================== */
 
-    let pages = [];
-    let courses = [];
+    const directPages = {
+      SUBSCRIPTION: "https://easyt.online/p/subscriptions",
+      PAYMENT: "https://easyt.online/p/Payments",
+      AUTHOR: "https://easyt.online/p/author",
+      AFFILIATE: "https://easyt.online/p/affiliate"
+    };
 
-    /* ✅ STEP 1: DIRECT PAGE ROUTING */
-    if (intent === "SUBSCRIPTION") {
-      pages = await getPageByURL("https://easyt.online/p/subscriptions");
+    if (directPages[intent]) {
+      const pages = await getPage(directPages[intent]);
+      const context = filterContent(pages, message);
+
+      if (!context) {
+        return res.json({
+          reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT.",
+          session_id
+        });
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: `
+أنت مستشار رسمي داخل منصة easyT فقط.
+ممنوع اقتراح أي منصة خارج easyT.
+لا تخترع معلومات.
+`
+          },
+          { role: "system", content: context },
+          ...history
+        ]
+      });
+
+      let reply = clean(completion.choices[0].message.content);
+      reply = appendLink(reply, intent);
+
+      return res.json({ reply, session_id });
     }
-    else if (intent === "PAYMENT") {
-      pages = await getPageByURL("https://easyt.online/p/Payments");
-    }
-    else if (intent === "AUTHOR") {
-      pages = await getPageByURL("https://easyt.online/p/author");
-    }
-    else if (intent === "AFFILIATE") {
-      pages = await getPageByURL("https://easyt.online/p/affiliate");
-    }
-    else {
-      /* ✅ STEP 2: SEARCH COURSES FIRST */
-      courses = await searchCourses(message);
+
+    /* ==============================
+       ✅ COURSE SEARCH ONLY IF INTENT
+    ============================== */
+
+    if (intent === "COURSE_SEARCH") {
+
+      const courses = await searchCourses(message);
 
       if (courses.length > 0) {
-
         let reply = "لدينا الدورات التالية على منصة easyT:<br><br>";
 
         courses.forEach(course => {
@@ -257,20 +306,19 @@ ${course.title}
 
         return res.json({ reply, session_id });
       }
-
-      /* ✅ STEP 3: THEN RAG SEARCH */
-      pages = await searchPages(message);
     }
 
-    let pageContext = "";
+    /* ==============================
+       ✅ GENERAL RAG
+    ============================== */
 
-    if (pages.length > 0) {
-      pageContext = filterRelevantContent(pages, message);
-    }
+    const pages = await searchPages(message);
+    const context = filterContent(pages, message);
 
-    if (!pageContext) {
+    if (!context) {
       return res.json({
-        reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT."
+        reply: "حالياً لا تتوفر معلومات دقيقة حول هذا الطلب داخل منصة easyT.",
+        session_id
       });
     }
 
@@ -283,24 +331,20 @@ ${course.title}
           content: `
 أنت مستشار رسمي داخل منصة easyT فقط.
 ممنوع اقتراح أي منصة خارج easyT.
-استخدم المعلومات التالية للإجابة.
-لا تقل قم بزيارة الموقع.
 لا تخترع معلومات.
 `
         },
-        { role: "system", content: `محتوى رسمي:\n${pageContext}` },
+        { role: "system", content: context },
         ...history
       ]
     });
 
-    let reply = completion.choices[0].message.content;
-    reply = cleanHTML(reply);
-    reply = appendSmartLink(reply, intent);
+    const reply = clean(completion.choices[0].message.content);
 
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error("Server Error:", error);
+    console.error(error);
     return res.status(500).json({ reply: "حدث خطأ مؤقت." });
   }
 });
@@ -312,5 +356,5 @@ ${course.title}
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("✅ Server Running on port " + PORT);
+  console.log("✅ EasyT AI V2 Running on port " + PORT);
 });
