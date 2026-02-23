@@ -37,7 +37,6 @@ const supabase = createClient(
 
 const conversations = new Map();
 const MAX_HISTORY = 10;
-const MAX_CONTEXT_LENGTH = 12000;
 
 function getSession(session_id) {
   if (!conversations.has(session_id)) {
@@ -78,29 +77,24 @@ async function search_courses(query) {
   return data || [];
 }
 
-async function search_pages(query) {
-  const embedding = await createEmbedding(query);
-
-  const { data } = await supabase.rpc("match_documents", {
-    query_embedding: embedding,
-    match_threshold: 0.5,
-    match_count: 8
-  });
-
-  return data || [];
-}
-
 async function get_subscription_info() {
-  const { data } = await supabase
+
+  const { data, error } = await supabase
     .from("site_pages")
-    .select("title, content, page_url")
-    .ilike("page_url", "%subscription%");
+    .select("page_url, content")
+    .ilike("page_url", "%/p/subscriptions%")
+    .limit(1);
+
+  if (error) {
+    console.error("Subscription error:", error);
+    return [];
+  }
 
   return data || [];
 }
 
 /* =====================================================
-   ✅ FORMAT RESPONSE CLEANLY
+   ✅ FORMATTERS
 ===================================================== */
 
 function cleanMarkdown(text) {
@@ -111,15 +105,37 @@ function cleanMarkdown(text) {
     .trim();
 }
 
-function formatCoursesWithLinks(text, courses) {
-  courses.forEach(course => {
-    if (course.title && course.url) {
-      const linkHTML = `🔗 <a href="${course.url}" target="_blank" style="color:#c40000;font-weight:bold;">${course.title}</a>`;
-      text = text.replace(course.url, "");
-      text += `<br><br>${linkHTML}`;
-    }
+function formatCourses(courses) {
+
+  let formatted = "";
+
+  courses.forEach((course, index) => {
+
+    const title = course.title || "الدورة";
+    const url = course.url || course.page_url || "#";
+
+    formatted += `
+${index + 1}. 🔗 <a href="${url}" target="_blank" 
+style="text-decoration:none;font-weight:bold;">
+${title}
+</a><br><br>
+    `;
   });
-  return text;
+
+  return formatted;
+}
+
+function formatSubscription(data) {
+
+  const subscription = data[0];
+
+  return `
+🔗 <a href="${subscription.page_url}" target="_blank" 
+style="text-decoration:none;font-weight:bold;">
+الاشتراك الشامل في easyT
+</a><br><br>
+${subscription.content}
+  `;
 }
 
 /* =====================================================
@@ -150,11 +166,14 @@ app.post("/chat", async (req, res) => {
           content: `
 أنت مساعد داخل منصة easyT.
 
-إذا أراد المستخدم كل الدورات استخدم get_subscription_info.
-إذا بحث عن دورة محددة استخدم search_courses.
-إذا سؤال عام استخدم search_pages.
+إذا طلب المستخدم جميع الدورات أو باقة شاملة
+استخدم get_subscription_info.
 
-لا تكتب روابط مباشرة داخل النص.
+إذا طلب كورسات محددة
+استخدم search_courses.
+
+لا تكتب روابط كنص مباشر.
+لا تشير لأي موقع خارجي.
 `
         },
         ...history
@@ -164,17 +183,6 @@ app.post("/chat", async (req, res) => {
           type: "function",
           function: {
             name: "search_courses",
-            parameters: {
-              type: "object",
-              properties: { query: { type: "string" } },
-              required: ["query"]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "search_pages",
             parameters: {
               type: "object",
               properties: { query: { type: "string" } },
@@ -210,53 +218,32 @@ app.post("/chat", async (req, res) => {
 
       if (toolName === "search_courses") {
         toolResult = await search_courses(args.query);
-      }
 
-      if (toolName === "search_pages") {
-        toolResult = await search_pages(args.query);
+        if (!toolResult.length) {
+          return res.json({
+            reply: "لا توجد دورات مطابقة حالياً.",
+            session_id
+          });
+        }
+
+        const reply = formatCourses(toolResult);
+        return res.json({ reply, session_id });
       }
 
       if (toolName === "get_subscription_info") {
+
         toolResult = await get_subscription_info();
+
+        if (!toolResult.length) {
+          return res.json({
+            reply: "صفحة الاشتراك غير متاحة حالياً.",
+            session_id
+          });
+        }
+
+        const reply = formatSubscription(toolResult).replace(/\n/g, "<br>");
+        return res.json({ reply, session_id });
       }
-
-      if (!toolResult.length) {
-        return res.json({
-          reply: "حالياً لا توجد معلومات متاحة داخل منصة easyT.",
-          session_id
-        });
-      }
-
-      const finalResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content: `
-استخدم البيانات فقط.
-لا تعرض روابط كنص مباشر.
-`
-          },
-          ...history,
-          messageResponse,
-          {
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(toolResult)
-          }
-        ]
-      });
-
-      let reply = finalResponse.choices[0].message.content;
-
-      reply = cleanMarkdown(reply);
-
-      reply = formatCoursesWithLinks(reply, toolResult);
-
-      reply = reply.replace(/\n/g, "<br>");
-
-      return res.json({ reply, session_id });
     }
 
     let reply = cleanMarkdown(messageResponse.content);
@@ -265,7 +252,7 @@ app.post("/chat", async (req, res) => {
     return res.json({ reply, session_id });
 
   } catch (error) {
-    console.error(error);
+    console.error("AI ERROR:", error);
     return res.status(500).json({
       reply: "حدث خطأ مؤقت."
     });
@@ -275,5 +262,5 @@ app.post("/chat", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🚀 EasyT AI Fully Fixed & Clean Running");
+  console.log("🚀 EasyT AI Final Production Server Running");
 });
