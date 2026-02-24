@@ -1,12 +1,14 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v7.4 — 🎯 Smart Subject Filter + 🧹 Audience Strip
-   ✅ ALL v7.3.1 features preserved
-   🆕 v7.4: BUG FIX — AI filter [] was ignored → now returns empty
-   🆕 v7.4: stripAudienceModifiers() — "للكبار" removed from search, kept as filter
-   🆕 v7.4: preFilterByPrimarySubject() — hard rules exclude Graphics/NLP from language search
-   🆕 v7.4: Retry logic — if exclusion gives 0, retry with broader terms
-   🆕 v7.4: CLASSIFY_SYSTEM updated — search_terms = topic only, no audience words
+   🤖 easyT Chatbot v7.5 — 🧠 Context-Aware Audience + 💬 Conversational Detection
+   ✅ ALL v7.4 features preserved
+   🆕 v7.5: FIX — stripAudienceModifiers returns EMPTY when all terms are audience words
+   🆕 v7.5: FIX — isVagueEntity now catches audience-only entities ("للكبار")
+   🆕 v7.5: FIX — COURSE_SEARCH generates terms from session entity when stripped is empty
+   🆕 v7.5: Conversational detection — "انت فين" / "شكرا" answered instantly, no AI classify
+   🆕 v7.5: /admin/conversations/:session_id endpoint added
+   🆕 v7.5: CLASSIFY_SYSTEM updated — conversational messages = GENERAL
    ─── Previous features ───
+   ✅ v7.4: AI filter [] bug fix + stripAudienceModifiers + preFilterByPrimarySubject + Retry
    ✅ v7.3.1: rescueStartLearningIntent()
    ✅ v7.3: detectAudienceExclusions() + Strict AI filter + Audience on first query
    ✅ v7.2: Exclude terms + Refinement + Diploma AI filter
@@ -241,7 +243,7 @@ function mapDiplomaToCategory(diplomaTitle) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: AI Filter BUG FIX — respect empty [] ═════
+   ═══ v7.4: AI Filter BUG FIX — respect empty [] ═════════
    ══════════════════════════════════════════════════════════ */
 async function filterRelevantDiplomas(diplomas, userQuery, entity) {
   if (!diplomas.length) return [];
@@ -262,7 +264,6 @@ Format: [0, 1]` },
     const matchArr = choices[0].message.content.match(/\[[\d,\s]*\]/);
     if (matchArr) {
       const indices = JSON.parse(matchArr[0]);
-      /* 🆕 v7.4: BUG FIX — if AI says NONE relevant, return empty! */
       if (indices.length === 0) {
         console.log(`   🎓 Diploma AI filter: ${diplomas.length} → 0 (all irrelevant)`);
         return [];
@@ -300,7 +301,8 @@ function detectAudienceExclusions(message, entity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: Strip Audience Modifiers from Search ═════
+   ═══ 🆕 v7.5: Strip Audience Modifiers — FIXED ═════════
+   ═══ BUG FIX: No longer falls back to originals!
    ══════════════════════════════════════════════════════════ */
 const AUDIENCE_WORDS_RE = /\b(للكبار|الكبار|كبار|للأطفال|الأطفال|أطفال|اطفال|للاطفال|للمبتدئين|مبتدئين|للمتقدمين|متقدمين|متقدم|بالغين|for adults?|for kids|for children|for beginners?|for advanced)\b/gi;
 
@@ -313,19 +315,21 @@ function stripAudienceModifiers(terms, entity) {
   cleanEntity = cleanEntity.replace(AUDIENCE_WORDS_RE, "").trim();
 
   if (cleanTerms.length === 0 && terms.length > 0) {
-    /* All terms were audience words — keep originals */
-    return { cleanTerms: terms, cleanEntity: entity };
+    /* 🆕 v7.5: BUG FIX — Don't fallback to originals!
+       Return EMPTY so the system falls back to session.entity/history.
+       Old behavior: returned originals → searched for "للكبار" as topic! */
+    console.log(`   🧹 v7.5: ALL terms were audience words → returning EMPTY (will use session context)`);
+    return { cleanTerms: [], cleanEntity: "" };
   }
 
-  console.log(`   🧹 v7.4: Stripped audience → terms: [${cleanTerms.join(", ")}] | entity: "${cleanEntity}"`);
-  return { cleanTerms, cleanEntity: cleanEntity || entity };
+  if (cleanTerms.length < terms.length || cleanEntity !== (entity || "")) {
+    console.log(`   🧹 Stripped audience → terms: [${cleanTerms.join(", ")}] | entity: "${cleanEntity}"`);
+  }
+  return { cleanTerms, cleanEntity: cleanEntity || "" };
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: Pre-Filter by Primary Subject ════════════
-   ══════════════════════════════════════════════════════════
-   Hard rules to catch obvious mismatches BEFORE AI filter.
-   Example: user wants "تعلم انجليزي" → exclude Graphics/NLP courses
+   ═══ v7.4: Pre-Filter by Primary Subject ════════════════
    ══════════════════════════════════════════════════════════ */
 function preFilterByPrimarySubject(courses, userQuery, entity) {
   if (!courses.length) return courses;
@@ -343,25 +347,20 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
       const t = (c.title || "").toLowerCase();
       const tNorm = normalizeArabic(t);
 
-      /* Exclude: Graphics/Design courses that happen to mention English */
       if (/جرافيك|تصميم|design|graphic|فوتوشوب|photoshop|اليستر|illustrat/i.test(t)) {
         console.log(`   🚫 Pre-filter: "${c.title}" → graphics, not language`);
         return false;
       }
-      /* Exclude: NLP / Natural Language Processing */
       if (/معالج.*لغ|NLP|natural language proc|لغ.*طبيع/i.test(t)) {
         console.log(`   🚫 Pre-filter: "${c.title}" → NLP, not language learning`);
         return false;
       }
-      /* Exclude: Programming courses (Python, Java, etc.) */
       if (/بايثون|python|جافا|java[^s]|c\+\+|برمج[ةه]|programming|كود|code|sql|database/i.test(t) &&
           !/تعلم.*انجل|english|تعليم.*لغ/i.test(t)) {
         console.log(`   🚫 Pre-filter: "${c.title}" → programming, not language`);
         return false;
       }
-      /* Exclude: "باللغة الإنجليزية" (taught IN English, not ABOUT English) */
       if (/باللغ[ةه]\s*(الإنجليزي|الانجليزي|الانجل)/i.test(c.title || "")) {
-        /* Check if the course is actually ABOUT English */
         const aboutEnglish = /تعلم|تعليم|learn|course.*english|english.*course|كورس.*انجل/i.test(t);
         if (!aboutEnglish) {
           console.log(`   🚫 Pre-filter: "${c.title}" → taught IN English, not ABOUT English`);
@@ -375,7 +374,6 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
       if (filtered.length !== before) console.log(`   🎯 Pre-filter (language): ${before} → ${filtered.length}`);
       return filtered;
     }
-    /* If ALL were filtered, return empty — don't show irrelevant results */
     console.log(`   🎯 Pre-filter (language): ${before} → 0 (all irrelevant)`);
     return [];
   }
@@ -388,7 +386,6 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
   if (wantsProgramming) {
     const filtered = courses.filter((c) => {
       const t = (c.title || "").toLowerCase();
-      /* Exclude pure language courses from programming search */
       if (/تعلم.*انجل|english for|انجليزي.*للا|تعليم.*لغ[اهة]/i.test(t) &&
           !/برمج|programm|NLP|code/i.test(t)) {
         console.log(`   🚫 Pre-filter: "${c.title}" → language course, not programming`);
@@ -751,6 +748,82 @@ function isLikelyGibberish(text) {
   return false;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.5: Conversational Message Detection ═════════
+   ═══ Catches chat messages BEFORE AI classification
+   ══════════════════════════════════════════════════════════ */
+const CONVERSATIONAL_PATTERNS = [
+  /^(انت|أنت|إنت|انتي|أنتي)\s*(فين|منين|مين)\s*[؟?!.\s]*$/i,
+  /^(انت|أنت|إنت)\s*(عامل|بتعمل)\s*(ايه|إيه|اي)\s*[؟?!.\s]*$/i,
+  /^(انت|أنت|إنت)\s*(بوت|روبوت|ذكاء|انسان|إنسان|حقيقي|ايه|إيه|ليه)\s*[؟?!.\s]*$/i,
+  /^(انت|أنت|إنت)\s*(بتفهم|فاهم|ذكي|شاطر|كويس)\s*[؟?!.\s]*$/i,
+  /^مين\s*(انت|أنت|إنت|ده|دا)\s*[؟?!.\s]*$/i,
+  /^(ايه|إيه|ايش)\s*(ده|دا|هو ده|هو دا)\s*[؟?!.\s]*$/i,
+  /^(صباح|مساء)\s*(الخير|النور|الفل|الورد)\s*[.!❤️🌹]*$/i,
+  /^(ازيك|إزيك|ازاي\s*(الحال|حالك)|عامل\s*ايه|كيفك|ايه\s*(الاخبار|أخبارك)|اخبارك)\s*[؟?!.\s]*$/i,
+  /^(شكرا|متشكر|تسلم|الله\s*يخليك|مرسي|thanks|thank\s*you|thx)\s*[.!❤️💚🙏]*$/i,
+  /^(باي|مع\s*السلام[ةه]?|سلام|bye|goodbye|يلا\s*باي|يلا\s*سلام)\s*[.!👋]*$/i,
+  /^(تمام|اوك|حاضر|ماشي|ok|okay|تم|طيب|يب|اه|اها)\s*[.!]*$/i,
+  /^(لا\s*شكرا|مش\s*عايز|مش\s*محتاج|خلاص|كفايه|كفاية|بس\s*كده)\s*[.!]*$/i,
+  /^(هه+|هاها+|😂|😅|🤣|لول|lol|haha+|ههههه*)\s*$/i,
+  /^(حلو|جميل|ممتاز|رائع|عظيم|nice|great|cool|wow)\s*[.!🔥❤️]*$/i,
+  /^(بحبك|حبيبي|يا\s*(معلم|باشا|كبير|صاحبي|غالي|ريس|برنس))\s*[.!❤️]*$/i,
+  /^(مش\s*فاهم|ما\s*فهمت|يعني\s*ايه|ازاي\s*يعني)\s*[؟?!.\s]*$/i,
+  /^(ده\s*ايه|ايه\s*(الكلام|الهبل|الهري)\s*د[اه])\s*[؟?!.\s]*$/i,
+];
+
+function isConversationalMessage(message) {
+  const msg = message.trim();
+  const normMsg = normalizeArabic(msg.toLowerCase());
+  const wordCount = msg.split(/\s+/).length;
+  if (wordCount > 6) return false;
+  return CONVERSATIONAL_PATTERNS.some(p => p.test(msg) || p.test(normMsg));
+}
+
+function getQuickConversationalReply(message) {
+  const msg = message.trim();
+  const norm = normalizeArabic(msg.toLowerCase());
+
+  if (/^(انت|أنت|إنت)\s*(فين|منين)\s*[؟?!.\s]*$/i.test(msg) || /^(انت|أنت|إنت)\s*(فين|منين)\s*[؟?!.\s]*$/i.test(norm)) {
+    return `أنا هنا معاك! 😊 أنا مساعد منصة إيزي تي الذكي.<br><br>تقدر تسألني عن:<br>▸ 🎓 الدورات والدبلومات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`;
+  }
+  if (/^مين\s*(انت|أنت)|^(انت|أنت)\s*(مين|ايه|إيه)/i.test(msg) || /^مين\s*(انت|أنت)|^(انت|أنت)\s*(مين|ايه|إيه)/i.test(norm)) {
+    return `أنا المساعد الذكي لمنصة <b>إيزي تي</b>! 🤖<br><br>بساعدك تلاقي الكورسات المناسبة ليك من أكتر من <b>600 دورة</b> و<b>27 دبلومة</b>.<br><br>قولي عايز تتعلم ايه وهساعدك! 🚀`;
+  }
+  if (/^(انت|أنت)\s*(بوت|روبوت|ذكاء|انسان|إنسان|حقيقي)/i.test(msg)) {
+    return `أيوه، أنا بوت ذكي 🤖 متدرب على كل كورسات منصة إيزي تي عشان أساعدك تلاقي اللي يناسبك.<br><br>قولي مهتم بايه وهدلك أحسن الكورسات! 😊`;
+  }
+  if (/^(ازيك|إزيك|ازاي|عامل\s*ايه|كيفك|ايه\s*(اخبارك|الاخبار))/i.test(msg) || /^(ازيك|إزيك|ازاي|عامل\s*ايه|كيفك|ايه\s*(اخبارك|الاخبار))/i.test(norm)) {
+    return `تمام الحمد لله! 😊 أنا جاهز أساعدك.<br>عايز تتعلم حاجة معينة؟ قولي وهبحثلك! 🎓`;
+  }
+  if (/^(صباح|مساء)\s*(الخير|النور|الفل|الورد)/i.test(msg)) {
+    return `صباح النور! ☀️ إزاي أقدر أساعدك النهاردة؟`;
+  }
+  if (/^(شكرا|متشكر|تسلم|مرسي|thanks|thank)/i.test(msg) || /^(شكرا|متشكر|تسلم|مرسي|thanks|thank)/i.test(norm)) {
+    return `العفو! 😊 لو محتاج أي حاجة تانية أنا موجود.<br>بالتوفيق في رحلة التعلم! 🚀`;
+  }
+  if (/^(باي|مع\s*السلام|سلام$|bye|يلا\s*باي)/i.test(msg) || /^(باي|مع\s*السلام|سلام$|bye|يلا\s*باي)/i.test(norm)) {
+    return `مع السلامة! 👋 بالتوفيق!<br>لو رجعت في أي وقت أنا هنا أساعدك 😊`;
+  }
+  if (/^(لا\s*شكرا|مش\s*عايز|مش\s*محتاج|خلاص|كفاي[ةه]|بس\s*كده)/i.test(msg) || /^(لا\s*شكرا|مش\s*عايز|مش\s*محتاج|خلاص|كفاي[ةه]|بس\s*كده)/i.test(norm)) {
+    return `تمام! 😊 لو احتجت أي حاجة في أي وقت أنا موجود.<br>بالتوفيق! 🚀`;
+  }
+  if (/^(تمام|اوك|حاضر|ماشي|ok|okay|تم|طيب)$/i.test(msg)) {
+    return `تمام! 👍 لو عايز تسأل عن حاجة تانية أنا موجود 😊`;
+  }
+  if (/^(مش\s*فاهم|ما\s*فهمت|يعني\s*ايه|ازاي\s*يعني)/i.test(msg) || /^(مش\s*فاهم|ما\s*فهمت|يعني\s*ايه|ازاي\s*يعني)/i.test(norm)) {
+    return `معلش! 😅 قولي بالظبط عايز ايه وهحاول أساعدك:<br><br>▸ 🎓 عايز كورس في مجال معين؟<br>▸ 💳 عايز تعرف طرق الدفع؟<br>▸ 🔧 عندك مشكلة تقنية؟`;
+  }
+  if (/^(هه+|هاها+|لول|lol|haha)/i.test(msg)) {
+    return `😄 أنا موجود لو محتاج أي حاجة! قولي عايز تتعلم ايه؟`;
+  }
+  if (/^(حلو|جميل|ممتاز|رائع|عظيم|nice|great|cool|wow)/i.test(msg)) {
+    return `شكراً! 😊 لو عايز تسأل عن حاجة تانية أنا موجود`;
+  }
+
+  return `😊 أنا مساعد منصة إيزي تي — تقدر تسألني عن:<br><br>▸ 🎓 الدورات والكورسات<br>▸ 💳 الدفع والاشتراك<br>▸ 📋 أي استفسار عن المنصة<br><br>قولي محتاج ايه! 🚀`;
+}
+
 /* ═══ Access Flow Escape ═══ */
 const ACCESS_KEYWORDS_RE = /دخول|حساب|login|password|دوراتي|مش.*لاقي|تسجيل|activate|تفعيل|مش.*شغال|مش.*ظاهر|كلمة.*سر|كلمة.*مرور/i;
 const YES_NO_RE = /^(أيوه|ايوه|اه|لا|لأ|نعم|yes|no|اكيد|طبعا|مسجل|مش مسجل|مسجلتش)\s*[.!؟?]*$/i;
@@ -766,7 +839,7 @@ function shouldEscapeAccessFlow(message, intent, entity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: Updated Classification ═══════════════════
+   ═══ 🆕 v7.5: Updated Classification ═══════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES).map(([k, v]) => `  ${k}: ${v.name}`).join("\n");
 
@@ -785,15 +858,37 @@ Return ONLY valid JSON:
   "is_refinement": false
 }
 
-═══ ⚠️ v7.4 CRITICAL: search_terms = TOPIC ONLY, NO AUDIENCE WORDS! ═══
+═══ ⚠️ CRITICAL: CONVERSATIONAL = GENERAL, NEVER COURSE_SEARCH! ═══
+These are ALWAYS "GENERAL" intent — NEVER classify as COURSE_SEARCH or FOLLOW_UP:
+• "انت فين" → GENERAL (asking about the bot, NOT searching!)
+• "انت مين" → GENERAL
+• "انت بوت" → GENERAL
+• "ازيك" / "عامل ايه" → GREETING
+• "شكرا" / "تمام" / "ماشي" / "اوك" → GENERAL
+• "مش فاهم" / "يعني ايه" → GENERAL
+• "هههه" / "لول" → GENERAL
+• "باي" / "مع السلامة" → GENERAL
+• "لا شكرا" / "خلاص" → GENERAL
+⚠️ Short non-topic messages after a course search = GENERAL, not FOLLOW_UP!
+
+═══ ⚠️ v7.5 CRITICAL: search_terms = TOPIC ONLY, NO AUDIENCE WORDS! ═══
 search_terms should contain ONLY the subject/topic keywords.
 NEVER put audience words in search_terms: للكبار, للأطفال, مبتدئين, متقدم, for adults, for kids.
 These go in exclude_terms instead!
 
+═══ ⚠️ v7.5 CRITICAL: AUDIENCE-ONLY messages ═══
+When user says ONLY audience modifier with NO topic (e.g. "للكبار", "عايز للكبار"):
+• intent: "COURSE_SEARCH" (or "FOLLOW_UP" if continuing)
+• entity: null (because there is NO topic!)
+• search_terms: [] (empty — NO topic keywords!)
+• is_refinement: true
+• exclude_terms: the audience exclusions
+The system will resolve the actual topic from session history.
+
 Examples:
-• "عاوز انجليزي للكبار" → search_terms: ["انجليزي", "english", "تعلم انجليزي", "English course"], exclude_terms: ["أطفال", "children", "kids", "للأطفال"]
-• "كورس فوتوشوب للمبتدئين" → search_terms: ["فوتوشوب", "photoshop", "Photoshop course"], exclude_terms: []
-• "عاوز اتعلم لغات" → search_terms: ["لغات", "لغة", "language", "تعلم لغات", "انجليزي", "english"], exclude_terms: []
+• "عاوز انجليزي للكبار" → entity: "انجليزي", search_terms: ["انجليزي", "english", "تعلم انجليزي"], exclude_terms: ["أطفال", "children", "kids"]
+• "للكبار" (after asking about English) → entity: null, search_terms: [], is_refinement: true, exclude_terms: ["أطفال", "children", "kids"]
+• "عايز للكبار" (after asking about English) → entity: null, search_terms: [], is_refinement: true, exclude_terms: ["أطفال", "children", "kids"]
 
 ═══ ⚠️ START_LEARNING vs COURSE_SEARCH ═══
 START_LEARNING = ONLY when NO topic at all!
@@ -828,11 +923,12 @@ ACCESS_ISSUE → new SPECIFIC topic = COURSE_SEARCH, not FOLLOW_UP!
 • AFFILIATE — Affiliate program
 • AUTHOR — Become instructor
 • FOLLOW_UP — Continue previous topic
-• GENERAL — Other
+• GENERAL — Other (including conversational/chat messages)
 
 ═══ search_terms Rules ═══
 • 3-6 TOPIC-FOCUSED variations (NO audience modifiers!)
 • Include English equivalents + Arabic hamza variants
+• If message has NO topic (only audience words), return EMPTY []
 
 ═══ category_key ═══
 ${CAT_LIST}`;
@@ -881,10 +977,24 @@ async function resolveEntityFromHistory(history) {
   return null;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.5: isVagueEntity — now catches audience words
+   ══════════════════════════════════════════════════════════ */
 function isVagueEntity(entity) {
   if (!entity) return true;
-  const vagueTerms = ["الموضوع ده","الموضوع دا","الموضوع","ده","دا","كده","كدا","الحاجة دي","المجال ده","المجال دا","فيه","عنه","عن ده","هذا","هذا الموضوع","this","this topic","دبلومات","الدبلومات","دبلومة"];
-  return vagueTerms.includes(entity.trim()) || entity.trim().length < 2;
+  const trimmed = entity.trim();
+  if (trimmed.length < 2) return true;
+  const vagueTerms = [
+    "الموضوع ده","الموضوع دا","الموضوع","ده","دا","كده","كدا",
+    "الحاجة دي","المجال ده","المجال دا","فيه","عنه","عن ده",
+    "هذا","هذا الموضوع","this","this topic",
+    "دبلومات","الدبلومات","دبلومة",
+    /* 🆕 v7.5: Audience-only words are VAGUE — they don't tell us WHAT topic! */
+    "للكبار","الكبار","كبار","للأطفال","الأطفال","أطفال","اطفال","للاطفال",
+    "للمبتدئين","مبتدئين","للمتقدمين","متقدمين","متقدم","بالغين",
+    "for adults","for kids","for children","for beginners","for advanced",
+  ];
+  return vagueTerms.includes(trimmed);
 }
 
 function expandArabicTerms(terms) {
@@ -952,9 +1062,7 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   });
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: STRICT AI Filter — BUG FIX + Better Prompt
-   ══════════════════════════════════════════════════════════ */
+/* ═══ STRICT AI Filter ═══ */
 async function filterRelevantAI(courses, userQuery, entity) {
   if (courses.length < 2) return courses;
   try {
@@ -985,7 +1093,6 @@ Format: [0, 1, 2] or []`,
     const matchArr = choices[0].message.content.match(/\[[\d,\s]*\]/);
     if (matchArr) {
       const indices = JSON.parse(matchArr[0]);
-      /* 🆕 v7.4: BUG FIX — respect empty array! */
       if (indices.length === 0) {
         console.log(`   🎯 AI filter: ${courses.length} → 0 (ALL irrelevant!)`);
         return [];
@@ -998,9 +1105,7 @@ Format: [0, 1, 2] or []`,
   return courses;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: searchCourses — with preFilter ═══════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ searchCourses — with preFilter ═══ */
 async function searchCourses(searchTerms, entity, userQuery) {
   const expandedTerms = expandArabicTerms(searchTerms);
   console.log(`   🔤 Expanded: [${expandedTerms.join(" | ")}]`);
@@ -1011,12 +1116,8 @@ async function searchCourses(searchTerms, entity, userQuery) {
   const deduped = dedupe(courses);
   const localFiltered = localRelevanceFilter(deduped, entity, searchTerms);
   if (!localFiltered.length) return [];
-
-  /* 🆕 v7.4: Pre-filter by primary subject */
   const preFiltered = preFilterByPrimarySubject(localFiltered, userQuery || entity || searchTerms[0] || "", entity);
   if (!preFiltered.length) return [];
-
-  /* AI filter on 2+ results */
   if (preFiltered.length >= 2) {
     const aiFiltered = await filterRelevantAI(preFiltered, entity || searchTerms[0] || "", entity);
     return aiFiltered.slice(0, 6);
@@ -1165,7 +1266,7 @@ function mergeExcludeTerms(...arrays) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.4: Main Chat Route ══════════════════════════
+   ═══ 🆕 v7.5: Main Chat Route ══════════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1194,6 +1295,16 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
+    /* 🆕 v7.5: Conversational message → instant response (BEFORE AI classification!) */
+    if (isConversationalMessage(message)) {
+      _logIntent = "GENERAL_CHAT";
+      const reply = getQuickConversationalReply(message);
+      session.history.push({ role: "user", content: message });
+      session.history.push({ role: "assistant", content: reply });
+      while (session.history.length > MAX_HISTORY) session.history.shift();
+      return res.json({ reply, session_id });
+    }
+
     session.history.push({ role: "user", content: message });
     while (session.history.length > MAX_HISTORY) session.history.shift();
 
@@ -1213,12 +1324,12 @@ app.post("/chat", limiter, async (req, res) => {
     /* v7.3: Audience detection */
     const audienceExcludes = detectAudienceExclusions(message, entity);
 
-    /* 🆕 v7.4: Strip audience modifiers from search terms */
+    /* 🆕 v7.5: Strip audience modifiers — NOW returns empty when all are audience! */
     const { cleanTerms: strippedTerms, cleanEntity: strippedEntity } = stripAudienceModifiers(search_terms, entity);
 
     console.log(`\n════════════════════════════════`);
     console.log(`💬 "${message.slice(0, 60)}"`);
-    console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Stripped: ${strippedEntity}`);
+    console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Stripped: "${strippedEntity}"`);
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] → Stripped: [${strippedTerms.slice(0, 5).join(", ")}]`);
     if (exclude_terms.length) console.log(`🚫 Classifier excludes: [${exclude_terms.join(", ")}]`);
     if (audienceExcludes.length) console.log(`👥 Audience excludes: [${audienceExcludes.join(", ")}]`);
@@ -1300,7 +1411,6 @@ app.post("/chat", limiter, async (req, res) => {
       if (isGeneralQuery) {
         diplomas = await getAllDiplomas();
       } else {
-        /* 🆕 v7.4: Use stripped terms */
         const terms = [...new Set([strippedEntity, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
         diplomas = await searchDiplomas(expandArabicTerms(terms));
         if (diplomas.length > 0) diplomas = await filterRelevantDiplomas(diplomas, strippedEntity || message, strippedEntity);
@@ -1333,16 +1443,19 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v7.4: COURSE_SEARCH — Smart Filtering ═══════
+    // ═══ 🆕 v7.5: COURSE_SEARCH — Context-Aware ═════════
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
-      /* 🆕 v7.4: Use STRIPPED entity and terms for search */
       let resolvedEntity = strippedEntity;
-      let resolvedTerms = strippedTerms;
+      let resolvedTerms = [...strippedTerms];
       let resolvedCategoryKey = category_key;
 
+      /* 🆕 v7.5: If stripped entity is vague (e.g. "للكبار" → ""), resolve from session */
       if (isVagueEntity(resolvedEntity)) {
-        if (session.entity && !isVagueEntity(session.entity)) resolvedEntity = session.entity;
+        if (session.entity && !isVagueEntity(session.entity)) {
+          resolvedEntity = session.entity;
+          console.log(`   🔄 v7.5: Entity was audience-only → using session entity: "${resolvedEntity}"`);
+        }
         if (isVagueEntity(resolvedEntity)) {
           const ht = await resolveEntityFromHistory(session.history);
           if (ht) { resolvedEntity = ht.topic || resolvedEntity; resolvedTerms = ht.search_terms?.length ? ht.search_terms : resolvedTerms; resolvedCategoryKey = ht.category_key && CATEGORIES[ht.category_key] ? ht.category_key : resolvedCategoryKey; }
@@ -1350,17 +1463,26 @@ app.post("/chat", limiter, async (req, res) => {
         if (resolvedEntity && !isVagueEntity(resolvedEntity)) session.entity = resolvedEntity;
       }
 
-      /* 🆕 v7.4: Display with original entity (keeps "للكبار" for display) but search with stripped */
+      /* 🆕 v7.5: If terms are EMPTY (all were audience words), generate from entity + category */
+      if (resolvedTerms.length === 0 && resolvedEntity && !isVagueEntity(resolvedEntity)) {
+        const entityWords = resolvedEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
+        resolvedTerms = [...entityWords];
+        if (resolvedCategoryKey && CATEGORY_SEARCH_TERMS[resolvedCategoryKey]) {
+          resolvedTerms.push(...CATEGORY_SEARCH_TERMS[resolvedCategoryKey].slice(0, 4));
+        }
+        resolvedTerms = [...new Set(resolvedTerms)];
+        console.log(`   🧠 v7.5: Generated terms from entity+category: [${resolvedTerms.join(", ")}]`);
+      }
+
       const displayTerm = entity || resolvedEntity || message;
-      const searchEntity = resolvedEntity; /* cleaned — no "للكبار" */
+      const searchEntity = resolvedEntity;
 
       const resolvedCategory = resolvedCategoryKey ? CATEGORIES[resolvedCategoryKey] : category;
       const allTerms = [...new Set([...(searchEntity && !isVagueEntity(searchEntity) ? [searchEntity] : []), ...resolvedTerms, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
       _logEntity = resolvedEntity || entity;
 
-      /* 🆕 v7.4: Pass userQuery (message) to searchCourses for preFilter */
       const [coursesRaw, relatedDiplomasRaw] = await Promise.all([
-        searchCourses(allTerms, searchEntity, message),
+        allTerms.length > 0 ? searchCourses(allTerms, searchEntity, message) : Promise.resolve([]),
         allTerms.length > 0 ? searchDiplomas(expandArabicTerms(allTerms)) : Promise.resolve([]),
       ]);
 
@@ -1368,18 +1490,17 @@ app.post("/chat", limiter, async (req, res) => {
       let courses = exclude_terms.length ? applyExclusions(coursesRaw, exclude_terms) : coursesRaw;
       if (exclude_terms.length) console.log(`   🚫 After exclusion: ${coursesRaw.length} → ${courses.length}`);
 
-      /* 🆕 v7.4: RETRY — if exclusion wiped all results, try category fallback WITH pre-filter */
+      /* RETRY — if exclusion wiped all results, try category fallback */
       if (courses.length === 0 && coursesRaw.length > 0 && exclude_terms.length) {
-        console.log(`   🔄 v7.4: All results excluded! Trying category fallback...`);
+        console.log(`   🔄 v7.5: All results excluded! Trying category fallback...`);
         const fallbackKey = resolvedCategoryKey || category_key;
         if (fallbackKey) {
           let catCourses = await getCoursesByCategory(fallbackKey);
-          /* Pre-filter category courses too */
           catCourses = preFilterByPrimarySubject(catCourses, message, searchEntity);
           catCourses = exclude_terms.length ? applyExclusions(catCourses, exclude_terms) : catCourses;
           if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity);
           if (catCourses.length > 0) {
-            console.log(`   ✅ v7.4: Category fallback found ${catCourses.length} courses`);
+            console.log(`   ✅ v7.5: Category fallback found ${catCourses.length} courses`);
             courses = catCourses;
           }
         }
@@ -1420,7 +1541,7 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* 🆕 v7.4: Better message when exclusion is the reason */
+      /* Better message when exclusion is the reason */
       if (is_refinement && exclude_terms.length) {
         const catLink = resolvedCategory || (fallbackCatKey ? CATEGORIES[fallbackCatKey] : null);
         let reply = `<b>🔍 الكورسات المتاحة عن "${searchEntity || displayTerm}" على المنصة مش مطابقة للمواصفات دي حالياً.</b><br><br>`;
@@ -1495,8 +1616,17 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
+      /* 🆕 v7.5: Follow-up also uses session entity when stripped is empty */
       let followUpEntity = strippedEntity || session.entity || null;
-      if (isVagueEntity(followUpEntity)) { const ht = await resolveEntityFromHistory(session.history); followUpEntity = ht?.topic || "الموضوع السابق"; }
+      if (isVagueEntity(followUpEntity)) {
+        if (session.entity && !isVagueEntity(session.entity)) {
+          followUpEntity = session.entity;
+          console.log(`   🔄 v7.5: Follow-up entity was vague → using session: "${followUpEntity}"`);
+        } else {
+          const ht = await resolveEntityFromHistory(session.history);
+          followUpEntity = ht?.topic || "الموضوع السابق";
+        }
+      }
       _logEntity = followUpEntity;
 
       const fuAud = detectAudienceExclusions(message, followUpEntity);
@@ -1506,12 +1636,23 @@ app.post("/chat", limiter, async (req, res) => {
       const isDiplomaFollowUp = ["دبلومة","دبلومات","مسار","diploma"].some((p) => message.toLowerCase().includes(p));
 
       if ((isCourseFollowUp || isDiplomaFollowUp) && followUpEntity && followUpEntity !== "الموضوع السابق") {
-        /* 🆕 v7.4: Strip audience from follow-up terms too */
         const { cleanTerms: fuCleanTerms } = stripAudienceModifiers(
           search_terms.length ? [...new Set([followUpEntity, ...search_terms])] : [followUpEntity],
           followUpEntity
         );
-        const terms = fuCleanTerms.filter((t) => t.length >= 2);
+        let terms = fuCleanTerms.filter((t) => t.length >= 2);
+
+        /* 🆕 v7.5: If terms empty after strip, generate from entity */
+        if (terms.length === 0 && followUpEntity && !isVagueEntity(followUpEntity)) {
+          const entityWords = followUpEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
+          terms = [...entityWords];
+          const ck = category_key || (resolvedCategoryKey => null);
+          if (category_key && CATEGORY_SEARCH_TERMS[category_key]) {
+            terms.push(...CATEGORY_SEARCH_TERMS[category_key].slice(0, 3));
+          }
+          terms = [...new Set(terms)];
+          console.log(`   🧠 v7.5: Follow-up generated terms: [${terms.join(", ")}]`);
+        }
 
         if (isDiplomaFollowUp) {
           let diplomas = await searchDiplomas(expandArabicTerms(terms));
@@ -1524,11 +1665,13 @@ app.post("/chat", limiter, async (req, res) => {
           }
         }
 
-        /* 🆕 v7.4: Pass message to searchCourses for preFilter */
-        const [cRaw, dRaw] = await Promise.all([searchCourses(terms, followUpEntity, message), searchDiplomas(expandArabicTerms(terms))]);
+        const [cRaw, dRaw] = await Promise.all([
+          terms.length > 0 ? searchCourses(terms, followUpEntity, message) : Promise.resolve([]),
+          terms.length > 0 ? searchDiplomas(expandArabicTerms(terms)) : Promise.resolve([]),
+        ]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
 
-        /* 🆕 v7.4: Retry with category if exclusion emptied results */
+        /* Retry with category if exclusion emptied results */
         if (courses.length === 0 && cRaw.length > 0 && fuExc.length) {
           const fk = category_key || (await resolveEntityFromHistory(session.history))?.category_key;
           if (fk && CATEGORIES[fk]) {
@@ -1563,8 +1706,15 @@ app.post("/chat", limiter, async (req, res) => {
       /* General follow-up with entity */
       if (entity && !isVagueEntity(entity)) {
         const { cleanTerms: eClean } = stripAudienceModifiers(search_terms.length ? [...new Set([entity, ...search_terms])] : [entity], entity);
-        const terms = eClean.filter((t) => t.length >= 2);
-        const [cRaw, dRaw] = await Promise.all([searchCourses(terms, entity, message), searchDiplomas(expandArabicTerms(terms))]);
+        let terms = eClean.filter((t) => t.length >= 2);
+        /* 🆕 v7.5: generate terms if empty */
+        if (terms.length === 0 && !isVagueEntity(entity)) {
+          terms = entity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
+        }
+        const [cRaw, dRaw] = await Promise.all([
+          terms.length > 0 ? searchCourses(terms, entity, message) : Promise.resolve([]),
+          terms.length > 0 ? searchDiplomas(expandArabicTerms(terms)) : Promise.resolve([]),
+        ]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
         let relDip = dRaw.length > 0 ? await filterRelevantDiplomas(dRaw, entity, entity) : [];
         if (fuExc.length) relDip = applyDiplomaExclusions(relDip, fuExc);
@@ -1634,7 +1784,6 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
     const offset = (page - 1) * limit;
     const search = req.query.search || "";
 
-    /* ── Fetch raw messages (increased range) ── */
     let query = supabase
       .from("chat_logs")
       .select("session_id, content, intent, entity, created_at, role")
@@ -1646,14 +1795,12 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
       );
     }
 
-    /* 🆕 Fetch 3000 rows instead of 500 */
     const { data, error } = await query.range(0, 2999);
     if (error) return res.status(500).json({ error: error.message });
 
-    /* ── Group by session_id — prefer USER messages ── */
     const sm = new Map();
     for (const r of data || []) {
-      if (!r.session_id) continue; /* skip null session_ids */
+      if (!r.session_id) continue;
 
       if (!sm.has(r.session_id)) {
         sm.set(r.session_id, {
@@ -1670,14 +1817,12 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
       const sess = sm.get(r.session_id);
       sess.message_count++;
 
-      /* 🆕 Prefer user messages (plain text, no HTML) */
       if (r.role === "user" && !sess.last_user_message) {
         sess.last_user_message = (r.content || "").slice(0, 150);
         sess.last_intent = sess.last_intent || r.intent;
         sess.last_entity = sess.last_entity || r.entity;
       }
 
-      /* Fallback: first message (any role) */
       if (!sess.last_message) {
         sess.last_message = (r.content || "").slice(0, 150);
         if (!sess.last_intent) sess.last_intent = r.intent;
@@ -1685,7 +1830,6 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
       }
     }
 
-    /* 🆕 Use user message for display (strips HTML issue) */
     for (const sess of sm.values()) {
       if (sess.last_user_message) {
         sess.last_message = sess.last_user_message;
@@ -1693,7 +1837,6 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
       delete sess.last_user_message;
     }
 
-    /* ── Paginate ── */
     const allConversations = [...sm.values()];
     const paginatedConversations = allConversations.slice(offset, offset + limit);
 
@@ -1716,6 +1859,36 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
   }
 });
 
+/* ═══ 🆕 v7.5: Single Conversation Detail Endpoint ═══ */
+app.get("/admin/conversations/:session_id", adminAuth, async (req, res) => {
+  try {
+    const sid = decodeURIComponent(req.params.session_id);
+    console.log(`📋 Admin: Loading conversation detail for: ${sid}`);
+
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("id, session_id, role, content, intent, entity, created_at")
+      .eq("session_id", sid)
+      .order("created_at", { ascending: true })
+      .limit(500);
+
+    if (error) {
+      console.error("❌ Conversation detail error:", error.message);
+      return res.status(500).json({ error: error.message });
+    }
+
+    console.log(`   ✅ Found ${(data || []).length} messages for session: ${sid}`);
+
+    res.json({
+      messages: data || [],
+      session_id: sid,
+      count: (data || []).length,
+    });
+  } catch (e) {
+    console.error("❌ Conversation detail exception:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /* ─── Corrections CRUD ─── */
 app.get("/admin/corrections", adminAuth, async (req, res) => { try { const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false }).limit(100); if (error) return res.status(500).json({ error: error.message }); res.json({ corrections: data || [] }); } catch (e) { res.status(500).json({ error: e.message }); } });
@@ -1818,9 +1991,9 @@ app.get("/debug/search/:query", async (req, res) => {
   const { cleanTerms: st, cleanEntity: se } = stripAudienceModifiers(ft, fe);
   const ae = detectAudienceExclusions(q, fe);
   const allExc = mergeExcludeTerms(classification.exclude_terms, ae);
-  const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : [q];
+  const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : (se && !isVagueEntity(se) ? [se] : [q]);
   const expanded = expandArabicTerms(terms);
-  const [cRaw, dRaw, corr] = await Promise.all([searchCourses(terms, se, q), searchDiplomas(expanded), searchCorrections(q, fi, fe)]);
+  const [cRaw, dRaw, corr] = await Promise.all([terms.length ? searchCourses(terms, se, q) : Promise.resolve([]), expanded.length ? searchDiplomas(expanded) : Promise.resolve([]), searchCorrections(q, fi, fe)]);
   const courses = allExc.length ? applyExclusions(cRaw, allExc) : cRaw;
   const dFilt = dRaw.length ? await filterRelevantDiplomas(dRaw, se || q, se) : [];
   const dFinal = allExc.length ? applyDiplomaExclusions(dFilt, allExc) : dFilt;
@@ -1852,7 +2025,7 @@ app.get("/debug/strip/:query", (req, res) => {
   const terms = q.split(/\s+/).filter((t) => t.length >= 2);
   const { cleanTerms, cleanEntity } = stripAudienceModifiers(terms, q);
   const ae = detectAudienceExclusions(q, null);
-  res.json({ query: q, original_terms: terms, stripped_terms: cleanTerms, stripped_entity: cleanEntity, audience_excludes: ae });
+  res.json({ query: q, original_terms: terms, stripped_terms: cleanTerms, stripped_entity: cleanEntity, audience_excludes: ae, is_vague: isVagueEntity(cleanEntity) });
 });
 
 app.get("/debug/normalize/:text", (req, res) => { const t = decodeURIComponent(req.params.text); res.json({ original: t, normalized: normalizeArabic(t), expanded: expandArabicTerms([t]) }); });
@@ -1907,18 +2080,20 @@ app.get("/debug/test-all", async (req, res) => {
 
 /* ═══ Health & 404 ═══ */
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", version: "7.4-smart-subject-filter", sessions: sessions.size, uptime: Math.floor(process.uptime()), categories: Object.keys(CATEGORIES).length });
+  res.json({ status: "ok", version: "7.5-context-aware-audience", sessions: sessions.size, uptime: Math.floor(process.uptime()), categories: Object.keys(CATEGORIES).length });
 });
 
 app.use((req, res) => { res.status(404).json({ error: "Not Found" }); });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v7.4 🎯 Smart Subject Filter + 🧹 Audience Strip`);
+  console.log(`\n🤖 easyT Chatbot v7.5 🧠 Context-Aware Audience + 💬 Conversational Detection`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   🆕 v7.4: BUG FIX — AI filter [] was ignored → now returns empty`);
-  console.log(`   🆕 v7.4: stripAudienceModifiers() — "للكبار" removed from search`);
-  console.log(`   🆕 v7.4: preFilterByPrimarySubject() — Graphics/NLP excluded from language search`);
-  console.log(`   🆕 v7.4: Retry logic when exclusion gives 0 results`);
+  console.log(`   🆕 v7.5: FIX — stripAudienceModifiers returns EMPTY (not originals)`);
+  console.log(`   🆕 v7.5: FIX — isVagueEntity catches audience-only entities`);
+  console.log(`   🆕 v7.5: FIX — COURSE_SEARCH generates terms from session entity`);
+  console.log(`   🆕 v7.5: Conversational detection (انت فين/شكرا/باي)`);
+  console.log(`   🆕 v7.5: /admin/conversations/:session_id endpoint`);
+  console.log(`   ✅ v7.4: AI filter [] fix + preFilter + Retry`);
   console.log(`   ✅ v7.3: Audience detection + Strict AI filter`);
   console.log(`   ✅ v7.2: Refinement + Exclusions`);
   console.log(`   🧠 v7.1: Corrections learning`);
