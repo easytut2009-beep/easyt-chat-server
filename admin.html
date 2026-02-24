@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easyT Admin Dashboard v7.1</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+    --success: #10b981;
+    --success-hover: #059669;
+    --warning: #f59e0b;
+    --sidebar-bg: #0f172a;
+    --sidebar-active: #1e293b;
+    --sidebar-text: #94a3b8;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    --shadow-lg: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Cairo', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* === Scrollbar === */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  /* === Login === */
+  .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%); }
+  .login-card { background: var(--card); border-radius: 20px; padding: 40px; width: 380px; max-width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,.25); text-align: center; }
+  .login-logo { font-size: 48px; margin-bottom: 8px; }
+  .login-title { font-size: 24px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+  .login-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 28px; }
+
+  /* === Layout === */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 240px; background: var(--sidebar-bg); color: #fff; position: fixed; top: 0; right: 0; bottom: 0; overflow-y: auto; z-index: 50; transition: transform .3s; }
+  .sidebar-header { padding: 20px; border-bottom: 1px solid #1e293b; }
+  .sidebar-brand { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .sidebar-version { font-size: 11px; color: var(--sidebar-text); margin-top: 4px; }
+  .sidebar-nav { padding: 8px 0; }
+  .sidebar-nav a { display: flex; align-items: center; gap: 10px; padding: 12px 20px; color: var(--sidebar-text); text-decoration: none; font-size: 14px; font-weight: 600; transition: all .2s; border-right: 3px solid transparent; }
+  .sidebar-nav a:hover { background: rgba(255,255,255,.05); color: #e2e8f0; }
+  .sidebar-nav a.active { background: var(--sidebar-active); color: #fff; border-right-color: var(--primary); }
+  .sidebar-nav a .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+  .sidebar-nav a .nav-badge { margin-right: auto; background: var(--primary); color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; }
+  .sidebar-footer { padding: 12px 20px; border-top: 1px solid #1e293b; margin-top: auto; }
+  .sidebar-footer a { color: var(--danger) !important; }
+
+  .main { margin-right: 240px; padding: 24px; flex: 1; min-height: 100vh; }
+  .page-header { margin-bottom: 24px; }
+  .page-title { font-size: 22px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .page-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* === Cards === */
+  .card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--text); }
+
+  /* === Stats Grid === */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); text-align: center; transition: transform .2s, box-shadow .2s; }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .stat-icon { font-size: 28px; margin-bottom: 8px; }
+  .stat-num { font-size: 32px; font-weight: 800; color: var(--text); line-height: 1; }
+  .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 6px; font-weight: 600; }
+
+  /* === Intent Chart === */
+  .intent-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .intent-label { min-width: 140px; font-size: 12px; color: var(--text-secondary); font-weight: 600; text-align: left; }
+  .intent-track { flex: 1; background: #f1f5f9; border-radius: 6px; height: 24px; overflow: hidden; }
+  .intent-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: width .6s ease; min-width: 30px; }
+  .intent-fill span { font-size: 10px; color: #fff; font-weight: 700; }
+
+  /* === Tables === */
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { position: sticky; top: 0; z-index: 1; }
+  th { background: #f8fafc; padding: 12px 14px; text-align: right; font-weight: 700; color: var(--text-secondary); font-size: 12px; border-bottom: 2px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: .3px; }
+  td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: var(--text); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tbody tr { transition: background .15s; }
+  tbody tr:hover { background: #f8fafc; }
+  tbody tr.clickable { cursor: pointer; }
+
+  /* === Buttons === */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 13px; font-weight: 700; font-family: 'Cairo', sans-serif; transition: all .2s; white-space: nowrap; }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: var(--danger-hover); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { background: var(--success-hover); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: #f8fafc; color: var(--text); }
+  .btn-sm { padding: 5px 10px; font-size: 11px; border-radius: 6px; }
+  .btn-icon { padding: 6px 8px; }
+  .btn-group { display: flex; gap: 6px; }
+
+  /* === Badges === */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-blue { background: #dbeafe; color: #1d4ed8; }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-yellow { background: #fef3c3; color: #92400e; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+  .badge-purple { background: #f3e8ff; color: #7c3aed; }
+  .badge-gray { background: #f1f5f9; color: #475569; }
+
+  /* === Form === */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
+  .form-input, .form-textarea, .form-select {
+    width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    padding: 10px 14px; font-size: 13px; font-family: 'Cairo', sans-serif;
+    color: var(--text); background: #fff; transition: border-color .2s, box-shadow .2s;
+  }
+  .form-input:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+  .form-textarea { resize: vertical; min-height: 80px; }
+  .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .search-box { position: relative; max-width: 400px; }
+  .search-box input { padding-right: 38px; }
+  .search-box .search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 16px; color: var(--text-muted); pointer-events: none; }
+
+  /* === Chat Messages === */
+  .msg { padding: 10px 14px; border-radius: 10px; margin: 6px 0; font-size: 13px; line-height: 1.6; position: relative; }
+  .msg-user { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .msg-bot { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .msg-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+  .msg-role { font-weight: 700; font-size: 12px; }
+  .msg-time { font-size: 10px; color: var(--text-muted); margin-right: auto; }
+  .msg-content { word-break: break-word; }
+
+  /* === Modal === */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border-radius: 16px; width: 100%; max-width: 560px; max-height: 85vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,.25); }
+  .modal-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+  .modal-title { font-size: 17px; font-weight: 800; }
+  .modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); padding: 4px; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 16px 24px; }
+  .modal-footer { padding: 0 24px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* === Alert/Info Box === */
+  .info-box { background: #eff6ff; border: 1px solid #93c5fd; border-radius: var(--radius-sm); padding: 12px 16px; font-size: 12px; color: #1e40af; display: flex; align-items: flex-start; gap: 8px; }
+  .success-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: var(--radius-sm); padding: 12px 16px; font-size: 12px; color: #166534; display: flex; align-items: flex-start; gap: 8px; }
+  .warn-box { background: #fefce8; border: 1px solid #fde047; border-radius: var(--radius-sm); padding: 12px 16px; font-size: 12px; color: #854d0e; display: flex; align-items: flex-start; gap: 8px; }
+  .error-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center; color: var(--text-muted); }
+
+  /* === Pagination === */
+  .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; }
+
+  /* === Responsive === */
+  .mobile-toggle { display: none; position: fixed; top: 12px; right: 12px; z-index: 60; background: var(--sidebar-bg); color: #fff; border: none; border-radius: 8px; padding: 10px 12px; font-size: 18px; cursor: pointer; }
+  @media(max-width: 768px) {
+    .mobile-toggle { display: block; }
+    .sidebar { transform: translateX(100%); }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-right: 0; padding: 16px; padding-top: 56px; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat-card { padding: 14px; }
+    .stat-num { font-size: 24px; }
+  }
+
+  /* === Toast === */
+  .toast-container { position: fixed; bottom: 24px; left: 24px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+  .toast { padding: 12px 20px; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 600; font-family: 'Cairo', sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,.15); animation: slideIn .3s ease; display: flex; align-items: center; gap: 8px; }
+  .toast-success { background: #059669; }
+  .toast-error { background: #dc2626; }
+  .toast-info { background: #4f46e5; }
+  @keyframes slideIn { from { transform: translateX(-100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* === Loading === */
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #e2e8f0; border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted); gap: 8px; font-size: 13px; }
+
+  /* === Empty State === */
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 8px; }
+  .empty-text { font-size: 14px; font-weight: 600; }
+  .empty-hint { font-size: 12px; margin-top: 4px; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .correction-source { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #991b1b; max-height: 100px; overflow-y: auto; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Mobile Toggle -->
+<button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+
+<!-- ═══════════ LOGIN SCREEN ═══════════ -->
+<div id="loginScreen" class="login-wrapper">
+  <div class="login-card">
+    <div class="login-logo">🤖</div>
+    <div class="login-title">easyT Admin</div>
+    <div class="login-subtitle">لوحة التحكم — v7.1 🧠 Learning</div>
+    <div class="form-group">
+      <input type="password" class="form-input" id="passInput" placeholder="🔑 كلمة السر" onkeydown="if(event.key==='Enter')doLogin()" style="text-align:center;font-size:15px;">
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;" onclick="doLogin()">تسجيل الدخول</button>
+    <p id="loginErr" style="color:var(--danger);font-size:12px;margin-top:12px;display:none"></p>
+  </div>
+</div>
+
+<!-- ═══════════ DASHBOARD ═══════════ -->
+<div id="dashboard" style="display:none" class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">🤖 easyT</div>
+      <div class="sidebar-version">v7.1 — 🧠 Self-Learning Bot</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" onclick="showTab('stats')" id="nav-stats" class="active">
+        <span class="nav-icon">📊</span> الإحصائيات
+      </a>
+      <a href="#" onclick="showTab('conversations')" id="nav-conversations">
+        <span class="nav-icon">💬</span> المحادثات
+      </a>
+      <a href="#" onclick="showTab('corrections')" id="nav-corrections">
+        <span class="nav-icon">🧠</span> التصحيحات
+        <span class="nav-badge" id="corrBadge" style="display:none">0</span>
+      </a>
+      <a href="#" onclick="showTab('courses')" id="nav-courses">
+        <span class="nav-icon">📚</span> الكورسات
+      </a>
+      <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">
+        <span class="nav-icon">🎓</span> الدبلومات
+      </a>
+      <a href="#" onclick="showTab('instructors')" id="nav-instructors">
+        <span class="nav-icon">👤</span> المحاضرين
+      </a>
+      <a href="#" onclick="showTab('faq')" id="nav-faq">
+        <span class="nav-icon">❓</span> الأسئلة الشائعة
+      </a>
+      <a href="#" onclick="showTab('sitepages')" id="nav-sitepages">
+        <span class="nav-icon">📄</span> صفحات الموقع
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="#" onclick="doLogout()" class="sidebar-nav" style="display:flex;align-items:center;gap:10px;color:var(--danger);text-decoration:none;font-size:14px;font-weight:600;">
+        <span>🚪</span> تسجيل الخروج
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- ═══ STATS TAB ═══ -->
+    <div id="tab-stats" class="tab-content active">
+      <div class="page-header">
+        <h1 class="page-title">📊 الإحصائيات</h1>
+        <p class="page-desc">نظرة عامة على بيانات المنصة والبوت</p>
+      </div>
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 توزيع أنواع الأسئلة (آخر 1000 رسالة)</span>
+        </div>
+        <div id="intentChart"></div>
+      </div>
+    </div>
+
+    <!-- ═══ CONVERSATIONS TAB ═══ -->
+    <div id="tab-conversations" class="tab-content">
+      <div class="page-header">
+        <h1 class="page-title">💬 المحادثات</h1>
+        <p class="page-desc">عرض ومراجعة محادثات المستخدمين مع البوت</p>
+      </div>
+
+      <div id="convListView">
+        <div class="card">
+          <div class="card-header">
+            <div class="search-box" style="flex:1;max-width:400px;">
+              <span class="search-icon">🔍</span>
+              <input class="form-input" id="convSearch" placeholder="ابحث في المحادثات..." onkeydown="if(event.key==='Enter')loadConversations()">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="loadConversations()">🔄 تحديث</button>
+          </div>
+          <div id="convListContent"></div>
+        </div>
+      </div>
+
+      <div id="convDetailView" style="display:none">
+        <button class="btn btn-ghost" onclick="backToConvList()" style="margin-bottom:12px">→ رجوع للقائمة</button>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="convDetailTitle">تفاصيل المحادثة</span>
+          </div>
+          <div id="convDetailContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CORRECTIONS TAB ═══ -->
+    <div id="tab-corrections" class="tab-content">
+      <div class="page-header">
+        <h1 class="page-title">🧠 التصحيحات</h1>
+        <p class="page-desc">البوت بيتعلم من التصحيحات دي تلقائياً — كل تصحيح بيحسّن الردود الجاية</p>
+      </div>
+      <div class="success-box" style="margin-bottom:16px">
+        <span>🧠</span>
+        <div><b>إزاي البوت بيتعلم؟</b><br>كل ما تضيف تصحيح (سؤال + إجابة صح) → البوت بيبحث فيهم قبل ما يرد → لو لقى سؤال مشابه بيستخدم الإجابة الصح مباشرة!</div>
+      </div>
+      <div style="margin-bottom:16px">
+        <button class="btn btn-success" onclick="openManualCorrection()">➕ إضافة تصحيح يدوي</button>
+      </div>
+      <div class="card">
+        <div id="corrListContent"></div>
+      </div>
+    </div>
+
+    <!-- ═══ COURSES TAB ═══ -->
+    <div id="tab-courses" class="tab-content">
+      <div class="page-header">
+        <h1 class="page-title">📚 إدارة الكورسات</h1>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-box" style="flex:1;max-width:400px;">
+            <span class="search-icon">🔍</span>
+            <input class="form-input" id="coursesSearch" placeholder="ابحث عن كورس..." onkeydown="if(event.key==='Enter')loadEntity('courses')">
+          </div>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('courses')">➕ إضافة كورس</button>
+        </div>
+        <div id="coursesTable"></div>
+      </div>
+    </div>
+
+    <!-- ═══ DIPLOMAS TAB ═══ -->
+    <div id="tab-diplomas" class="tab-content">
+      <div class="page-header"><h1 class="page-title">🎓 إدارة الدبلومات</h1></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">الدبلومات</span>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')">➕ إضافة دبلومة</button>
+        </div>
+        <div id="diplomasTable"></div>
+      </div>
+    </div>
+
+    <!-- ═══ INSTRUCTORS TAB ═══ -->
+    <div id="tab-instructors" class="tab-content">
+      <div class="page-header"><h1 class="page-title">👤 إدارة المحاضرين</h1></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">المحاضرين</span>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('instructors')">➕ إضافة محاضر</button>
+        </div>
+        <div id="instructorsTable"></div>
+      </div>
+    </div>
+
+    <!-- ═══ FAQ TAB ═══ -->
+    <div id="tab-faq" class="tab-content">
+      <div class="page-header"><h1 class="page-title">❓ إدارة الأسئلة الشائعة</h1></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">الأسئلة الشائعة</span>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('faq')">➕ إضافة سؤال</button>
+        </div>
+        <div id="faqTable"></div>
+      </div>
+    </div>
+
+    <!-- ═══ SITE PAGES TAB ═══ -->
+    <div id="tab-sitepages" class="tab-content">
+      <div class="page-header"><h1 class="page-title">📄 إدارة صفحات الموقع</h1></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">صفحات الموقع</span>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('site-pages')">➕ إضافة صفحة</button>
+        </div>
+        <div id="sitepagesTable"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ═══════════ MODAL ═══════════ -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modalTitle"></h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="modalSaveBtn" onclick="saveModal()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ CONFIRM DIALOG ═══════════ -->
+<div class="modal-overlay" id="confirmDialog" onclick="if(event.target===this)closeConfirm()">
+  <div class="modal" style="max-width:380px;text-align:center;">
+    <div class="modal-body" style="padding:30px 24px">
+      <div style="font-size:40px;margin-bottom:12px" id="confirmIcon">⚠️</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:8px" id="confirmTitle">هل أنت متأكد؟</div>
+      <div style="font-size:13px;color:var(--text-secondary)" id="confirmMsg"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:24px">
+      <button class="btn btn-ghost" onclick="closeConfirm()">إلغاء</button>
+      <button class="btn btn-danger" id="confirmBtn" onclick="">تأكيد الحذف</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════
+   CORE STATE & CONFIG
+   ═══════════════════════════════════════ */
+const API = window.location.origin;
+let TOKEN = '';
+let modalState = {};
+let _convMessages = [];
+
+const INTENT_COLORS = {
+  'COURSE_SEARCH':'#3b82f6','GREETING':'#10b981','DIPLOMA_SEARCH':'#8b5cf6',
+  'PLATFORM_QA':'#f59e0b','PAYMENT':'#ef4444','SUBSCRIPTION':'#06b6d4',
+  'ACCESS_ISSUE':'#f97316','FOLLOW_UP':'#64748b','GENERAL':'#6b7280',
+  'GIBBERISH':'#d1d5db','START_LEARNING':'#22c55e','CERTIFICATE_QA':'#a855f7',
+  'AFFILIATE':'#ec4899','AUTHOR':'#14b8a6'
+};
+
+/* ═══ Entity Field Definitions ═══ */
+const ENTITY_FIELDS = {
+  'courses': [
+    { key:'title', label:'العنوان', required:true },
+    { key:'description', label:'الوصف', type:'textarea' },
+    { key:'subtitle', label:'العنوان الفرعي' },
+    { key:'link', label:'رابط الدورة' },
+    { key:'price', label:'السعر' },
+    { key:'image', label:'رابط الصورة' },
+    { key:'domain', label:'المجال' },
+  ],
+  'diplomas': [
+    { key:'title', label:'العنوان', required:true },
+    { key:'slug', label:'Slug' },
+    { key:'link', label:'الرابط' },
+    { key:'description', label:'الوصف', type:'textarea' },
+    { key:'price', label:'السعر' },
+    { key:'courses_count', label:'عدد الدورات', type:'number' },
+    { key:'books_count', label:'عدد الكتب', type:'number' },
+    { key:'hours', label:'عدد الساعات', type:'number' },
+  ],
+  'instructors': [
+    { key:'name', label:'اسم المحاضر', required:true },
+  ],
+  'faq': [
+    { key:'section', label:'القسم', required:true },
+    { key:'question', label:'السؤال', type:'textarea', required:true },
+    { key:'answer', label:'الإجابة', type:'textarea', required:true },
+  ],
+  'site-pages': [
+    { key:'page_url', label:'رابط الصفحة', required:true },
+    { key:'content', label:'المحتوى', type:'textarea', required:true },
+  ],
+};
+
+const ENTITY_DISPLAY_COLS = {
+  'courses': ['id','title','price','link'],
+  'diplomas': ['id','title','price','courses_count','hours'],
+  'instructors': ['id','name'],
+  'faq': ['id','section','question'],
+  'site-pages': ['id','page_url'],
+};
+
+/* ═══════════════════════════════════════
+   AUTH
+   ═══════════════════════════════════════ */
+async function doLogin() {
+  const p = document.getElementById('passInput').value;
+  const errEl = document.getElementById('loginErr');
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch(API+'/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:p}) });
+    const d = await r.json();
+    if (r.ok) {
+      TOKEN = d.token;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'flex';
+      loadStats();
+      toast('تم تسجيل الدخول بنجاح ✅', 'success');
+    } else {
+      errEl.textContent = d.error || 'كلمة السر غلط';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'خطأ في الاتصال بالسيرفر';
+    errEl.style.display = 'block';
+  }
+}
+
+function doLogout() {
+  TOKEN = '';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('passInput').value = '';
+}
+
+async function api(path, opts={}) {
+  const r = await fetch(API+path, {
+    ...opts,
+    headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+TOKEN, ...(opts.headers||{}) }
+  });
+  if (r.status === 401) { doLogout(); toast('انتهت الجلسة — سجل دخول تاني','error'); throw new Error('Unauthorized'); }
+  return r.json();
+}
+
+/* ═══════════════════════════════════════
+   UTILS
+   ═══════════════════════════════════════ */
+function toast(msg, type='info') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast toast-'+type;
+  t.innerHTML = msg;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50px)'; setTimeout(()=>t.remove(),300); }, 3000);
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
+  const tabEl = document.getElementById('tab-'+tab);
+  if (tabEl) tabEl.classList.add('active');
+  const navEl = document.getElementById('nav-'+tab);
+  if (navEl) navEl.classList.add('active');
+  document.getElementById('sidebar').classList.remove('open');
+
+  if (tab==='stats') loadStats();
+  else if (tab==='conversations') loadConversations();
+  else if (tab==='corrections') loadCorrections();
+  else if (tab==='courses') loadEntity('courses');
+  else if (tab==='diplomas') loadEntity('diplomas');
+  else if (tab==='instructors') loadEntity('instructors');
+  else if (tab==='faq') loadEntity('faq');
+  else if (tab==='sitepages') loadEntity('site-pages');
+}
+
+function fmtDate(d) { if(!d) return '—'; return new Date(d).toLocaleString('ar-EG', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function fmtTime(d) { if(!d) return '—'; return new Date(d).toLocaleTimeString('ar-EG', {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function truncate(s, n=60) { if(!s) return '—'; return s.length > n ? s.slice(0,n)+'...' : s; }
+function escHtml(s) { if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function loading() { return '<div class="loading-overlay"><div class="spinner"></div> جاري التحميل...</div>'; }
+function empty(icon,text,hint) { return `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${text}</div>${hint?'<div class="empty-hint">'+hint+'</div>':''}</div>`; }
+
+/* ═══════════════════════════════════════
+   STATS
+   ═══════════════════════════════════════ */
+async function loadStats() {
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = '<div class="loading-overlay" style="grid-column:1/-1"><div class="spinner"></div></div>';
+  try {
+    const d = await api('/admin/stats');
+    const stats = [
+      ['💬', d.total_messages, 'إجمالي الرسائل'],
+      ['👥', d.unique_sessions, 'جلسات فريدة'],
+      ['📅', d.today_messages, 'رسائل اليوم'],
+      ['🟢', d.active_sessions, 'جلسات نشطة'],
+      ['🧠', d.corrections, 'تصحيحات'],
+      ['📚', d.courses, 'كورسات'],
+      ['🎓', d.diplomas, 'دبلومات'],
+      ['👤', d.instructors, 'محاضرين'],
+      ['❓', d.faq_entries, 'أسئلة شائعة'],
+      ['📄', d.site_pages, 'صفحات'],
+    ];
+    grid.innerHTML = stats.map(([icon, num, label]) =>
+      `<div class="stat-card"><div class="stat-icon">${icon}</div><div class="stat-num">${num||0}</div><div class="stat-label">${label}</div></div>`
+    ).join('');
+
+    // Update corrections badge
+    if (d.corrections > 0) {
+      const badge = document.getElementById('corrBadge');
+      badge.textContent = d.corrections;
+      badge.style.display = 'inline';
+    }
+
+    // Intent chart
+    const ic = document.getElementById('intentChart');
+    if (d.intent_distribution && Object.keys(d.intent_distribution).length) {
+      const max = Math.max(...Object.values(d.intent_distribution));
+      ic.innerHTML = Object.entries(d.intent_distribution)
+        .sort((a,b) => b[1]-a[1])
+        .map(([k,v]) => {
+          const pct = Math.round(v/max*100);
+          const color = INTENT_COLORS[k] || '#6b7280';
+          return `<div class="intent-bar"><span class="intent-label">${k}</span><div class="intent-track"><div class="intent-fill" style="width:${pct}%;background:${color}"><span>${v}</span></div></div></div>`;
+        }).join('');
+    } else {
+      ic.innerHTML = empty('📈','لا توجد بيانات بعد');
+    }
+  } catch(e) { grid.innerHTML = empty('❌','خطأ في تحميل الإحصائيات',e.message); }
+}
+
+/* ═══════════════════════════════════════
+   CONVERSATIONS
+   ═══════════════════════════════════════ */
+async function loadConversations() {
+  const el = document.getElementById('convListContent');
+  el.innerHTML = loading();
+  try {
+    const s = document.getElementById('convSearch').value;
+    const d = await api('/admin/conversations?limit=50'+(s?'&search='+encodeURIComponent(s):''));
+    if (!d.conversations?.length) { el.innerHTML = empty('💬','لا توجد محادثات بعد','ابدأ محادثة مع البوت وهتظهر هنا'); return; }
+    el.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr><th>الجلسة</th><th>آخر رسالة</th><th>النوع</th><th>الكيان</th><th>الوقت</th><th>عدد</th></tr></thead>
+      <tbody>${d.conversations.map(c => `
+        <tr class="clickable" onclick="loadConvDetail('${c.session_id}')">
+          <td style="font-family:monospace;font-size:11px;color:var(--text-muted)">${c.session_id.slice(0,10)}...</td>
+          <td>${truncate(c.last_message,40)}</td>
+          <td><span class="badge badge-blue">${c.last_intent||'—'}</span></td>
+          <td><span class="badge badge-green">${truncate(c.last_entity,20)||'—'}</span></td>
+          <td style="font-size:11px;white-space:nowrap">${fmtDate(c.last_time)}</td>
+          <td style="text-align:center;font-weight:700">${c.message_count}</td>
+        </tr>
+      `).join('')}</tbody></table></div>`;
+  } catch(e) { el.innerHTML = empty('❌','خطأ',e.message); }
+}
+
+function backToConvList() {
+  document.getElementById('convListView').style.display = 'block';
+  document.getElementById('convDetailView').style.display = 'none';
+}
+
+async function loadConvDetail(sid) {
+  document.getElementById('convListView').style.display = 'none';
+  document.getElementById('convDetailView').style.display = 'block';
+  document.getElementById('convDetailTitle').textContent = 'جلسة: ' + sid.slice(0,14) + '...';
+  const el = document.getElementById('convDetailContent');
+  el.innerHTML = loading();
+  try {
+    const d = await api('/admin/conversations/'+sid);
+    _convMessages = d.messages || [];
+    if (!_convMessages.length) { el.innerHTML = empty('💬','لا توجد رسائل'); return; }
+
+    let lastUserContent = '';
+    el.innerHTML = _convMessages.map((m, idx) => {
+      if (m.role === 'user') lastUserContent = m.content || '';
+      const cls = m.role === 'user' ? 'msg-user' : 'msg-bot';
+      const icon = m.role === 'user' ? '👤' : '🤖';
+      let html = `<div class="${cls}"><div class="msg-header"><span class="msg-role">${icon} ${m.role==='user'?'المستخدم':'البوت'}</span>`;
+      if (m.intent) html += ` <span class="badge badge-blue">${m.intent}</span>`;
+      if (m.entity) html += ` <span class="badge badge-green">${m.entity}</span>`;
+      html += `<span class="msg-time">${fmtTime(m.created_at)}</span></div>`;
+      html += `<div class="msg-content" id="msgContent${idx}">${escHtml(m.content).slice(0,800)}</div>`;
+      if (m.role === 'bot') {
+        html += `<div style="margin-top:8px"><button class="btn btn-sm" style="background:#fef3c3;color:#92400e" onclick="openConvCorrection(${m.id},'${sid}',${idx})">✏️ تصحيح ← البوت هيتعلم 🧠</button></div>`;
+      }
+      html += '</div>';
+      return html;
+    }).join('');
+  } catch(e) { el.innerHTML = empty('❌','خطأ',e.message); }
+}
+
+function openConvCorrection(logId, sid, msgIdx) {
+  // Find the user message before this bot message
+  let userQ = '';
+  for (let i = msgIdx - 1; i >= 0; i--) {
+    if (_convMessages[i] && _convMessages[i].role === 'user') {
+      userQ = _convMessages[i].content || '';
+      break;
+    }
+  }
+  const botAnswer = _convMessages[msgIdx]?.content || '';
+
+  modalState = { type:'correction', logId, sid, original: botAnswer, userQuestion: userQ };
+  document.getElementById('modalTitle').textContent = '✏️ تصحيح إجابة البوت 🧠';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="success-box" style="margin-bottom:14px"><span>🧠</span><div>لما تحفظ التصحيح، البوت هيستخدم الإجابة الصح تلقائي في الردود الجاية!</div></div>
+    <div class="form-group">
+      <label class="form-label">سؤال المستخدم</label>
+      <input class="form-input" id="corrQuestion" value="${escHtml(userQ)}" style="background:#eff6ff">
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="color:var(--danger)">❌ الإجابة الخاطئة</label>
+      <div class="correction-source">${escHtml(botAnswer).slice(0,400)}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="color:var(--success)">✅ الإجابة الصحيحة</label>
+      <textarea class="form-textarea" id="corrAnswer" rows="4" style="border-color:#86efac" placeholder="اكتب الإجابة الصح هنا..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">📝 ملاحظة (اختياري)</label>
+      <input class="form-input" id="corrNote" placeholder="مثال: السعر اتغير / الرابط اتحدث">
+    </div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+/* ═══════════════════════════════════════
+   CORRECTIONS
+   ═══════════════════════════════════════ */
+async function loadCorrections() {
+  const el = document.getElementById('corrListContent');
+  el.innerHTML = loading();
+  try {
+    const d = await api('/admin/corrections');
+    if (!d.corrections?.length) {
+      el.innerHTML = empty('🧠','لا توجد تصحيحات بعد','صحّح أي إجابة غلط من المحادثات أو أضف تصحيح يدوي — والبوت هيتعلم!');
+      return;
+    }
+    el.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr><th>#</th><th>السؤال 🧠</th><th>الإجابة المصححة</th><th>ملاحظة</th><th>الحالة</th><th>التاريخ</th><th>إجراء</th></tr></thead>
+      <tbody>${d.corrections.map(c => {
+        const statusMap = { pending:['badge-yellow','⏳ معلق'], approved:['badge-green','✅ مُعتمد'], applied:['badge-blue','🧠 مُطبق'] };
+        const [cls, label] = statusMap[c.status] || ['badge-gray', c.status];
+        return `<tr>
+          <td>${c.id}</td>
+          <td><span class="badge badge-purple">${truncate(c.original_question,40)||'—'}</span></td>
+          <td>${truncate(c.corrected_answer,50)}</td>
+          <td style="color:var(--text-muted);font-size:12px">${truncate(c.note,30)||'—'}</td>
+          <td><span class="badge ${cls}">${label}</span></td>
+          <td style="font-size:11px;white-space:nowrap">${fmtDate(c.created_at)}</td>
+          <td><div class="btn-group"><button class="btn btn-danger btn-sm btn-icon" onclick="confirmDelete('corrections',${c.id},'التصحيح #${c.id}')">🗑️</button></div></td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+  } catch(e) { el.innerHTML = empty('❌','خطأ',e.message); }
+}
+
+function openManualCorrection() {
+  modalState = { type:'correction_manual' };
+  document.getElementById('modalTitle').textContent = '➕ إضافة تصحيح يدوي 🧠';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="success-box" style="margin-bottom:14px"><span>🧠</span><div>أضف سؤال متوقع + الإجابة الصح — البوت هيستخدمهم تلقائي!</div></div>
+    <div class="form-group">
+      <label class="form-label">السؤال المتوقع من المستخدم *</label>
+      <input class="form-input" id="corrQuestion" placeholder="مثال: بكام الاشتراك الشهري؟">
+      <div class="form-hint">اكتب السؤال زي ما المستخدم هيكتبه بالظبط</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="color:var(--success)">✅ الإجابة الصحيحة *</label>
+      <textarea class="form-textarea" id="corrAnswer" rows="4" style="border-color:#86efac" placeholder="الإجابة اللي عايز البوت يقولها..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">📝 ملاحظة (اختياري)</label>
+      <input class="form-input" id="corrNote" placeholder="سبب التصحيح أو أي ملاحظة">
+    </div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+/* ═══════════════════════════════════════
+   GENERIC CRUD
+   ═══════════════════════════════════════ */
+async function loadEntity(entity) {
+  const tableId = entity.replace('-','') + 'Table';
+  const el = document.getElementById(tableId);
+  if (!el) return;
+  el.innerHTML = loading();
+
+  try {
+    const searchEl = document.getElementById(entity.replace('-','')+'Search') || document.getElementById(entity+'Search');
+    const search = searchEl ? searchEl.value : '';
+    const d = await api('/admin/'+entity+'?limit=100'+(search?'&search='+encodeURIComponent(search):''));
+    const items = d.items || [];
+    if (!items.length) { el.innerHTML = empty('📭','لا توجد بيانات'); return; }
+
+    const cols = ENTITY_DISPLAY_COLS[entity] || Object.keys(items[0]).filter(k => !['full_content','content','description'].includes(k)).slice(0,5);
+
+    el.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr>${cols.map(c => '<th>'+c+'</th>').join('')}<th>إجراء</th></tr></thead>
+      <tbody>${items.map(item => `<tr>
+        ${cols.map(c => `<td>${truncate(item[c]!=null?String(item[c]):'',50)}</td>`).join('')}
+        <td><div class="btn-group">
+          <button class="btn btn-sm btn-ghost" onclick='openEditModal("${entity}",${JSON.stringify(item).replace(/'/g,"&#39;").replace(/"/g,"&quot;")})'>✏️</button>
+          <button class="btn btn-sm btn-danger btn-icon" onclick="confirmDelete('${entity}','${item.id}','${escHtml(truncate(item.title||item.name||item.question||item.page_url||'#'+item.id,30))}')">🗑️</button>
+        </div></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch(e) { el.innerHTML = empty('❌','خطأ في التحميل',e.message); }
+}
+
+/* ═══════════════════════════════════════
+   MODALS — ADD / EDIT
+   ═══════════════════════════════════════ */
+function openAddModal(entity) {
+  const fields = ENTITY_FIELDS[entity];
+  if (!fields) return;
+  modalState = { type:'add', entity };
+  document.getElementById('modalTitle').textContent = '➕ إضافة جديد';
+  document.getElementById('modalBody').innerHTML = fields.map(f => `
+    <div class="form-group">
+      <label class="form-label">${f.label}${f.required?' *':''}</label>
+      ${f.type==='textarea'
+        ? `<textarea class="form-textarea" id="modal_${f.key}" rows="3"></textarea>`
+        : `<input class="form-input" type="${f.type||'text'}" id="modal_${f.key}">`}
+    </div>
+  `).join('');
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditModal(entity, item) {
+  if (typeof item === 'string') item = JSON.parse(item);
+  const fields = ENTITY_FIELDS[entity];
+  if (!fields) return;
+  modalState = { type:'edit', entity, id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل';
+  document.getElementById('modalBody').innerHTML = fields.map(f => {
+    const val = escHtml(item[f.key] != null ? String(item[f.key]) : '');
+    return `<div class="form-group">
+      <label class="form-label">${f.label}${f.required?' *':''}</label>
+      ${f.type==='textarea'
+        ? `<textarea class="form-textarea" id="modal_${f.key}" rows="3">${val}</textarea>`
+        : `<input class="form-input" type="${f.type||'text'}" id="modal_${f.key}" value="${val}">`}
+    </div>`;
+  }).join('');
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  modalState = {};
+}
+
+async function saveModal() {
+  const saveBtn = document.getElementById('modalSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> جاري الحفظ...';
+
+  try {
+    // Handle corrections
+    if (modalState.type === 'correction' || modalState.type === 'correction_manual') {
+      const corrAnswer = document.getElementById('corrAnswer').value.trim();
+      if (!corrAnswer) { toast('اكتب الإجابة الصحيحة!','error'); return; }
+
+      const body = {
+        chat_log_id: modalState.logId || null,
+        session_id: modalState.sid || null,
+        original_answer: modalState.original || null,
+        original_question: document.getElementById('corrQuestion').value.trim() || null,
+        corrected_answer: corrAnswer,
+        note: document.getElementById('corrNote')?.value.trim() || null,
+      };
+      await api('/admin/corrections', { method:'POST', body: JSON.stringify(body) });
+      closeModal();
+      toast('🧠 تم إضافة التصحيح — البوت هيتعلم منه!','success');
+      loadCorrections();
+      return;
+    }
+
+    // Handle CRUD
+    const fields = ENTITY_FIELDS[modalState.entity];
+    const body = {};
+    for (const f of fields) {
+      const el = document.getElementById('modal_'+f.key);
+      if (el) body[f.key] = el.value;
+    }
+
+    if (modalState.type === 'add') {
+      await api('/admin/'+modalState.entity, { method:'POST', body: JSON.stringify(body) });
+      toast('✅ تم الإضافة بنجاح','success');
+    } else if (modalState.type === 'edit') {
+      await api('/admin/'+modalState.entity+'/'+modalState.id, { method:'PUT', body: JSON.stringify(body) });
+      toast('✅ تم التحديث بنجاح','success');
+    }
+    closeModal();
+    loadEntity(modalState.entity);
+  } catch(e) {
+    toast('❌ خطأ: '+e.message,'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '💾 حفظ';
+  }
+}
+
+/* ═══════════════════════════════════════
+   CONFIRM DELETE
+   ═══════════════════════════════════════ */
+function confirmDelete(entity, id, name) {
+  document.getElementById('confirmMsg').textContent = `هل تريد حذف "${name}"؟ هذا الإجراء لا يمكن التراجع عنه.`;
+  document.getElementById('confirmBtn').onclick = async function() {
+    try {
+      await api('/admin/'+entity+'/'+id, { method:'DELETE' });
+      toast('✅ تم الحذف','success');
+      closeConfirm();
+      // Reload
+      if (entity === 'corrections') loadCorrections();
+      else loadEntity(entity);
+    } catch(e) { toast('❌ خطأ في الحذف','error'); }
+  };
+  document.getElementById('confirmDialog').classList.add('show');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmDialog').classList.remove('show');
+}
+
+/* ═══════════════════════════════════════
+   KEYBOARD SHORTCUTS
+   ═══════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('confirmDialog').classList.contains('show')) closeConfirm();
+    else if (document.getElementById('modal').classList.contains('show')) closeModal();
+  }
+});
+</script>
+</body>
+</html>
