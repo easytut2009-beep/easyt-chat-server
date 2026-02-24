@@ -1629,25 +1629,93 @@ app.post("/admin/login", (req, res) => {
 
 app.get("/admin/conversations", adminAuth, async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 30, offset = (page - 1) * limit, search = req.query.search || "";
-    let query = supabase.from("chat_logs").select("session_id, content, intent, entity, created_at, role").order("created_at", { ascending: false });
-    if (search) query = query.or(`content.ilike.%${search}%,intent.ilike.%${search}%,entity.ilike.%${search}%,session_id.ilike.%${search}%`);
-    const { data, error } = await query.range(offset, offset + limit * 10 - 1);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
+    /* ── Fetch raw messages (increased range) ── */
+    let query = supabase
+      .from("chat_logs")
+      .select("session_id, content, intent, entity, created_at, role")
+      .order("created_at", { ascending: false });
+
+    if (search) {
+      query = query.or(
+        `content.ilike.%${search}%,intent.ilike.%${search}%,entity.ilike.%${search}%,session_id.ilike.%${search}%`
+      );
+    }
+
+    /* 🆕 Fetch 3000 rows instead of 500 */
+    const { data, error } = await query.range(0, 2999);
     if (error) return res.status(500).json({ error: error.message });
+
+    /* ── Group by session_id — prefer USER messages ── */
     const sm = new Map();
-    for (const r of data || []) { if (!sm.has(r.session_id)) sm.set(r.session_id, { session_id: r.session_id, last_message: r.content?.slice(0, 100), last_intent: r.intent, last_entity: r.entity, last_time: r.created_at, message_count: 0 }); sm.get(r.session_id).message_count++; }
-    const { count } = await supabase.from("chat_logs").select("session_id", { count: "exact", head: true });
-    res.json({ conversations: [...sm.values()].slice(0, limit), pagination: { page, limit, total_estimate: count || 0 } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    for (const r of data || []) {
+      if (!r.session_id) continue; /* skip null session_ids */
+
+      if (!sm.has(r.session_id)) {
+        sm.set(r.session_id, {
+          session_id: r.session_id,
+          last_message: "",
+          last_user_message: "",
+          last_intent: null,
+          last_entity: null,
+          last_time: r.created_at,
+          message_count: 0,
+        });
+      }
+
+      const sess = sm.get(r.session_id);
+      sess.message_count++;
+
+      /* 🆕 Prefer user messages (plain text, no HTML) */
+      if (r.role === "user" && !sess.last_user_message) {
+        sess.last_user_message = (r.content || "").slice(0, 150);
+        sess.last_intent = sess.last_intent || r.intent;
+        sess.last_entity = sess.last_entity || r.entity;
+      }
+
+      /* Fallback: first message (any role) */
+      if (!sess.last_message) {
+        sess.last_message = (r.content || "").slice(0, 150);
+        if (!sess.last_intent) sess.last_intent = r.intent;
+        if (!sess.last_entity) sess.last_entity = r.entity;
+      }
+    }
+
+    /* 🆕 Use user message for display (strips HTML issue) */
+    for (const sess of sm.values()) {
+      if (sess.last_user_message) {
+        sess.last_message = sess.last_user_message;
+      }
+      delete sess.last_user_message;
+    }
+
+    /* ── Paginate ── */
+    const allConversations = [...sm.values()];
+    const paginatedConversations = allConversations.slice(offset, offset + limit);
+
+    const { count } = await supabase
+      .from("chat_logs")
+      .select("session_id", { count: "exact", head: true });
+
+    res.json({
+      conversations: paginatedConversations,
+      pagination: {
+        page,
+        limit,
+        total_sessions: allConversations.length,
+        total_messages: count || 0,
+        has_more: offset + limit < allConversations.length,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.get("/admin/conversations/:session_id", adminAuth, async (req, res) => {
-  try {
-    const { data, error } = await supabase.from("chat_logs").select("id, session_id, role, content, intent, entity, created_at").eq("session_id", req.params.session_id).order("created_at", { ascending: true });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ session_id: req.params.session_id, messages: data || [] });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 /* ─── Corrections CRUD ─── */
 app.get("/admin/corrections", adminAuth, async (req, res) => { try { const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false }).limit(100); if (error) return res.status(500).json({ error: error.message }); res.json({ corrections: data || [] }); } catch (e) { res.status(500).json({ error: e.message }); } });
