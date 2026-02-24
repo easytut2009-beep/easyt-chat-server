@@ -343,7 +343,7 @@ function formatDiplomas(
 
     html += `<div style="margin-bottom:8px;padding:8px 10px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-weight:bold;font-size:13px;text-decoration:none;">`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;">`;
     html += `${i + 1}. ${d.title}</a>`;
 
     if (d.description) {
@@ -370,7 +370,7 @@ function formatDiplomas(
       html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${stats.join(" • ")}</div>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:3px;display:inline-block;">📖 تفاصيل الدبلومة والاشتراك ←</a>`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:3px;display:inline-block;">📖 تفاصيل الدبلومة والاشتراك ←</a>`;
     html += `</div>`;
   });
 
@@ -387,7 +387,7 @@ function formatDiplomas(
       }
 
       html += `<div style="flex:1;min-width:0;">`;
-      html += `<a href="${link}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;text-decoration:none;">${i + 1}. ${c.title}</a>`;
+      html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;text-decoration:none;">${i + 1}. ${c.title}</a>`;
       const meta = [];
       if (c.instructor) meta.push(`👤 ${c.instructor}`);
       if (c.price !== undefined && c.price !== null) {
@@ -401,17 +401,17 @@ function formatDiplomas(
       if (meta.length) {
         html += `<div style="font-size:11px;color:#888;margin-top:2px;">${meta.join(" • ")}</div>`;
       }
-      html += `<a href="${link}" target="_blank" style="color:#444444;font-size:10.5px;font-weight:bold;text-decoration:underline;margin-top:2px;display:inline-block;">تفاصيل ←</a>`;
+      html += `<a href="${link}" target="_blank" style="color:#303030;font-size:10.5px;font-weight:bold;text-decoration:underline;margin-top:2px;display:inline-block;">تفاصيل ←</a>`;
       html += `</div></div>`;
     });
   }
 
   if (relatedCategory) {
-    html += `<br>🔗 <a href="${relatedCategory.url}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;">تصفح جميع دورات ${relatedCategory.name} ←</a>`;
+    html += `<br>🔗 <a href="${relatedCategory.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح جميع دورات ${relatedCategory.name} ←</a>`;
   }
 
-  html += `<br>🔗 <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;">تصفح جميع الدبلومات ←</a>`;
-  html += `<br><br><span style="font-size:11.5px;">💡 وصول لكل الدورات والدبلومات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#444444;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
+  html += `<br>🔗 <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح جميع الدبلومات ←</a>`;
+  html += `<br><br><span style="font-size:11.5px;">💡 وصول لكل الدورات والدبلومات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
 }
@@ -426,7 +426,7 @@ function formatDiplomaMention(diplomas) {
     const stats = [];
     if (d.courses_count) stats.push(`${d.courses_count} دورات`);
     if (d.hours) stats.push(`${d.hours} ساعة`);
-    html += `▸ <a href="${link}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;">${d.title}</a>`;
+    html += `▸ <a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">${d.title}</a>`;
     if (stats.length) html += ` <span style="font-size:11px;color:#888;">(${stats.join(" • ")})</span>`;
     html += `<br>`;
   });
@@ -1377,7 +1377,7 @@ function formatCourses(courses, category, diplomaMention = "") {
     }
 
     html += `<div style="flex:1;min-width:0;">`;
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
     html += `${i + 1}. ${c.title}</a>`;
 
     const meta = [];
@@ -1402,7 +1402,7 @@ function formatCourses(courses, category, diplomaMention = "") {
       html += `<div style="font-size:11px;color:#888;margin-top:2px;">📝 ${desc}</div>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
     html += `</div></div>`;
   });
 
@@ -1411,12 +1411,12 @@ function formatCourses(courses, category, diplomaMention = "") {
   }
 
   if (category) {
-    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;">`;
+    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">`;
     html += `تصفح جميع دورات ${category.name} ←</a>`;
   }
 
   html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال `;
-  html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#444444;font-weight:bold;">`;
+  html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">`;
   html += `الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
@@ -1438,7 +1438,7 @@ function formatCategoryCourses(courses, category, originalTopic) {
     }
 
     html += `<div style="flex:1;min-width:0;">`;
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
     html += `${i + 1}. ${c.title}</a>`;
 
     const meta = [];
@@ -1463,12 +1463,12 @@ function formatCategoryCourses(courses, category, originalTopic) {
       }</div>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#444444;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
     html += `</div></div>`;
   });
 
-  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#444444;font-weight:bold;font-size:12px;">تصفح جميع دورات ${category.name} ←</a>`;
-  html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#444444;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
+  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح جميع دورات ${category.name} ←</a>`;
+  html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
 }
@@ -1479,12 +1479,12 @@ function formatNoResults(displayTerm, category) {
 
   if (category) {
     html += `لكن ممكن تلاقي دورات قريبة في قسم:<br>`;
-    html += `▸ <a href="${category.url}" target="_blank" style="color:#444444;font-weight:bold;">${category.name}</a><br><br>`;
+    html += `▸ <a href="${category.url}" target="_blank" style="color:#303030;font-weight:bold;">${category.name}</a><br><br>`;
   }
 
   html += `تقدر تتصفح كل الدورات المتاحة (+600 دورة) من هنا:<br>`;
-  html += `▸ <a href="${ALL_COURSES_URL}" target="_blank" style="color:#444444;font-weight:bold;">📚 جميع الدورات على المنصة</a><br><br>`;
-  html += `<span style="font-size:12px;">💡 مع <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#444444;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a> تقدر تدخل كل الدورات والدبلومات 🎓</span>`;
+  html += `▸ <a href="${ALL_COURSES_URL}" target="_blank" style="color:#303030;font-weight:bold;">📚 جميع الدورات على المنصة</a><br><br>`;
+  html += `<span style="font-size:12px;">💡 مع <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a> تقدر تدخل كل الدورات والدبلومات 🎓</span>`;
 
   return html;
 }
@@ -1508,7 +1508,7 @@ function buildAccessResponse_HowToAccess() {
   html += `<b>3.</b> هتلاقي كل الدورات مع شريط يوضّح نسبة التقدم في كل دورة ✅<br><br>`;
   html += `⚠️ <b>تأكد إنك بتسجل بنفس الإيميل اللي اشتركت بيه.</b><br><br>`;
   html += `لو عملت كده ولسه مش لاقي الدورة → تواصل مع الدعم الفني:<br>`;
-  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#444444;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
   return html;
 }
 
@@ -1518,7 +1518,7 @@ function buildAccessResponse_AlreadyLoggedIn() {
   html += `▸ جرب تعمل <b>تحديث للصفحة</b> (Refresh)<br>`;
   html += `▸ لو اشتركت بفودافون كاش أو تحويل بنكي → الدورة بتتفعل خلال <b>24 ساعة</b> من رفع الإيصال<br><br>`;
   html += `لو المشكلة مستمرة، تواصل مع الدعم الفني وهيحلولك المشكلة فوراً:<br>`;
-  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#444444;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
   return html;
 }
 
@@ -1528,7 +1528,7 @@ function buildAccessResponse_CantLogin() {
   html += `▸ جرب تضغط <b>«نسيت كلمة المرور»</b> وهيوصلك كود على الإيميل<br>`;
   html += `▸ تأكد إن الإيميل مكتوب صح من غير مسافات<br><br>`;
   html += `لو المشكلة مستمرة، تواصل مع الدعم الفني:<br>`;
-  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#444444;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
   return html;
 }
 
@@ -1567,17 +1567,17 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 7. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
 
 【الروابط المسموح بيها فقط — HTML】
-★ كل الدورات → <a href="https://easyt.online/courses" target="_blank" style="color:#444444;font-weight:bold;">📚 تصفح جميع الدورات</a>
-★ الدبلومات → <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#444444;font-weight:bold;">🎓 تصفح جميع الدبلومات</a>
-★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#444444;font-weight:bold;">💳 صفحة طرق الدفع</a>
-★ اشتراك → <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#444444;font-weight:bold;">📋 صفحة الاشتراكات</a>
-★ مساعدة → <a href="https://easyt.online/p/help" target="_blank" style="color:#444444;font-weight:bold;">❓ صفحة المساعدة</a>
-★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#444444;font-weight:bold;">💰 برنامج العمولة</a>
-★ محاضر → <a href="https://easyt.online/p/author" target="_blank" style="color:#444444;font-weight:bold;">🎓 الانضمام كمحاضر</a>
-★ واتساب → <a href="https://wa.me/201027007899" target="_blank" style="color:#444444;font-weight:bold;">📱 تواصل مع الدعم واتساب</a>
+★ كل الدورات → <a href="https://easyt.online/courses" target="_blank" style="color:#303030;font-weight:bold;">📚 تصفح جميع الدورات</a>
+★ الدبلومات → <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#303030;font-weight:bold;">🎓 تصفح جميع الدبلومات</a>
+★ دفع → <a href="https://easyt.online/p/Payments" target="_blank" style="color:#303030;font-weight:bold;">💳 صفحة طرق الدفع</a>
+★ اشتراك → <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">📋 صفحة الاشتراكات</a>
+★ مساعدة → <a href="https://easyt.online/p/help" target="_blank" style="color:#303030;font-weight:bold;">❓ صفحة المساعدة</a>
+★ عمولة → <a href="https://easyt.online/p/affiliate" target="_blank" style="color:#303030;font-weight:bold;">💰 برنامج العمولة</a>
+★ محاضر → <a href="https://easyt.online/p/author" target="_blank" style="color:#303030;font-weight:bold;">🎓 الانضمام كمحاضر</a>
+★ واتساب → <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">📱 تواصل مع الدعم واتساب</a>
 
 【تنسيق】
-• <b>عنوان</b> • ▸ للنقاط • <a href="URL" target="_blank" style="color:#444444;font-weight:bold;">نص</a> للروابط
+• <b>عنوان</b> • ▸ للنقاط • <a href="URL" target="_blank" style="color:#303030;font-weight:bold;">نص</a> للروابط
 
 【روابط التصنيفات المعتمدة】
 ${CATEGORY_LINKS_TEXT}
@@ -1618,7 +1618,7 @@ function formatReply(text) {
   return text
     .replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" target="_blank" style="color:#444444;font-weight:bold;">$1</a>'
+      '<a href="$2" target="_blank" style="color:#303030;font-weight:bold;">$1</a>'
     )
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
     .replace(/\*([^*]+)\*/g, "<i>$1</i>")
@@ -1630,7 +1630,7 @@ function formatReply(text) {
 }
 
 function makeLink(url, text) {
-  return `<a href="${url}" target="_blank" style="color:#444444;font-weight:bold;text-decoration:underline;">${text}</a>`;
+  return `<a href="${url}" target="_blank" style="color:#303030;font-weight:bold;text-decoration:underline;">${text}</a>`;
 }
 
 /* ══════════════════════════════════════════════════════════
