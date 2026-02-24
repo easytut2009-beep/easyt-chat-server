@@ -31,6 +31,7 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -463,7 +464,7 @@ setTimeout(async () => { await getFAQData(); }, 2000);
    ══════════════════════════════════════════════════════════ */
 let correctionsCache = [];
 let correctionsLastFetch = 0;
-const CORRECTIONS_CACHE_TTL = 5 * 60 * 1000; /* 5 minutes */
+const CORRECTIONS_CACHE_TTL = 5 * 60 * 1000;
 
 async function getCorrections() {
   const now = Date.now();
@@ -521,21 +522,18 @@ async function searchCorrections(query, intent, entity) {
     const corrA = normalizeArabic((c.corrected_answer || "").toLowerCase());
     const note = normalizeArabic((c.note || "").toLowerCase());
 
-    /* Exact or near-exact question match → highest score */
     if (origQ && origQ.length >= 3) {
       if (normalizedQuery === origQ) score += 15;
       else if (normalizedQuery.includes(origQ)) score += 10;
       else if (origQ.includes(normalizedQuery) && normalizedQuery.length >= 5) score += 10;
     }
 
-    /* Term matching against original question */
     for (const term of queryTerms) {
       if (origQ.includes(term)) score += 3;
       if (note.includes(term)) score += 1;
       if (origA.includes(term)) score += 0.5;
     }
 
-    /* Entity matching */
     if (entity && entity.length >= 2) {
       const normEntity = normalizeArabic(entity.toLowerCase());
       if (origQ.includes(normEntity)) score += 5;
@@ -890,7 +888,6 @@ async function buildContext(searchQuery, options = {}) {
 
   let context = "";
 
-  /* 🆕 v7.1: Corrections have HIGHEST priority */
   if (corrections.length) {
     context += formatCorrectionsContext(corrections);
     console.log(`🧠 Context: ${corrections.length} corrections (PRIORITY)`);
@@ -1141,7 +1138,7 @@ function buildAccessResponse_CantLogin() {
   return html;
 }
 
-/* ═══ GPT Response Generator — 🆕 v7.1: Updated SYSTEM_PROMPT ═══ */
+/* ═══ GPT Response Generator ═══ */
 const CATEGORY_LINKS_TEXT = Object.values(CATEGORIES).map((c) => `• ${c.name}: ${c.url}`).join("\n");
 
 const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار الذكي الرسمي لمنصة easyT.online.
@@ -1234,7 +1231,6 @@ app.post("/chat", limiter, async (req, res) => {
       return _origJson(data);
     };
 
-    /* ── Step 0: Local Gibberish Check ── */
     if (isLikelyGibberish(message)) {
       _logIntent = "GIBBERISH";
       const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟<br><br>تقدر تسألني عن:<br>▸ 🎓 الدورات والكورسات<br>▸ 💳 طرق الدفع والاشتراك<br>▸ 📋 أي استفسار عن المنصة`;
@@ -1246,7 +1242,6 @@ app.post("/chat", limiter, async (req, res) => {
     session.history.push({ role: "user", content: message });
     while (session.history.length > MAX_HISTORY) session.history.shift();
 
-    /* ── Step 1: AI Classification ── */
     const { intent: classifiedIntent, entity, search_terms, category_key, page_type, refers_to_previous, access_sub } = await classify(message, session.history, session.intent, session.entity);
 
     let intent = classifiedIntent;
@@ -1265,7 +1260,6 @@ app.post("/chat", limiter, async (req, res) => {
 
     const category = category_key ? CATEGORIES[category_key] : null;
 
-    /* v6.3: SMART ACCESS FLOW ESCAPE */
     if (session.accessIssueStep && shouldEscapeAccessFlow(message, intent, entity)) {
       console.log(`🔧 v6.3 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}"`);
       session.accessIssueStep = null;
@@ -1283,28 +1277,21 @@ app.post("/chat", limiter, async (req, res) => {
 
     _logEntity = entity || session.entity;
 
-    /* ══════════════════════════════════════════════════════
-       🆕 v7.1: Search Corrections BEFORE handling intent
-       ══════════════════════════════════════════════════════ */
     let matchedCorrections = [];
     if (!["GIBBERISH", "GREETING", "START_LEARNING"].includes(intent)) {
       matchedCorrections = await searchCorrections(message, intent, entity || session.entity);
     }
 
-    /* 🆕 v7.1: HIGH-CONFIDENCE correction → use directly as answer */
     const highConfCorrection = matchedCorrections.find((c) => c._score >= 10);
     if (highConfCorrection) {
       console.log(`🧠 ✅ HIGH-CONFIDENCE correction #${highConfCorrection.id} (score: ${highConfCorrection._score}) — using as direct answer`);
       let reply = highConfCorrection.corrected_answer;
-      /* If correction doesn't look like HTML, format it */
       if (!reply.includes("<") && !reply.includes("href")) {
         reply = formatReply(reply);
       }
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
-
-    /* ── Step 2: Handle by Intent ── */
 
     // ─── GIBBERISH ───
     if (intent === "GIBBERISH") {
@@ -1429,7 +1416,6 @@ app.post("/chat", limiter, async (req, res) => {
     // ═══ ACCESS_ISSUE ═══
     if (intent === "ACCESS_ISSUE") {
       let reply;
-      /* 🆕 v7.1: Check corrections for access issues too */
       if (matchedCorrections.length > 0) {
         const context = await buildContext("وصول دورات حساب تسجيل دخول", { corrections: matchedCorrections });
         session.history.push({ role: "system", content: `المستخدم عنده مشكلة في الوصول. ⚠️ أجب من التصحيحات والمعلومات الموجودة.` });
@@ -1462,7 +1448,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ═══ PLATFORM_QA ═══ — 🆕 v7.1: with corrections
+    // ═══ PLATFORM_QA ═══
     if (intent === "PLATFORM_QA") {
       const context = await buildContext(entity || message, { corrections: matchedCorrections });
       session.history.push({ role: "system", content: `المستخدم بيسأل عن: "${entity || message}". ⚠️ أجب من التصحيحات أو الأسئلة الشائعة أو محتوى الصفحات. لا تخترع روابط.` });
@@ -1473,7 +1459,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ─── CERTIFICATE_QA ─── — 🆕 v7.1: with corrections
+    // ─── CERTIFICATE_QA ───
     if (intent === "CERTIFICATE_QA") {
       const context = await buildContext("شهادة اعتماد", { corrections: matchedCorrections });
       session.history.push({ role: "system", content: `المستخدم بيسأل عن الشهادات. أجب من التصحيحات أو الأسئلة الشائعة.` });
@@ -1603,7 +1589,6 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* Generic follow-up — 🆕 v7.1: with corrections */
       const context = await buildContext(followUpEntity, { corrections: matchedCorrections });
       session.history.push({ role: "system", content: `متابعة للمحادثة عن "${followUpEntity}". ⚠️ أجب مباشرةً من المعلومات المتاحة فقط.` });
       let reply = await generateAIResponse(session, context, false);
@@ -1613,7 +1598,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ─── — 🆕 v7.1: with corrections
+    // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
     if (["PAYMENT", "SUBSCRIPTION", "AFFILIATE", "AUTHOR"].includes(intent)) {
       const context = await buildContext(entity || intent.toLowerCase(), { corrections: matchedCorrections });
       let reply = await generateAIResponse(session, context, isFirst);
@@ -1626,7 +1611,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ─── GENERAL ─── — 🆕 v7.1: with corrections
+    // ─── GENERAL ───
     const context = await buildContext(entity || message, { corrections: matchedCorrections });
     let reply = await generateAIResponse(session, context, isFirst);
     reply = formatReply(reply);
@@ -1684,7 +1669,6 @@ app.get("/admin/conversations/:session_id", adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/* ═══ 🆕 v7.1: Corrections — updated to accept original_question ═══ */
 app.get("/admin/corrections", adminAuth, async (req, res) => {
   try {
     const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false }).limit(100);
@@ -1701,13 +1685,13 @@ app.post("/admin/corrections", adminAuth, async (req, res) => {
       chat_log_id: chat_log_id || null,
       session_id: session_id || null,
       original_answer: original_answer || null,
-      original_question: original_question || null, /* 🆕 v7.1 */
+      original_question: original_question || null,
       corrected_answer,
       note: note || null,
       status: "pending",
     }).select();
     if (error) return res.status(500).json({ error: error.message });
-    invalidateCorrectionsCache(); /* 🆕 v7.1 */
+    invalidateCorrectionsCache();
     res.json({ message: "تم إضافة التصحيح ✅ — البوت هيستخدم الإجابة دي في الردود الجاية 🧠", correction: data?.[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1717,7 +1701,7 @@ app.put("/admin/corrections/:id", adminAuth, async (req, res) => {
     const { id } = req.params;
     const { data, error } = await supabase.from("corrections").update(req.body).eq("id", id).select();
     if (error) return res.status(500).json({ error: error.message });
-    invalidateCorrectionsCache(); /* 🆕 v7.1 */
+    invalidateCorrectionsCache();
     res.json({ message: "تم التحديث ✅", correction: data?.[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1726,7 +1710,7 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
   try {
     const { error } = await supabase.from("corrections").delete().eq("id", req.params.id);
     if (error) return res.status(500).json({ error: error.message });
-    invalidateCorrectionsCache(); /* 🆕 v7.1 */
+    invalidateCorrectionsCache();
     res.json({ message: "تم الحذف ✅" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1934,376 +1918,11 @@ app.get("/admin/stats", adminAuth, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.1: Admin Dashboard (HTML) — Updated ═════════
+   ═══ Admin Dashboard — Served from admin.html ═══════════
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
-  res.send(ADMIN_DASHBOARD_HTML);
+  res.sendFile(path.join(__dirname, "admin.html"));
 });
-
-const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v7.1</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-<style>
-  body{font-family:system-ui,-apple-system,sans-serif;background:#f0f2f5;margin:0}
-  .sidebar{width:220px;background:#1e293b;color:#fff;height:100vh;position:fixed;right:0;top:0;overflow-y:auto;z-index:50}
-  .sidebar a{display:block;padding:12px 20px;color:#94a3b8;text-decoration:none;font-size:14px;border-bottom:1px solid #334155;transition:.2s}
-  .sidebar a:hover,.sidebar a.active{background:#334155;color:#fff}
-  .main{margin-right:220px;padding:24px;min-height:100vh}
-  .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:16px}
-  .stat-card{text-align:center;padding:16px}
-  .stat-num{font-size:28px;font-weight:bold;color:#1e293b}
-  .stat-label{font-size:12px;color:#64748b;margin-top:4px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{background:#f8fafc;padding:10px 12px;text-align:right;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0}
-  td{padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155}
-  tr:hover td{background:#f8fafc}
-  .btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.2s}
-  .btn-primary{background:#3b82f6;color:#fff}.btn-primary:hover{background:#2563eb}
-  .btn-danger{background:#ef4444;color:#fff}.btn-danger:hover{background:#dc2626}
-  .btn-success{background:#10b981;color:#fff}.btn-success:hover{background:#059669}
-  .btn-sm{padding:4px 10px;font-size:11px}
-  input,textarea,select{border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;width:100%;font-size:13px;box-sizing:border-box}
-  input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
-  .msg-user{background:#e0f2fe;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:13px}
-  .msg-bot{background:#f0fdf4;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:13px}
-  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
-  .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-green{background:#dcfce7;color:#166534}
-  .badge-yellow{background:#fef9c3;color:#854d0e}.badge-red{background:#fee2e2;color:#991b1b}
-  .badge-purple{background:#f3e8ff;color:#7c3aed}
-  .login-box{max-width:360px;margin:120px auto;text-align:center}
-  .tab-content{display:none}.tab-content.active{display:block}
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:none;align-items:center;justify-content:center}
-  .modal-overlay.show{display:flex}
-  .modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:500px;max-height:80vh;overflow-y:auto}
-  .learning-badge{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;font-size:11px;color:#166534;margin-top:8px}
-  @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative}.main{margin-right:0}}
-</style>
-</head>
-<body>
-
-<div id="loginScreen" class="login-box">
-  <div class="card">
-    <h2 style="margin:0 0 8px;font-size:22px">🔐 easyT Admin</h2>
-    <p style="color:#64748b;font-size:13px;margin-bottom:20px">سجل دخول للوحة التحكم</p>
-    <input type="password" id="passInput" placeholder="كلمة السر" style="margin-bottom:12px" onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">دخول</button>
-    <p id="loginErr" style="color:#ef4444;font-size:12px;margin-top:8px;display:none"></p>
-  </div>
-</div>
-
-<div id="dashboard" style="display:none">
-  <div class="sidebar">
-    <div style="padding:16px 20px;border-bottom:1px solid #334155">
-      <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v7.1 🧠 Learning</div>
-    </div>
-    <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
-    <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
-    <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات 🧠</a>
-    <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
-    <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
-    <a href="#" onclick="showTab('instructors')" id="nav-instructors">👤 المحاضرين</a>
-    <a href="#" onclick="showTab('faq')" id="nav-faq">❓ الأسئلة الشائعة</a>
-    <a href="#" onclick="showTab('sitepages')" id="nav-sitepages">📄 صفحات الموقع</a>
-    <a href="#" onclick="doLogout()" style="color:#ef4444;border-top:2px solid #334155;margin-top:20px">🚪 تسجيل خروج</a>
-  </div>
-
-  <div class="main">
-    <div id="tab-stats" class="tab-content active">
-      <h2 style="margin:0 0 16px;font-size:20px">📊 إحصائيات عامة</h2>
-      <div id="statsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px"></div>
-      <div class="card" style="margin-top:16px">
-        <h3 style="margin:0 0 12px;font-size:15px">📈 توزيع الأنواع (آخر 1000 رسالة)</h3>
-        <div id="intentChart"></div>
-      </div>
-    </div>
-
-    <div id="tab-conversations" class="tab-content">
-      <h2 style="margin:0 0 16px;font-size:20px">💬 المحادثات</h2>
-      <input type="text" id="convSearch" placeholder="🔍 ابحث في المحادثات..." onkeydown="if(event.key==='Enter')loadConversations()" style="margin-bottom:12px;max-width:400px">
-      <div id="convList" class="card"></div>
-      <div id="convDetail" style="display:none">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('convDetail').style.display='none';document.getElementById('convList').style.display='block'" style="margin-bottom:12px">← رجوع للقائمة</button>
-        <div class="card" id="convMessages"></div>
-      </div>
-    </div>
-
-    <div id="tab-corrections" class="tab-content">
-      <h2 style="margin:0 0 16px;font-size:20px">✅ التصحيحات 🧠</h2>
-      <div class="learning-badge" style="margin-bottom:12px">🧠 <b>التعلم التلقائي:</b> البوت بيقرأ التصحيحات دي قبل ما يرد — لو سؤال مشابه جاه تاني هيستخدم الإجابة الصح!</div>
-      <button class="btn btn-success btn-sm" onclick="openAddCorrectionModal()" style="margin-bottom:12px">+ إضافة تصحيح يدوي</button>
-      <div class="card" id="corrList"></div>
-    </div>
-
-    <div id="tab-courses" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">📚 إدارة الكورسات</h2><div class="card"><input type="text" id="courseSearch" placeholder="🔍 ابحث..." onkeydown="if(event.key==='Enter')loadCrud('courses')" style="margin-bottom:12px;max-width:400px"><div id="courses-table"></div></div></div>
-    <div id="tab-diplomas" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">🎓 إدارة الدبلومات</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')" style="margin-bottom:12px">+ إضافة دبلومة</button><div id="diplomas-table"></div></div></div>
-    <div id="tab-instructors" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">👤 إدارة المحاضرين</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('instructors')" style="margin-bottom:12px">+ إضافة محاضر</button><div id="instructors-table"></div></div></div>
-    <div id="tab-faq" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">❓ إدارة الأسئلة الشائعة</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('faq')" style="margin-bottom:12px">+ إضافة سؤال</button><div id="faq-table"></div></div></div>
-    <div id="tab-sitepages" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">📄 إدارة صفحات الموقع</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('site-pages')" style="margin-bottom:12px">+ إضافة صفحة</button><div id="site-pages-table"></div></div></div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="modal">
-  <div class="modal">
-    <h3 id="modalTitle" style="margin:0 0 16px;font-size:16px"></h3>
-    <div id="modalBody"></div>
-    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-      <button class="btn" onclick="closeModal()" style="background:#e2e8f0">إلغاء</button>
-      <button class="btn btn-primary" id="modalSaveBtn" onclick="saveModal()">حفظ</button>
-    </div>
-  </div>
-</div>
-
-<script>
-const API=window.location.origin;
-let TOKEN='';
-let currentTab='stats';
-let modalState={};
-let _convMessages=[]; /* 🆕 v7.1: store loaded messages for correction context */
-
-async function doLogin(){
-  const p=document.getElementById('passInput').value;
-  try{
-    const r=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})});
-    const d=await r.json();
-    if(r.ok){TOKEN=d.token;document.getElementById('loginScreen').style.display='none';document.getElementById('dashboard').style.display='block';loadStats();}
-    else{document.getElementById('loginErr').textContent=d.error;document.getElementById('loginErr').style.display='block';}
-  }catch(e){document.getElementById('loginErr').textContent='خطأ في الاتصال';document.getElementById('loginErr').style.display='block';}
-}
-function doLogout(){TOKEN='';document.getElementById('loginScreen').style.display='block';document.getElementById('dashboard').style.display='none';document.getElementById('passInput').value='';}
-
-function api(path,opts={}){
-  return fetch(API+path,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN,...(opts.headers||{})}}).then(r=>{if(r.status===401){doLogout();throw new Error('Unauthorized');}return r.json();});
-}
-
-function showTab(tab){
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
-  document.getElementById('tab-'+tab).classList.add('active');
-  const nav=document.getElementById('nav-'+tab);if(nav)nav.classList.add('active');
-  currentTab=tab;
-  if(tab==='stats')loadStats();
-  else if(tab==='conversations')loadConversations();
-  else if(tab==='corrections')loadCorrections();
-  else if(tab==='courses')loadCrud('courses');
-  else if(tab==='diplomas')loadCrud('diplomas');
-  else if(tab==='instructors')loadCrud('instructors');
-  else if(tab==='faq')loadCrud('faq');
-  else if(tab==='sitepages')loadCrud('site-pages');
-}
-
-async function loadStats(){
-  try{
-    const d=await api('/admin/stats');
-    const g=document.getElementById('statsGrid');
-    g.innerHTML=[
-      ['💬',d.total_messages,'إجمالي الرسائل'],
-      ['👥',d.unique_sessions,'جلسات فريدة'],
-      ['📅',d.today_messages,'رسائل اليوم'],
-      ['🟢',d.active_sessions,'جلسات نشطة'],
-      ['🧠',d.corrections_cached||d.corrections,'تصحيحات (مُخزنة)'],
-      ['📚',d.courses,'كورسات'],
-      ['🎓',d.diplomas,'دبلومات'],
-      ['👤',d.instructors,'محاضرين'],
-      ['❓',d.faq_entries,'أسئلة شائعة'],
-      ['📄',d.site_pages,'صفحات'],
-    ].map(([e,n,l])=>'<div class="card stat-card"><div style="font-size:24px">'+e+'</div><div class="stat-num">'+n+'</div><div class="stat-label">'+l+'</div></div>').join('');
-    const ic=document.getElementById('intentChart');
-    if(d.intent_distribution&&Object.keys(d.intent_distribution).length){
-      const max=Math.max(...Object.values(d.intent_distribution));
-      ic.innerHTML=Object.entries(d.intent_distribution).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
-        const pct=Math.round(v/max*100);
-        return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="min-width:130px;font-size:12px;color:#475569">'+k+'</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:20px"><div style="width:'+pct+'%;background:#3b82f6;border-radius:4px;height:100%;min-width:24px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">'+v+'</span></div></div></div>';
-      }).join('');
-    }else ic.innerHTML='<p style="color:#94a3b8;font-size:13px">لا توجد بيانات بعد</p>';
-  }catch(e){console.error(e);}
-}
-
-async function loadConversations(){
-  try{
-    const s=document.getElementById('convSearch').value;
-    const d=await api('/admin/conversations?limit=50'+(s?'&search='+encodeURIComponent(s):''));
-    const el=document.getElementById('convList');
-    if(!d.conversations?.length){el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد محادثات بعد</p>';return;}
-    el.innerHTML='<table><thead><tr><th>الجلسة</th><th>آخر رسالة</th><th>النوع</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>'+
-      d.conversations.map(c=>'<tr style="cursor:pointer" onclick="loadConvDetail(\\''+c.session_id+'\\')"><td style="font-family:monospace;font-size:11px">'+c.session_id.slice(0,8)+'...</td><td>'+((c.last_message||'').slice(0,50))+'</td><td><span class="badge badge-blue">'+(c.last_intent||'-')+'</span></td><td style="font-size:11px">'+new Date(c.last_time).toLocaleString('ar-EG')+'</td><td>'+c.message_count+'</td></tr>').join('')+
-      '</tbody></table>';
-    el.style.display='block';
-    document.getElementById('convDetail').style.display='none';
-  }catch(e){console.error(e);}
-}
-
-/* 🆕 v7.1: Updated to track user questions for corrections */
-async function loadConvDetail(sid){
-  try{
-    const d=await api('/admin/conversations/'+sid);
-    _convMessages=d.messages||[];
-    document.getElementById('convList').style.display='none';
-    document.getElementById('convDetail').style.display='block';
-    const el=document.getElementById('convMessages');
-    let lastUserContent='';
-    el.innerHTML='<h3 style="margin:0 0 12px;font-size:14px">جلسة: '+sid.slice(0,12)+'... ('+_convMessages.length+' رسالة)</h3>'+
-      _convMessages.map((m,idx)=>{
-        if(m.role==='user') lastUserContent=m.content||'';
-        const cls=m.role==='user'?'msg-user':'msg-bot';
-        const icon=m.role==='user'?'👤':'🤖';
-        let html='<div class="'+cls+'" data-idx="'+idx+'"><b>'+icon+' '+m.role+'</b>';
-        if(m.intent)html+=' <span class="badge badge-blue">'+m.intent+'</span>';
-        if(m.entity)html+=' <span class="badge badge-green">'+m.entity+'</span>';
-        html+='<span style="float:left;font-size:10px;color:#94a3b8">'+new Date(m.created_at).toLocaleTimeString('ar-EG')+'</span>';
-        html+='<div style="margin-top:4px" class="msg-content">'+m.content.slice(0,500)+'</div>';
-        if(m.role==='bot'){
-          const safeQ=btoa(unescape(encodeURIComponent(lastUserContent.slice(0,500))));
-          html+='<button class="btn btn-sm" style="margin-top:6px;background:#fef3c7;color:#92400e" onclick="openCorrection('+m.id+',\\''+sid+'\\',\\''+safeQ+'\\',this)">✏️ تصحيح ← البوت هيتعلم 🧠</button>';
-        }
-        html+='</div>';
-        return html;
-      }).join('');
-  }catch(e){console.error(e);}
-}
-
-/* 🆕 v7.1: Updated openCorrection to include original question */
-function openCorrection(logId,sid,safeQ,btn){
-  const original=btn.parentElement.querySelector('.msg-content').textContent;
-  let userQuestion='';
-  try{userQuestion=decodeURIComponent(escape(atob(safeQ)));}catch(e){}
-  modalState={type:'correction',logId,sid,original,userQuestion};
-  document.getElementById('modalTitle').textContent='✏️ تصحيح الإجابة — البوت هيتعلم! 🧠';
-  document.getElementById('modalBody').innerHTML=
-    '<div class="learning-badge" style="margin-bottom:12px">🧠 لما تحفظ التصحيح، البوت هيستخدم الإجابة الصح لو سؤال مشابه جاه تاني</div>'+
-    '<label style="font-size:12px;font-weight:600">سؤال المستخدم:</label>'+
-    '<input type="text" id="corrQuestion" value="'+(userQuestion||'').replace(/"/g,'&quot;')+'" style="margin-top:4px;margin-bottom:8px;background:#e0f2fe">'+
-    '<label style="font-size:12px;font-weight:600;color:#64748b">الإجابة الخاطئة:</label>'+
-    '<div style="background:#fee2e2;padding:8px;border-radius:6px;font-size:12px;margin-bottom:12px;max-height:100px;overflow-y:auto">'+original.slice(0,300)+'</div>'+
-    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة الصحيحة:</label>'+
-    '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac"></textarea>'+
-    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة (اختياري):</label>'+
-    '<input type="text" id="corrNote" style="margin-top:4px" placeholder="مثال: السعر اتغير / الرابط اتحدث">';
-  document.getElementById('modal').classList.add('show');
-}
-
-/* 🆕 v7.1: Manual correction addition */
-function openAddCorrectionModal(){
-  modalState={type:'correction_manual'};
-  document.getElementById('modalTitle').textContent='➕ إضافة تصحيح يدوي 🧠';
-  document.getElementById('modalBody').innerHTML=
-    '<div class="learning-badge" style="margin-bottom:12px">🧠 أضف سؤال + إجابة صح — البوت هيستخدمهم تلقائي</div>'+
-    '<label style="font-size:12px;font-weight:600">سؤال المستخدم المتوقع:</label>'+
-    '<input type="text" id="corrQuestion" style="margin-top:4px;margin-bottom:8px" placeholder="مثال: بكام الاشتراك">'+
-    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة الصحيحة:</label>'+
-    '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac" placeholder="الإجابة اللي عايز البوت يقولها"></textarea>'+
-    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة (اختياري):</label>'+
-    '<input type="text" id="corrNote" style="margin-top:4px">';
-  document.getElementById('modal').classList.add('show');
-}
-
-async function loadCorrections(){
-  try{
-    const d=await api('/admin/corrections');
-    const el=document.getElementById('corrList');
-    if(!d.corrections?.length){el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات بعد — صحّح أي إجابة غلط من المحادثات والبوت هيتعلم 🧠</p>';return;}
-    el.innerHTML='<table><thead><tr><th>ID</th><th>السؤال 🧠</th><th>الإجابة المصححة</th><th>الحالة</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>'+
-      d.corrections.map(c=>{
-        const statusCls=c.status==='pending'?'badge-yellow':c.status==='approved'?'badge-green':'badge-blue';
-        return '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge badge-purple">'+(c.original_question||'—').slice(0,60)+'</span></td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.corrected_answer||'').slice(0,80)+'</td><td><span class="badge '+statusCls+'">'+c.status+'</span></td><td style="font-size:11px">'+new Date(c.created_at).toLocaleString('ar-EG')+'</td><td><button class="btn btn-danger btn-sm" onclick="deleteCrud(\\'corrections\\','+c.id+')">حذف</button></td></tr>';
-      }).join('')+'</tbody></table>';
-  }catch(e){console.error(e);}
-}
-
-async function loadCrud(entity){
-  try{
-    const searchEl=document.getElementById(entity.replace('-','')+'Search')||document.getElementById(entity+'Search');
-    const search=searchEl?searchEl.value:'';
-    const d=await api('/admin/'+entity+'?limit=50'+(search?'&search='+encodeURIComponent(search):''));
-    const items=d.items||[];
-    const el=document.getElementById(entity+'-table');
-    if(!items.length){el.innerHTML='<p style="color:#94a3b8;text-align:center">لا توجد بيانات</p>';return;}
-    const cols=Object.keys(items[0]).filter(k=>k!=='full_content'&&k!=='content').slice(0,6);
-    el.innerHTML='<div style="overflow-x:auto"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'<th>إجراء</th></tr></thead><tbody>'+
-      items.map(item=>'<tr>'+cols.map(c=>'<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+((item[c]!=null?String(item[c]):'').slice(0,60))+'</td>').join('')+
-      '<td><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-left:4px" onclick="openEditModal(\\''+entity+'\\','+JSON.stringify(item).replace(/'/g,"\\\\'").replace(/"/g,'&quot;')+')">تعديل</button> <button class="btn btn-danger btn-sm" onclick="deleteCrud(\\''+entity+'\\',\\''+item.id+'\\')">حذف</button></td></tr>').join('')+
-      '</tbody></table></div>';
-  }catch(e){console.error(e);}
-}
-
-async function deleteCrud(entity,id){
-  if(!confirm('هل أنت متأكد من الحذف؟'))return;
-  try{
-    await api('/admin/'+entity+'/'+id,{method:'DELETE'});
-    if(entity==='corrections')loadCorrections();
-    else loadCrud(entity);
-  }catch(e){alert('خطأ: '+e.message);}
-}
-
-function closeModal(){document.getElementById('modal').classList.remove('show');modalState={};}
-
-function openAddModal(entity){
-  modalState={type:'add',entity};
-  document.getElementById('modalTitle').textContent='➕ إضافة جديد';
-  const fields=getFields(entity);
-  document.getElementById('modalBody').innerHTML=fields.map(f=>'<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">'+f.label+':</label>'+(f.type==='textarea'?'<textarea id="modal_'+f.key+'" rows="3" style="margin-top:4px"></textarea>':'<input type="text" id="modal_'+f.key+'" style="margin-top:4px">')).join('');
-  document.getElementById('modal').classList.add('show');
-}
-
-function openEditModal(entity,item){
-  if(typeof item==='string')item=JSON.parse(item);
-  modalState={type:'edit',entity,id:item.id};
-  document.getElementById('modalTitle').textContent='✏️ تعديل';
-  const fields=getFields(entity);
-  document.getElementById('modalBody').innerHTML=fields.map(f=>{
-    const val=(item[f.key]!=null?String(item[f.key]):'').replace(/"/g,'&quot;');
-    return '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">'+f.label+':</label>'+(f.type==='textarea'?'<textarea id="modal_'+f.key+'" rows="3" style="margin-top:4px">'+val+'</textarea>':'<input type="text" id="modal_'+f.key+'" value="'+val+'" style="margin-top:4px">');
-  }).join('');
-  document.getElementById('modal').classList.add('show');
-}
-
-function getFields(entity){
-  const map={
-    'courses':[{key:'title',label:'العنوان'},{key:'description',label:'الوصف',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة URL'}],
-    'diplomas':[{key:'title',label:'العنوان'},{key:'slug',label:'Slug'},{key:'link',label:'الرابط'},{key:'description',label:'الوصف',type:'textarea'},{key:'price',label:'السعر'},{key:'courses_count',label:'عدد الدورات'},{key:'hours',label:'عدد الساعات'}],
-    'instructors':[{key:'name',label:'الاسم'}],
-    'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}],
-    'site-pages':[{key:'page_url',label:'رابط الصفحة'},{key:'content',label:'المحتوى',type:'textarea'}],
-  };
-  return map[entity]||[{key:'title',label:'العنوان'}];
-}
-
-async function saveModal(){
-  try{
-    /* 🆕 v7.1: Handle correction saves (both from conversation and manual) */
-    if(modalState.type==='correction'||modalState.type==='correction_manual'){
-      const body={
-        chat_log_id:modalState.logId||null,
-        session_id:modalState.sid||null,
-        original_answer:modalState.original||null,
-        original_question:document.getElementById('corrQuestion').value||null,
-        corrected_answer:document.getElementById('corrAnswer').value,
-        note:document.getElementById('corrNote').value||null
-      };
-      if(!body.corrected_answer){alert('اكتب الإجابة الصحيحة!');return;}
-      await api('/admin/corrections',{method:'POST',body:JSON.stringify(body)});
-      closeModal();alert('تم إضافة التصحيح ✅\\n🧠 البوت هيستخدم الإجابة دي في الردود الجاية!');
-      return;
-    }
-    const fields=getFields(modalState.entity);
-    const body={};
-    fields.forEach(f=>{const v=document.getElementById('modal_'+f.key);if(v)body[f.key]=v.value;});
-    if(modalState.type==='add'){
-      await api('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
-    }else{
-      await api('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
-    }
-    closeModal();
-    loadCrud(modalState.entity);
-  }catch(e){alert('خطأ: '+e.message);}
-}
-</script>
-</body>
-</html>`;
 
 /* ══════════════════════════════════════════════════════════
    ═══ Debug Endpoints ════════════════════════════════════
@@ -2335,23 +1954,15 @@ app.get("/debug/site-pages/:query", async (req, res) => {
   res.json({ query: q, results_count: results.length, results: results.map((r) => ({ page_url: r.page_url, content_preview: r.content?.slice(0, 200) })) });
 });
 
-/* 🆕 v7.1: Debug corrections search */
 app.get("/debug/corrections/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const results = await searchCorrections(q, null, null);
   const total = (await getCorrections()).length;
   res.json({
-    query: q,
-    total_corrections: total,
+    query: q, total_corrections: total,
     cache_age_seconds: correctionsLastFetch ? Math.floor((Date.now() - correctionsLastFetch) / 1000) : null,
     results_count: results.length,
-    results: results.map((r) => ({
-      id: r.id,
-      original_question: r.original_question,
-      corrected_answer: r.corrected_answer?.slice(0, 200),
-      score: r._score,
-      status: r.status,
-    })),
+    results: results.map((r) => ({ id: r.id, original_question: r.original_question, corrected_answer: r.corrected_answer?.slice(0, 200), score: r._score, status: r.status })),
   });
 });
 
