@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.1 — ⚡ Performance + Access Fix
-   ✅ ALL v6.0 features preserved
+   🤖 easyT Chatbot v6.2 — ⚡ Performance + Access Fix v2
+   ✅ ALL v6.1 features preserved
    ⚡ Supabase .or() filters (N queries → 1 query per strategy)
    ⚡ Promise.all() for parallel operations
    ⚡ Instructor cache
@@ -8,6 +8,7 @@
    ⚡ Parallel buildContext (FAQ + site_pages)
    🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas HTML
    🔧 Fixed: ACCESS_ISSUE now asks login first + correct steps
+   🔧 Fixed v6.2: Early accessIssueStep reset (no stale state leak)
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -624,7 +625,7 @@ function getSession(id) {
     entity: null,
     count: 1,
     lastAccess: Date.now(),
-    accessIssueStep: null, // 🆕 track access issue conversation step
+    accessIssueStep: null,
   };
   sessions.set(id, s);
   return s;
@@ -674,7 +675,7 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification (v6.1 — with ACCESS sub-types) ═══
+   ═══ AI Classification (v6.2) ═══════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -1263,7 +1264,7 @@ function formatNoResults(displayTerm, category) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v6.1: ACCESS_ISSUE Direct Responses ════════════
+   ═══ ACCESS_ISSUE Direct Responses ══════════════════════
    ══════════════════════════════════════════════════════════ */
 function buildAccessResponse_AskLogin() {
   let html = `<b>🔐 عشان أقدر أساعدك، محتاج أعرف:</b><br><br>`;
@@ -1407,7 +1408,7 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route — ⚡ Optimized ═════════════════════
+   ═══ Main Chat Route — ⚡ v6.2 Fixed ════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1445,6 +1446,9 @@ app.post("/chat", limiter, async (req, res) => {
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
     if (access_sub) console.log(`🔐 Access sub: ${access_sub}`);
 
+    /* ── 🔧 v6.2 FIX: Save previous intent BEFORE updating ── */
+    const prevSessionIntent = session.intent;
+
     /* Save entity when detected */
     if (entity && entity.length >= 2 && !isVagueEntity(entity)) {
       session.entity = entity;
@@ -1454,6 +1458,19 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     const category = category_key ? CATEGORIES[category_key] : null;
+
+    /* ── 🔧 v6.2 FIX: Early reset of accessIssueStep ──
+       Reset access flow when user moves to ANY different topic.
+       Only keep accessIssueStep for:
+       1. ACCESS_ISSUE intent (obviously)
+       2. FOLLOW_UP intent (the handler itself checks if it's access-related)
+    */
+    if (intent !== "ACCESS_ISSUE" && intent !== "FOLLOW_UP") {
+      if (session.accessIssueStep) {
+        console.log(`🔧 Early reset: accessIssueStep "${session.accessIssueStep}" → null (intent: ${intent})`);
+      }
+      session.accessIssueStep = null;
+    }
 
     /* ── Step 2: Handle by Intent ── */
 
@@ -1699,7 +1716,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v6.1: ACCESS_ISSUE — Smart Step Flow ════════
+    // ═══ ACCESS_ISSUE — Smart Step Flow ══════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "ACCESS_ISSUE") {
       console.log(`🔐 ACCESS_ISSUE | sub: ${access_sub} | prev step: ${session.accessIssueStep}`);
@@ -1716,28 +1733,23 @@ app.post("/chat", limiter, async (req, res) => {
         access_sub === "already_logged_in" ||
         session.accessIssueStep === "asked_login"
       ) {
-        /* Check if user said "yes logged in" or "no not logged in" */
         const msgLower = message.toLowerCase();
         const saysYes = /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(msgLower);
         const saysNo = /لا|لأ|no|مش مسجل|مسجلتش/.test(msgLower);
 
         if (saysNo) {
-          /* Not logged in → give access instructions */
           reply = buildAccessResponse_HowToAccess();
           session.accessIssueStep = "how_to_access_sent";
         } else if (saysYes || access_sub === "already_logged_in") {
-          /* Logged in but still issue */
           reply = buildAccessResponse_AlreadyLoggedIn();
           session.accessIssueStep = "already_logged_in_answered";
         } else {
-          /* Unclear answer → give full how to access */
           reply = buildAccessResponse_HowToAccess();
           session.accessIssueStep = "how_to_access_sent";
         }
       }
       /* Sub-type: Can't find course after purchase */
       else if (access_sub === "cant_find_course") {
-        /* First ask if they're logged in */
         reply = buildAccessResponse_AskLogin();
         session.accessIssueStep = "asked_login";
       }
@@ -1778,9 +1790,6 @@ app.post("/chat", limiter, async (req, res) => {
     // ═══ PLATFORM_QA — site_pages + FAQ ═══════════════════
     // ═══════════════════════════════════════════════════════
     if (intent === "PLATFORM_QA") {
-      /* Reset access step if user moved to different topic */
-      session.accessIssueStep = null;
-
       const searchQuery = entity || message;
       const context = await buildContext(searchQuery);
 
@@ -1800,7 +1809,6 @@ app.post("/chat", limiter, async (req, res) => {
 
     // ─── CERTIFICATE_QA ───
     if (intent === "CERTIFICATE_QA") {
-      session.accessIssueStep = null;
       const context = await buildContext("شهادة اعتماد");
 
       session.history.push({
@@ -1821,7 +1829,7 @@ app.post("/chat", limiter, async (req, res) => {
     // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
       /* Check if this is a follow-up to ACCESS_ISSUE */
-      if (session.intent === "ACCESS_ISSUE" || session.accessIssueStep) {
+      if (prevSessionIntent === "ACCESS_ISSUE" || session.accessIssueStep) {
         console.log(`🔐 FOLLOW_UP in ACCESS flow | step: ${session.accessIssueStep}`);
 
         const msgLower = message.toLowerCase();
@@ -1863,7 +1871,7 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* Non-access follow-up: reset access step */
+      /* ── Non-access follow-up: clear any stale access state ── */
       session.accessIssueStep = null;
 
       let followUpEntity = entity || session.entity || null;
@@ -2023,7 +2031,7 @@ app.post("/chat", limiter, async (req, res) => {
 
       /* Non-course follow-up: new topic search */
       if (
-        session.intent === "COURSE_SEARCH" &&
+        prevSessionIntent === "COURSE_SEARCH" &&
         entity &&
         !isVagueEntity(entity) &&
         entity !== session.entity
@@ -2102,11 +2110,6 @@ app.post("/chat", limiter, async (req, res) => {
       session.history.pop();
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
-    }
-
-    // ─── ACCESS_ISSUE handled above, but reset step for other intents ───
-    if (!["ACCESS_ISSUE", "FOLLOW_UP"].includes(intent)) {
-      session.accessIssueStep = null;
     }
 
     // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
@@ -2551,7 +2554,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.1-access-fix",
+    version: "6.2-early-access-reset",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2564,14 +2567,14 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.1 ⚡ Performance + Access Fix`);
+  console.log(`\n🤖 easyT Chatbot v6.2 ⚡ Early Access Reset Fix`);
   console.log(`   Port: ${PORT}`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
-  console.log(`   🔧 Fixed: ACCESS_ISSUE now uses direct responses (no AI hallucination)`);
-  console.log(`   🔧 Fixed: Smart login-first flow with step tracking`);
-  console.log(`   🔧 Fixed: PLATFORM_KB includes correct access instructions`);
+  console.log(`   🔧 ACCESS_ISSUE: direct responses (no AI hallucination)`);
+  console.log(`   🔧 Smart login-first flow with step tracking`);
+  console.log(`   🔧 v6.2: Early accessIssueStep reset — no stale state leak`);
   console.log(
     `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
   );
