@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.3 — 🔧 Access Flow Escape Fix
-   ✅ ALL v6.2 features preserved
+   🤖 easyT Chatbot v6.4 — 🔤 Arabic Normalization Fix
+   ✅ ALL v6.3 features preserved
    ⚡ Supabase .or() filters (N queries → 1 query per strategy)
    ⚡ Promise.all() for parallel operations
    ⚡ Instructor cache
@@ -10,6 +10,7 @@
    🔧 Fixed: ACCESS_ISSUE now asks login first + correct steps
    🔧 Fixed v6.2: Early accessIssueStep reset (no stale state leak)
    🔧 Fixed v6.3: Smart escape from access flow when user changes topic
+   🔤 Fixed v6.4: Arabic normalization (أ إ آ ا → ا) for search
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -52,6 +53,18 @@ const limiter = rateLimit({
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/diplomas";
 
+/* ═══ 🔤 v6.4: Arabic Normalization ═══ */
+function normalizeArabic(text) {
+  if (!text) return "";
+  return text
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[\u064B-\u065F\u0670]/g, "");
+}
+
 /* ═══ DB Column Mapping (Courses) ═══ */
 const DB = {
   title: "title",
@@ -66,8 +79,14 @@ const DB = {
 };
 
 const SELECT_COLUMNS = [
-  DB.title, DB.description, DB.link, DB.price,
-  DB.instructor, DB.image, DB.subtitle, DB.domain,
+  DB.title,
+  DB.description,
+  DB.link,
+  DB.price,
+  DB.instructor,
+  DB.image,
+  DB.subtitle,
+  DB.domain,
 ];
 const SELECT = SELECT_COLUMNS.join(", ");
 
@@ -121,11 +140,84 @@ async function getInstructorMap(rows) {
   return result;
 }
 
-/* ⚡ Helper: build Supabase OR filter from terms + column */
+/* ⚡ 🔤 v6.4: Helper — build Supabase OR filter with Arabic variants */
 function buildOrFilter(column, terms) {
-  return terms
-    .map((t) => `${column}.ilike.%${t.replace(/[,.()"']/g, "")}%`)
-    .join(",");
+  const filters = new Set();
+
+  for (const t of terms) {
+    const clean = t.replace(/[,.()"']/g, "").trim();
+    if (clean.length < 2) continue;
+
+    /* Original term */
+    filters.add(`${column}.ilike.%${clean}%`);
+
+    /* Normalized (all alef → bare alef, etc.) */
+    const norm = normalizeArabic(clean);
+    if (norm !== clean) {
+      filters.add(`${column}.ilike.%${norm}%`);
+    }
+
+    /* Hamza variants for الا → الإ / الأ */
+    if (norm.includes("الا")) {
+      filters.add(
+        `${column}.ilike.%${norm.replace(/الا/g, "الإ")}%`
+      );
+      filters.add(
+        `${column}.ilike.%${norm.replace(/الا/g, "الأ")}%`
+      );
+    }
+
+    /* Word-initial alef → أ / إ */
+    if (norm.startsWith("ا") && norm.length > 2) {
+      filters.add(`${column}.ilike.%${"إ" + norm.slice(1)}%`);
+      filters.add(`${column}.ilike.%${"أ" + norm.slice(1)}%`);
+    }
+
+    /* ة vs ه variant */
+    if (clean.includes("ة")) {
+      filters.add(
+        `${column}.ilike.%${clean.replace(/ة/g, "ه")}%`
+      );
+    }
+    if (clean.includes("ه")) {
+      filters.add(
+        `${column}.ilike.%${clean.replace(/ه/g, "ة")}%`
+      );
+    }
+
+    /* Multi-word: also search individual words with variants */
+    if (clean.includes(" ")) {
+      const words = clean
+        .split(/\s+/)
+        .filter((w) => w.length >= 3);
+      for (const word of words) {
+        const normWord = normalizeArabic(word);
+        filters.add(`${column}.ilike.%${word}%`);
+        if (normWord !== word) {
+          filters.add(`${column}.ilike.%${normWord}%`);
+        }
+        if (normWord.startsWith("الا")) {
+          filters.add(
+            `${column}.ilike.%${normWord.replace(/^الا/, "الإ")}%`
+          );
+          filters.add(
+            `${column}.ilike.%${normWord.replace(/^الا/, "الأ")}%`
+          );
+        }
+        if (normWord.startsWith("ا") && normWord.length > 2) {
+          filters.add(
+            `${column}.ilike.%${"إ" + normWord.slice(1)}%`
+          );
+          filters.add(
+            `${column}.ilike.%${"أ" + normWord.slice(1)}%`
+          );
+        }
+      }
+    }
+  }
+
+  /* Limit to prevent excessively long queries */
+  return [...filters].slice(0, 40).join(",");
 }
 
 /* ⚡ Helper: dedupe raw DB rows */
@@ -142,12 +234,15 @@ function dedupeRows(rows) {
 /* ══════════════════════════════════════════════════════════
    ═══ Diploma DB Functions — ⚡ Optimized ════════════════
    ══════════════════════════════════════════════════════════ */
-const DIPLOMA_SELECT = "title, slug, link, description, price, courses_count, books_count, hours";
+const DIPLOMA_SELECT =
+  "title, slug, link, description, price, courses_count, books_count, hours";
 
 async function searchDiplomas(terms) {
   if (!terms?.length) return [];
 
-  const clean = [...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 8);
+  const clean = [
+    ...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2)),
+  ].slice(0, 8);
   if (!clean.length) return [];
 
   console.log(`\n🎓 ═══ Diploma Search ═══`);
@@ -232,7 +327,11 @@ function mapDiplomaToCategory(diplomaTitle) {
   return null;
 }
 
-function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
+function formatDiplomas(
+  diplomas,
+  relatedCourses = [],
+  relatedCategory = null
+) {
   let html = `<b>🎓 الدبلومات المتاحة على منصة إيزي تي:</b><br><br>`;
 
   diplomas.forEach((d, i) => {
@@ -244,7 +343,10 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
     html += `${i + 1}. ${d.title}</a><br>`;
 
     if (d.description) {
-      const desc = d.description.length > 150 ? d.description.slice(0, 150) + "..." : d.description;
+      const desc =
+        d.description.length > 150
+          ? d.description.slice(0, 150) + "..."
+          : d.description;
       html += `📝 ${desc}<br>`;
     }
 
@@ -277,13 +379,16 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
         html += `<div style="text-align:center;margin-bottom:6px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:250px;border-radius:6px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
       }
 
-      html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:14px;text-decoration:none;">${i + 1}. ${c.title}</a><br>`;
+      html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:14px;text-decoration:none;">${
+        i + 1
+      }. ${c.title}</a><br>`;
       if (c.instructor) html += `👤 ${c.instructor}<br>`;
       if (c.price !== undefined && c.price !== null) {
         const p = String(c.price).trim();
-        html += p === "0" || p === "0.00" || p.toLowerCase() === "free"
-          ? `💰 مجاني 🎉<br>`
-          : `💰 <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+        html +=
+          p === "0" || p === "0.00" || p.toLowerCase() === "free"
+            ? `💰 مجاني 🎉<br>`
+            : `💰 <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
       }
 
       html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
@@ -479,14 +584,14 @@ async function searchFAQ(query) {
   const faqData = await getFAQData();
   if (!faqData.length) return [];
 
-  const terms = query
-    .toLowerCase()
+  const normalizedQuery = normalizeArabic(query.toLowerCase());
+
+  const terms = normalizedQuery
     .split(/\s+/)
     .filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t));
 
   if (!terms.length) {
-    const fallbackTerms = query
-      .toLowerCase()
+    const fallbackTerms = normalizedQuery
       .split(/\s+/)
       .filter((t) => t.length >= 2)
       .slice(0, 3);
@@ -497,9 +602,9 @@ async function searchFAQ(query) {
   console.log(`📚 FAQ search terms: [${terms.join(", ")}]`);
 
   const scored = faqData.map((faq) => {
-    const q = (faq.question || "").toLowerCase();
-    const a = (faq.answer || "").toLowerCase();
-    const s = (faq.section || "").toLowerCase();
+    const q = normalizeArabic((faq.question || "").toLowerCase());
+    const a = normalizeArabic((faq.answer || "").toLowerCase());
+    const s = normalizeArabic((faq.section || "").toLowerCase());
 
     let score = 0;
     for (const term of terms) {
@@ -528,7 +633,8 @@ async function searchFAQ(query) {
 function formatFAQContext(faqResults) {
   if (!faqResults.length) return "";
 
-  let text = "\n\n【أسئلة شائعة ذات صلة من قاعدة البيانات — استخدمها كمصدر أساسي】\n";
+  let text =
+    "\n\n【أسئلة شائعة ذات صلة من قاعدة البيانات — استخدمها كمصدر أساسي】\n";
   faqResults.forEach((faq) => {
     text += `\n[${faq.section}]\nسؤال: ${faq.question}\nإجابة: ${faq.answer}\n`;
   });
@@ -657,6 +763,7 @@ function isLikelyGibberish(text) {
       "programming", "الاشتراك", "المحاضرين", "الكورسات",
       "typescript", "bootstrap", "الاستثمار", "wordpress",
       "البرمجة", "الشهادات", "flutter", "python", "الدبلومات",
+      "الاستراتيجية",
     ];
     const lower = clean.toLowerCase();
     if (knownLong.some((w) => lower.includes(w))) return false;
@@ -676,29 +783,24 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🔧 v6.3: Access Flow Escape Detector ══════════════
+   ═══ v6.3: Access Flow Escape Detector ══════════════════
    ══════════════════════════════════════════════════════════ */
-const ACCESS_KEYWORDS_RE = /دخول|حساب|login|password|دوراتي|مش.*لاقي|تسجيل|activate|تفعيل|مش.*شغال|مش.*ظاهر|كلمة.*سر|كلمة.*مرور/i;
-const YES_NO_RE = /^(أيوه|ايوه|اه|لا|لأ|نعم|yes|no|اكيد|طبعا|مسجل|مش مسجل|مسجلتش)\s*[.!؟?]*$/i;
+const ACCESS_KEYWORDS_RE =
+  /دخول|حساب|login|password|دوراتي|مش.*لاقي|تسجيل|activate|تفعيل|مش.*شغال|مش.*ظاهر|كلمة.*سر|كلمة.*مرور/i;
+const YES_NO_RE =
+  /^(أيوه|ايوه|اه|لا|لأ|نعم|yes|no|اكيد|طبعا|مسجل|مش مسجل|مسجلتش)\s*[.!؟?]*$/i;
 
 function shouldEscapeAccessFlow(message, intent, entity) {
   const msgLower = message.toLowerCase().trim();
 
-  /* Yes/No answers should STAY in access flow */
   if (YES_NO_RE.test(msgLower)) return false;
-
-  /* Messages about access should STAY */
   if (ACCESS_KEYWORDS_RE.test(msgLower)) return false;
-
-  /* ACCESS_ISSUE intent from classifier should STAY */
   if (intent === "ACCESS_ISSUE") return false;
 
-  /* If there's a real entity that's not access-related → ESCAPE */
   if (entity && !isVagueEntity(entity) && entity.length >= 3) {
     if (!ACCESS_KEYWORDS_RE.test(entity.toLowerCase())) return true;
   }
 
-  /* Multi-word messages that don't mention access → likely new topic → ESCAPE */
   const words = msgLower.split(/\s+/).filter((w) => w.length >= 2);
   if (words.length >= 3) return true;
 
@@ -706,7 +808,7 @@ function shouldEscapeAccessFlow(message, intent, entity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification (v6.3) ═══════════════════════════
+   ═══ AI Classification (v6.4) ═══════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -740,6 +842,15 @@ If the previous messages were about ACCESS ISSUE (can't find course, login probl
 → Return COURSE_SEARCH (or DIPLOMA_SEARCH), NOT FOLLOW_UP or ACCESS_ISSUE!
 → Example: prev="مش لاقي دوراتي" → new="عايز اعرف عن الادارة الاستراتيجية" → COURSE_SEARCH
 
+═══ ⚠️ CRITICAL: search_terms for Arabic ═══
+
+When generating search_terms, include BOTH hamza variants:
+→ "الإدارة" AND "الادارة"
+→ "الأعمال" AND "الاعمال"
+→ "إدارة" AND "ادارة"
+→ "استراتيجية" AND "إستراتيجية"
+This ensures database search works regardless of how the title is stored.
+
 ═══ ⚠️ INTENT DEFINITIONS ═══
 
 • GIBBERISH — Random characters, keyboard mashing, no meaningful words
@@ -760,16 +871,12 @@ If the previous messages were about ACCESS ISSUE (can't find course, login probl
   ⚠️ Even with "ابدأ/ازاي" → STILL COURSE_SEARCH if topic mentioned!
   ⚠️ "الموضوع ده" + previous topic in history → COURSE_SEARCH with entity = previous topic!
   ⚠️ If user says "كورس" or "دورة" + topic → COURSE_SEARCH (NOT DIPLOMA_SEARCH)
-  ⚠️ "عايز اعرف عن X" → COURSE_SEARCH with entity = X (even if previous was ACCESS_ISSUE!)
+  ⚠️ "عايز اعرف عن X" → COURSE_SEARCH with entity = X
+  ⚠️ "ايه هي X" → COURSE_SEARCH with entity = X
 
 • ACCESS_ISSUE — Can't login, can't access course, can't find course after purchase, subscription not working
   ⚠️ ONLY when the message is ACTUALLY about access/login problems!
   ⚠️ NOT when user asks about a course topic (even if previous was access issue)
-  ⚠️ Set "access_sub" field:
-    - "cant_find_course" → user bought/subscribed but can't find the course
-    - "cant_login" → user can't login to their account
-    - "already_logged_in" → user confirms they ARE logged in but still have issues
-    - null → general access issue
 
 • PLATFORM_QA — Questions about platform usage, policies, guarantees, refunds, FAQ, technical issues
 • CERTIFICATE_QA — Questions about certificates (اعتماد, شهادة, معتمدة)
@@ -782,8 +889,9 @@ If the previous messages were about ACCESS ISSUE (can't find course, login probl
 • GENERAL — Other questions
 
 ═══ search_terms Rules (for COURSE_SEARCH & DIPLOMA_SEARCH) ═══
-Provide 3-5 focused search variations:
+Provide 3-6 focused search variations:
 • Arabic name + English name + common spelling variants
+• Include BOTH with-hamza and without-hamza variants (e.g. "إدارة" + "ادارة")
 • ⚠️ NO single-character terms! Minimum 2 characters.
 • ⚠️ NO generic words like كورس, دورة, تعلم, دبلومة — only the TOPIC itself
 
@@ -863,7 +971,10 @@ async function resolveEntityFromHistory(history) {
   try {
     const recent = history
       .slice(-8)
-      .map((m) => `${m.role === "user" ? "User" : "Bot"}: ${m.content.slice(0, 200)}`)
+      .map(
+        (m) =>
+          `${m.role === "user" ? "User" : "Bot"}: ${m.content.slice(0, 200)}`
+      )
       .join("\n");
 
     const { choices } = await openai.chat.completions.create({
@@ -907,6 +1018,31 @@ function isVagueEntity(entity) {
     "دبلومات", "الدبلومات", "دبلومة",
   ];
   return vagueTerms.includes(entity.trim()) || entity.trim().length < 2;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ 🔤 v6.4: Enhanced search_terms with Arabic variants
+   ══════════════════════════════════════════════════════════ */
+function expandArabicTerms(terms) {
+  const expanded = new Set();
+  for (const t of terms) {
+    if (!t || t.length < 2) continue;
+    expanded.add(t);
+
+    const norm = normalizeArabic(t);
+    if (norm !== t) expanded.add(norm);
+
+    /* Add common hamza variants */
+    if (norm.includes("الا")) {
+      expanded.add(norm.replace(/الا/g, "الإ"));
+      expanded.add(norm.replace(/الا/g, "الأ"));
+    }
+    if (norm.startsWith("ا") && norm.length > 2) {
+      expanded.add("إ" + norm.slice(1));
+      expanded.add("أ" + norm.slice(1));
+    }
+  }
+  return [...expanded].filter((t) => t.length >= 2);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -980,7 +1116,7 @@ async function buildContext(searchQuery, options = {}) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ DB Search (courses) — ⚡ Optimized ═════════════════
+   ═══ DB Search (courses) — ⚡ Optimized + 🔤 Arabic ════
    ══════════════════════════════════════════════════════════ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
@@ -994,6 +1130,7 @@ async function searchCoursesRaw(terms) {
   console.log(`\n🔍 ═══ Course Search Start ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
+  /* Strategy 1: Title */
   try {
     const { data, error } = await supabase
       .from("courses")
@@ -1007,6 +1144,7 @@ async function searchCoursesRaw(terms) {
     }
   } catch (e) {}
 
+  /* Strategy 2: Subtitle */
   try {
     const subTerms = clean.slice(0, 5);
     const { data, error } = await supabase
@@ -1016,10 +1154,12 @@ async function searchCoursesRaw(terms) {
       .limit(15);
 
     if (!error && data?.length) {
+      console.log(`   ✅ Subtitle OR: ${data.length}`);
       return dedupeRows(data).slice(0, 10);
     }
   } catch (e) {}
 
+  /* Strategy 3: Description */
   try {
     const descTerms = clean.slice(0, 4);
     const { data, error } = await supabase
@@ -1029,10 +1169,12 @@ async function searchCoursesRaw(terms) {
       .limit(15);
 
     if (!error && data?.length) {
+      console.log(`   ✅ Description OR: ${data.length}`);
       return dedupeRows(data).slice(0, 10);
     }
   } catch (e) {}
 
+  /* Strategy 4: Full content */
   try {
     const fullTerms = clean.slice(0, 3);
     const { data, error } = await supabase
@@ -1042,21 +1184,24 @@ async function searchCoursesRaw(terms) {
       .limit(10);
 
     if (!error && data?.length) {
+      console.log(`   ✅ Full content OR: ${data.length}`);
       return dedupeRows(data).slice(0, 10);
     }
   } catch (e) {}
 
+  console.log(`   ❌ No results found`);
   return [];
 }
 
+/* 🔤 v6.4: localRelevanceFilter with Arabic normalization */
 function localRelevanceFilter(courses, entity, searchTerms) {
   if (!courses.length) return [];
 
   const checkTerms = new Set();
-  if (entity) checkTerms.add(entity.toLowerCase());
+  if (entity) checkTerms.add(normalizeArabic(entity.toLowerCase()));
   if (searchTerms?.length) {
     searchTerms.forEach((t) => {
-      if (t.length >= 2) checkTerms.add(t.toLowerCase());
+      if (t.length >= 2) checkTerms.add(normalizeArabic(t.toLowerCase()));
     });
   }
 
@@ -1064,7 +1209,9 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   if (!significantTerms.length) return courses;
 
   const filtered = courses.filter((course) => {
-    const combined = `${course.title} ${course.description}`.toLowerCase();
+    const combined = normalizeArabic(
+      `${course.title} ${course.description}`.toLowerCase()
+    );
     return significantTerms.some((term) => combined.includes(term));
   });
 
@@ -1109,7 +1256,11 @@ async function filterRelevantAI(courses, userQuery, entity) {
 }
 
 async function searchCourses(searchTerms, entity) {
-  const rawRows = await searchCoursesRaw(searchTerms);
+  /* 🔤 v6.4: Expand search terms with Arabic variants */
+  const expandedTerms = expandArabicTerms(searchTerms);
+  console.log(`   🔤 Expanded terms: [${expandedTerms.join(" | ")}]`);
+
+  const rawRows = await searchCoursesRaw(expandedTerms);
   if (!rawRows.length) return [];
 
   const instructorMap = await getInstructorMap(rawRows);
@@ -1151,7 +1302,7 @@ const CATEGORY_SEARCH_TERMS = {
   webdev: ["ويب", "موقع", "تطبيق", "web", "react", "node"],
   earning: ["ربح", "انترنت", "فريلانس", "دخل"],
   basics: ["كمبيوتر", "ويندوز", "اوفيس", "اكسل", "computer"],
-  business: ["إدارة", "أعمال", "بيزنس", "management"],
+  business: ["إدارة", "أعمال", "بيزنس", "management", "ادارة", "اعمال"],
   kids: ["أطفال", "تربية", "تعليم أطفال"],
   accounting: ["محاسبة", "اقتصاد", "احصاء", "accounting"],
   skills: ["مهارات", "تطوير ذات", "soft skills"],
@@ -1160,7 +1311,12 @@ const CATEGORY_SEARCH_TERMS = {
   art: ["فن", "هوايات", "رسم", "art"],
   electronics: ["روبوت", "الكترونيات", "شبكات", "network"],
   programming: ["برمجة", "programming", "كود", "code", "بايثون", "جافا"],
-  ai_programming: ["برمجة ذكاء", "machine learning", "deep learning", "LLM"],
+  ai_programming: [
+    "برمجة ذكاء",
+    "machine learning",
+    "deep learning",
+    "LLM",
+  ],
   ui_design: ["UI", "UX", "واجهة", "تصميم موقع"],
   investment: ["استثمار", "أسواق مالية", "بورصة", "trading"],
   sales: ["مبيعات", "تسويق", "sales", "بيع", "عروض"],
@@ -1277,7 +1433,11 @@ function formatCategoryCourses(courses, category, originalTopic) {
     }
 
     if (c.description) {
-      html += `📝 ${c.description.length > 120 ? c.description.slice(0, 120) + "..." : c.description}<br>`;
+      html += `📝 ${
+        c.description.length > 120
+          ? c.description.slice(0, 120) + "..."
+          : c.description
+      }<br>`;
     }
 
     html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
@@ -1450,7 +1610,7 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route — v6.3 Access Escape Fix ═══════════
+   ═══ Main Chat Route — v6.4 ═════════════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1480,18 +1640,34 @@ app.post("/chat", limiter, async (req, res) => {
     /* ── Step 1: AI Classification ── */
     const {
       intent: classifiedIntent,
-      entity, search_terms, category_key, page_type, refers_to_previous, access_sub,
-    } = await classify(message, session.history, session.intent, session.entity);
+      entity,
+      search_terms,
+      category_key,
+      page_type,
+      refers_to_previous,
+      access_sub,
+    } = await classify(
+      message,
+      session.history,
+      session.intent,
+      session.entity
+    );
 
-    /* 🔧 v6.3: Use mutable intent — may be overridden by escape logic */
     let intent = classifiedIntent;
 
     console.log(`\n════════════════════════════════`);
     console.log(`💬 "${message.slice(0, 60)}"`);
-    console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`);
-    console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
+    console.log(
+      `🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`
+    );
+    console.log(
+      `🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${
+        category_key || "—"
+      }`
+    );
     if (access_sub) console.log(`🔐 Access sub: ${access_sub}`);
-    if (session.accessIssueStep) console.log(`🔐 Access step: ${session.accessIssueStep}`);
+    if (session.accessIssueStep)
+      console.log(`🔐 Access step: ${session.accessIssueStep}`);
 
     /* Save entity when detected */
     if (entity && entity.length >= 2 && !isVagueEntity(entity)) {
@@ -1505,24 +1681,30 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ══════════════════════════════════════════════════════
        🔧 v6.3: SMART ACCESS FLOW ESCAPE
-       If accessIssueStep is set but user clearly changed topic → escape
        ══════════════════════════════════════════════════════ */
-    if (session.accessIssueStep && shouldEscapeAccessFlow(message, intent, entity)) {
-      console.log(`🔧 v6.3 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}" — user changed topic`);
+    if (
+      session.accessIssueStep &&
+      shouldEscapeAccessFlow(message, intent, entity)
+    ) {
+      console.log(
+        `🔧 v6.3 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}" — user changed topic`
+      );
       session.accessIssueStep = null;
 
-      /* If intent was FOLLOW_UP but user has a real entity → upgrade to COURSE_SEARCH */
       if (intent === "FOLLOW_UP" && entity && !isVagueEntity(entity)) {
         intent = "COURSE_SEARCH";
         session.intent = "COURSE_SEARCH";
-        console.log(`🔧 v6.3 ESCAPE: Overrode FOLLOW_UP → COURSE_SEARCH for "${entity}"`);
+        console.log(
+          `🔧 v6.3 ESCAPE: Overrode FOLLOW_UP → COURSE_SEARCH for "${entity}"`
+        );
       }
     }
 
-    /* Also reset for any non-access, non-follow-up intent (belt-and-suspenders) */
     if (intent !== "ACCESS_ISSUE" && intent !== "FOLLOW_UP") {
       if (session.accessIssueStep) {
-        console.log(`🔧 Reset accessIssueStep "${session.accessIssueStep}" (intent: ${intent})`);
+        console.log(
+          `🔧 Reset accessIssueStep "${session.accessIssueStep}" (intent: ${intent})`
+        );
       }
       session.accessIssueStep = null;
     }
@@ -1551,7 +1733,13 @@ app.post("/chat", limiter, async (req, res) => {
         .slice(0, 15)
         .map((c) => `▸ ${c.name}`)
         .join("<br>");
-      const reply = `حلو إنك عايز تبدأ رحلة التعلم! 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو تقدر تتصفح:<br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات على المنصة")}<br>▸ ${makeLink(ALL_DIPLOMAS_URL, "🎓 جميع الدبلومات (مسارات تعليمية متكاملة)")}`;
+      const reply = `حلو إنك عايز تبدأ رحلة التعلم! 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو تقدر تتصفح:<br>▸ ${makeLink(
+        ALL_COURSES_URL,
+        "📚 جميع الدورات على المنصة"
+      )}<br>▸ ${makeLink(
+        ALL_DIPLOMAS_URL,
+        "🎓 جميع الدبلومات (مسارات تعليمية متكاملة)"
+      )}`;
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
@@ -1565,9 +1753,13 @@ app.post("/chat", limiter, async (req, res) => {
       const isGeneralQuery =
         !entity ||
         isVagueEntity(entity) ||
-        ["دبلومات", "الدبلومات", "دبلومة", "مسارات", "المسارات"].includes(
-          (entity || "").trim()
-        );
+        [
+          "دبلومات",
+          "الدبلومات",
+          "دبلومة",
+          "مسارات",
+          "المسارات",
+        ].includes((entity || "").trim());
 
       let diplomas;
       let relatedCourses = [];
@@ -1582,7 +1774,10 @@ app.post("/chat", limiter, async (req, res) => {
           ...new Set([entity, ...search_terms]),
         ].filter((t) => t && t.trim().length >= 2);
 
-        diplomas = await searchDiplomas(terms);
+        /* 🔤 v6.4: expand with Arabic variants */
+        const expandedTerms = expandArabicTerms(terms);
+
+        diplomas = await searchDiplomas(expandedTerms);
 
         if (!diplomas.length) {
           console.log(`   ⚠️ No specific diploma found → showing all`);
@@ -1609,15 +1804,22 @@ app.post("/chat", limiter, async (req, res) => {
           if (courseSearchTerms.length) {
             const [directCourses, catCourses] = await Promise.all([
               searchCourses(courseSearchTerms, entity),
-              catKey ? getCoursesByCategory(catKey) : Promise.resolve([]),
+              catKey
+                ? getCoursesByCategory(catKey)
+                : Promise.resolve([]),
             ]);
 
             relatedCourses = directCourses;
 
             if (relatedCourses.length < 4 && catCourses.length) {
-              const existingUrls = new Set(relatedCourses.map((c) => c.url));
+              const existingUrls = new Set(
+                relatedCourses.map((c) => c.url)
+              );
               for (const c of catCourses) {
-                if (!existingUrls.has(c.url) && relatedCourses.length < 6) {
+                if (
+                  !existingUrls.has(c.url) &&
+                  relatedCourses.length < 6
+                ) {
                   relatedCourses.push(c);
                 }
               }
@@ -1629,23 +1831,32 @@ app.post("/chat", limiter, async (req, res) => {
       }
 
       if (diplomas.length > 0) {
-        const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory);
+        const reply = formatDiplomas(
+          diplomas,
+          relatedCourses,
+          relatedCategory
+        );
         session.history.push({
           role: "assistant",
           content: `[عرض ${diplomas.length} دبلومات${
-            relatedCourses.length ? ` + ${relatedCourses.length} كورسات مقترحة` : ""
+            relatedCourses.length
+              ? ` + ${relatedCourses.length} كورسات مقترحة`
+              : ""
           }]`,
         });
         return res.json({ reply, session_id });
       }
 
-      const reply = `للأسف مفيش دبلومات متاحة حالياً.<br><br>تقدر تتصفح كل الدورات من هنا:<br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات على المنصة")}`;
+      const reply = `للأسف مفيش دبلومات متاحة حالياً.<br><br>تقدر تتصفح كل الدورات من هنا:<br>▸ ${makeLink(
+        ALL_COURSES_URL,
+        "📚 جميع الدورات على المنصة"
+      )}`;
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ COURSE_SEARCH — ⚡ Parallel course + diploma ════
+    // ═══ COURSE_SEARCH — ⚡ Parallel + 🔤 Arabic ════════
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
       let resolvedEntity = entity;
@@ -1661,14 +1872,17 @@ app.post("/chat", limiter, async (req, res) => {
         }
 
         if (isVagueEntity(resolvedEntity)) {
-          const historyTopic = await resolveEntityFromHistory(session.history);
+          const historyTopic = await resolveEntityFromHistory(
+            session.history
+          );
           if (historyTopic) {
             resolvedEntity = historyTopic.topic || resolvedEntity;
             resolvedTerms = historyTopic.search_terms?.length
               ? historyTopic.search_terms
               : resolvedTerms;
             resolvedCategoryKey =
-              historyTopic.category_key && CATEGORIES[historyTopic.category_key]
+              historyTopic.category_key &&
+              CATEGORIES[historyTopic.category_key]
                 ? historyTopic.category_key
                 : resolvedCategoryKey;
           }
@@ -1700,7 +1914,9 @@ app.post("/chat", limiter, async (req, res) => {
 
       const [courses, relatedDiplomas] = await Promise.all([
         searchCourses(allTerms, resolvedEntity),
-        allTerms.length > 0 ? searchDiplomas(allTerms) : Promise.resolve([]),
+        allTerms.length > 0
+          ? searchDiplomas(expandArabicTerms(allTerms))
+          : Promise.resolve([]),
       ]);
 
       let diplomaMention = "";
@@ -1722,7 +1938,11 @@ app.post("/chat", limiter, async (req, res) => {
         const catCourses = await getCoursesByCategory(fallbackCatKey);
         if (catCourses.length > 0) {
           const fallbackCat = CATEGORIES[fallbackCatKey];
-          let reply = formatCategoryCourses(catCourses, fallbackCat, displayTerm);
+          let reply = formatCategoryCourses(
+            catCourses,
+            fallbackCat,
+            displayTerm
+          );
           if (diplomaMention) reply = reply + diplomaMention;
           session.history.push({
             role: "assistant",
@@ -1735,8 +1955,14 @@ app.post("/chat", limiter, async (req, res) => {
       if (diplomaMention) {
         let reply = `<b>🔍 مفيش كورس فردي عن "${displayTerm}" حالياً، لكن في دبلومة متكاملة في المجال ده:</b><br>`;
         reply += diplomaMention;
-        reply += `<br>تقدر تتصفح كل الدورات من هنا: ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}`;
-        reply += `<br><br>💡 مع ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")} تقدر تدخل كل الدورات والدبلومات 🎓`;
+        reply += `<br>تقدر تتصفح كل الدورات من هنا: ${makeLink(
+          ALL_COURSES_URL,
+          "📚 جميع الدورات"
+        )}`;
+        reply += `<br><br>💡 مع ${makeLink(
+          "https://easyt.online/p/subscriptions",
+          "الاشتراك السنوي (49$ عرض رمضان)"
+        )} تقدر تدخل كل الدورات والدبلومات 🎓`;
         session.history.push({
           role: "assistant",
           content: `[عرض دبلومات متعلقة بـ "${displayTerm}"]`,
@@ -1756,7 +1982,9 @@ app.post("/chat", limiter, async (req, res) => {
     // ═══ ACCESS_ISSUE — Smart Step Flow ══════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "ACCESS_ISSUE") {
-      console.log(`🔐 ACCESS_ISSUE | sub: ${access_sub} | prev step: ${session.accessIssueStep}`);
+      console.log(
+        `🔐 ACCESS_ISSUE | sub: ${access_sub} | prev step: ${session.accessIssueStep}`
+      );
 
       let reply;
 
@@ -1768,7 +1996,10 @@ app.post("/chat", limiter, async (req, res) => {
         session.accessIssueStep === "asked_login"
       ) {
         const msgLower = message.toLowerCase();
-        const saysYes = /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(msgLower);
+        const saysYes =
+          /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(
+            msgLower
+          );
         const saysNo = /لا|لأ|no|مش مسجل|مسجلتش/.test(msgLower);
 
         if (saysNo) {
@@ -1788,7 +2019,9 @@ app.post("/chat", limiter, async (req, res) => {
         reply = buildAccessResponse_AskLogin();
         session.accessIssueStep = "asked_login";
       } else {
-        const context = await buildContext("وصول دورات حساب تسجيل دخول");
+        const context = await buildContext(
+          "وصول دورات حساب تسجيل دخول"
+        );
         session.history.push({
           role: "system",
           content: `المستخدم عنده مشكلة في الوصول.
@@ -1803,7 +2036,10 @@ app.post("/chat", limiter, async (req, res) => {
         session.history.pop();
 
         if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
-          reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+          reply += `<br><br>${makeLink(
+            "https://wa.me/201027007899",
+            "📱 تواصل مع الدعم واتساب"
+          )}`;
         }
       }
 
@@ -1853,13 +2089,17 @@ app.post("/chat", limiter, async (req, res) => {
     // ═══ FOLLOW_UP ═══════════════════════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
-      /* 🔧 v6.3: ONLY use accessIssueStep (not prevSessionIntent)
-         because escape logic already cleared it if user changed topic */
+      /* v6.3: ONLY use accessIssueStep */
       if (session.accessIssueStep) {
-        console.log(`🔐 FOLLOW_UP in ACCESS flow | step: ${session.accessIssueStep}`);
+        console.log(
+          `🔐 FOLLOW_UP in ACCESS flow | step: ${session.accessIssueStep}`
+        );
 
         const msgLower = message.toLowerCase();
-        const saysYes = /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(msgLower);
+        const saysYes =
+          /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(
+            msgLower
+          );
         const saysNo = /لا|لأ|no|مش مسجل|مسجلتش/.test(msgLower);
 
         let reply;
@@ -1876,7 +2116,9 @@ app.post("/chat", limiter, async (req, res) => {
             session.accessIssueStep = "how_to_access_sent";
           }
         } else {
-          const context = await buildContext("وصول دورات حساب دخول دوراتي");
+          const context = await buildContext(
+            "وصول دورات حساب دخول دوراتي"
+          );
           session.history.push({
             role: "system",
             content: `متابعة لمشكلة الوصول.
@@ -1888,7 +2130,10 @@ app.post("/chat", limiter, async (req, res) => {
           session.history.pop();
 
           if (!reply.includes("wa.me")) {
-            reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+            reply += `<br><br>${makeLink(
+              "https://wa.me/201027007899",
+              "📱 تواصل مع الدعم واتساب"
+            )}`;
           }
         }
 
@@ -1900,7 +2145,9 @@ app.post("/chat", limiter, async (req, res) => {
       let followUpEntity = entity || session.entity || null;
 
       if (isVagueEntity(followUpEntity)) {
-        const historyTopic = await resolveEntityFromHistory(session.history);
+        const historyTopic = await resolveEntityFromHistory(
+          session.history
+        );
         if (historyTopic) {
           followUpEntity = historyTopic.topic || "الموضوع السابق";
         } else {
@@ -1930,10 +2177,11 @@ app.post("/chat", limiter, async (req, res) => {
           ...new Set([followUpEntity, ...search_terms]),
         ].filter((t) => t.length >= 2);
 
-        const diplomas = await searchDiplomas(terms);
+        const diplomas = await searchDiplomas(expandArabicTerms(terms));
         if (diplomas.length > 0) {
           const catKey =
-            category_key || mapDiplomaToCategory(diplomas[0].title);
+            category_key ||
+            mapDiplomaToCategory(diplomas[0].title);
           let relatedCourses = [];
           let relatedCategory = null;
 
@@ -1947,16 +2195,25 @@ app.post("/chat", limiter, async (req, res) => {
 
             relatedCourses = directCourses;
             if (relatedCourses.length < 4) {
-              const existingUrls = new Set(relatedCourses.map((c) => c.url));
+              const existingUrls = new Set(
+                relatedCourses.map((c) => c.url)
+              );
               for (const c of catCourses) {
-                if (!existingUrls.has(c.url) && relatedCourses.length < 6) {
+                if (
+                  !existingUrls.has(c.url) &&
+                  relatedCourses.length < 6
+                ) {
                   relatedCourses.push(c);
                 }
               }
             }
           }
 
-          const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory);
+          const reply = formatDiplomas(
+            diplomas,
+            relatedCourses,
+            relatedCategory
+          );
           session.entity = followUpEntity;
           session.history.push({
             role: "assistant",
@@ -1988,7 +2245,7 @@ app.post("/chat", limiter, async (req, res) => {
 
         const [courses, relatedDiplomas] = await Promise.all([
           searchCourses(terms, followUpEntity),
-          searchDiplomas(terms),
+          searchDiplomas(expandArabicTerms(terms)),
         ]);
 
         let diplomaMention = "";
@@ -2008,7 +2265,8 @@ app.post("/chat", limiter, async (req, res) => {
 
         const fallbackKey =
           category_key ||
-          (await resolveEntityFromHistory(session.history))?.category_key;
+          (await resolveEntityFromHistory(session.history))
+            ?.category_key;
         if (fallbackKey && CATEGORIES[fallbackKey]) {
           const catCourses = await getCoursesByCategory(fallbackKey);
           if (catCourses.length > 0) {
@@ -2029,7 +2287,10 @@ app.post("/chat", limiter, async (req, res) => {
 
         if (diplomaMention) {
           let reply = `<b>🔍 مفيش كورس فردي عن "${followUpEntity}" حالياً، لكن في دبلومة في المجال:</b><br>${diplomaMention}`;
-          reply += `<br>${makeLink(ALL_COURSES_URL, "📚 تصفح جميع الدورات")}`;
+          reply += `<br>${makeLink(
+            ALL_COURSES_URL,
+            "📚 تصفح جميع الدورات"
+          )}`;
           session.history.push({
             role: "assistant",
             content: `[عرض دبلومات عن "${followUpEntity}"]`,
@@ -2046,10 +2307,7 @@ app.post("/chat", limiter, async (req, res) => {
       }
 
       /* Non-course follow-up: new topic search */
-      if (
-        entity &&
-        !isVagueEntity(entity)
-      ) {
+      if (entity && !isVagueEntity(entity)) {
         const terms = search_terms.length
           ? [...new Set([entity, ...search_terms])].filter(
               (t) => t.length >= 2
@@ -2058,7 +2316,7 @@ app.post("/chat", limiter, async (req, res) => {
 
         const [courses, relDip] = await Promise.all([
           searchCourses(terms, entity),
-          searchDiplomas(terms),
+          searchDiplomas(expandArabicTerms(terms)),
         ]);
 
         let diplomaMention = "";
@@ -2094,7 +2352,10 @@ app.post("/chat", limiter, async (req, res) => {
 
         if (diplomaMention) {
           let reply = `<b>🔍 مفيش كورس فردي عن "${entity}"، لكن في دبلومة:</b><br>${diplomaMention}`;
-          reply += `<br>${makeLink(ALL_COURSES_URL, "📚 تصفح جميع الدورات")}`;
+          reply += `<br>${makeLink(
+            ALL_COURSES_URL,
+            "📚 تصفح جميع الدورات"
+          )}`;
           session.history.push({
             role: "assistant",
             content: `[عرض دبلومات عن "${entity}"]`,
@@ -2154,7 +2415,10 @@ app.post("/chat", limiter, async (req, res) => {
         !reply.includes("wa.me") &&
         !reply.includes("01027007899")
       ) {
-        reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+        reply += `<br><br>${makeLink(
+          "https://wa.me/201027007899",
+          "📱 تواصل مع الدعم واتساب"
+        )}`;
       }
 
       session.history.push({ role: "assistant", content: reply });
@@ -2184,14 +2448,32 @@ app.post("/chat", limiter, async (req, res) => {
    ═══ Debug Endpoints ════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 
+/* 🔤 v6.4: Debug Arabic normalization */
+app.get("/debug/normalize/:text", (req, res) => {
+  const text = decodeURIComponent(req.params.text);
+  const norm = normalizeArabic(text);
+  const expanded = expandArabicTerms([text]);
+
+  res.json({
+    original: text,
+    normalized: norm,
+    expanded_terms: expanded,
+    or_filter_sample: buildOrFilter("title", [text]),
+  });
+});
+
 app.get("/debug/diplomas/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const terms = q.split(/\s+/).filter((t) => t.length >= 2);
-  const diplomas = terms.length ? await searchDiplomas(terms) : await getAllDiplomas();
+  const expanded = expandArabicTerms(terms);
+  const diplomas = expanded.length
+    ? await searchDiplomas(expanded)
+    : await getAllDiplomas();
 
   res.json({
     query: q,
     search_terms: terms,
+    expanded_terms: expanded,
     results_count: diplomas.length,
     results: diplomas.map((d) => ({
       title: d.title,
@@ -2247,19 +2529,24 @@ app.get("/debug/search/:query", async (req, res) => {
       ]
     : [q];
 
+  const expanded = expandArabicTerms(terms);
+
   const [courses, diplomas] = await Promise.all([
     searchCourses(terms, classification.entity),
-    searchDiplomas(terms),
+    searchDiplomas(expanded),
   ]);
 
   let categoryFallback = [];
   if (courses.length === 0 && classification.category_key) {
-    categoryFallback = await getCoursesByCategory(classification.category_key);
+    categoryFallback = await getCoursesByCategory(
+      classification.category_key
+    );
   }
 
   res.json({
     query: q,
     classification,
+    expanded_terms: expanded,
     direct_results: courses.length,
     courses: courses.map((c) => ({
       title: c.title,
@@ -2338,9 +2625,11 @@ app.post("/debug/test-context", async (req, res) => {
     ]),
   ].filter((t) => t && t.length >= 2);
 
+  const expanded = expandArabicTerms(allTerms);
+
   const [courses, diplomas, faqResults] = await Promise.all([
     searchCourses(allTerms, resolvedEntity),
-    searchDiplomas(allTerms),
+    searchDiplomas(expanded),
     searchFAQ(resolvedEntity || current),
   ]);
 
@@ -2358,6 +2647,10 @@ app.post("/debug/test-context", async (req, res) => {
       resolved_entity: resolvedEntity,
       resolved_terms: resolvedTerms,
       resolved_from: resolvedFrom,
+    },
+    arabic_expansion: {
+      original_terms: allTerms,
+      expanded_terms: expanded,
     },
     courses: {
       search_terms_used: allTerms,
@@ -2429,7 +2722,7 @@ app.get("/debug/test-context/:current", async (req, res) => {
 
   const [courses, diplomas] = await Promise.all([
     searchCourses(allTerms, resolvedEntity),
-    searchDiplomas(allTerms),
+    searchDiplomas(expandArabicTerms(allTerms)),
   ]);
 
   res.json({
@@ -2440,6 +2733,7 @@ app.get("/debug/test-context/:current", async (req, res) => {
     classification_entity: classification.entity,
     is_vague: isVagueEntity(classification.entity),
     resolved_entity: resolvedEntity,
+    expanded_terms: expandArabicTerms(allTerms),
     courses_found: courses.length,
     courses: courses.map((c) => ({ title: c.title })),
     diplomas_found: diplomas.length,
@@ -2457,17 +2751,27 @@ app.get("/debug/columns", async (req, res) => {
     ]);
 
     res.json({
-      courses: { columns: courseRes.data?.[0] ? Object.keys(courseRes.data[0]) : [] },
+      courses: {
+        columns: courseRes.data?.[0]
+          ? Object.keys(courseRes.data[0])
+          : [],
+      },
       site_pages: {
-        columns: spRes.data?.[0] ? Object.keys(spRes.data[0]) : [],
+        columns: spRes.data?.[0]
+          ? Object.keys(spRes.data[0])
+          : [],
         error: spRes.error?.message,
       },
       faq: {
-        columns: faqRes.data?.[0] ? Object.keys(faqRes.data[0]) : [],
+        columns: faqRes.data?.[0]
+          ? Object.keys(faqRes.data[0])
+          : [],
         error: faqRes.error?.message,
       },
       diplomas: {
-        columns: dipRes.data?.[0] ? Object.keys(dipRes.data[0]) : [],
+        columns: dipRes.data?.[0]
+          ? Object.keys(dipRes.data[0])
+          : [],
         error: dipRes.error?.message,
       },
     });
@@ -2480,9 +2784,13 @@ app.get("/debug/db", async (req, res) => {
   try {
     const [cRes, spRes, faqRes, dipRes] = await Promise.all([
       supabase.from("courses").select("*", { count: "exact", head: true }),
-      supabase.from("site_pages").select("*", { count: "exact", head: true }),
+      supabase
+        .from("site_pages")
+        .select("*", { count: "exact", head: true }),
       supabase.from("faq").select("*", { count: "exact", head: true }),
-      supabase.from("diplomas").select("*", { count: "exact", head: true }),
+      supabase
+        .from("diplomas")
+        .select("*", { count: "exact", head: true }),
     ]);
 
     res.json({
@@ -2509,7 +2817,10 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "كورس سي", expected_intent: "COURSE_SEARCH" },
     { input: "كورس بايثون", expected_intent: "COURSE_SEARCH" },
     { input: "البرمجة ابدأها ازاي", expected_intent: "COURSE_SEARCH" },
-    { input: "ايه الدبلومات المتاحة", expected_intent: "DIPLOMA_SEARCH" },
+    {
+      input: "ايه الدبلومات المتاحة",
+      expected_intent: "DIPLOMA_SEARCH",
+    },
     { input: "في دبلومة تسويق", expected_intent: "DIPLOMA_SEARCH" },
     { input: "عايز دبلومة برمجة", expected_intent: "DIPLOMA_SEARCH" },
     { input: "هل في ضمان", expected_intent: "PLATFORM_QA" },
@@ -2522,8 +2833,19 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "مش قادر ادخل حسابي", expected_intent: "ACCESS_ISSUE" },
     { input: "مش لاقي الدورة", expected_intent: "ACCESS_ISSUE" },
     { input: "ازاي اسجل حساب", expected_intent: "PLATFORM_QA" },
-    { input: "ايه الفرق بين الكورس والدبلومة", expected_intent: "PLATFORM_QA" },
+    {
+      input: "ايه الفرق بين الكورس والدبلومة",
+      expected_intent: "PLATFORM_QA",
+    },
     { input: "هل في تقسيط", expected_intent: "PLATFORM_QA" },
+    {
+      input: "الادارة الاستراتيجية",
+      expected_intent: "COURSE_SEARCH",
+    },
+    {
+      input: "الإدارة الإستراتيجية",
+      expected_intent: "COURSE_SEARCH",
+    },
   ];
 
   const results = [];
@@ -2536,6 +2858,7 @@ app.get("/debug/test-all", async (req, res) => {
         got: c.intent,
         pass: c.intent === test.expected_intent ? "✅" : "❌",
         entity: c.entity,
+        search_terms: c.search_terms,
         category_key: c.category_key,
         access_sub: c.access_sub,
       });
@@ -2562,7 +2885,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.3-access-escape",
+    version: "6.4-arabic-normalization",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2575,17 +2898,20 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.3 🔧 Access Flow Escape Fix`);
+  console.log(`\n🤖 easyT Chatbot v6.4 🔤 Arabic Normalization Fix`);
   console.log(`   Port: ${PORT}`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
   console.log(`   🔧 ACCESS_ISSUE: direct responses (no AI hallucination)`);
   console.log(`   🔧 Smart login-first flow with step tracking`);
-  console.log(`   🔧 v6.3: shouldEscapeAccessFlow() — detects topic changes mid-access-flow`);
-  console.log(`   🔧 v6.3: FOLLOW_UP uses only accessIssueStep (not prevSessionIntent)`);
-  console.log(`   🔧 v6.3: Classifier prompt updated with TOPIC CHANGE DETECTION rule`);
+  console.log(`   🔧 v6.3: shouldEscapeAccessFlow() — topic change detection`);
+  console.log(`   🔤 v6.4: normalizeArabic() — أ إ آ ا → ا`);
+  console.log(`   🔤 v6.4: expandArabicTerms() — search with all hamza variants`);
+  console.log(`   🔤 v6.4: buildOrFilter() generates Arabic variant filters`);
+  console.log(`   🔤 v6.4: localRelevanceFilter() normalized comparison`);
+  console.log(`   🔤 v6.4: searchFAQ() normalized matching`);
   console.log(
-    `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
+    `   Debug: /debug/normalize/:text | /debug/search/:q | /debug/test-all\n`
   );
 });
