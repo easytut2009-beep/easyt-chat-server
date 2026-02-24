@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.2 — ⚡ Performance + Access Fix v2
-   ✅ ALL v6.1 features preserved
+   🤖 easyT Chatbot v6.3 — 🔧 Access Flow Escape Fix
+   ✅ ALL v6.2 features preserved
    ⚡ Supabase .or() filters (N queries → 1 query per strategy)
    ⚡ Promise.all() for parallel operations
    ⚡ Instructor cache
@@ -9,6 +9,7 @@
    🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas HTML
    🔧 Fixed: ACCESS_ISSUE now asks login first + correct steps
    🔧 Fixed v6.2: Early accessIssueStep reset (no stale state leak)
+   🔧 Fixed v6.3: Smart escape from access flow when user changes topic
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -139,7 +140,7 @@ function dedupeRows(rows) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v6.0: Diploma DB Functions — ⚡ Optimized ══════
+   ═══ Diploma DB Functions — ⚡ Optimized ════════════════
    ══════════════════════════════════════════════════════════ */
 const DIPLOMA_SELECT = "title, slug, link, description, price, courses_count, books_count, hours";
 
@@ -675,7 +676,37 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification (v6.2) ═══════════════════════════
+   ═══ 🔧 v6.3: Access Flow Escape Detector ══════════════
+   ══════════════════════════════════════════════════════════ */
+const ACCESS_KEYWORDS_RE = /دخول|حساب|login|password|دوراتي|مش.*لاقي|تسجيل|activate|تفعيل|مش.*شغال|مش.*ظاهر|كلمة.*سر|كلمة.*مرور/i;
+const YES_NO_RE = /^(أيوه|ايوه|اه|لا|لأ|نعم|yes|no|اكيد|طبعا|مسجل|مش مسجل|مسجلتش)\s*[.!؟?]*$/i;
+
+function shouldEscapeAccessFlow(message, intent, entity) {
+  const msgLower = message.toLowerCase().trim();
+
+  /* Yes/No answers should STAY in access flow */
+  if (YES_NO_RE.test(msgLower)) return false;
+
+  /* Messages about access should STAY */
+  if (ACCESS_KEYWORDS_RE.test(msgLower)) return false;
+
+  /* ACCESS_ISSUE intent from classifier should STAY */
+  if (intent === "ACCESS_ISSUE") return false;
+
+  /* If there's a real entity that's not access-related → ESCAPE */
+  if (entity && !isVagueEntity(entity) && entity.length >= 3) {
+    if (!ACCESS_KEYWORDS_RE.test(entity.toLowerCase())) return true;
+  }
+
+  /* Multi-word messages that don't mention access → likely new topic → ESCAPE */
+  const words = msgLower.split(/\s+/).filter((w) => w.length >= 2);
+  if (words.length >= 3) return true;
+
+  return false;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ AI Classification (v6.3) ═══════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -702,6 +733,13 @@ When user says "الموضوع ده", "عن كده", "تشرح ده", "في كو
 → "search_terms" MUST contain terms related to the REAL topic!
 → "category_key" MUST match the REAL topic!
 
+═══ ⚠️ CRITICAL: TOPIC CHANGE DETECTION ═══
+
+If the previous messages were about ACCESS ISSUE (can't find course, login problem) but the NEW message asks about a SPECIFIC course topic:
+→ This is a TOPIC CHANGE, NOT a follow-up to the access issue!
+→ Return COURSE_SEARCH (or DIPLOMA_SEARCH), NOT FOLLOW_UP or ACCESS_ISSUE!
+→ Example: prev="مش لاقي دوراتي" → new="عايز اعرف عن الادارة الاستراتيجية" → COURSE_SEARCH
+
 ═══ ⚠️ INTENT DEFINITIONS ═══
 
 • GIBBERISH — Random characters, keyboard mashing, no meaningful words
@@ -722,8 +760,11 @@ When user says "الموضوع ده", "عن كده", "تشرح ده", "في كو
   ⚠️ Even with "ابدأ/ازاي" → STILL COURSE_SEARCH if topic mentioned!
   ⚠️ "الموضوع ده" + previous topic in history → COURSE_SEARCH with entity = previous topic!
   ⚠️ If user says "كورس" or "دورة" + topic → COURSE_SEARCH (NOT DIPLOMA_SEARCH)
+  ⚠️ "عايز اعرف عن X" → COURSE_SEARCH with entity = X (even if previous was ACCESS_ISSUE!)
 
 • ACCESS_ISSUE — Can't login, can't access course, can't find course after purchase, subscription not working
+  ⚠️ ONLY when the message is ACTUALLY about access/login problems!
+  ⚠️ NOT when user asks about a course topic (even if previous was access issue)
   ⚠️ Set "access_sub" field:
     - "cant_find_course" → user bought/subscribed but can't find the course
     - "cant_login" → user can't login to their account
@@ -736,7 +777,8 @@ When user says "الموضوع ده", "عن كده", "تشرح ده", "في كو
 • SUBSCRIPTION — Pricing, plans, offers, renewal, cancellation
 • AFFILIATE — Affiliate/commission program
 • AUTHOR — Wants to become instructor
-• FOLLOW_UP — Continuation of PREVIOUS topic
+• FOLLOW_UP — Continuation of PREVIOUS topic (SAME topic, not a new one!)
+  ⚠️ If user switches to a DIFFERENT topic → use the appropriate intent for the NEW topic!
 • GENERAL — Other questions
 
 ═══ search_terms Rules (for COURSE_SEARCH & DIPLOMA_SEARCH) ═══
@@ -1408,7 +1450,7 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route — ⚡ v6.2 Fixed ════════════════════
+   ═══ Main Chat Route — v6.3 Access Escape Fix ═══════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1437,17 +1479,19 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 1: AI Classification ── */
     const {
-      intent, entity, search_terms, category_key, page_type, refers_to_previous, access_sub,
+      intent: classifiedIntent,
+      entity, search_terms, category_key, page_type, refers_to_previous, access_sub,
     } = await classify(message, session.history, session.intent, session.entity);
+
+    /* 🔧 v6.3: Use mutable intent — may be overridden by escape logic */
+    let intent = classifiedIntent;
 
     console.log(`\n════════════════════════════════`);
     console.log(`💬 "${message.slice(0, 60)}"`);
     console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`);
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
     if (access_sub) console.log(`🔐 Access sub: ${access_sub}`);
-
-    /* ── 🔧 v6.2 FIX: Save previous intent BEFORE updating ── */
-    const prevSessionIntent = session.intent;
+    if (session.accessIssueStep) console.log(`🔐 Access step: ${session.accessIssueStep}`);
 
     /* Save entity when detected */
     if (entity && entity.length >= 2 && !isVagueEntity(entity)) {
@@ -1459,15 +1503,26 @@ app.post("/chat", limiter, async (req, res) => {
 
     const category = category_key ? CATEGORIES[category_key] : null;
 
-    /* ── 🔧 v6.2 FIX: Early reset of accessIssueStep ──
-       Reset access flow when user moves to ANY different topic.
-       Only keep accessIssueStep for:
-       1. ACCESS_ISSUE intent (obviously)
-       2. FOLLOW_UP intent (the handler itself checks if it's access-related)
-    */
+    /* ══════════════════════════════════════════════════════
+       🔧 v6.3: SMART ACCESS FLOW ESCAPE
+       If accessIssueStep is set but user clearly changed topic → escape
+       ══════════════════════════════════════════════════════ */
+    if (session.accessIssueStep && shouldEscapeAccessFlow(message, intent, entity)) {
+      console.log(`🔧 v6.3 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}" — user changed topic`);
+      session.accessIssueStep = null;
+
+      /* If intent was FOLLOW_UP but user has a real entity → upgrade to COURSE_SEARCH */
+      if (intent === "FOLLOW_UP" && entity && !isVagueEntity(entity)) {
+        intent = "COURSE_SEARCH";
+        session.intent = "COURSE_SEARCH";
+        console.log(`🔧 v6.3 ESCAPE: Overrode FOLLOW_UP → COURSE_SEARCH for "${entity}"`);
+      }
+    }
+
+    /* Also reset for any non-access, non-follow-up intent (belt-and-suspenders) */
     if (intent !== "ACCESS_ISSUE" && intent !== "FOLLOW_UP") {
       if (session.accessIssueStep) {
-        console.log(`🔧 Early reset: accessIssueStep "${session.accessIssueStep}" → null (intent: ${intent})`);
+        console.log(`🔧 Reset accessIssueStep "${session.accessIssueStep}" (intent: ${intent})`);
       }
       session.accessIssueStep = null;
     }
@@ -1497,13 +1552,12 @@ app.post("/chat", limiter, async (req, res) => {
         .map((c) => `▸ ${c.name}`)
         .join("<br>");
       const reply = `حلو إنك عايز تبدأ رحلة التعلم! 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>أو تقدر تتصفح:<br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات على المنصة")}<br>▸ ${makeLink(ALL_DIPLOMAS_URL, "🎓 جميع الدبلومات (مسارات تعليمية متكاملة)")}`;
-      session.intent = "START_LEARNING";
       session.history.push({ role: "assistant", content: reply });
       return res.json({ reply, session_id });
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ DIPLOMA_SEARCH — ⚡ Optimized ═══════════════════
+    // ═══ DIPLOMA_SEARCH ══════════════════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "DIPLOMA_SEARCH") {
       console.log(`\n🎓 ═══ DIPLOMA_SEARCH ═══`);
@@ -1559,9 +1613,6 @@ app.post("/chat", limiter, async (req, res) => {
             ]);
 
             relatedCourses = directCourses;
-            console.log(
-              `   📚 Related courses by query: ${relatedCourses.length}`
-            );
 
             if (relatedCourses.length < 4 && catCourses.length) {
               const existingUrls = new Set(relatedCourses.map((c) => c.url));
@@ -1570,9 +1621,6 @@ app.post("/chat", limiter, async (req, res) => {
                   relatedCourses.push(c);
                 }
               }
-              console.log(
-                `   📚 After category fill: ${relatedCourses.length} courses total`
-              );
             }
           } else if (catKey) {
             relatedCourses = await getCoursesByCategory(catKey);
@@ -1581,11 +1629,7 @@ app.post("/chat", limiter, async (req, res) => {
       }
 
       if (diplomas.length > 0) {
-        const reply = formatDiplomas(
-          diplomas,
-          relatedCourses,
-          relatedCategory
-        );
+        const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory);
         session.history.push({
           role: "assistant",
           content: `[عرض ${diplomas.length} دبلومات${
@@ -1662,9 +1706,6 @@ app.post("/chat", limiter, async (req, res) => {
       let diplomaMention = "";
       if (relatedDiplomas.length > 0) {
         diplomaMention = formatDiplomaMention(relatedDiplomas);
-        console.log(
-          `   🎓 Found ${relatedDiplomas.length} related diploma(s)`
-        );
       }
 
       if (courses.length > 0) {
@@ -1681,11 +1722,7 @@ app.post("/chat", limiter, async (req, res) => {
         const catCourses = await getCoursesByCategory(fallbackCatKey);
         if (catCourses.length > 0) {
           const fallbackCat = CATEGORIES[fallbackCatKey];
-          let reply = formatCategoryCourses(
-            catCourses,
-            fallbackCat,
-            displayTerm
-          );
+          let reply = formatCategoryCourses(catCourses, fallbackCat, displayTerm);
           if (diplomaMention) reply = reply + diplomaMention;
           session.history.push({
             role: "assistant",
@@ -1723,13 +1760,10 @@ app.post("/chat", limiter, async (req, res) => {
 
       let reply;
 
-      /* Sub-type: Can't login */
       if (access_sub === "cant_login") {
         reply = buildAccessResponse_CantLogin();
         session.accessIssueStep = "cant_login_answered";
-      }
-      /* Sub-type: User confirms already logged in */
-      else if (
+      } else if (
         access_sub === "already_logged_in" ||
         session.accessIssueStep === "asked_login"
       ) {
@@ -1747,19 +1781,13 @@ app.post("/chat", limiter, async (req, res) => {
           reply = buildAccessResponse_HowToAccess();
           session.accessIssueStep = "how_to_access_sent";
         }
-      }
-      /* Sub-type: Can't find course after purchase */
-      else if (access_sub === "cant_find_course") {
+      } else if (access_sub === "cant_find_course") {
         reply = buildAccessResponse_AskLogin();
         session.accessIssueStep = "asked_login";
-      }
-      /* General access issue — first time */
-      else if (!session.accessIssueStep) {
+      } else if (!session.accessIssueStep) {
         reply = buildAccessResponse_AskLogin();
         session.accessIssueStep = "asked_login";
-      }
-      /* Already in access flow, use FAQ context for follow-up */
-      else {
+      } else {
         const context = await buildContext("وصول دورات حساب تسجيل دخول");
         session.history.push({
           role: "system",
@@ -1775,10 +1803,7 @@ app.post("/chat", limiter, async (req, res) => {
         session.history.pop();
 
         if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
-          reply += `<br><br>${makeLink(
-            "https://wa.me/201027007899",
-            "📱 تواصل مع الدعم واتساب"
-          )}`;
+          reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
         }
       }
 
@@ -1787,7 +1812,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ═══════════════════════════════════════════════════════
-    // ═══ PLATFORM_QA — site_pages + FAQ ═══════════════════
+    // ═══ PLATFORM_QA ══════════════════════════════════════
     // ═══════════════════════════════════════════════════════
     if (intent === "PLATFORM_QA") {
       const searchQuery = entity || message;
@@ -1825,11 +1850,12 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ FOLLOW_UP — ⚡ Optimized ═══════════════════════
+    // ═══ FOLLOW_UP ═══════════════════════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
-      /* Check if this is a follow-up to ACCESS_ISSUE */
-      if (prevSessionIntent === "ACCESS_ISSUE" || session.accessIssueStep) {
+      /* 🔧 v6.3: ONLY use accessIssueStep (not prevSessionIntent)
+         because escape logic already cleared it if user changed topic */
+      if (session.accessIssueStep) {
         console.log(`🔐 FOLLOW_UP in ACCESS flow | step: ${session.accessIssueStep}`);
 
         const msgLower = message.toLowerCase();
@@ -1850,7 +1876,6 @@ app.post("/chat", limiter, async (req, res) => {
             session.accessIssueStep = "how_to_access_sent";
           }
         } else {
-          /* General follow-up in access flow */
           const context = await buildContext("وصول دورات حساب دخول دوراتي");
           session.history.push({
             role: "system",
@@ -1871,9 +1896,7 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* ── Non-access follow-up: clear any stale access state ── */
-      session.accessIssueStep = null;
-
+      /* ── Non-access follow-up ── */
       let followUpEntity = entity || session.entity || null;
 
       if (isVagueEntity(followUpEntity)) {
@@ -1926,21 +1949,14 @@ app.post("/chat", limiter, async (req, res) => {
             if (relatedCourses.length < 4) {
               const existingUrls = new Set(relatedCourses.map((c) => c.url));
               for (const c of catCourses) {
-                if (
-                  !existingUrls.has(c.url) &&
-                  relatedCourses.length < 6
-                ) {
+                if (!existingUrls.has(c.url) && relatedCourses.length < 6) {
                   relatedCourses.push(c);
                 }
               }
             }
           }
 
-          const reply = formatDiplomas(
-            diplomas,
-            relatedCourses,
-            relatedCategory
-          );
+          const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory);
           session.entity = followUpEntity;
           session.history.push({
             role: "assistant",
@@ -2031,10 +2047,8 @@ app.post("/chat", limiter, async (req, res) => {
 
       /* Non-course follow-up: new topic search */
       if (
-        prevSessionIntent === "COURSE_SEARCH" &&
         entity &&
-        !isVagueEntity(entity) &&
-        entity !== session.entity
+        !isVagueEntity(entity)
       ) {
         const terms = search_terms.length
           ? [...new Set([entity, ...search_terms])].filter(
@@ -2140,10 +2154,7 @@ app.post("/chat", limiter, async (req, res) => {
         !reply.includes("wa.me") &&
         !reply.includes("01027007899")
       ) {
-        reply += `<br><br>${makeLink(
-          "https://wa.me/201027007899",
-          "📱 تواصل مع الدعم واتساب"
-        )}`;
+        reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
       }
 
       session.history.push({ role: "assistant", content: reply });
@@ -2511,10 +2522,7 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "مش قادر ادخل حسابي", expected_intent: "ACCESS_ISSUE" },
     { input: "مش لاقي الدورة", expected_intent: "ACCESS_ISSUE" },
     { input: "ازاي اسجل حساب", expected_intent: "PLATFORM_QA" },
-    {
-      input: "ايه الفرق بين الكورس والدبلومة",
-      expected_intent: "PLATFORM_QA",
-    },
+    { input: "ايه الفرق بين الكورس والدبلومة", expected_intent: "PLATFORM_QA" },
     { input: "هل في تقسيط", expected_intent: "PLATFORM_QA" },
   ];
 
@@ -2554,7 +2562,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.2-early-access-reset",
+    version: "6.3-access-escape",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2567,14 +2575,16 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.2 ⚡ Early Access Reset Fix`);
+  console.log(`\n🤖 easyT Chatbot v6.3 🔧 Access Flow Escape Fix`);
   console.log(`   Port: ${PORT}`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
   console.log(`   🔧 ACCESS_ISSUE: direct responses (no AI hallucination)`);
   console.log(`   🔧 Smart login-first flow with step tracking`);
-  console.log(`   🔧 v6.2: Early accessIssueStep reset — no stale state leak`);
+  console.log(`   🔧 v6.3: shouldEscapeAccessFlow() — detects topic changes mid-access-flow`);
+  console.log(`   🔧 v6.3: FOLLOW_UP uses only accessIssueStep (not prevSessionIntent)`);
+  console.log(`   🔧 v6.3: Classifier prompt updated with TOPIC CHANGE DETECTION rule`);
   console.log(
     `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
   );
