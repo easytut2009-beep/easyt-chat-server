@@ -27,8 +27,16 @@ tr:hover td{background:#f8fafc}
 .btn-sm{padding:4px 10px;font-size:11px}
 input,textarea,select{border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;width:100%;font-size:13px;box-sizing:border-box}
 input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
-.msg-user{background:#e0f2fe;padding:10px 14px;border-radius:12px 12px 0 12px;margin:8px 0;font-size:13px;max-width:75%;margin-left:auto;margin-right:0;border:1px solid #bae6fd}
-.msg-bot{background:#f0fdf4;padding:10px 14px;border-radius:12px 12px 12px 0;margin:8px 0;font-size:13px;max-width:75%;margin-right:auto;margin-left:0;border:1px solid #bbf7d0}
+
+/* ===== Chat Messages ===== */
+.conv-messages-container{display:flex;flex-direction:column;gap:10px;padding:16px}
+.msg-user{background:#e0f2fe;padding:12px 16px;border-radius:12px 12px 0 12px;font-size:13px;max-width:70%;align-self:flex-start;border:1px solid #bae6fd;margin:0}
+.msg-bot{background:#f0fdf4;padding:12px 16px;border-radius:12px 12px 12px 0;font-size:13px;max-width:70%;align-self:flex-end;border:1px solid #bbf7d0;margin:0}
+.msg-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
+.msg-role{font-size:11px;font-weight:700;color:#475569}
+.msg-time{font-size:10px;color:#94a3b8}
+.msg-content{margin-top:4px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
+
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
 .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-green{background:#dcfce7;color:#166534}
 .badge-yellow{background:#fef9c3;color:#854d0e}.badge-red{background:#fee2e2;color:#991b1b}
@@ -126,7 +134,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
     <div class="card" id="corrList"></div>
   </div>
 
-  <!-- 🆕 v7.8: Custom Responses -->
+  <!-- Custom Responses -->
   <div id="tab-customresponses" class="tab-content">
     <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة (الدعم الفني)</h2>
     <div class="support-badge" style="margin-bottom:12px">
@@ -462,6 +470,9 @@ async function loadConversations(page) {
   }
 }
 
+/* ═══════════════════════════════════════════
+   💬 CONVERSATION DETAIL (Chat Style)
+   ═══════════════════════════════════════════ */
 async function loadConvDetail(sid) {
   var el = document.getElementById('convMessages');
   document.getElementById('convList').style.display = 'none';
@@ -488,41 +499,65 @@ async function loadConvDetail(sid) {
     }
 
     var lastUserContent = '';
-    var html = '<h3 style="margin:0 0 12px;font-size:14px">جلسة: ' + esc(sid.slice(0, 20)) + '... (' + _convMessages.length + ' رسالة)</h3>';
+    var html = '<h3 style="margin:0 0 4px;font-size:14px;padding:0 16px">💬 جلسة: ' + esc(sid.slice(0, 20)) + '... (' + _convMessages.length + ' رسالة)</h3>';
+    html += '<div style="padding:0 16px 8px;font-size:11px;color:#94a3b8;border-bottom:1px solid #e2e8f0;margin-bottom:8px">👤 المستخدم على اليمين (أزرق) &nbsp;|&nbsp; 🤖 البوت على الشمال (أخضر)</div>';
+    html += '<div class="conv-messages-container">';
 
     _convMessages.forEach(function(m, idx) {
       if (m.role === 'user') lastUserContent = m.content || '';
-      var cls = m.role === 'user' ? 'msg-user' : 'msg-bot';
-      var icon = m.role === 'user' ? '👤' : '🤖';
+
+      var isUser = (m.role === 'user');
+      var cls = isUser ? 'msg-user' : 'msg-bot';
+      var icon = isUser ? '👤' : '🤖';
+      var label = isUser ? 'المستخدم' : 'البوت';
       var content = m.content || '';
+      var time = m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
 
       html += '<div class="' + cls + '" data-idx="' + idx + '">';
-      html += '<b>' + icon + ' ' + esc(m.role) + '</b>';
+
+      // ─── Header: role + badges + time ───
+      html += '<div class="msg-header">';
+      html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+      html += '<span class="msg-role">' + icon + ' ' + label + '</span>';
       if (m.intent) {
         var iBadge = 'badge-blue';
         if (m.intent === 'SUPPORT') iBadge = 'badge-orange';
         else if (m.intent === 'ACCESS_ISSUE') iBadge = 'badge-red';
-        html += ' <span class="badge ' + iBadge + '">' + esc(m.intent) + '</span>';
+        else if (m.intent === 'GREETING') iBadge = 'badge-green';
+        else if (m.intent === 'SUBSCRIPTION' || m.intent === 'PAYMENT') iBadge = 'badge-yellow';
+        else if (m.intent === 'GENERAL' || m.intent === 'GENERAL_CHAT') iBadge = 'badge-purple';
+        else if (m.intent === 'FOLLOW_UP') iBadge = 'badge-purple';
+        html += '<span class="badge ' + iBadge + '">' + esc(m.intent) + '</span>';
       }
-      if (m.entity) html += ' <span class="badge badge-green">' + esc(m.entity) + '</span>';
-      html += '<span style="float:left;font-size:10px;color:#94a3b8">' + (m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG') : '') + '</span>';
+      if (m.entity) {
+        html += '<span class="badge badge-green">' + esc(m.entity) + '</span>';
+      }
+      html += '</div>';
+      html += '<span class="msg-time">' + time + '</span>';
+      html += '</div>';
 
-      if (m.role === 'bot' || m.role === 'assistant') {
-        html += '<div style="margin-top:4px" class="msg-content">' + content.slice(0, 2000) + '</div>';
+      // ─── Message Content ───
+      if (isUser) {
+        html += '<div class="msg-content">' + esc(content.slice(0, 500)) + '</div>';
       } else {
-        html += '<div style="margin-top:4px" class="msg-content">' + esc(content.slice(0, 500)) + '</div>';
+        html += '<div class="msg-content">' + content.slice(0, 2000) + '</div>';
       }
 
-      if (m.role === 'bot' || m.role === 'assistant') {
+      // ─── Correction button (bot messages only) ───
+      if (!isUser) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent(lastUserContent.slice(0, 500)))); } catch (enc) {}
-        html += '<button class="btn btn-sm" style="margin-top:6px;background:#fef3c7;color:#92400e" onclick="openCorrection(' + (m.id || 0) + ',\'' + esc(sid) + '\',\'' + safeQ + '\',this)">✏️ تصحيح ← البوت هيتعلم 🧠</button>';
+        html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #bbf7d0;text-align:left">';
+        html += '<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;font-size:11px" onclick="openCorrection(' + (m.id || 0) + ',\'' + esc(sid) + '\',\'' + safeQ + '\',this)">✏️ تصحيح ← البوت هيتعلم 💜</button>';
+        html += '</div>';
       }
 
-      html += '</div>';
+      html += '</div>'; // close msg div
     });
 
+    html += '</div>'; // close conv-messages-container
     el.innerHTML = html;
+
   } catch (e) {
     console.error('ConvDetail error:', e);
     el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
@@ -534,8 +569,11 @@ async function loadConvDetail(sid) {
    ═══════════════════════════════════════════ */
 function openCorrection(logId, sid, safeQ, btn) {
   var original = '';
-  var msgContent = btn.parentElement.querySelector('.msg-content');
-  if (msgContent) original = msgContent.textContent || '';
+  var msgContent = btn.closest('.msg-bot');
+  if (msgContent) {
+    var contentEl = msgContent.querySelector('.msg-content');
+    if (contentEl) original = contentEl.textContent || '';
+  }
 
   var userQuestion = '';
   try { userQuestion = decodeURIComponent(escape(atob(safeQ))); } catch (e) {}
@@ -598,7 +636,7 @@ async function loadCorrections() {
 }
 
 /* ═══════════════════════════════════════════
-   🆕 v7.8: CUSTOM RESPONSES (Support Replies)
+   🛠️ CUSTOM RESPONSES
    ═══════════════════════════════════════════ */
 async function loadCustomResponses() {
   var el = document.getElementById('customResponsesList');
@@ -627,7 +665,6 @@ async function loadCustomResponses() {
 
       html += '<div style="border:1px solid ' + (isActive ? '#e2e8f0' : '#fee2e2') + ';border-radius:10px;padding:14px;background:' + (isActive ? '#fff' : '#fef2f2') + '">';
 
-      // Header row
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
       html += '<div style="display:flex;align-items:center;gap:8px">';
       html += '<span style="font-weight:700;font-size:14px">' + esc(item.title || 'بدون عنوان') + '</span>';
@@ -639,7 +676,6 @@ async function loadCustomResponses() {
       html += '</div>';
       html += '</div>';
 
-      // Keywords
       if (keywords.length) {
         html += '<div style="margin-bottom:8px">';
         html += '<span style="font-size:11px;color:#64748b;font-weight:600">🔑 الكلمات المفتاحية: </span>';
@@ -650,12 +686,10 @@ async function loadCustomResponses() {
         html += '</div>';
       }
 
-      // Response preview
       html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;color:#475569;margin-bottom:8px;max-height:60px;overflow:hidden">';
       html += '📝 ' + esc(responsePreview) + (responsePreview.length >= 150 ? '...' : '');
       html += '</div>';
 
-      // Action buttons
       html += '<div style="display:flex;gap:6px;align-items:center">';
       html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCustomResponse(' + idx + ')">✏️ تعديل</button>';
       html += '<button class="btn btn-sm ' + (isActive ? 'btn-warning' : 'btn-success') + '" onclick="toggleCustomResponse(\'' + item.id + '\',' + !isActive + ')">' + (isActive ? '⏸️ تعطيل' : '▶️ تفعيل') + '</button>';
@@ -725,7 +759,7 @@ function buildCustomResponseForm(item) {
   html += '</div>';
 
   html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">📝 الرد <span style="color:#ef4444">*</span> <span style="font-weight:400;color:#64748b">(يدعم HTML)</span>:</label>';
-  html += '<textarea id="cr_response" rows="8" placeholder="اكتب الرد هنا... يدعم HTML مثل <b>bold</b> و <a href=&quot;...&quot;>links</a>" style="margin-bottom:4px;font-family:monospace;font-size:12px">' + response + '</textarea>';
+  html += '<textarea id="cr_response" rows="8" placeholder="اكتب الرد هنا... يدعم HTML" style="margin-bottom:4px;font-family:monospace;font-size:12px">' + response + '</textarea>';
   html += '<button class="btn btn-sm" style="background:#f0fdf4;color:#166534;margin-bottom:10px" onclick="previewResponseInModal()">👁️ معاينة الرد</button>';
   html += '<div id="cr_preview" class="preview-box" style="display:none"></div>';
 
@@ -946,7 +980,7 @@ async function saveModal() {
       return;
     }
 
-    // ─── 🆕 v7.8: Custom Response save ───
+    // ─── Custom Response save ───
     if (modalState.type === 'custom_response_add' || modalState.type === 'custom_response_edit') {
       var crBody = {
         title: document.getElementById('cr_title').value,
