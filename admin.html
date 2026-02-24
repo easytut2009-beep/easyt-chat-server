@@ -97,7 +97,8 @@
       <div class="card" id="corrList"></div>
     </div>
 
-    <div id="tab-courses" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">📚 إدارة الكورسات</h2><div class="card"><input type="text" id="courseSearch" placeholder="🔍 ابحث..." onkeydown="if(event.key==='Enter')loadCrud('courses')" style="margin-bottom:12px;max-width:400px"><div id="courses-table"></div></div></div>
+    <div id="tab-courses" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">📚 إدارة الكورسات</h2><div class="card"><div style="display:flex;gap:8px;margin-bottom:12px;align-items:center"><input type="text" id="coursesSearch" placeholder="🔍 ابحث في الكورسات..." onkeydown="if(event.key==='Enter')loadCrud('courses')" style="max-width:400px;margin:0"><button class="btn btn-primary btn-sm" onclick="loadCrud('courses')">بحث</button><button class="btn btn-success btn-sm" onclick="openAddModal('courses')">+ إضافة كورس</button></div><div id="courses-table"></div></div></div>
+
     <div id="tab-diplomas" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">🎓 إدارة الدبلومات</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')" style="margin-bottom:12px">+ إضافة دبلومة</button><div id="diplomas-table"></div></div></div>
     <div id="tab-instructors" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">👤 إدارة المحاضرين</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('instructors')" style="margin-bottom:12px">+ إضافة محاضر</button><div id="instructors-table"></div></div></div>
     <div id="tab-faq" class="tab-content"><h2 style="margin:0 0 16px;font-size:20px">❓ إدارة الأسئلة الشائعة</h2><div class="card"><button class="btn btn-success btn-sm" onclick="openAddModal('faq')" style="margin-bottom:12px">+ إضافة سؤال</button><div id="faq-table"></div></div></div>
