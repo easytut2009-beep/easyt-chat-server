@@ -421,16 +421,41 @@ async function loadConversations(page) {
 }
 
 async function loadConvDetail(sid) {
-  try {
-    var d = await api('/admin/conversations/' + sid);
-    _convMessages = d.messages || [];
-    document.getElementById('convList').style.display = 'none';
-    document.getElementById('convPagination').style.display = 'none';
-    document.getElementById('convDetail').style.display = 'block';
-    var el = document.getElementById('convMessages');
-    var lastUserContent = '';
+  var el = document.getElementById('convMessages');
+  document.getElementById('convList').style.display = 'none';
+  if (document.getElementById('convPagination')) document.getElementById('convPagination').style.display = 'none';
+  document.getElementById('convDetail').style.display = 'block';
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳ جاري تحميل المحادثة...</p>';
 
-    var html = '<h3 style="margin:0 0 12px;font-size:14px">جلسة: ' + esc(sid.slice(0, 12)) + '... (' + _convMessages.length + ' رسالة)</h3>';
+  try {
+    var d = await api('/admin/conversations/' + encodeURIComponent(sid));
+
+    console.log('=== CONVERSATION DETAIL RESPONSE ===');
+    console.log('Session ID:', sid);
+    console.log('Full response:', JSON.stringify(d, null, 2));
+    console.log('d.messages:', d.messages);
+    console.log('d.conversation:', d.conversation);
+    console.log('d.data:', d.data);
+
+    var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || [];
+    if (!Array.isArray(messages)) messages = [];
+
+    _convMessages = messages;
+
+    if (_convMessages.length === 0) {
+      el.innerHTML = '<h3 style="margin:0 0 12px;font-size:14px;color:#ef4444">⚠️ جلسة: ' + esc(sid.slice(0, 20)) + '... (0 رسالة)</h3>' +
+        '<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:12px;margin-bottom:12px">' +
+        '<b>🔍 Debug Info:</b><br>' +
+        'Session ID: <code>' + esc(sid) + '</code><br>' +
+        'Response keys: <code>' + esc(Object.keys(d).join(', ')) + '</code><br>' +
+        'API URL: <code>/admin/conversations/' + esc(encodeURIComponent(sid)) + '</code>' +
+        '</div>' +
+        '<p style="color:#64748b;font-size:13px">افتح Console (F12) وشوف الـ response الكامل</p>';
+      return;
+    }
+
+    var lastUserContent = '';
+    var html = '<h3 style="margin:0 0 12px;font-size:14px">جلسة: ' + esc(sid.slice(0, 20)) + '... (' + _convMessages.length + ' رسالة)</h3>';
 
     _convMessages.forEach(function(m, idx) {
       if (m.role === 'user') lastUserContent = m.content || '';
@@ -444,14 +469,12 @@ async function loadConvDetail(sid) {
       if (m.entity) html += ' <span class="badge badge-green">' + esc(m.entity) + '</span>';
       html += '<span style="float:left;font-size:10px;color:#94a3b8">' + (m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG') : '') + '</span>';
 
-      // Bot messages: render HTML (formatted response) | User messages: escape
       if (m.role === 'bot' || m.role === 'assistant') {
         html += '<div style="margin-top:4px" class="msg-content">' + content.slice(0, 2000) + '</div>';
       } else {
         html += '<div style="margin-top:4px" class="msg-content">' + esc(content.slice(0, 500)) + '</div>';
       }
 
-      // Correction button for bot messages
       if (m.role === 'bot' || m.role === 'assistant') {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent(lastUserContent.slice(0, 500)))); } catch (enc) {}
@@ -464,7 +487,7 @@ async function loadConvDetail(sid) {
     el.innerHTML = html;
   } catch (e) {
     console.error('ConvDetail error:', e);
-    toast('خطأ في تحميل المحادثة', 'error');
+    el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
   }
 }
 
