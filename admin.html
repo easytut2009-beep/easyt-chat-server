@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v7.2</title>
+<title>easyT Admin Dashboard v7.8</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#f0f2f5;margin:0}
@@ -23,26 +23,36 @@ tr:hover td{background:#f8fafc}
 .btn-primary{background:#3b82f6;color:#fff}.btn-primary:hover{background:#2563eb}
 .btn-danger{background:#ef4444;color:#fff}.btn-danger:hover{background:#dc2626}
 .btn-success{background:#10b981;color:#fff}.btn-success:hover{background:#059669}
+.btn-warning{background:#f59e0b;color:#fff}.btn-warning:hover{background:#d97706}
 .btn-sm{padding:4px 10px;font-size:11px}
 input,textarea,select{border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;width:100%;font-size:13px;box-sizing:border-box}
-input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
 .msg-user{background:#e0f2fe;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:13px}
 .msg-bot{background:#f0fdf4;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:13px}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
 .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-green{background:#dcfce7;color:#166534}
 .badge-yellow{background:#fef9c3;color:#854d0e}.badge-red{background:#fee2e2;color:#991b1b}
-.badge-purple{background:#f3e8ff;color:#7c3aed}
+.badge-purple{background:#f3e8ff;color:#7c3aed}.badge-orange{background:#ffedd5;color:#c2410c}
 .login-box{max-width:360px;margin:120px auto;text-align:center}
 .tab-content{display:none}.tab-content.active{display:block}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:none;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
-.modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:500px;max-height:80vh;overflow-y:auto}
+.modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:600px;max-height:85vh;overflow-y:auto}
 .learning-badge{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;font-size:11px;color:#166534;margin-top:8px}
+.support-badge{background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:6px 10px;font-size:11px;color:#c2410c;margin-top:8px}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:10px;font-size:13px;font-weight:600;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
 .toast-success{background:#dcfce7;color:#166534;border:1px solid #86efac}
 .toast-error{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
 .toast-info{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.toggle-switch{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:#cbd5e1;border-radius:24px;transition:.3s}
+.toggle-slider:before{content:"";position:absolute;height:18px;width:18px;right:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.toggle-switch input:checked+.toggle-slider{background:#10b981}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(-20px)}
+.preview-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:12px;margin-top:8px;max-height:200px;overflow-y:auto}
+.keyword-tag{display:inline-block;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:999px;font-size:10px;margin:2px}
 @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative}.main{margin-right:0}}
 </style>
 </head>
@@ -67,11 +77,12 @@ input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3p
 <div class="sidebar">
   <div style="padding:16px 20px;border-bottom:1px solid #334155">
     <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-    <div style="font-size:11px;color:#64748b;margin-top:4px">v7.2 🧠 Learning</div>
+    <div style="font-size:11px;color:#64748b;margin-top:4px">v7.8 🛠️ Support + Custom</div>
   </div>
   <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
   <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
   <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات 🧠</a>
+  <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
   <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
   <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
   <a href="#" onclick="showTab('instructors')" id="nav-instructors">👤 المحاضرين</a>
@@ -113,6 +124,21 @@ input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3p
     <div class="learning-badge" style="margin-bottom:12px">🧠 <b>التعلم التلقائي:</b> البوت بيقرأ التصحيحات دي قبل ما يرد — لو سؤال مشابه جاه تاني هيستخدم الإجابة الصح!</div>
     <button class="btn btn-success btn-sm" onclick="openAddCorrectionModal()" style="margin-bottom:12px">+ إضافة تصحيح يدوي</button>
     <div class="card" id="corrList"></div>
+  </div>
+
+  <!-- 🆕 v7.8: Custom Responses -->
+  <div id="tab-customresponses" class="tab-content">
+    <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة (الدعم الفني)</h2>
+    <div class="support-badge" style="margin-bottom:12px">
+      🛠️ <b>كيف تشتغل:</b> لما المستخدم يبلّغ عن مشكلة تقنية (فيديو مش شغال، صوت، إلخ)، البوت بيدور الأول في الردود دي قبل ما يستخدم GPT.<br>
+      <span style="font-size:10px;color:#9a3412">💡 أضف كلمات مفتاحية مفصولة بفاصلة — كل ما الكلمات أكتر، المطابقة بتكون أدق</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="customresponsesSearch" placeholder="🔍 ابحث في الردود المخصصة..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
+      <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
+      <button class="btn btn-success btn-sm" onclick="openAddCustomResponseModal()">+ إضافة رد مخصص</button>
+    </div>
+    <div class="card" id="customResponsesList"></div>
   </div>
 
   <!-- Courses -->
@@ -178,7 +204,7 @@ input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3p
 </div>
 </div>
 
-<!-- Confirm Dialog (replaces confirm()) -->
+<!-- Confirm Dialog -->
 <div class="modal-overlay" id="confirmDialog">
 <div class="modal" style="max-width:380px;text-align:center">
   <div style="font-size:40px;margin-bottom:12px">⚠️</div>
@@ -194,16 +220,18 @@ input:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3p
 /* ═══════════════════════════════════════════
    GLOBALS
    ═══════════════════════════════════════════ */
-const API = window.location.origin;
-let TOKEN = '';
-let currentTab = 'stats';
-let modalState = {};
-let _convMessages = [];
-let currentConvPage = 1;
-let _confirmResolve = null;
+var API = window.location.origin;
+var TOKEN = '';
+var currentTab = 'stats';
+var modalState = {};
+var _convMessages = [];
+var currentConvPage = 1;
+var _confirmResolve = null;
+var _crudCache = {};
+var _customResponsesCache = [];
 
 /* ═══════════════════════════════════════════
-   🆕 UTILITY: HTML Escaping (XSS protection)
+   UTILITY
    ═══════════════════════════════════════════ */
 function esc(text) {
   if (text == null) return '';
@@ -221,7 +249,7 @@ function stripHtml(text) {
 }
 
 /* ═══════════════════════════════════════════
-   🆕 TOAST (replaces alert())
+   TOAST
    ═══════════════════════════════════════════ */
 function toast(msg, type) {
   var t = document.getElementById('toast');
@@ -232,7 +260,7 @@ function toast(msg, type) {
 }
 
 /* ═══════════════════════════════════════════
-   🆕 CUSTOM CONFIRM (replaces confirm())
+   CUSTOM CONFIRM
    ═══════════════════════════════════════════ */
 function showConfirm(msg) {
   return new Promise(function(resolve) {
@@ -280,7 +308,7 @@ function doLogout() {
   document.getElementById('passInput').value = '';
 }
 
-function api(path, opts) {
+function apiCall(path, opts) {
   opts = opts || {};
   return fetch(API + path, {
     method: opts.method || 'GET',
@@ -309,6 +337,7 @@ function showTab(tab) {
   if (tab === 'stats') loadStats();
   else if (tab === 'conversations') loadConversations(1);
   else if (tab === 'corrections') loadCorrections();
+  else if (tab === 'customresponses') loadCustomResponses();
   else if (tab === 'courses') loadCrud('courses');
   else if (tab === 'diplomas') loadCrud('diplomas');
   else if (tab === 'instructors') loadCrud('instructors');
@@ -321,14 +350,15 @@ function showTab(tab) {
    ═══════════════════════════════════════════ */
 async function loadStats() {
   try {
-    var d = await api('/admin/stats');
+    var d = await apiCall('/admin/stats');
     var g = document.getElementById('statsGrid');
     var items = [
       ['💬', d.total_messages, 'إجمالي الرسائل'],
       ['👥', d.unique_sessions, 'جلسات فريدة'],
       ['📅', d.today_messages, 'رسائل اليوم'],
       ['🟢', d.active_sessions, 'جلسات نشطة'],
-      ['🧠', d.corrections_cached || d.corrections, 'تصحيحات (مُخزنة)'],
+      ['🧠', d.corrections, 'تصحيحات'],
+      ['🛠️', d.custom_responses || 0, 'ردود مخصصة'],
       ['📚', d.courses, 'كورسات'],
       ['🎓', d.diplomas, 'دبلومات'],
       ['👤', d.instructors, 'محاضرين'],
@@ -343,9 +373,17 @@ async function loadStats() {
     if (d.intent_distribution && Object.keys(d.intent_distribution).length) {
       var entries = Object.entries(d.intent_distribution).sort(function(a, b) { return b[1] - a[1]; });
       var max = Math.max.apply(null, entries.map(function(e) { return e[1]; }));
+      var intentColors = {
+        'COURSE_SEARCH': '#3b82f6', 'GENERAL': '#8b5cf6', 'GREETING': '#10b981',
+        'SUPPORT': '#f59e0b', 'ACCESS_ISSUE': '#ef4444', 'PAYMENT': '#06b6d4',
+        'SUBSCRIPTION': '#14b8a6', 'DIPLOMA_SEARCH': '#ec4899', 'PLATFORM_QA': '#6366f1',
+        'FOLLOW_UP': '#a855f7', 'START_LEARNING': '#22c55e', 'GENERAL_CHAT': '#94a3b8',
+        'GIBBERISH': '#cbd5e1', 'CERTIFICATE_QA': '#0ea5e9', 'AFFILIATE': '#f97316', 'AUTHOR': '#84cc16'
+      };
       ic.innerHTML = entries.map(function(e) {
         var pct = Math.round(e[1] / max * 100);
-        return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="min-width:130px;font-size:12px;color:#475569">' + esc(e[0]) + '</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:20px"><div style="width:' + pct + '%;background:#3b82f6;border-radius:4px;height:100%;min-width:24px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">' + e[1] + '</span></div></div></div>';
+        var color = intentColors[e[0]] || '#3b82f6';
+        return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="min-width:130px;font-size:12px;color:#475569">' + esc(e[0]) + '</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:20px"><div style="width:' + pct + '%;background:' + color + ';border-radius:4px;height:100%;min-width:24px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">' + e[1] + '</span></div></div></div>';
       }).join('');
     } else {
       ic.innerHTML = '<p style="color:#94a3b8;font-size:13px">لا توجد بيانات بعد</p>';
@@ -357,7 +395,7 @@ async function loadStats() {
 }
 
 /* ═══════════════════════════════════════════
-   💬 CONVERSATIONS (FIXED)
+   💬 CONVERSATIONS
    ═══════════════════════════════════════════ */
 async function loadConversations(page) {
   page = page || 1;
@@ -367,7 +405,7 @@ async function loadConversations(page) {
 
   try {
     var s = document.getElementById('convSearch').value;
-    var d = await api('/admin/conversations?limit=50&page=' + page + (s ? '&search=' + encodeURIComponent(s) : ''));
+    var d = await apiCall('/admin/conversations?limit=50&page=' + page + (s ? '&search=' + encodeURIComponent(s) : ''));
 
     if (!d.conversations || !d.conversations.length) {
       el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد محادثات' + (s ? ' لهذا البحث' : ' بعد') + '</p>';
@@ -385,10 +423,15 @@ async function loadConversations(page) {
       var timeStr = c.last_time ? new Date(c.last_time).toLocaleString('ar-EG') : '-';
       var count = c.message_count || 0;
 
+      var intentBadge = 'badge-blue';
+      if (safeIntent === 'SUPPORT') intentBadge = 'badge-orange';
+      else if (safeIntent === 'ACCESS_ISSUE') intentBadge = 'badge-red';
+      else if (safeIntent === 'GENERAL' || safeIntent === 'GENERAL_CHAT') intentBadge = 'badge-purple';
+
       html += '<tr style="cursor:pointer" onclick="loadConvDetail(\'' + safeId + '\')">';
       html += '<td style="font-family:monospace;font-size:11px">' + safeId.slice(0, 8) + '...</td>';
       html += '<td>' + safeMsg + '</td>';
-      html += '<td><span class="badge badge-blue">' + safeIntent + '</span></td>';
+      html += '<td><span class="badge ' + intentBadge + '">' + safeIntent + '</span></td>';
       html += '<td><span class="badge badge-green">' + safeEntity.slice(0, 30) + '</span></td>';
       html += '<td style="font-size:11px">' + timeStr + '</td>';
       html += '<td>' + count + '</td>';
@@ -400,7 +443,6 @@ async function loadConversations(page) {
     el.style.display = 'block';
     document.getElementById('convDetail').style.display = 'none';
 
-    // Pagination
     var pag = d.pagination || {};
     var pagEl = document.getElementById('convPagination');
     var pagHtml = '';
@@ -428,14 +470,7 @@ async function loadConvDetail(sid) {
   el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳ جاري تحميل المحادثة...</p>';
 
   try {
-    var d = await api('/admin/conversations/' + encodeURIComponent(sid));
-
-    console.log('=== CONVERSATION DETAIL RESPONSE ===');
-    console.log('Session ID:', sid);
-    console.log('Full response:', JSON.stringify(d, null, 2));
-    console.log('d.messages:', d.messages);
-    console.log('d.conversation:', d.conversation);
-    console.log('d.data:', d.data);
+    var d = await apiCall('/admin/conversations/' + encodeURIComponent(sid));
 
     var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || [];
     if (!Array.isArray(messages)) messages = [];
@@ -447,10 +482,8 @@ async function loadConvDetail(sid) {
         '<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:12px;margin-bottom:12px">' +
         '<b>🔍 Debug Info:</b><br>' +
         'Session ID: <code>' + esc(sid) + '</code><br>' +
-        'Response keys: <code>' + esc(Object.keys(d).join(', ')) + '</code><br>' +
-        'API URL: <code>/admin/conversations/' + esc(encodeURIComponent(sid)) + '</code>' +
-        '</div>' +
-        '<p style="color:#64748b;font-size:13px">افتح Console (F12) وشوف الـ response الكامل</p>';
+        'Response keys: <code>' + esc(Object.keys(d).join(', ')) + '</code>' +
+        '</div>';
       return;
     }
 
@@ -465,7 +498,12 @@ async function loadConvDetail(sid) {
 
       html += '<div class="' + cls + '" data-idx="' + idx + '">';
       html += '<b>' + icon + ' ' + esc(m.role) + '</b>';
-      if (m.intent) html += ' <span class="badge badge-blue">' + esc(m.intent) + '</span>';
+      if (m.intent) {
+        var iBadge = 'badge-blue';
+        if (m.intent === 'SUPPORT') iBadge = 'badge-orange';
+        else if (m.intent === 'ACCESS_ISSUE') iBadge = 'badge-red';
+        html += ' <span class="badge ' + iBadge + '">' + esc(m.intent) + '</span>';
+      }
       if (m.entity) html += ' <span class="badge badge-green">' + esc(m.entity) + '</span>';
       html += '<span style="float:left;font-size:10px;color:#94a3b8">' + (m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG') : '') + '</span>';
 
@@ -533,7 +571,7 @@ function openAddCorrectionModal() {
 
 async function loadCorrections() {
   try {
-    var d = await api('/admin/corrections');
+    var d = await apiCall('/admin/corrections');
     var el = document.getElementById('corrList');
     if (!d.corrections || !d.corrections.length) {
       el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات بعد — صحّح أي إجابة غلط من المحادثات والبوت هيتعلم 🧠</p>';
@@ -560,21 +598,206 @@ async function loadCorrections() {
 }
 
 /* ═══════════════════════════════════════════
-   📚 CRUD (FIXED onclick quoting)
+   🆕 v7.8: CUSTOM RESPONSES (Support Replies)
    ═══════════════════════════════════════════ */
+async function loadCustomResponses() {
+  var el = document.getElementById('customResponsesList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳ جاري التحميل...</p>';
 
-// 🆕 Store items in memory for edit — avoids broken inline JSON
-var _crudCache = {};
+  try {
+    var searchEl = document.getElementById('customresponsesSearch');
+    var search = searchEl ? searchEl.value : '';
+    var d = await apiCall('/admin/custom-responses?limit=100' + (search ? '&search=' + encodeURIComponent(search) : ''));
+    var items = d.items || [];
 
+    _customResponsesCache = [];
+    items.forEach(function(item) { _customResponsesCache.push(item); });
+
+    if (!items.length) {
+      el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد ردود مخصصة بعد — أضف أول رد للدعم الفني 🛠️</p>';
+      return;
+    }
+
+    var html = '<div style="display:grid;gap:12px">';
+
+    items.forEach(function(item, idx) {
+      var isActive = item.is_active !== false;
+      var keywords = (item.keywords || '').split(',').map(function(k) { return k.trim(); }).filter(function(k) { return k; });
+      var responsePreview = stripHtml(item.response || '').slice(0, 150);
+
+      html += '<div style="border:1px solid ' + (isActive ? '#e2e8f0' : '#fee2e2') + ';border-radius:10px;padding:14px;background:' + (isActive ? '#fff' : '#fef2f2') + '">';
+
+      // Header row
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<span style="font-weight:700;font-size:14px">' + esc(item.title || 'بدون عنوان') + '</span>';
+      html += '<span class="badge ' + (item.category === 'SUPPORT' ? 'badge-orange' : 'badge-blue') + '">' + esc(item.category || 'SUPPORT') + '</span>';
+      if (item.priority) html += '<span class="badge badge-purple">أولوية: ' + item.priority + '</span>';
+      html += '</div>';
+      html += '<div style="display:flex;align-items:center;gap:6px">';
+      html += '<span style="font-size:11px;color:' + (isActive ? '#16a34a' : '#dc2626') + ';font-weight:600">' + (isActive ? '✅ مفعّل' : '❌ معطّل') + '</span>';
+      html += '</div>';
+      html += '</div>';
+
+      // Keywords
+      if (keywords.length) {
+        html += '<div style="margin-bottom:8px">';
+        html += '<span style="font-size:11px;color:#64748b;font-weight:600">🔑 الكلمات المفتاحية: </span>';
+        keywords.slice(0, 8).forEach(function(kw) {
+          html += '<span class="keyword-tag">' + esc(kw) + '</span>';
+        });
+        if (keywords.length > 8) html += '<span class="keyword-tag" style="background:#f1f5f9;color:#64748b">+' + (keywords.length - 8) + ' أخرى</span>';
+        html += '</div>';
+      }
+
+      // Response preview
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;color:#475569;margin-bottom:8px;max-height:60px;overflow:hidden">';
+      html += '📝 ' + esc(responsePreview) + (responsePreview.length >= 150 ? '...' : '');
+      html += '</div>';
+
+      // Action buttons
+      html += '<div style="display:flex;gap:6px;align-items:center">';
+      html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCustomResponse(' + idx + ')">✏️ تعديل</button>';
+      html += '<button class="btn btn-sm ' + (isActive ? 'btn-warning' : 'btn-success') + '" onclick="toggleCustomResponse(\'' + item.id + '\',' + !isActive + ')">' + (isActive ? '⏸️ تعطيل' : '▶️ تفعيل') + '</button>';
+      html += '<button class="btn btn-danger btn-sm" onclick="deleteCustomResponse(\'' + item.id + '\')">🗑️ حذف</button>';
+      html += '<button class="btn btn-sm" style="background:#f0fdf4;color:#166534" onclick="previewCustomResponse(' + idx + ')">👁️ معاينة</button>';
+      html += '</div>';
+
+      html += '</div>';
+    });
+
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    console.error('Custom responses error:', e);
+    el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
+  }
+}
+
+function openAddCustomResponseModal() {
+  modalState = { type: 'custom_response_add' };
+  document.getElementById('modalTitle').textContent = '➕ إضافة رد مخصص جديد 🛠️';
+  document.getElementById('modalBody').innerHTML = buildCustomResponseForm(null);
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditCustomResponse(idx) {
+  var item = _customResponsesCache[idx];
+  if (!item) { toast('خطأ: البيانات مش موجودة', 'error'); return; }
+  modalState = { type: 'custom_response_edit', id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل الرد المخصص';
+  document.getElementById('modalBody').innerHTML = buildCustomResponseForm(item);
+  document.getElementById('modal').classList.add('show');
+}
+
+function buildCustomResponseForm(item) {
+  var title = item ? esc(item.title || '') : '';
+  var keywords = item ? esc(item.keywords || '') : '';
+  var category = item ? (item.category || 'SUPPORT') : 'SUPPORT';
+  var response = item ? esc(item.response || '') : '';
+  var priority = item ? (item.priority || 0) : 10;
+  var isActive = item ? (item.is_active !== false) : true;
+
+  var html = '';
+  html += '<div class="support-badge" style="margin-bottom:12px">🛠️ الرد ده هيظهر لما المستخدم يبلّغ عن مشكلة بتطابق الكلمات المفتاحية</div>';
+
+  html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">العنوان <span style="color:#ef4444">*</span>:</label>';
+  html += '<input type="text" id="cr_title" value="' + title + '" placeholder="مثال: مشكلة تشغيل الفيديو" style="margin-bottom:10px">';
+
+  html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">🔑 الكلمات المفتاحية <span style="color:#ef4444">*</span> <span style="font-weight:400;color:#64748b">(مفصولة بفاصلة)</span>:</label>';
+  html += '<textarea id="cr_keywords" rows="3" placeholder="فيديو مش شغال,لا يمكن تشغيل الفيديو,الفيديو لا يعمل,video not working" style="margin-bottom:4px">' + keywords + '</textarea>';
+  html += '<div style="font-size:10px;color:#94a3b8;margin-bottom:10px">💡 كل ما تضيف كلمات أكتر، المطابقة بتكون أدق. اكتب أشكال مختلفة للمشكلة.</div>';
+
+  html += '<div style="display:flex;gap:12px;margin-bottom:10px">';
+  html += '<div style="flex:1">';
+  html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">التصنيف:</label>';
+  html += '<select id="cr_category" style="padding:8px 12px">';
+  html += '<option value="SUPPORT"' + (category === 'SUPPORT' ? ' selected' : '') + '>🛠️ دعم فني (SUPPORT)</option>';
+  html += '<option value="GENERAL"' + (category === 'GENERAL' ? ' selected' : '') + '>💬 عام (GENERAL)</option>';
+  html += '<option value="PAYMENT"' + (category === 'PAYMENT' ? ' selected' : '') + '>💳 دفع (PAYMENT)</option>';
+  html += '<option value="ACCESS"' + (category === 'ACCESS' ? ' selected' : '') + '>🔐 وصول (ACCESS)</option>';
+  html += '</select>';
+  html += '</div>';
+  html += '<div style="flex:1">';
+  html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">الأولوية:</label>';
+  html += '<input type="number" id="cr_priority" value="' + priority + '" min="0" max="100" placeholder="10">';
+  html += '</div>';
+  html += '</div>';
+
+  html += '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">📝 الرد <span style="color:#ef4444">*</span> <span style="font-weight:400;color:#64748b">(يدعم HTML)</span>:</label>';
+  html += '<textarea id="cr_response" rows="8" placeholder="اكتب الرد هنا... يدعم HTML مثل <b>bold</b> و <a href=&quot;...&quot;>links</a>" style="margin-bottom:4px;font-family:monospace;font-size:12px">' + response + '</textarea>';
+  html += '<button class="btn btn-sm" style="background:#f0fdf4;color:#166534;margin-bottom:10px" onclick="previewResponseInModal()">👁️ معاينة الرد</button>';
+  html += '<div id="cr_preview" class="preview-box" style="display:none"></div>';
+
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">';
+  html += '<label class="toggle-switch"><input type="checkbox" id="cr_active"' + (isActive ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+  html += '<span style="font-size:13px;font-weight:600">مفعّل</span>';
+  html += '</div>';
+
+  return html;
+}
+
+function previewResponseInModal() {
+  var responseText = document.getElementById('cr_response').value;
+  var previewEl = document.getElementById('cr_preview');
+  if (responseText) {
+    previewEl.innerHTML = responseText;
+    previewEl.style.display = 'block';
+  } else {
+    previewEl.style.display = 'none';
+  }
+}
+
+function previewCustomResponse(idx) {
+  var item = _customResponsesCache[idx];
+  if (!item) return;
+  modalState = { type: 'preview' };
+  document.getElementById('modalTitle').textContent = '👁️ معاينة: ' + esc(item.title || '');
+  var html = '<div style="font-size:12px;color:#64748b;margin-bottom:8px">هكذا سيظهر الرد للمستخدم:</div>';
+  html += '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;font-size:13px">';
+  html += item.response || '';
+  html += '</div>';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalSaveBtn').style.display = 'none';
+  document.getElementById('modal').classList.add('show');
+}
+
+async function toggleCustomResponse(id, newActive) {
+  try {
+    await apiCall('/admin/custom-responses/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({ is_active: newActive })
+    });
+    toast(newActive ? 'تم التفعيل ✅' : 'تم التعطيل ⏸️');
+    loadCustomResponses();
+  } catch (e) {
+    toast('خطأ: ' + e.message, 'error');
+  }
+}
+
+async function deleteCustomResponse(id) {
+  var confirmed = await showConfirm('هل أنت متأكد من حذف هذا الرد المخصص؟');
+  if (!confirmed) return;
+  try {
+    await apiCall('/admin/custom-responses/' + id, { method: 'DELETE' });
+    toast('تم الحذف بنجاح 🗑️');
+    loadCustomResponses();
+  } catch (e) {
+    toast('خطأ: ' + e.message, 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   📚 CRUD
+   ═══════════════════════════════════════════ */
 async function loadCrud(entity) {
   try {
     var searchEl = document.getElementById(entity + 'Search');
     var search = searchEl ? searchEl.value : '';
-    var d = await api('/admin/' + entity + '?limit=50' + (search ? '&search=' + encodeURIComponent(search) : ''));
+    var d = await apiCall('/admin/' + entity + '?limit=50' + (search ? '&search=' + encodeURIComponent(search) : ''));
     var items = d.items || [];
     var el = document.getElementById(entity + '-table');
 
-    // Cache items for editing
     _crudCache[entity] = {};
     items.forEach(function(item) { _crudCache[entity][item.id] = item; });
 
@@ -593,7 +816,6 @@ async function loadCrud(entity) {
       cols.forEach(function(c) {
         html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(item[c] != null ? String(item[c]) : '').slice(0, 60) + '</td>';
       });
-      // 🆕 Fixed: use cached items instead of inline JSON
       html += '<td>';
       html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-left:4px" onclick="openEditFromCache(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">تعديل</button> ';
       html += '<button class="btn btn-danger btn-sm" onclick="deleteCrud(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">حذف</button>';
@@ -609,7 +831,6 @@ async function loadCrud(entity) {
   }
 }
 
-// 🆕 Safe edit from cached data
 function openEditFromCache(entity, id) {
   if (_crudCache[entity] && _crudCache[entity][id]) {
     openEditModal(entity, _crudCache[entity][id]);
@@ -622,7 +843,7 @@ async function deleteCrud(entity, id) {
   var confirmed = await showConfirm('هل أنت متأكد من الحذف؟');
   if (!confirmed) return;
   try {
-    await api('/admin/' + entity + '/' + id, { method: 'DELETE' });
+    await apiCall('/admin/' + entity + '/' + id, { method: 'DELETE' });
     toast('تم الحذف بنجاح 🗑️');
     if (entity === 'corrections') loadCorrections();
     else loadCrud(entity);
@@ -636,6 +857,7 @@ async function deleteCrud(entity, id) {
    ═══════════════════════════════════════════ */
 function closeModal() {
   document.getElementById('modal').classList.remove('show');
+  document.getElementById('modalSaveBtn').style.display = '';
   modalState = {};
 }
 
@@ -703,6 +925,7 @@ function getFields(entity) {
 
 async function saveModal() {
   try {
+    // ─── Correction save ───
     if (modalState.type === 'correction' || modalState.type === 'correction_manual') {
       var corrBody = {
         chat_log_id: modalState.logId || null,
@@ -716,13 +939,47 @@ async function saveModal() {
         toast('اكتب الإجابة الصحيحة!', 'error');
         return;
       }
-      await api('/admin/corrections', { method: 'POST', body: JSON.stringify(corrBody) });
+      await apiCall('/admin/corrections', { method: 'POST', body: JSON.stringify(corrBody) });
       closeModal();
       toast('تم إضافة التصحيح ✅ — البوت هيستخدم الإجابة دي 🧠');
       if (currentTab === 'corrections') loadCorrections();
       return;
     }
 
+    // ─── 🆕 v7.8: Custom Response save ───
+    if (modalState.type === 'custom_response_add' || modalState.type === 'custom_response_edit') {
+      var crBody = {
+        title: document.getElementById('cr_title').value,
+        keywords: document.getElementById('cr_keywords').value,
+        category: document.getElementById('cr_category').value,
+        response: document.getElementById('cr_response').value,
+        priority: parseInt(document.getElementById('cr_priority').value) || 0,
+        is_active: document.getElementById('cr_active').checked
+      };
+
+      if (!crBody.title) { toast('اكتب عنوان للرد!', 'error'); return; }
+      if (!crBody.keywords) { toast('اكتب كلمات مفتاحية!', 'error'); return; }
+      if (!crBody.response) { toast('اكتب محتوى الرد!', 'error'); return; }
+
+      if (modalState.type === 'custom_response_add') {
+        await apiCall('/admin/custom-responses', { method: 'POST', body: JSON.stringify(crBody) });
+        toast('تم إضافة الرد المخصص ✅ 🛠️');
+      } else {
+        await apiCall('/admin/custom-responses/' + modalState.id, { method: 'PUT', body: JSON.stringify(crBody) });
+        toast('تم تحديث الرد المخصص ✅');
+      }
+      closeModal();
+      loadCustomResponses();
+      return;
+    }
+
+    // ─── Preview (just close) ───
+    if (modalState.type === 'preview') {
+      closeModal();
+      return;
+    }
+
+    // ─── Generic CRUD save ───
     var fields = getFields(modalState.entity);
     var body = {};
     fields.forEach(function(f) {
@@ -731,9 +988,9 @@ async function saveModal() {
     });
 
     if (modalState.type === 'add') {
-      await api('/admin/' + modalState.entity, { method: 'POST', body: JSON.stringify(body) });
+      await apiCall('/admin/' + modalState.entity, { method: 'POST', body: JSON.stringify(body) });
     } else {
-      await api('/admin/' + modalState.entity + '/' + modalState.id, { method: 'PUT', body: JSON.stringify(body) });
+      await apiCall('/admin/' + modalState.entity + '/' + modalState.id, { method: 'PUT', body: JSON.stringify(body) });
     }
     closeModal();
     loadCrud(modalState.entity);
