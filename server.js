@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.4 — 🔤 Arabic Normalization Fix
-   ✅ ALL v6.3 features preserved
+   🤖 easyT Chatbot v6.5 — 📱 Compact Card Design
+   ✅ ALL v6.4 features preserved
    ⚡ Supabase .or() filters (N queries → 1 query per strategy)
    ⚡ Promise.all() for parallel operations
    ⚡ Instructor cache
@@ -11,6 +11,7 @@
    🔧 Fixed v6.2: Early accessIssueStep reset (no stale state leak)
    🔧 Fixed v6.3: Smart escape from access flow when user changes topic
    🔤 Fixed v6.4: Arabic normalization (أ إ آ ا → ا) for search
+   📱 v6.5: Compact horizontal card layout (70px thumbnails)
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -327,6 +328,9 @@ function mapDiplomaToCategory(diplomaTitle) {
   return null;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ═══ 📱 v6.5: Compact formatDiplomas ════════════════════
+   ══════════════════════════════════════════════════════════ */
 function formatDiplomas(
   diplomas,
   relatedCourses = [],
@@ -337,86 +341,93 @@ function formatDiplomas(
   diplomas.forEach((d, i) => {
     const link = d.link || `https://easyt.online/p/${d.slug}`;
 
-    html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
+    html += `<div style="margin-bottom:8px;padding:8px 10px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
-    html += `${i + 1}. ${d.title}</a><br>`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:13px;text-decoration:none;">`;
+    html += `${i + 1}. ${d.title}</a>`;
 
     if (d.description) {
       const desc =
-        d.description.length > 150
-          ? d.description.slice(0, 150) + "..."
+        d.description.length > 100
+          ? d.description.slice(0, 100) + "..."
           : d.description;
-      html += `📝 ${desc}<br>`;
+      html += `<div style="font-size:11.5px;color:#555;margin-top:2px;">📝 ${desc}</div>`;
     }
 
     const stats = [];
     if (d.courses_count) stats.push(`📚 ${d.courses_count} دورات`);
     if (d.books_count) stats.push(`📖 ${d.books_count} كتب`);
     if (d.hours) stats.push(`⏱️ ${d.hours} ساعة`);
-    if (stats.length) html += `${stats.join(" • ")}<br>`;
-
     if (d.price !== undefined && d.price !== null) {
       const p = String(d.price).trim();
       if (p === "0" || p === "0.00") {
-        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+        stats.push(`<span style="color:green;font-weight:bold;">مجاني 🎉</span>`);
       } else {
-        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+        stats.push(`💰 ${p.startsWith("$") ? p : "$" + p}`);
       }
     }
+    if (stats.length) {
+      html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${stats.join(" • ")}</div>`;
+    }
 
-    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدبلومة والاشتراك</a>`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:3px;display:inline-block;">📖 تفاصيل الدبلومة والاشتراك ←</a>`;
     html += `</div>`;
   });
 
   if (relatedCourses.length > 0) {
-    html += `<br><b>📌 دورات مقترحة ذات صلة:</b><br><br>`;
-    relatedCourses.forEach((c, i) => {
+    html += `<br><b style="font-size:13px;">📌 دورات مقترحة ذات صلة:</b><br>`;
+    relatedCourses.slice(0, 4).forEach((c, i) => {
       const link = c.url || ALL_COURSES_URL;
-      html += `<div style="margin-bottom:10px;padding:10px;border:1px solid #eee;border-radius:8px;background:#f9f9f9;">`;
+      html += `<div style="display:flex;gap:8px;margin-bottom:6px;padding:6px 8px;border:1px solid #eee;border-radius:8px;background:#f9f9f9;">`;
 
       if (c.image_url) {
-        html += `<div style="text-align:center;margin-bottom:6px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:250px;border-radius:6px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
+        html += `<a href="${link}" target="_blank" style="flex-shrink:0;">`;
+        html += `<img src="${c.image_url}" alt="${c.title}" style="width:55px;height:55px;border-radius:6px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">`;
+        html += `</a>`;
       }
 
-      html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:14px;text-decoration:none;">${
-        i + 1
-      }. ${c.title}</a><br>`;
-      if (c.instructor) html += `👤 ${c.instructor}<br>`;
+      html += `<div style="flex:1;min-width:0;">`;
+      html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;text-decoration:none;">${i + 1}. ${c.title}</a>`;
+      const meta = [];
+      if (c.instructor) meta.push(`👤 ${c.instructor}`);
       if (c.price !== undefined && c.price !== null) {
         const p = String(c.price).trim();
-        html +=
+        meta.push(
           p === "0" || p === "0.00" || p.toLowerCase() === "free"
-            ? `💰 مجاني 🎉<br>`
-            : `💰 <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+            ? `مجاني 🎉`
+            : `💰 ${p.startsWith("$") ? p : "$" + p}`
+        );
       }
-
-      html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
-      html += `</div>`;
+      if (meta.length) {
+        html += `<div style="font-size:11px;color:#888;margin-top:2px;">${meta.join(" • ")}</div>`;
+      }
+      html += `<a href="${link}" target="_blank" style="color:#c40000;font-size:10.5px;font-weight:bold;text-decoration:underline;margin-top:2px;display:inline-block;">تفاصيل ←</a>`;
+      html += `</div></div>`;
     });
   }
 
   if (relatedCategory) {
-    html += `<br>🔗 <a href="${relatedCategory.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${relatedCategory.name} ←</a>`;
+    html += `<br>🔗 <a href="${relatedCategory.url}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;">تصفح جميع دورات ${relatedCategory.name} ←</a>`;
   }
 
-  html += `<br><br>🔗 <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع الدبلومات ←</a>`;
-  html += `<br><br>💡 وصول لكل الدورات والدبلومات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a>`;
+  html += `<br>🔗 <a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;">تصفح جميع الدبلومات ←</a>`;
+  html += `<br><br><span style="font-size:11.5px;">💡 وصول لكل الدورات والدبلومات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
 }
 
+/* 📱 v6.5: Compact formatDiplomaMention */
 function formatDiplomaMention(diplomas) {
   if (!diplomas.length) return "";
 
-  let html = `<br><b>🎓 يوجد أيضاً دبلومات في هذا المجال:</b><br>`;
+  let html = `<br><b style="font-size:12px;">🎓 يوجد أيضاً دبلومات في هذا المجال:</b><br>`;
   diplomas.slice(0, 3).forEach((d) => {
     const link = d.link || `https://easyt.online/p/${d.slug}`;
     const stats = [];
     if (d.courses_count) stats.push(`${d.courses_count} دورات`);
     if (d.hours) stats.push(`${d.hours} ساعة`);
-    html += `▸ <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;">${d.title}</a>`;
-    if (stats.length) html += ` (${stats.join(" • ")})`;
+    html += `▸ <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;">${d.title}</a>`;
+    if (stats.length) html += ` <span style="font-size:11px;color:#888;">(${stats.join(" • ")})</span>`;
     html += `<br>`;
   });
   return html;
@@ -1346,7 +1357,7 @@ async function getCoursesByCategory(categoryKey) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Cards ════════════════════════════════
+   ═══ 📱 v6.5: Compact Format Course Cards ══════════════
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category, diplomaMention = "") {
   let html = `<b>🎓 إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
@@ -1354,41 +1365,45 @@ function formatCourses(courses, category, diplomaMention = "") {
   courses.forEach((c, i) => {
     const link = c.url || (category ? category.url : ALL_COURSES_URL);
 
-    html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
+    /* 📱 v6.5: Horizontal compact card */
+    html += `<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
     if (c.image_url) {
-      html += `<div style="text-align:center;margin-bottom:8px;">`;
-      html += `<a href="${link}" target="_blank">`;
+      html += `<a href="${link}" target="_blank" style="flex-shrink:0;">`;
       html += `<img src="${c.image_url}" alt="${c.title}" `;
-      html += `style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" `;
-      html += `onerror="this.style.display='none'">`;
-      html += `</a></div>`;
+      html += `style="width:70px;height:70px;border-radius:8px;object-fit:cover;display:block;" `;
+      html += `onerror="this.parentElement.style.display='none'">`;
+      html += `</a>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
-    html += `${i + 1}. ${c.title}</a><br>`;
+    html += `<div style="flex:1;min-width:0;">`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
+    html += `${i + 1}. ${c.title}</a>`;
 
-    if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
-
+    const meta = [];
+    if (c.instructor) meta.push(`👤 ${c.instructor}`);
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
       if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
-        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+        meta.push(`<span style="color:green;font-weight:bold;">مجاني 🎉</span>`);
       } else {
-        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+        meta.push(`💰 ${p.startsWith("$") ? p : "$" + p}`);
       }
+    }
+    if (meta.length) {
+      html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${meta.join(" • ")}</div>`;
     }
 
     if (c.description) {
       const desc =
-        c.description.length > 120
-          ? c.description.slice(0, 120) + "..."
+        c.description.length > 80
+          ? c.description.slice(0, 80) + "..."
           : c.description;
-      html += `📝 ${desc}<br>`;
+      html += `<div style="font-size:11px;color:#888;margin-top:2px;">📝 ${desc}</div>`;
     }
 
-    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
-    html += `</div>`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
+    html += `</div></div>`;
   });
 
   if (diplomaMention) {
@@ -1396,60 +1411,69 @@ function formatCourses(courses, category, diplomaMention = "") {
   }
 
   if (category) {
-    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">`;
+    html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;">`;
     html += `تصفح جميع دورات ${category.name} ←</a>`;
   }
 
-  html += `<br><br>💡 وصول لكل الدورات من خلال `;
+  html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال `;
   html += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">`;
-  html += `الاشتراك السنوي (49$ عرض رمضان)</a>`;
+  html += `الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
 }
 
+/* 📱 v6.5: Compact formatCategoryCourses */
 function formatCategoryCourses(courses, category, originalTopic) {
   let html = `<b>🔍 مفيش كورس باسم "${originalTopic}" بالظبط، لكن في دورات قريبة في قسم ${category.name}:</b><br><br>`;
 
   courses.forEach((c, i) => {
     const link = c.url || category.url;
-    html += `<div style="margin-bottom:14px;padding:12px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
+
+    html += `<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
 
     if (c.image_url) {
-      html += `<div style="text-align:center;margin-bottom:8px;"><a href="${link}" target="_blank"><img src="${c.image_url}" alt="${c.title}" style="width:100%;max-width:300px;border-radius:8px;display:block;margin:0 auto;" onerror="this.style.display='none'"></a></div>`;
+      html += `<a href="${link}" target="_blank" style="flex-shrink:0;">`;
+      html += `<img src="${c.image_url}" alt="${c.title}" style="width:70px;height:70px;border-radius:8px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">`;
+      html += `</a>`;
     }
 
-    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:15px;text-decoration:none;">`;
-    html += `${i + 1}. ${c.title}</a><br>`;
+    html += `<div style="flex:1;min-width:0;">`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">`;
+    html += `${i + 1}. ${c.title}</a>`;
 
-    if (c.instructor) html += `👤 المحاضر: ${c.instructor}<br>`;
-
+    const meta = [];
+    if (c.instructor) meta.push(`👤 ${c.instructor}`);
     if (c.price !== undefined && c.price !== null) {
       const p = String(c.price).trim();
       if (p === "0" || p === "0.00" || p.toLowerCase() === "free") {
-        html += `💰 السعر: <span style="color:green;font-weight:bold;">مجاني 🎉</span><br>`;
+        meta.push(`<span style="color:green;font-weight:bold;">مجاني 🎉</span>`);
       } else {
-        html += `💰 السعر: <b>${p.startsWith("$") ? p : "$" + p}</b><br>`;
+        meta.push(`💰 ${p.startsWith("$") ? p : "$" + p}`);
       }
+    }
+    if (meta.length) {
+      html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${meta.join(" • ")}</div>`;
     }
 
     if (c.description) {
-      html += `📝 ${
-        c.description.length > 120
-          ? c.description.slice(0, 120) + "..."
+      html += `<div style="font-size:11px;color:#888;margin-top:2px;">📝 ${
+        c.description.length > 80
+          ? c.description.slice(0, 80) + "..."
           : c.description
-      }<br>`;
+      }</div>`;
     }
 
-    html += `<br>📖 <a href="${link}" target="_blank" style="color:#c40000;font-weight:bold;text-decoration:underline;">تفاصيل الدورة والاشتراك</a>`;
-    html += `</div>`;
+    html += `<a href="${link}" target="_blank" style="color:#c40000;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
+    html += `</div></div>`;
   });
 
-  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;">تصفح جميع دورات ${category.name} ←</a>`;
-  html += `<br><br>💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a>`;
+  html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#c40000;font-weight:bold;font-size:12px;">تصفح جميع دورات ${category.name} ←</a>`;
+  html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
 
   return html;
 }
 
+/* 📱 v6.5: Compact formatNoResults */
 function formatNoResults(displayTerm, category) {
   let html = `<b>🔍 للأسف مفيش كورس عن "${displayTerm}" على المنصة حالياً.</b><br><br>`;
 
@@ -1460,7 +1484,7 @@ function formatNoResults(displayTerm, category) {
 
   html += `تقدر تتصفح كل الدورات المتاحة (+600 دورة) من هنا:<br>`;
   html += `▸ <a href="${ALL_COURSES_URL}" target="_blank" style="color:#c40000;font-weight:bold;">📚 جميع الدورات على المنصة</a><br><br>`;
-  html += `💡 مع <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a> تقدر تدخل كل الدورات والدبلومات 🎓`;
+  html += `<span style="font-size:12px;">💡 مع <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#c40000;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a> تقدر تدخل كل الدورات والدبلومات 🎓</span>`;
 
   return html;
 }
@@ -1610,7 +1634,7 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route — v6.4 ═════════════════════════════
+   ═══ Main Chat Route — v6.5 ═════════════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -2885,7 +2909,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.4-arabic-normalization",
+    version: "6.5-compact-cards",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2898,8 +2922,11 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.4 🔤 Arabic Normalization Fix`);
+  console.log(`\n🤖 easyT Chatbot v6.5 📱 Compact Card Design`);
   console.log(`   Port: ${PORT}`);
+  console.log(`   📱 v6.5: Compact horizontal cards (70px thumbnails)`);
+  console.log(`   📱 v6.5: Single-line meta (instructor • price)`);
+  console.log(`   📱 v6.5: Compact diploma cards with inline stats`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
