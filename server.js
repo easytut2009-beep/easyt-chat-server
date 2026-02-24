@@ -1,16 +1,17 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v7.5 — 🧠 Context-Aware Audience + 💬 Conversational Detection
-   ✅ ALL v7.4 features preserved
-   🆕 v7.5: FIX — stripAudienceModifiers returns EMPTY when all terms are audience words
-   🆕 v7.5: FIX — isVagueEntity now catches audience-only entities ("للكبار")
-   🆕 v7.5: FIX — COURSE_SEARCH generates terms from session entity when stripped is empty
-   🆕 v7.5: Conversational detection — "انت فين" / "شكرا" answered instantly, no AI classify
-   🆕 v7.5: /admin/conversations/:session_id endpoint added
-   🆕 v7.5: CLASSIFY_SYSTEM updated — conversational messages = GENERAL
+   🤖 easyT Chatbot v7.6 — 🔍 Fuzzy Arabic Search + 🐛 Critical Bug Fixes
+   ✅ ALL v7.5 features preserved
+   🆕 v7.6: Fuzzy Arabic search with Levenshtein distance
+   🆕 v7.6: Common Arabic misspelling corrections dictionary
+   🆕 v7.6: Smart search variants generation
+   🆕 v7.6: FIX — Arrow function bug in FOLLOW_UP (resolvedCategoryKey => null)
+   🆕 v7.6: FIX — resolvedCategoryKey undefined in FOLLOW_UP scope
+   🆕 v7.6: Improved search retry with spelling correction
+   🆕 v7.6: Better search pipeline with fuzzy fallback
    ─── Previous features ───
-   ✅ v7.4: AI filter [] bug fix + stripAudienceModifiers + preFilterByPrimarySubject + Retry
-   ✅ v7.3.1: rescueStartLearningIntent()
-   ✅ v7.3: detectAudienceExclusions() + Strict AI filter + Audience on first query
+   ✅ v7.5: Context-Aware Audience + Conversational Detection
+   ✅ v7.4: AI filter [] bug fix + stripAudienceModifiers + preFilterByPrimarySubject
+   ✅ v7.3: detectAudienceExclusions() + Strict AI filter
    ✅ v7.2: Exclude terms + Refinement + Diploma AI filter
    ✅ v7.1: Bot learns from corrections
    ✅ v7.0: Chat logging + Admin Dashboard + Corrections CRUD
@@ -91,7 +92,9 @@ const limiter = rateLimit({
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/diplomas";
 
-/* ═══ Arabic Normalization ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.6: Enhanced Arabic Normalization + Fuzzy Search
+   ══════════════════════════════════════════════════════════ */
 function normalizeArabic(text) {
   if (!text) return "";
   return text
@@ -100,7 +103,265 @@ function normalizeArabic(text) {
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي")
     .replace(/ة/g, "ه")
-    .replace(/[\u064B-\u065F\u0670]/g, "");
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/ـ+/g, "");
+}
+
+/* 🆕 v7.6: Levenshtein Distance for fuzzy matching */
+function levenshtein(a, b) {
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+/* 🆕 v7.6: Similarity ratio (0-100) */
+function similarityRatio(a, b) {
+  if (!a || !b) return 0;
+  const na = normalizeArabic(a.toLowerCase().trim());
+  const nb = normalizeArabic(b.toLowerCase().trim());
+  if (na === nb) return 100;
+  const maxLen = Math.max(na.length, nb.length);
+  if (maxLen === 0) return 100;
+  const dist = levenshtein(na, nb);
+  return Math.round(((maxLen - dist) / maxLen) * 100);
+}
+
+/* 🆕 v7.6: Common Arabic Misspelling Corrections Dictionary */
+const ARABIC_CORRECTIONS = {
+  /* ─── Marketing ─── */
+  "ماركوتنج": "ماركيتنج",
+  "ماركوتنتج": "ماركيتنج",
+  "ماركتنج": "ماركيتنج",
+  "ماركتينج": "ماركيتنج",
+  "ماركتينق": "ماركيتنج",
+  "مارتكنج": "ماركيتنج",
+  "ماركنتج": "ماركيتنج",
+  "مركتنج": "ماركيتنج",
+  "ماركتنق": "ماركيتنج",
+  "مارتكينج": "ماركيتنج",
+  "ماريكتنج": "ماركيتنج",
+
+  /* ─── Digital ─── */
+  "دجيتال": "ديجيتال",
+  "ديجتال": "ديجيتال",
+  "دجتال": "ديجيتال",
+  "ديجتل": "ديجيتال",
+  "دجيتل": "ديجيتال",
+  "ديجيتل": "ديجيتال",
+  "دجيتيال": "ديجيتال",
+
+  /* ─── Programming ─── */
+  "بروجرامنج": "برمجه",
+  "بروغرامنج": "برمجه",
+  "بروقرامنج": "برمجه",
+  "بيثون": "بايثون",
+  "بايتون": "بايثون",
+  "بايسون": "بايثون",
+  "باثيون": "بايثون",
+  "جافاسكربت": "جافاسكريبت",
+  "جافاسكربت": "جافاسكريبت",
+  "جافسكربت": "جافاسكريبت",
+  "فلاتر": "فلاتر",
+  "ريأكت": "ريأكت",
+  "ريياكت": "ريأكت",
+  "تايب سكريبت": "تايبسكريبت",
+
+  /* ─── Design ─── */
+  "جرافك": "جرافيك",
+  "قرافيك": "جرافيك",
+  "غرافيك": "جرافيك",
+  "جرفيك": "جرافيك",
+  "فتوشوب": "فوتوشوب",
+  "فوتشوب": "فوتوشوب",
+  "فوطوشوب": "فوتوشوب",
+  "فطوشوب": "فوتوشوب",
+  "اليستريتور": "اليستريتر",
+  "السترتور": "اليستريتر",
+  "اللستريتر": "اليستريتر",
+  "اليسترايتر": "اليستريتر",
+
+  /* ─── Business ─── */
+  "بزنس": "بيزنس",
+  "بزنيس": "بيزنس",
+  "بيزنيس": "بيزنس",
+  "منجمنت": "مانجمنت",
+  "مانجمينت": "مانجمنت",
+  "مانيجمنت": "مانجمنت",
+  "اكونتنج": "اكاونتنج",
+  "اكونتينج": "اكاونتنج",
+
+  /* ─── SEO / Analytics ─── */
+  "اس اي او": "سيو",
+  "انالتكس": "اناليتكس",
+  "انلتكس": "اناليتكس",
+  "اناليتيكس": "اناليتكس",
+
+  /* ─── UI/UX ─── */
+  "يو اي": "ui",
+  "يو اكس": "ux",
+  "يواي": "ui",
+  "يواكس": "ux",
+
+  /* ─── General ─── */
+  "كورسات": "كورسات",
+  "دبلومه": "دبلومه",
+  "دبلومة": "دبلومه",
+  "دبلوما": "دبلومه",
+  "شهاده": "شهاده",
+  "شهادة": "شهاده",
+  "اونلين": "اونلاين",
+  "اون لاين": "اونلاين",
+  "سبسكربشن": "اشتراك",
+  "سوشيال ميديا": "سوشيال ميديا",
+  "سوشل ميديا": "سوشيال ميديا",
+  "سايبر سكيورتي": "سايبر سيكيورتي",
+  "سيكيورتي": "سيكيورتي",
+  "هاكنج": "هاكينج",
+  "هاكينق": "هاكينج",
+  "وردبرس": "ووردبريس",
+  "وردبريس": "ووردبريس",
+  "وورد بريس": "ووردبريس",
+};
+
+/* 🆕 v7.6: Synonym groups for search expansion */
+const SEARCH_SYNONYMS = {
+  "ديجيتال ماركيتنج": ["تسويق رقمي", "تسويق الكتروني", "تسويق اونلاين", "digital marketing", "التسويق الرقمي", "تسويق ديجيتال"],
+  "جرافيك ديزاين": ["تصميم جرافيك", "تصميم", "graphic design", "التصميم الجرافيكي"],
+  "برمجه": ["تطوير", "كودنج", "coding", "programming", "برمجة", "development"],
+  "سيو": ["تحسين محركات البحث", "seo", "محركات البحث"],
+  "فوتوشوب": ["photoshop", "فوتو شوب", "تعديل صور"],
+  "اليستريتر": ["illustrator", "اليستريتور", "رسم فيكتور"],
+  "بايثون": ["python", "بايثن"],
+  "جافاسكريبت": ["javascript", "جافا سكريبت", "js"],
+  "ووردبريس": ["wordpress", "وورد بريس", "wp"],
+  "ريأكت": ["react", "react.js", "ريأكت"],
+  "سوشيال ميديا": ["social media", "وسائل التواصل", "التواصل الاجتماعي"],
+  "اكسل": ["excel", "اكسيل", "جداول"],
+  "سايبر سيكيورتي": ["cyber security", "أمن سيبراني", "حماية", "اختراق"],
+};
+
+/* 🆕 v7.6: Correct a single word using the dictionary + fuzzy matching */
+function correctArabicWord(word) {
+  if (!word || word.length < 2) return word;
+  const normalized = normalizeArabic(word.toLowerCase().trim());
+
+  /* Direct dictionary match */
+  if (ARABIC_CORRECTIONS[normalized]) {
+    return ARABIC_CORRECTIONS[normalized];
+  }
+  if (ARABIC_CORRECTIONS[word.toLowerCase().trim()]) {
+    return ARABIC_CORRECTIONS[word.toLowerCase().trim()];
+  }
+
+  /* Fuzzy match against dictionary keys */
+  let bestMatch = null;
+  let bestScore = 0;
+  for (const [misspelling, correction] of Object.entries(ARABIC_CORRECTIONS)) {
+    const score = similarityRatio(normalized, normalizeArabic(misspelling));
+    if (score > bestScore && score >= 70) {
+      bestScore = score;
+      bestMatch = correction;
+    }
+  }
+
+  if (bestMatch) {
+    console.log(`   ✏️ Fuzzy corrected: "${word}" → "${bestMatch}" (${bestScore}%)`);
+    return bestMatch;
+  }
+
+  return word;
+}
+
+/* 🆕 v7.6: Correct an entire query string */
+function correctQuery(query) {
+  if (!query) return { corrected: query, wasCorrected: false };
+  const words = query.trim().split(/\s+/);
+  const correctedWords = words.map((w) => correctArabicWord(w));
+  const corrected = correctedWords.join(" ");
+  const wasCorrected = corrected !== words.join(" ");
+
+  /* Also try correcting multi-word phrases */
+  const fullNorm = normalizeArabic(query.toLowerCase().trim());
+  if (ARABIC_CORRECTIONS[fullNorm]) {
+    return { corrected: ARABIC_CORRECTIONS[fullNorm], wasCorrected: true, original: query };
+  }
+
+  /* Try 2-word combinations */
+  for (let i = 0; i < words.length - 1; i++) {
+    const pair = normalizeArabic(`${words[i]} ${words[i + 1]}`.toLowerCase());
+    if (ARABIC_CORRECTIONS[pair]) {
+      const newWords = [...correctedWords];
+      newWords[i] = ARABIC_CORRECTIONS[pair];
+      newWords.splice(i + 1, 1);
+      return { corrected: newWords.join(" "), wasCorrected: true, original: query };
+    }
+  }
+
+  return { corrected, wasCorrected, original: wasCorrected ? query : undefined };
+}
+
+/* 🆕 v7.6: Expand search terms with synonyms */
+function expandWithSynonyms(terms) {
+  const expanded = new Set(terms);
+  for (const term of terms) {
+    const normTerm = normalizeArabic(term.toLowerCase().trim());
+    for (const [key, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
+      const normKey = normalizeArabic(key.toLowerCase());
+      if (normTerm === normKey || normTerm.includes(normKey) || normKey.includes(normTerm)) {
+        synonyms.forEach((s) => expanded.add(s));
+        expanded.add(key);
+      }
+      for (const syn of synonyms) {
+        const normSyn = normalizeArabic(syn.toLowerCase());
+        if (normTerm === normSyn || normTerm.includes(normSyn) || normSyn.includes(normTerm)) {
+          synonyms.forEach((s) => expanded.add(s));
+          expanded.add(key);
+          break;
+        }
+      }
+    }
+  }
+  return [...expanded].filter((t) => t && t.length >= 2);
+}
+
+/* 🆕 v7.6: Generate all search variants (correct + normalize + expand + synonyms) */
+function generateSearchVariants(terms, entity) {
+  const allInput = [...terms];
+  if (entity && entity.length >= 2) allInput.push(entity);
+
+  /* Step 1: Correct spelling */
+  const corrected = allInput.map((t) => {
+    const { corrected: c } = correctQuery(t);
+    return c;
+  });
+
+  /* Step 2: Add originals + corrected */
+  const combined = [...new Set([...allInput, ...corrected])].filter((t) => t && t.length >= 2);
+
+  /* Step 3: Expand with synonyms */
+  const withSynonyms = expandWithSynonyms(combined);
+
+  /* Step 4: Arabic normalization variants */
+  const final = expandArabicTerms(withSynonyms);
+
+  console.log(`   🔄 v7.6 Search variants: ${terms.length} input → ${final.length} variants`);
+  return final;
 }
 
 /* ═══ DB Column Mapping ═══ */
@@ -145,12 +406,12 @@ async function getInstructorMap(rows) {
       if (!error && data) {
         for (const i of data) { instructorCache.set(i.id, { name: i.name, time: now }); result.set(i.id, i.name); }
       }
-    } catch (e) {}
+    } catch (e) { console.error("   ❌ Instructor fetch error:", e.message); }
   }
   return result;
 }
 
-/* ⚡ Supabase OR filter with Arabic variants */
+/* ⚡ Supabase OR filter with Arabic variants — 🆕 v7.6: Enhanced */
 function buildOrFilter(column, terms) {
   const filters = new Set();
   for (const t of terms) {
@@ -169,6 +430,15 @@ function buildOrFilter(column, terms) {
     }
     if (clean.includes("ة")) filters.add(`${column}.ilike.%${clean.replace(/ة/g, "ه")}%`);
     if (clean.includes("ه")) filters.add(`${column}.ilike.%${clean.replace(/ه/g, "ة")}%`);
+
+    /* 🆕 v7.6: Add corrected spelling variants */
+    const { corrected, wasCorrected } = correctQuery(clean);
+    if (wasCorrected && corrected.length >= 2) {
+      filters.add(`${column}.ilike.%${corrected}%`);
+      const normCorrected = normalizeArabic(corrected);
+      if (normCorrected !== corrected) filters.add(`${column}.ilike.%${normCorrected}%`);
+    }
+
     if (clean.includes(" ")) {
       const words = clean.split(/\s+/).filter((w) => w.length >= 3);
       for (const word of words) {
@@ -183,10 +453,17 @@ function buildOrFilter(column, terms) {
           filters.add(`${column}.ilike.%${"إ" + normWord.slice(1)}%`);
           filters.add(`${column}.ilike.%${"أ" + normWord.slice(1)}%`);
         }
+        /* 🆕 v7.6: Correct individual words too */
+        const correctedWord = correctArabicWord(word);
+        if (correctedWord !== word && correctedWord.length >= 2) {
+          filters.add(`${column}.ilike.%${correctedWord}%`);
+          const normCW = normalizeArabic(correctedWord);
+          if (normCW !== correctedWord) filters.add(`${column}.ilike.%${normCW}%`);
+        }
       }
     }
   }
-  return [...filters].slice(0, 40).join(",");
+  return [...filters].slice(0, 50).join(",");
 }
 
 function dedupeRows(rows) {
@@ -199,28 +476,34 @@ const DIPLOMA_SELECT = "title, slug, link, description, price, courses_count, bo
 
 async function searchDiplomas(terms) {
   if (!terms?.length) return [];
-  const clean = [...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 8);
+  const clean = [...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 10);
   if (!clean.length) return [];
   console.log(`\n🎓 ═══ Diploma Search ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
   try {
-    const { data, error } = await supabase.from("diplomas").select(DIPLOMA_SELECT).or(buildOrFilter("title", clean)).limit(15);
-    if (!error && data?.length) {
-      console.log(`   ✅ Diploma title OR: ${data.length}`);
-      const deduped = []; const seen = new Set();
-      for (const row of data) { if (!seen.has(row.slug)) { seen.add(row.slug); deduped.push(row); } }
-      if (deduped.length) return deduped.slice(0, 10);
+    const orFilter = buildOrFilter("title", clean);
+    if (orFilter) {
+      const { data, error } = await supabase.from("diplomas").select(DIPLOMA_SELECT).or(orFilter).limit(15);
+      if (!error && data?.length) {
+        console.log(`   ✅ Diploma title OR: ${data.length}`);
+        const deduped = []; const seen = new Set();
+        for (const row of data) { if (!seen.has(row.slug)) { seen.add(row.slug); deduped.push(row); } }
+        if (deduped.length) return deduped.slice(0, 10);
+      }
     }
-  } catch (e) {}
+  } catch (e) { console.error("   ❌ Diploma title search error:", e.message); }
   try {
-    const { data, error } = await supabase.from("diplomas").select(DIPLOMA_SELECT).or(buildOrFilter("description", clean.slice(0, 4))).limit(15);
-    if (!error && data?.length) {
-      const deduped = []; const seen = new Set();
-      for (const row of data) { if (!seen.has(row.slug)) { seen.add(row.slug); deduped.push(row); } }
-      console.log(`   🎓 Total diplomas found: ${deduped.length}`);
-      return deduped.slice(0, 10);
+    const orFilter = buildOrFilter("description", clean.slice(0, 5));
+    if (orFilter) {
+      const { data, error } = await supabase.from("diplomas").select(DIPLOMA_SELECT).or(orFilter).limit(15);
+      if (!error && data?.length) {
+        const deduped = []; const seen = new Set();
+        for (const row of data) { if (!seen.has(row.slug)) { seen.add(row.slug); deduped.push(row); } }
+        console.log(`   🎓 Total diplomas found: ${deduped.length}`);
+        return deduped.slice(0, 10);
+      }
     }
-  } catch (e) {}
+  } catch (e) { console.error("   ❌ Diploma desc search error:", e.message); }
   console.log(`   🎓 Total diplomas found: 0`);
   return [];
 }
@@ -242,9 +525,7 @@ function mapDiplomaToCategory(diplomaTitle) {
   return null;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ v7.4: AI Filter BUG FIX — respect empty [] ═════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ AI Filter for Diplomas ═══ */
 async function filterRelevantDiplomas(diplomas, userQuery, entity) {
   if (!diplomas.length) return [];
   try {
@@ -276,9 +557,7 @@ Format: [0, 1]` },
   return diplomas;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ v7.3: Audience Auto-Detection ═════════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Audience Detection ═══ */
 function detectAudienceExclusions(message, entity) {
   const combined = `${message} ${entity || ""}`.toLowerCase();
   const norm = normalizeArabic(combined);
@@ -300,10 +579,7 @@ function detectAudienceExclusions(message, entity) {
   return [...new Set(excludes)];
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.5: Strip Audience Modifiers — FIXED ═════════
-   ═══ BUG FIX: No longer falls back to originals!
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Strip Audience Modifiers ═══ */
 const AUDIENCE_WORDS_RE = /\b(للكبار|الكبار|كبار|للأطفال|الأطفال|أطفال|اطفال|للاطفال|للمبتدئين|مبتدئين|للمتقدمين|متقدمين|متقدم|بالغين|for adults?|for kids|for children|for beginners?|for advanced)\b/gi;
 
 function stripAudienceModifiers(terms, entity) {
@@ -315,9 +591,6 @@ function stripAudienceModifiers(terms, entity) {
   cleanEntity = cleanEntity.replace(AUDIENCE_WORDS_RE, "").trim();
 
   if (cleanTerms.length === 0 && terms.length > 0) {
-    /* 🆕 v7.5: BUG FIX — Don't fallback to originals!
-       Return EMPTY so the system falls back to session.entity/history.
-       Old behavior: returned originals → searched for "للكبار" as topic! */
     console.log(`   🧹 v7.5: ALL terms were audience words → returning EMPTY (will use session context)`);
     return { cleanTerms: [], cleanEntity: "" };
   }
@@ -328,15 +601,12 @@ function stripAudienceModifiers(terms, entity) {
   return { cleanTerms, cleanEntity: cleanEntity || "" };
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ v7.4: Pre-Filter by Primary Subject ════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Pre-Filter by Primary Subject ═══ */
 function preFilterByPrimarySubject(courses, userQuery, entity) {
   if (!courses.length) return courses;
 
   const combined = normalizeArabic(`${userQuery} ${entity || ""}`.toLowerCase());
 
-  /* ── Detect: user wants LANGUAGE LEARNING ── */
   const wantsLanguage =
     /انجل|انجليز|english|فرنس|french|المان|german|اسبان|spanish|لغ[اهة]|language/.test(combined) &&
     !/جرافيك|تصميم|design|graphic|برمج|programm|NLP|معالج/.test(combined);
@@ -345,31 +615,16 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
     const before = courses.length;
     const filtered = courses.filter((c) => {
       const t = (c.title || "").toLowerCase();
-      const tNorm = normalizeArabic(t);
-
-      if (/جرافيك|تصميم|design|graphic|فوتوشوب|photoshop|اليستر|illustrat/i.test(t)) {
-        console.log(`   🚫 Pre-filter: "${c.title}" → graphics, not language`);
-        return false;
-      }
-      if (/معالج.*لغ|NLP|natural language proc|لغ.*طبيع/i.test(t)) {
-        console.log(`   🚫 Pre-filter: "${c.title}" → NLP, not language learning`);
-        return false;
-      }
+      if (/جرافيك|تصميم|design|graphic|فوتوشوب|photoshop|اليستر|illustrat/i.test(t)) return false;
+      if (/معالج.*لغ|NLP|natural language proc|لغ.*طبيع/i.test(t)) return false;
       if (/بايثون|python|جافا|java[^s]|c\+\+|برمج[ةه]|programming|كود|code|sql|database/i.test(t) &&
-          !/تعلم.*انجل|english|تعليم.*لغ/i.test(t)) {
-        console.log(`   🚫 Pre-filter: "${c.title}" → programming, not language`);
-        return false;
-      }
+          !/تعلم.*انجل|english|تعليم.*لغ/i.test(t)) return false;
       if (/باللغ[ةه]\s*(الإنجليزي|الانجليزي|الانجل)/i.test(c.title || "")) {
         const aboutEnglish = /تعلم|تعليم|learn|course.*english|english.*course|كورس.*انجل/i.test(t);
-        if (!aboutEnglish) {
-          console.log(`   🚫 Pre-filter: "${c.title}" → taught IN English, not ABOUT English`);
-          return false;
-        }
+        if (!aboutEnglish) return false;
       }
       return true;
     });
-
     if (filtered.length > 0 || before === 0) {
       if (filtered.length !== before) console.log(`   🎯 Pre-filter (language): ${before} → ${filtered.length}`);
       return filtered;
@@ -378,7 +633,6 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
     return [];
   }
 
-  /* ── Detect: user wants PROGRAMMING ── */
   const wantsProgramming =
     /برمج|programm|كود|code|بايثون|python|جافا|java|react|node|flutter|web dev|ويب/.test(combined) &&
     !/لغ[اهة].*انجل|english.*language|تعلم.*لغ/.test(combined);
@@ -387,10 +641,7 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
     const filtered = courses.filter((c) => {
       const t = (c.title || "").toLowerCase();
       if (/تعلم.*انجل|english for|انجليزي.*للا|تعليم.*لغ[اهة]/i.test(t) &&
-          !/برمج|programm|NLP|code/i.test(t)) {
-        console.log(`   🚫 Pre-filter: "${c.title}" → language course, not programming`);
-        return false;
-      }
+          !/برمج|programm|NLP|code/i.test(t)) return false;
       return true;
     });
     if (filtered.length > 0) return filtered;
@@ -399,7 +650,7 @@ function preFilterByPrimarySubject(courses, userQuery, entity) {
   return courses;
 }
 
-/* ═══ Exclusion Filter ═══ */
+/* ═══ Exclusion Filters ═══ */
 function applyExclusions(courses, excludeTerms) {
   if (!excludeTerms?.length || !courses.length) return courses;
   const normExclude = excludeTerms.map((t) => normalizeArabic(t.toLowerCase())).filter((t) => t.length >= 2);
@@ -541,13 +792,18 @@ const CATEGORY_SEARCH_TERMS = {
   video: ["تصوير", "مونتاج", "أنيميشن", "فيديو", "montage"],
 };
 
-/* ═══ v7.3.1: Rescue START_LEARNING ═══ */
+/* ═══ Rescue START_LEARNING ═══ */
 function rescueStartLearningIntent(message, currentEntity, currentTerms) {
   const msgNorm = normalizeArabic(message.toLowerCase());
+
+  /* 🆕 v7.6: Also try with corrected spelling */
+  const { corrected } = correctQuery(message);
+  const correctedNorm = normalizeArabic(corrected.toLowerCase());
+
   for (const [catKey, keywords] of Object.entries(CATEGORY_SEARCH_TERMS)) {
     for (const kw of keywords) {
       const kwNorm = normalizeArabic(kw.toLowerCase());
-      if (kwNorm.length >= 3 && msgNorm.includes(kwNorm)) {
+      if (kwNorm.length >= 3 && (msgNorm.includes(kwNorm) || correctedNorm.includes(kwNorm))) {
         console.log(`   🛟 Rescued START_LEARNING → COURSE_SEARCH (keyword: "${kw}" → cat: ${catKey})`);
         return { intent: "COURSE_SEARCH", entity: currentEntity && !isVagueEntity(currentEntity) ? currentEntity : CATEGORIES[catKey]?.name || kw, search_terms: currentTerms.length ? currentTerms : keywords, category_key: catKey };
       }
@@ -559,7 +815,7 @@ function rescueStartLearningIntent(message, currentEntity, currentTerms) {
     { re: /فرنس(ي|ى|اوي)|french/i, cat: "languages", entity: "تعلم فرنسي", terms: ["فرنسي", "french"] },
     { re: /برمج(ه|ة|ي)|coding|programming/i, cat: "programming", entity: "البرمجة", terms: ["برمجة", "programming", "كود"] },
     { re: /تصم(يم|ى)|جرافيك|design/i, cat: "graphics", entity: "التصميم والجرافيكس", terms: ["تصميم", "جرافيك", "design"] },
-    { re: /تسويق|ماركت|market/i, cat: "marketing", entity: "التسويق الرقمي", terms: ["تسويق", "ماركتينج", "marketing"] },
+    { re: /تسويق|ماركت|market/i, cat: "marketing", entity: "التسويق الرقمي", terms: ["تسويق", "ماركتينج", "marketing", "ماركيتنج"] },
     { re: /محاسب(ه|ة)|اقتصاد|account/i, cat: "accounting", entity: "المحاسبة", terms: ["محاسبة", "accounting"] },
     { re: /ادار(ه|ة)|بيزنس|business|اعمال/i, cat: "business", entity: "إدارة الأعمال", terms: ["إدارة", "أعمال", "business"] },
     { re: /بايثون|python/i, cat: "programming", entity: "بايثون", terms: ["بايثون", "python"] },
@@ -569,7 +825,7 @@ function rescueStartLearningIntent(message, currentEntity, currentTerms) {
     { re: /استثمار|بورص(ه|ة)|trad(e|ing)/i, cat: "investment", entity: "الاستثمار", terms: ["استثمار", "trading"] },
   ];
   for (const p of extraPatterns) {
-    if (p.re.test(message) || p.re.test(msgNorm)) {
+    if (p.re.test(message) || p.re.test(msgNorm) || p.re.test(corrected) || p.re.test(correctedNorm)) {
       console.log(`   🛟 Rescued START_LEARNING → COURSE_SEARCH (pattern: ${p.entity})`);
       return { intent: "COURSE_SEARCH", entity: currentEntity && !isVagueEntity(currentEntity) ? currentEntity : p.entity, search_terms: currentTerms.length ? currentTerms : p.terms, category_key: p.cat };
     }
@@ -596,7 +852,7 @@ async function getFAQData() {
     const { data, error } = await supabase.from("faq").select("section, question, answer").order("id");
     if (error) { console.error("❌ FAQ load error:", error.message); return faqCache; }
     if (data?.length) { faqCache = data; faqLastFetch = now; console.log(`✅ FAQ cache: ${faqCache.length} entries`); }
-  } catch (e) {}
+  } catch (e) { console.error("❌ FAQ fetch exception:", e.message); }
   return faqCache;
 }
 
@@ -606,6 +862,15 @@ async function searchFAQ(query) {
   const normalizedQuery = normalizeArabic(query.toLowerCase());
   const terms = normalizedQuery.split(/\s+/).filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t));
   if (!terms.length) { const fb = normalizedQuery.split(/\s+/).filter((t) => t.length >= 2).slice(0, 3); if (!fb.length) return []; terms.push(...fb); }
+
+  /* 🆕 v7.6: Also search with corrected terms */
+  const { corrected, wasCorrected } = correctQuery(query);
+  if (wasCorrected) {
+    const correctedNorm = normalizeArabic(corrected.toLowerCase());
+    const correctedTerms = correctedNorm.split(/\s+/).filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t));
+    for (const ct of correctedTerms) { if (!terms.includes(ct)) terms.push(ct); }
+  }
+
   const scored = faqData.map((faq) => {
     const q = normalizeArabic((faq.question || "").toLowerCase());
     const a = normalizeArabic((faq.answer || "").toLowerCase());
@@ -638,7 +903,7 @@ async function getCorrections() {
     const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false }).limit(200);
     if (error) { console.error("❌ Corrections load error:", error.message); return correctionsCache; }
     if (data) { correctionsCache = data; correctionsLastFetch = now; }
-  } catch (e) {}
+  } catch (e) { console.error("❌ Corrections fetch exception:", e.message); }
   return correctionsCache;
 }
 
@@ -728,7 +993,7 @@ function getSession(id) {
 setInterval(() => { const now = Date.now(); for (const [id, s] of sessions) { if (now - s.lastAccess > SESSION_TTL) sessions.delete(id); } }, 5 * 60 * 1000);
 
 async function logChatMessage(sessionId, role, content, intent, entity) {
-  try { await supabase.from("chat_logs").insert({ session_id: sessionId, role, content: (content || "").slice(0, 5000), intent: intent || null, entity: entity || null }); } catch (e) {}
+  try { await supabase.from("chat_logs").insert({ session_id: sessionId, role, content: (content || "").slice(0, 5000), intent: intent || null, entity: entity || null }); } catch (e) { console.error("   ❌ Log error:", e.message); }
 }
 
 /* ═══ Gibberish Detection ═══ */
@@ -739,7 +1004,7 @@ function isLikelyGibberish(text) {
   const words = clean.split(/\s+/);
   if (words.length >= 3) return false;
   if (words.length === 1 && clean.length > 10) {
-    const knownLong = ["فوتوشوب","اليستريتور","بروجرامنج","ماركيتينج","subscription","photoshop","illustrator","javascript","programming","الاشتراك","المحاضرين","الكورسات","typescript","bootstrap","الاستثمار","wordpress","البرمجة","الشهادات","flutter","python","الدبلومات","الاستراتيجية"];
+    const knownLong = ["فوتوشوب","اليستريتور","بروجرامنج","ماركيتينج","subscription","photoshop","illustrator","javascript","programming","الاشتراك","المحاضرين","الكورسات","typescript","bootstrap","الاستثمار","wordpress","البرمجة","الشهادات","flutter","python","الدبلومات","الاستراتيجية","ماركوتنج","ديجيتال"];
     if (knownLong.some((w) => clean.toLowerCase().includes(w))) return false;
     const vowelCount = (clean.match(/[اوي]/g) || []).length;
     if (vowelCount / clean.length < 0.08) return true;
@@ -748,10 +1013,7 @@ function isLikelyGibberish(text) {
   return false;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.5: Conversational Message Detection ═════════
-   ═══ Catches chat messages BEFORE AI classification
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Conversational Message Detection ═══ */
 const CONVERSATIONAL_PATTERNS = [
   /^(انت|أنت|إنت|انتي|أنتي)\s*(فين|منين|مين)\s*[؟?!.\s]*$/i,
   /^(انت|أنت|إنت)\s*(عامل|بتعمل)\s*(ايه|إيه|اي)\s*[؟?!.\s]*$/i,
@@ -838,9 +1100,7 @@ function shouldEscapeAccessFlow(message, intent, entity) {
   return false;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.5: Updated Classification ═══════════════════
-   ══════════════════════════════════════════════════════════ */
+/* ═══ Classification ═══ */
 const CAT_LIST = Object.entries(CATEGORIES).map(([k, v]) => `  ${k}: ${v.name}`).join("\n");
 
 const CLASSIFY_SYSTEM = `You classify messages for easyT educational platform chatbot.
@@ -871,24 +1131,32 @@ These are ALWAYS "GENERAL" intent — NEVER classify as COURSE_SEARCH or FOLLOW_
 • "لا شكرا" / "خلاص" → GENERAL
 ⚠️ Short non-topic messages after a course search = GENERAL, not FOLLOW_UP!
 
-═══ ⚠️ v7.5 CRITICAL: search_terms = TOPIC ONLY, NO AUDIENCE WORDS! ═══
+═══ ⚠️ CRITICAL: MISSPELLINGS — Understand the intent! ═══
+Users often misspell words. Understand what they MEAN:
+• "ماركوتنج" = "ماركيتنج" = marketing
+• "دجيتال" = "ديجيتال" = digital
+• "فتوشوب" = "فوتوشوب" = Photoshop
+• "بروجرامنج" = programming = برمجة
+• "جرافك" = "جرافيك" = graphic
+Always classify based on INTENT, not exact spelling!
+
+═══ ⚠️ search_terms = TOPIC ONLY, NO AUDIENCE WORDS! ═══
 search_terms should contain ONLY the subject/topic keywords.
 NEVER put audience words in search_terms: للكبار, للأطفال, مبتدئين, متقدم, for adults, for kids.
 These go in exclude_terms instead!
 
-═══ ⚠️ v7.5 CRITICAL: AUDIENCE-ONLY messages ═══
+═══ ⚠️ AUDIENCE-ONLY messages ═══
 When user says ONLY audience modifier with NO topic (e.g. "للكبار", "عايز للكبار"):
 • intent: "COURSE_SEARCH" (or "FOLLOW_UP" if continuing)
 • entity: null (because there is NO topic!)
 • search_terms: [] (empty — NO topic keywords!)
 • is_refinement: true
 • exclude_terms: the audience exclusions
-The system will resolve the actual topic from session history.
 
 Examples:
 • "عاوز انجليزي للكبار" → entity: "انجليزي", search_terms: ["انجليزي", "english", "تعلم انجليزي"], exclude_terms: ["أطفال", "children", "kids"]
 • "للكبار" (after asking about English) → entity: null, search_terms: [], is_refinement: true, exclude_terms: ["أطفال", "children", "kids"]
-• "عايز للكبار" (after asking about English) → entity: null, search_terms: [], is_refinement: true, exclude_terms: ["أطفال", "children", "kids"]
+• "ديجيتال ماركوتنج" → entity: "ديجيتال ماركيتنج", search_terms: ["ديجيتال ماركيتنج", "تسويق رقمي", "digital marketing", "تسويق", "ماركيتنج"], category_key: "marketing"
 
 ═══ ⚠️ START_LEARNING vs COURSE_SEARCH ═══
 START_LEARNING = ONLY when NO topic at all!
@@ -928,6 +1196,7 @@ ACCESS_ISSUE → new SPECIFIC topic = COURSE_SEARCH, not FOLLOW_UP!
 ═══ search_terms Rules ═══
 • 3-6 TOPIC-FOCUSED variations (NO audience modifiers!)
 • Include English equivalents + Arabic hamza variants
+• Include CORRECTED spelling if user misspelled
 • If message has NO topic (only audience words), return EMPTY []
 
 ═══ category_key ═══
@@ -937,11 +1206,16 @@ async function classify(message, history, prevIntent, prevEntity) {
   try {
     const recent = history.slice(-6).map((m) => `${m.role === "user" ? "User" : "Bot"}: ${m.content.slice(0, 150)}`).join("\n");
     const ctx = prevIntent ? `\n\n⚠️ Previous: ${prevIntent}${prevEntity ? ` | Topic: "${prevEntity}"` : ""}` : "";
+
+    /* 🆕 v7.6: Include corrected version in the prompt */
+    const { corrected, wasCorrected } = correctQuery(message);
+    const correctionHint = wasCorrected ? `\n⚠️ Possible correction: "${message}" → "${corrected}"` : "";
+
     const { choices } = await openai.chat.completions.create({
       model: "gpt-4o-mini", temperature: 0, max_tokens: 300,
       messages: [
         { role: "system", content: CLASSIFY_SYSTEM },
-        { role: "user", content: `Chat history:\n${recent}${ctx}\n\nNew message: "${message}"` },
+        { role: "user", content: `Chat history:\n${recent}${ctx}${correctionHint}\n\nNew message: "${message}"` },
       ],
     });
     const match = choices[0].message.content.match(/\{[\s\S]*\}/);
@@ -973,13 +1247,11 @@ async function resolveEntityFromHistory(history) {
     });
     const m = choices[0].message.content.match(/\{[\s\S]*\}/);
     if (m) { const p = JSON.parse(m[0]); console.log(`   🧠 Resolved: "${p.topic}"`); return p; }
-  } catch (e) {}
+  } catch (e) { console.error("   ❌ resolveEntityFromHistory error:", e.message); }
   return null;
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.5: isVagueEntity — now catches audience words
-   ══════════════════════════════════════════════════════════ */
+/* ═══ isVagueEntity ═══ */
 function isVagueEntity(entity) {
   if (!entity) return true;
   const trimmed = entity.trim();
@@ -989,7 +1261,6 @@ function isVagueEntity(entity) {
     "الحاجة دي","المجال ده","المجال دا","فيه","عنه","عن ده",
     "هذا","هذا الموضوع","this","this topic",
     "دبلومات","الدبلومات","دبلومة",
-    /* 🆕 v7.5: Audience-only words are VAGUE — they don't tell us WHAT topic! */
     "للكبار","الكبار","كبار","للأطفال","الأطفال","أطفال","اطفال","للاطفال",
     "للمبتدئين","مبتدئين","للمتقدمين","متقدمين","متقدم","بالغين",
     "for adults","for kids","for children","for beginners","for advanced",
@@ -1006,6 +1277,14 @@ function expandArabicTerms(terms) {
     if (norm !== t) expanded.add(norm);
     if (norm.includes("الا")) { expanded.add(norm.replace(/الا/g, "الإ")); expanded.add(norm.replace(/الا/g, "الأ")); }
     if (norm.startsWith("ا") && norm.length > 2) { expanded.add("إ" + norm.slice(1)); expanded.add("أ" + norm.slice(1)); }
+
+    /* 🆕 v7.6: Add spelling corrections as variants */
+    const correctedWord = correctArabicWord(t);
+    if (correctedWord !== t && correctedWord.length >= 2) {
+      expanded.add(correctedWord);
+      const normC = normalizeArabic(correctedWord);
+      if (normC !== correctedWord) expanded.add(normC);
+    }
   }
   return [...expanded].filter((t) => t.length >= 2);
 }
@@ -1016,9 +1295,11 @@ async function searchSitePages(query) {
   if (!terms.length && query.trim().length >= 2) terms.push(query.trim());
   if (!terms.length) return [];
   try {
-    const { data, error } = await supabase.from("site_pages").select("page_url, content").or(buildOrFilter("content", terms)).limit(8);
+    const orFilter = buildOrFilter("content", terms);
+    if (!orFilter) return [];
+    const { data, error } = await supabase.from("site_pages").select("page_url, content").or(orFilter).limit(8);
     if (!error && data?.length) { const seen = new Set(); return data.filter((r) => { const k = r.page_url + "|" + r.content?.slice(0, 50); if (seen.has(k)) return false; seen.add(k); return true; }); }
-  } catch (e) {}
+  } catch (e) { console.error("   ❌ Site pages search error:", e.message); }
   return [];
 }
 
@@ -1034,18 +1315,85 @@ async function buildContext(searchQuery, options = {}) {
   return context;
 }
 
-/* ═══ DB Search (courses) ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.6: Enhanced Course Search with Fuzzy Retry
+   ══════════════════════════════════════════════════════════ */
 async function searchCoursesRaw(terms) {
   if (!terms?.length) return [];
-  const clean = [...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 8);
+  const clean = [...new Set(terms.map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 10);
   if (!clean.length) return [];
   console.log(`\n🔍 ═══ Course Search ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
-  try { const { data, error } = await supabase.from("courses").select(SELECT).or(buildOrFilter(DB.title, clean)).limit(15); if (!error && data?.length) { console.log(`   ✅ Title: ${data.length}`); return dedupeRows(data).slice(0, 10); } } catch (e) {}
-  try { const { data, error } = await supabase.from("courses").select(SELECT).or(buildOrFilter(DB.subtitle, clean.slice(0, 5))).limit(15); if (!error && data?.length) { console.log(`   ✅ Subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); } } catch (e) {}
-  try { const { data, error } = await supabase.from("courses").select(SELECT).or(buildOrFilter(DB.description, clean.slice(0, 4))).limit(15); if (!error && data?.length) { console.log(`   ✅ Description: ${data.length}`); return dedupeRows(data).slice(0, 10); } } catch (e) {}
-  try { const { data, error } = await supabase.from("courses").select(SELECT).or(buildOrFilter(DB.full_content, clean.slice(0, 3))).limit(10); if (!error && data?.length) { console.log(`   ✅ Full content: ${data.length}`); return dedupeRows(data).slice(0, 10); } } catch (e) {}
-  console.log(`   ❌ No results`);
+
+  /* 🆕 v7.6: Try title first */
+  try {
+    const orFilter = buildOrFilter(DB.title, clean);
+    if (orFilter) {
+      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+      if (!error && data?.length) { console.log(`   ✅ Title: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+    }
+  } catch (e) { console.error("   ❌ Title search error:", e.message); }
+
+  /* Try subtitle */
+  try {
+    const orFilter = buildOrFilter(DB.subtitle, clean.slice(0, 5));
+    if (orFilter) {
+      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+      if (!error && data?.length) { console.log(`   ✅ Subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+    }
+  } catch (e) { console.error("   ❌ Subtitle search error:", e.message); }
+
+  /* Try description */
+  try {
+    const orFilter = buildOrFilter(DB.description, clean.slice(0, 4));
+    if (orFilter) {
+      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+      if (!error && data?.length) { console.log(`   ✅ Description: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+    }
+  } catch (e) { console.error("   ❌ Description search error:", e.message); }
+
+  /* Try full_content */
+  try {
+    const orFilter = buildOrFilter(DB.full_content, clean.slice(0, 3));
+    if (orFilter) {
+      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(10);
+      if (!error && data?.length) { console.log(`   ✅ Full content: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+    }
+  } catch (e) { console.error("   ❌ Full content search error:", e.message); }
+
+  /* 🆕 v7.6: FUZZY RETRY — Try with corrected spelling + synonyms if nothing found */
+  console.log(`   🔄 v7.6: No results → trying fuzzy/synonym retry...`);
+  const fuzzyTerms = generateSearchVariants(clean, null);
+  const newTerms = fuzzyTerms.filter((t) => !clean.includes(t)).slice(0, 8);
+
+  if (newTerms.length > 0) {
+    console.log(`   🔄 v7.6: Retry terms: [${newTerms.join(" | ")}]`);
+    try {
+      const orFilter = buildOrFilter(DB.title, newTerms);
+      if (orFilter) {
+        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+        if (!error && data?.length) { console.log(`   ✅ v7.6 Fuzzy retry title: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+      }
+    } catch (e) { console.error("   ❌ Fuzzy retry error:", e.message); }
+
+    try {
+      const orFilter = buildOrFilter(DB.subtitle, newTerms.slice(0, 5));
+      if (orFilter) {
+        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+        if (!error && data?.length) { console.log(`   ✅ v7.6 Fuzzy retry subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+      }
+    } catch (e) { console.error("   ❌ Fuzzy subtitle retry error:", e.message); }
+
+    try {
+      const orFilter = buildOrFilter(DB.description, newTerms.slice(0, 4));
+      if (orFilter) {
+        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
+        if (!error && data?.length) { console.log(`   ✅ v7.6 Fuzzy retry description: ${data.length}`); return dedupeRows(data).slice(0, 10); }
+      }
+    } catch (e) { console.error("   ❌ Fuzzy desc retry error:", e.message); }
+  }
+
+  console.log(`   ❌ No results (even after fuzzy retry)`);
   return [];
 }
 
@@ -1054,7 +1402,16 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   const checkTerms = new Set();
   if (entity) checkTerms.add(normalizeArabic(entity.toLowerCase()));
   if (searchTerms?.length) searchTerms.forEach((t) => { if (t.length >= 2) checkTerms.add(normalizeArabic(t.toLowerCase())); });
-  const significantTerms = [...checkTerms].filter((t) => t.length >= 3);
+
+  /* 🆕 v7.6: Also add corrected versions */
+  const correctedCheckTerms = new Set();
+  for (const t of checkTerms) {
+    correctedCheckTerms.add(t);
+    const { corrected } = correctQuery(t);
+    if (corrected) correctedCheckTerms.add(normalizeArabic(corrected.toLowerCase()));
+  }
+
+  const significantTerms = [...correctedCheckTerms].filter((t) => t.length >= 3);
   if (!significantTerms.length) return courses;
   return courses.filter((c) => {
     const combined = normalizeArabic(`${c.title} ${c.description}`.toLowerCase());
@@ -1105,10 +1462,12 @@ Format: [0, 1, 2] or []`,
   return courses;
 }
 
-/* ═══ searchCourses — with preFilter ═══ */
+/* ═══ searchCourses — 🆕 v7.6: with generateSearchVariants ═══ */
 async function searchCourses(searchTerms, entity, userQuery) {
-  const expandedTerms = expandArabicTerms(searchTerms);
-  console.log(`   🔤 Expanded: [${expandedTerms.join(" | ")}]`);
+  /* 🆕 v7.6: Use generateSearchVariants for comprehensive search */
+  const expandedTerms = generateSearchVariants(searchTerms, entity);
+  console.log(`   🔤 v7.6 Expanded: [${expandedTerms.slice(0, 12).join(" | ")}]${expandedTerms.length > 12 ? ` +${expandedTerms.length - 12} more` : ""}`);
+
   const rawRows = await searchCoursesRaw(expandedTerms);
   if (!rawRows.length) return [];
   const instructorMap = await getInstructorMap(rawRows);
@@ -1134,19 +1493,28 @@ async function getCoursesByCategory(categoryKey) {
   const terms = CATEGORY_SEARCH_TERMS[categoryKey];
   if (!terms) return [];
   try {
-    const { data, error } = await supabase.from("courses").select(SELECT).or(buildOrFilter(DB.title, terms.slice(0, 3))).limit(10);
+    const orFilter = buildOrFilter(DB.title, terms.slice(0, 3));
+    if (!orFilter) return [];
+    const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(10);
     if (!error && data?.length) {
       const deduped = dedupeRows(data);
       const instructorMap = await getInstructorMap(deduped);
       return deduped.slice(0, 6).map((row) => mapCourse(row, instructorMap));
     }
-  } catch (e) {}
+  } catch (e) { console.error("   ❌ getCoursesByCategory error:", e.message); }
   return [];
 }
 
 /* ═══ Format Course Cards ═══ */
-function formatCourses(courses, category, diplomaMention = "") {
-  let html = `<b>🎓 إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
+function formatCourses(courses, category, diplomaMention = "", correctionNote = "") {
+  let html = "";
+
+  /* 🆕 v7.6: Show spelling correction note */
+  if (correctionNote) {
+    html += `<div style="background:#fff3cd;padding:6px 10px;border-radius:8px;margin-bottom:10px;font-size:12px;">✏️ ${correctionNote}</div>`;
+  }
+
+  html += `<b>🎓 إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
   courses.forEach((c, i) => {
     const link = c.url || (category ? category.url : ALL_COURSES_URL);
     html += `<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
@@ -1266,7 +1634,7 @@ function mergeExcludeTerms(...arrays) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.5: Main Chat Route ══════════════════════════
+   ═══ 🆕 v7.6: Main Chat Route ══════════════════════════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1295,7 +1663,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    /* 🆕 v7.5: Conversational message → instant response (BEFORE AI classification!) */
+    /* Conversational message → instant response */
     if (isConversationalMessage(message)) {
       _logIntent = "GENERAL_CHAT";
       const reply = getQuickConversationalReply(message);
@@ -1308,11 +1676,25 @@ app.post("/chat", limiter, async (req, res) => {
     session.history.push({ role: "user", content: message });
     while (session.history.length > MAX_HISTORY) session.history.shift();
 
+    /* 🆕 v7.6: Pre-correct the message for classification */
+    const { corrected: correctedMessage, wasCorrected: messageWasCorrected } = correctQuery(message);
+    if (messageWasCorrected) {
+      console.log(`   ✏️ v7.6: Spelling correction: "${message}" → "${correctedMessage}"`);
+    }
+
     const classification = await classify(message, session.history, session.intent, session.entity);
     let { intent: classifiedIntent, entity, search_terms, category_key, page_type, refers_to_previous, access_sub, exclude_terms, is_refinement } = classification;
     let intent = classifiedIntent;
 
-    /* v7.3.1: Rescue START_LEARNING */
+    /* 🆕 v7.6: Enrich search_terms with corrected versions */
+    if (search_terms.length > 0 && messageWasCorrected) {
+      const correctedTerms = correctedMessage.split(/\s+/).filter((t) => t.length >= 2 && !AUDIENCE_WORDS_RE.test(t));
+      for (const ct of correctedTerms) {
+        if (!search_terms.includes(ct)) search_terms.push(ct);
+      }
+    }
+
+    /* Rescue START_LEARNING */
     if (intent === "START_LEARNING") {
       const rescue = rescueStartLearningIntent(message, entity, search_terms);
       if (rescue) { intent = rescue.intent; entity = rescue.entity; search_terms = rescue.search_terms.length ? rescue.search_terms : search_terms; category_key = rescue.category_key || category_key; }
@@ -1321,14 +1703,14 @@ app.post("/chat", limiter, async (req, res) => {
     _logIntent = intent;
     _logEntity = entity || session.entity;
 
-    /* v7.3: Audience detection */
+    /* Audience detection */
     const audienceExcludes = detectAudienceExclusions(message, entity);
 
-    /* 🆕 v7.5: Strip audience modifiers — NOW returns empty when all are audience! */
+    /* Strip audience modifiers */
     const { cleanTerms: strippedTerms, cleanEntity: strippedEntity } = stripAudienceModifiers(search_terms, entity);
 
     console.log(`\n════════════════════════════════`);
-    console.log(`💬 "${message.slice(0, 60)}"`);
+    console.log(`💬 "${message.slice(0, 60)}"${messageWasCorrected ? ` → ✏️ "${correctedMessage.slice(0, 60)}"` : ""}`);
     console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Stripped: "${strippedEntity}"`);
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] → Stripped: [${strippedTerms.slice(0, 5).join(", ")}]`);
     if (exclude_terms.length) console.log(`🚫 Classifier excludes: [${exclude_terms.join(", ")}]`);
@@ -1412,7 +1794,9 @@ app.post("/chat", limiter, async (req, res) => {
         diplomas = await getAllDiplomas();
       } else {
         const terms = [...new Set([strippedEntity, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
-        diplomas = await searchDiplomas(expandArabicTerms(terms));
+        /* 🆕 v7.6: Use generateSearchVariants */
+        const expandedTerms = generateSearchVariants(terms, strippedEntity);
+        diplomas = await searchDiplomas(expandedTerms);
         if (diplomas.length > 0) diplomas = await filterRelevantDiplomas(diplomas, strippedEntity || message, strippedEntity);
         if (!diplomas.length) diplomas = await getAllDiplomas();
         if (exclude_terms.length) diplomas = applyDiplomaExclusions(diplomas, exclude_terms);
@@ -1443,18 +1827,18 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     // ══════════════════════════════════════════════════════
-    // ═══ 🆕 v7.5: COURSE_SEARCH — Context-Aware ═════════
+    // ═══ COURSE_SEARCH ══════════════════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "COURSE_SEARCH") {
       let resolvedEntity = strippedEntity;
       let resolvedTerms = [...strippedTerms];
       let resolvedCategoryKey = category_key;
 
-      /* 🆕 v7.5: If stripped entity is vague (e.g. "للكبار" → ""), resolve from session */
+      /* If stripped entity is vague, resolve from session */
       if (isVagueEntity(resolvedEntity)) {
         if (session.entity && !isVagueEntity(session.entity)) {
           resolvedEntity = session.entity;
-          console.log(`   🔄 v7.5: Entity was audience-only → using session entity: "${resolvedEntity}"`);
+          console.log(`   🔄 Entity was audience-only → using session entity: "${resolvedEntity}"`);
         }
         if (isVagueEntity(resolvedEntity)) {
           const ht = await resolveEntityFromHistory(session.history);
@@ -1463,7 +1847,7 @@ app.post("/chat", limiter, async (req, res) => {
         if (resolvedEntity && !isVagueEntity(resolvedEntity)) session.entity = resolvedEntity;
       }
 
-      /* 🆕 v7.5: If terms are EMPTY (all were audience words), generate from entity + category */
+      /* If terms are EMPTY, generate from entity + category */
       if (resolvedTerms.length === 0 && resolvedEntity && !isVagueEntity(resolvedEntity)) {
         const entityWords = resolvedEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
         resolvedTerms = [...entityWords];
@@ -1471,7 +1855,7 @@ app.post("/chat", limiter, async (req, res) => {
           resolvedTerms.push(...CATEGORY_SEARCH_TERMS[resolvedCategoryKey].slice(0, 4));
         }
         resolvedTerms = [...new Set(resolvedTerms)];
-        console.log(`   🧠 v7.5: Generated terms from entity+category: [${resolvedTerms.join(", ")}]`);
+        console.log(`   🧠 Generated terms from entity+category: [${resolvedTerms.join(", ")}]`);
       }
 
       const displayTerm = entity || resolvedEntity || message;
@@ -1481,18 +1865,24 @@ app.post("/chat", limiter, async (req, res) => {
       const allTerms = [...new Set([...(searchEntity && !isVagueEntity(searchEntity) ? [searchEntity] : []), ...resolvedTerms, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
       _logEntity = resolvedEntity || entity;
 
+      /* 🆕 v7.6: Build correction note */
+      let correctionNote = "";
+      if (messageWasCorrected) {
+        correctionNote = `بحثنا عن "<b>${correctedMessage}</b>" بدل "${message}" 🔍`;
+      }
+
       const [coursesRaw, relatedDiplomasRaw] = await Promise.all([
         allTerms.length > 0 ? searchCourses(allTerms, searchEntity, message) : Promise.resolve([]),
-        allTerms.length > 0 ? searchDiplomas(expandArabicTerms(allTerms)) : Promise.resolve([]),
+        allTerms.length > 0 ? searchDiplomas(generateSearchVariants(allTerms, searchEntity)) : Promise.resolve([]),
       ]);
 
       /* Apply exclusions */
       let courses = exclude_terms.length ? applyExclusions(coursesRaw, exclude_terms) : coursesRaw;
       if (exclude_terms.length) console.log(`   🚫 After exclusion: ${coursesRaw.length} → ${courses.length}`);
 
-      /* RETRY — if exclusion wiped all results, try category fallback */
+      /* RETRY — if exclusion wiped all results */
       if (courses.length === 0 && coursesRaw.length > 0 && exclude_terms.length) {
-        console.log(`   🔄 v7.5: All results excluded! Trying category fallback...`);
+        console.log(`   🔄 All results excluded! Trying category fallback...`);
         const fallbackKey = resolvedCategoryKey || category_key;
         if (fallbackKey) {
           let catCourses = await getCoursesByCategory(fallbackKey);
@@ -1500,7 +1890,7 @@ app.post("/chat", limiter, async (req, res) => {
           catCourses = exclude_terms.length ? applyExclusions(catCourses, exclude_terms) : catCourses;
           if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity);
           if (catCourses.length > 0) {
-            console.log(`   ✅ v7.5: Category fallback found ${catCourses.length} courses`);
+            console.log(`   ✅ Category fallback found ${catCourses.length} courses`);
             courses = catCourses;
           }
         }
@@ -1515,7 +1905,7 @@ app.post("/chat", limiter, async (req, res) => {
       let diplomaMention = relatedDiplomas.length > 0 ? formatDiplomaMention(relatedDiplomas) : "";
 
       if (courses.length > 0) {
-        const reply = formatCourses(courses, resolvedCategory, diplomaMention);
+        const reply = formatCourses(courses, resolvedCategory, diplomaMention, correctionNote);
         session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${displayTerm}]` });
         return res.json({ reply, session_id });
       }
@@ -1595,7 +1985,9 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ═══ FOLLOW_UP ═══
+    // ══════════════════════════════════════════════════════
+    // ═══ 🆕 v7.6: FOLLOW_UP — Fixed bugs ═══════════════
+    // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
       if (session.accessIssueStep) {
         const ml = message.toLowerCase();
@@ -1616,12 +2008,12 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* 🆕 v7.5: Follow-up also uses session entity when stripped is empty */
+      /* Follow-up uses session entity when stripped is empty */
       let followUpEntity = strippedEntity || session.entity || null;
       if (isVagueEntity(followUpEntity)) {
         if (session.entity && !isVagueEntity(session.entity)) {
           followUpEntity = session.entity;
-          console.log(`   🔄 v7.5: Follow-up entity was vague → using session: "${followUpEntity}"`);
+          console.log(`   🔄 Follow-up entity was vague → using session: "${followUpEntity}"`);
         } else {
           const ht = await resolveEntityFromHistory(session.history);
           followUpEntity = ht?.topic || "الموضوع السابق";
@@ -1642,20 +2034,21 @@ app.post("/chat", limiter, async (req, res) => {
         );
         let terms = fuCleanTerms.filter((t) => t.length >= 2);
 
-        /* 🆕 v7.5: If terms empty after strip, generate from entity */
+        /* 🆕 v7.6: FIX — was `const ck = category_key || (resolvedCategoryKey => null);` — ARROW FUNCTION BUG! */
         if (terms.length === 0 && followUpEntity && !isVagueEntity(followUpEntity)) {
           const entityWords = followUpEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
           terms = [...entityWords];
-          const ck = category_key || (resolvedCategoryKey => null);
-          if (category_key && CATEGORY_SEARCH_TERMS[category_key]) {
-            terms.push(...CATEGORY_SEARCH_TERMS[category_key].slice(0, 3));
+          /* 🆕 v7.6: FIX — use category_key directly, not undefined resolvedCategoryKey */
+          const ck = category_key || null;
+          if (ck && CATEGORY_SEARCH_TERMS[ck]) {
+            terms.push(...CATEGORY_SEARCH_TERMS[ck].slice(0, 3));
           }
           terms = [...new Set(terms)];
-          console.log(`   🧠 v7.5: Follow-up generated terms: [${terms.join(", ")}]`);
+          console.log(`   🧠 v7.6: Follow-up generated terms: [${terms.join(", ")}]`);
         }
 
         if (isDiplomaFollowUp) {
-          let diplomas = await searchDiplomas(expandArabicTerms(terms));
+          let diplomas = await searchDiplomas(generateSearchVariants(terms, followUpEntity));
           if (diplomas.length > 0) { diplomas = await filterRelevantDiplomas(diplomas, followUpEntity, followUpEntity); if (fuExc.length) diplomas = applyDiplomaExclusions(diplomas, fuExc); }
           if (diplomas.length > 0) {
             const reply = formatDiplomas(diplomas, [], null);
@@ -1667,12 +2060,13 @@ app.post("/chat", limiter, async (req, res) => {
 
         const [cRaw, dRaw] = await Promise.all([
           terms.length > 0 ? searchCourses(terms, followUpEntity, message) : Promise.resolve([]),
-          terms.length > 0 ? searchDiplomas(expandArabicTerms(terms)) : Promise.resolve([]),
+          terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, followUpEntity)) : Promise.resolve([]),
         ]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
 
         /* Retry with category if exclusion emptied results */
         if (courses.length === 0 && cRaw.length > 0 && fuExc.length) {
+          /* 🆕 v7.6: FIX — resolvedCategoryKey was undefined here, use category_key */
           const fk = category_key || (await resolveEntityFromHistory(session.history))?.category_key;
           if (fk && CATEGORIES[fk]) {
             let cc = await getCoursesByCategory(fk);
@@ -1707,13 +2101,12 @@ app.post("/chat", limiter, async (req, res) => {
       if (entity && !isVagueEntity(entity)) {
         const { cleanTerms: eClean } = stripAudienceModifiers(search_terms.length ? [...new Set([entity, ...search_terms])] : [entity], entity);
         let terms = eClean.filter((t) => t.length >= 2);
-        /* 🆕 v7.5: generate terms if empty */
         if (terms.length === 0 && !isVagueEntity(entity)) {
           terms = entity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
         }
         const [cRaw, dRaw] = await Promise.all([
           terms.length > 0 ? searchCourses(terms, entity, message) : Promise.resolve([]),
-          terms.length > 0 ? searchDiplomas(expandArabicTerms(terms)) : Promise.resolve([]),
+          terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, entity)) : Promise.resolve([]),
         ]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
         let relDip = dRaw.length > 0 ? await filterRelevantDiplomas(dRaw, entity, entity) : [];
@@ -1859,7 +2252,7 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
   }
 });
 
-/* ═══ 🆕 v7.5: Single Conversation Detail Endpoint ═══ */
+/* ═══ Single Conversation Detail Endpoint ═══ */
 app.get("/admin/conversations/:session_id", adminAuth, async (req, res) => {
   try {
     const sid = decodeURIComponent(req.params.session_id);
@@ -1985,6 +2378,10 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
 /* ═══ Debug Endpoints ═══ */
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
+
+  /* 🆕 v7.6: Show spelling correction in debug */
+  const { corrected, wasCorrected } = correctQuery(q);
+
   const classification = await classify(q, [], null, null);
   let fi = classification.intent, fe = classification.entity, ft = classification.search_terms, fc = classification.category_key, rescued = false;
   if (fi === "START_LEARNING") { const r = rescueStartLearningIntent(q, fe, ft); if (r) { fi = r.intent; fe = r.entity; ft = r.search_terms; fc = r.category_key; rescued = true; } }
@@ -1992,14 +2389,52 @@ app.get("/debug/search/:query", async (req, res) => {
   const ae = detectAudienceExclusions(q, fe);
   const allExc = mergeExcludeTerms(classification.exclude_terms, ae);
   const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : (se && !isVagueEntity(se) ? [se] : [q]);
-  const expanded = expandArabicTerms(terms);
+
+  /* 🆕 v7.6: Use generateSearchVariants */
+  const expanded = generateSearchVariants(terms, se);
+
   const [cRaw, dRaw, corr] = await Promise.all([terms.length ? searchCourses(terms, se, q) : Promise.resolve([]), expanded.length ? searchDiplomas(expanded) : Promise.resolve([]), searchCorrections(q, fi, fe)]);
   const courses = allExc.length ? applyExclusions(cRaw, allExc) : cRaw;
   const dFilt = dRaw.length ? await filterRelevantDiplomas(dRaw, se || q, se) : [];
   const dFinal = allExc.length ? applyDiplomaExclusions(dFilt, allExc) : dFilt;
   let catFb = [];
   if (courses.length === 0 && fc) { let cc = await getCoursesByCategory(fc); cc = preFilterByPrimarySubject(cc, q, se); if (allExc.length) cc = applyExclusions(cc, allExc); catFb = cc; }
-  res.json({ query: q, classification, rescued, final_intent: fi, stripped_entity: se, stripped_terms: st, audience_excludes: ae, merged_excludes: allExc, courses_raw: cRaw.length, courses_filtered: courses.length, courses: courses.map((c) => ({ title: c.title, url: c.url })), diplomas_raw: dRaw.length, diplomas_filtered: dFinal.length, diplomas: dFinal.map((d) => ({ title: d.title })), corrections_matched: corr.length, category_fallback: catFb.length });
+  res.json({
+    query: q,
+    spelling_correction: wasCorrected ? { original: q, corrected } : null,
+    classification, rescued,
+    final_intent: fi, stripped_entity: se, stripped_terms: st, audience_excludes: ae, merged_excludes: allExc,
+    search_variants_count: expanded.length,
+    courses_raw: cRaw.length, courses_filtered: courses.length,
+    courses: courses.map((c) => ({ title: c.title, url: c.url })),
+    diplomas_raw: dRaw.length, diplomas_filtered: dFinal.length,
+    diplomas: dFinal.map((d) => ({ title: d.title })),
+    corrections_matched: corr.length,
+    category_fallback: catFb.length,
+  });
+});
+
+/* 🆕 v7.6: Debug spelling correction */
+app.get("/debug/correct/:query", (req, res) => {
+  const q = decodeURIComponent(req.params.query);
+  const { corrected, wasCorrected, original } = correctQuery(q);
+  const words = q.split(/\s+/);
+  const wordCorrections = words.map((w) => ({
+    original: w,
+    corrected: correctArabicWord(w),
+    changed: w !== correctArabicWord(w),
+  }));
+  const synonyms = expandWithSynonyms([corrected]);
+  const variants = generateSearchVariants([q], null);
+  res.json({
+    query: q,
+    corrected,
+    was_corrected: wasCorrected,
+    word_by_word: wordCorrections,
+    synonyms: synonyms.slice(0, 15),
+    total_search_variants: variants.length,
+    variants_sample: variants.slice(0, 20),
+  });
 });
 
 app.get("/debug/prefilter/:query", async (req, res) => {
@@ -2007,7 +2442,7 @@ app.get("/debug/prefilter/:query", async (req, res) => {
   const classification = await classify(q, [], null, null);
   const { cleanTerms: st, cleanEntity: se } = stripAudienceModifiers(classification.search_terms, classification.entity);
   const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : [q];
-  const expanded = expandArabicTerms(terms);
+  const expanded = generateSearchVariants(terms, se);
   const rawRows = await searchCoursesRaw(expanded);
   const iMap = await getInstructorMap(rawRows);
   const allCourses = rawRows.map((r) => mapCourse(r, iMap));
@@ -2028,8 +2463,8 @@ app.get("/debug/strip/:query", (req, res) => {
   res.json({ query: q, original_terms: terms, stripped_terms: cleanTerms, stripped_entity: cleanEntity, audience_excludes: ae, is_vague: isVagueEntity(cleanEntity) });
 });
 
-app.get("/debug/normalize/:text", (req, res) => { const t = decodeURIComponent(req.params.text); res.json({ original: t, normalized: normalizeArabic(t), expanded: expandArabicTerms([t]) }); });
-app.get("/debug/diplomas/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const t = q.split(/\s+/).filter((t) => t.length >= 2); const e = expandArabicTerms(t); const d = e.length ? await searchDiplomas(e) : await getAllDiplomas(); res.json({ query: q, results: d.map((d) => ({ title: d.title, slug: d.slug })) }); });
+app.get("/debug/normalize/:text", (req, res) => { const t = decodeURIComponent(req.params.text); res.json({ original: t, normalized: normalizeArabic(t), expanded: expandArabicTerms([t]), corrected: correctQuery(t) }); });
+app.get("/debug/diplomas/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const t = q.split(/\s+/).filter((t) => t.length >= 2); const e = generateSearchVariants(t, null); const d = e.length ? await searchDiplomas(e) : await getAllDiplomas(); res.json({ query: q, results: d.map((d) => ({ title: d.title, slug: d.slug })) }); });
 app.get("/debug/faq/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const r = await searchFAQ(q); res.json({ query: q, results: r.map((r) => ({ question: r.question, score: r.score })) }); });
 app.get("/debug/corrections/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const r = await searchCorrections(q, null, null); res.json({ query: q, results: r.map((r) => ({ id: r.id, question: r.original_question, score: r._score })) }); });
 
@@ -2047,7 +2482,7 @@ app.get("/debug/db", async (req, res) => {
     const tables = ["courses", "site_pages", "faq", "diplomas", "corrections"];
     const counts = {};
     for (const t of tables) { const { count } = await supabase.from(t).select("*", { count: "exact", head: true }); counts[t] = count || 0; }
-    res.json({ ...counts, faq_cache: faqCache.length, corrections_cache: correctionsCache.length });
+    res.json({ ...counts, faq_cache: faqCache.length, corrections_cache: correctionsCache.length, spelling_dict_size: Object.keys(ARABIC_CORRECTIONS).length, synonym_groups: Object.keys(SEARCH_SYNONYMS).length });
   } catch (e) { res.json({ error: e.message }); }
 });
 
@@ -2060,18 +2495,28 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "عايز اتعلم برمجة", expected: "COURSE_SEARCH" },
     { input: "في فوتوشوب", expected: "COURSE_SEARCH" },
     { input: "كورس بايثون", expected: "COURSE_SEARCH" },
+    { input: "ديجيتال ماركوتنج", expected: "COURSE_SEARCH" },
     { input: "ايه الدبلومات المتاحة", expected: "DIPLOMA_SEARCH" },
     { input: "بكام الاشتراك", expected: "SUBSCRIPTION" },
     { input: "ازاي ادفع", expected: "PAYMENT" },
     { input: "مش قادر ادخل حسابي", expected: "ACCESS_ISSUE" },
+    { input: "انت فين", expected: "GENERAL" },
+    { input: "شكرا", expected: "GENERAL" },
   ];
   const results = [];
   for (const t of tests) {
     try {
+      /* Check conversational first */
+      if (isConversationalMessage(t.input)) {
+        results.push({ input: t.input, expected: t.expected, got: "GENERAL", pass: t.expected === "GENERAL" || t.expected === "GREETING" ? "✅" : "❌", note: "conversational shortcut" });
+        continue;
+      }
       const c = await classify(t.input, [], null, null);
       let fi = c.intent;
       if (fi === "START_LEARNING") { const r = rescueStartLearningIntent(t.input, c.entity, c.search_terms); if (r) fi = r.intent; }
-      results.push({ input: t.input, expected: t.expected, got: fi, pass: fi === t.expected ? "✅" : "❌" });
+      /* 🆕 v7.6: Show spelling correction in tests */
+      const { corrected, wasCorrected } = correctQuery(t.input);
+      results.push({ input: t.input, expected: t.expected, got: fi, pass: fi === t.expected ? "✅" : "❌", spelling: wasCorrected ? `→ ${corrected}` : null });
     } catch (e) { results.push({ input: t.input, expected: t.expected, got: "ERROR", pass: "❌" }); }
   }
   const passed = results.filter((r) => r.pass === "✅").length;
@@ -2080,22 +2525,31 @@ app.get("/debug/test-all", async (req, res) => {
 
 /* ═══ Health & 404 ═══ */
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", version: "7.5-context-aware-audience", sessions: sessions.size, uptime: Math.floor(process.uptime()), categories: Object.keys(CATEGORIES).length });
+  res.json({
+    status: "ok",
+    version: "7.6-fuzzy-search",
+    sessions: sessions.size,
+    uptime: Math.floor(process.uptime()),
+    categories: Object.keys(CATEGORIES).length,
+    spelling_dict: Object.keys(ARABIC_CORRECTIONS).length,
+    synonym_groups: Object.keys(SEARCH_SYNONYMS).length,
+  });
 });
 
 app.use((req, res) => { res.status(404).json({ error: "Not Found" }); });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v7.5 🧠 Context-Aware Audience + 💬 Conversational Detection`);
+  console.log(`\n🤖 easyT Chatbot v7.6 🔍 Fuzzy Arabic Search + 🐛 Bug Fixes`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   🆕 v7.5: FIX — stripAudienceModifiers returns EMPTY (not originals)`);
-  console.log(`   🆕 v7.5: FIX — isVagueEntity catches audience-only entities`);
-  console.log(`   🆕 v7.5: FIX — COURSE_SEARCH generates terms from session entity`);
-  console.log(`   🆕 v7.5: Conversational detection (انت فين/شكرا/باي)`);
-  console.log(`   🆕 v7.5: /admin/conversations/:session_id endpoint`);
+  console.log(`   🆕 v7.6: Fuzzy Arabic search (Levenshtein + dictionary)`);
+  console.log(`   🆕 v7.6: ${Object.keys(ARABIC_CORRECTIONS).length} spelling corrections`);
+  console.log(`   🆕 v7.6: ${Object.keys(SEARCH_SYNONYMS).length} synonym groups`);
+  console.log(`   🆕 v7.6: Smart search variants generation`);
+  console.log(`   🆕 v7.6: FIX — Arrow function bug (resolvedCategoryKey => null)`);
+  console.log(`   🆕 v7.6: FIX — resolvedCategoryKey undefined in FOLLOW_UP`);
+  console.log(`   🆕 v7.6: /debug/correct/:query endpoint`);
+  console.log(`   ✅ v7.5: Context-Aware Audience + Conversational Detection`);
   console.log(`   ✅ v7.4: AI filter [] fix + preFilter + Retry`);
   console.log(`   ✅ v7.3: Audience detection + Strict AI filter`);
-  console.log(`   ✅ v7.2: Refinement + Exclusions`);
-  console.log(`   🧠 v7.1: Corrections learning`);
   console.log(`\n   Admin: ${process.env.RENDER_EXTERNAL_URL || "http://localhost:" + PORT}/admin\n`);
 });
