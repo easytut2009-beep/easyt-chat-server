@@ -1,12 +1,17 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v7.2 — 🧠 Learning + 🎯 Smart Filtering
-   ✅ ALL v7.1 features preserved
-   🆕 v7.2: Exclude terms (user says "مش أطفال" / "للكبار" → exclude children)
-   🆕 v7.2: Refinement detection ("لا انا عاوز X" → re-search with corrections)
-   🆕 v7.2: AI-based diploma relevance filter (no more irrelevant diploma suggestions)
-   🆕 v7.2: Course exclusion filter (filter out unwanted courses)
-   🆕 v7.1: Bot learns from corrections
-   🆕 v7.0: Chat logging + Admin Dashboard + Corrections CRUD
+   🤖 easyT Chatbot v7.3 — 🎯 Strict Relevance + 👥 Audience Filter
+   ✅ ALL v7.2 features preserved
+   🆕 v7.3: detectAudienceExclusions() — auto-detect "للكبار"/"للأطفال" on FIRST query
+   🆕 v7.3: Strict AI relevance filter (no more "Graphics in English" for "learn English")
+   🆕 v7.3: AI filter runs on 2+ results (was 3+)
+   🆕 v7.3: Classifier detects audience intent on first message (not just refinement)
+   ─── v7.2 features ───
+   ✅ v7.2: Exclude terms (user says "مش أطفال" / "للكبار" → exclude children)
+   ✅ v7.2: Refinement detection ("لا انا عاوز X" → re-search with corrections)
+   ✅ v7.2: AI-based diploma relevance filter
+   ✅ v7.2: Course exclusion filter
+   ✅ v7.1: Bot learns from corrections
+   ✅ v7.0: Chat logging + Admin Dashboard + Corrections CRUD
    ⚡ Supabase .or() filters + Promise.all() + Instructor cache
    🔤 v6.4: Arabic normalization
    📱 v6.5: Compact horizontal card layout
@@ -275,7 +280,7 @@ function mapDiplomaToCategory(diplomaTitle) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.2: AI Diploma Relevance Filter ══════════════
+   ═══ AI Diploma Relevance Filter ════════════════════════
    ══════════════════════════════════════════════════════════ */
 async function filterRelevantDiplomas(diplomas, userQuery, entity) {
   if (!diplomas.length) return [];
@@ -317,7 +322,41 @@ Format: [0, 1]`,
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.2: Exclusion Filter ═════════════════════════
+   ═══ 🆕 v7.3: Audience Auto-Detection ══════════════════
+   ══════════════════════════════════════════════════════════ */
+function detectAudienceExclusions(message, entity) {
+  const combined = `${message} ${entity || ""}`.toLowerCase();
+  const norm = normalizeArabic(combined);
+  const excludes = [];
+
+  /* User wants ADULTS → exclude children */
+  const wantsAdults =
+    /للكبار|for adults?|بالغين|الكبار|مبتدئين كبار|مش.*اطفال|مش.*أطفال|غير.*اطفال|مش.*للاطفال|مش.*للأطفال/.test(combined) ||
+    /للكبار|بالغين|الكبار/.test(norm);
+
+  if (wantsAdults) {
+    excludes.push(
+      "أطفال", "اطفال", "children", "kids", "للأطفال", "للاطفال",
+      "for kids", "for children", "تربية", "أولاد", "بنات"
+    );
+    console.log(`   👥 v7.3: Audience detected → ADULTS (excluding children terms)`);
+  }
+
+  /* User wants CHILDREN → exclude advanced/professional */
+  const wantsChildren =
+    /للاطفال|للأطفال|for kids|for children|تعليم.*اطفال|تعليم.*أطفال/.test(combined) &&
+    !/مش.*اطفال|مش.*أطفال|غير.*اطفال/.test(combined);
+
+  if (wantsChildren) {
+    excludes.push("متقدم", "advanced", "professional", "محترف", "احترافي");
+    console.log(`   👥 v7.3: Audience detected → CHILDREN`);
+  }
+
+  return [...new Set(excludes)];
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ Exclusion Filter ═══════════════════════════════════
    ══════════════════════════════════════════════════════════ */
 function applyExclusions(courses, excludeTerms) {
   if (!excludeTerms?.length || !courses.length) return courses;
@@ -726,7 +765,7 @@ function getSession(id) {
     count: 1,
     lastAccess: Date.now(),
     accessIssueStep: null,
-    lastExcludeTerms: [], /* 🆕 v7.2 */
+    lastExcludeTerms: [],
   };
   sessions.set(id, s);
   return s;
@@ -800,7 +839,7 @@ function shouldEscapeAccessFlow(message, intent, entity) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.2: Updated AI Classification ════════════════
+   ═══ 🆕 v7.3: Updated AI Classification ════════════════
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES).map(([k, v]) => `  ${k}: ${v.name}`).join("\n");
 
@@ -819,6 +858,14 @@ Return ONLY valid JSON:
   "is_refinement": false
 }
 
+═══ ⚠️ CRITICAL v7.3: AUDIENCE DETECTION (FIRST QUERY TOO!) ═══
+ALWAYS detect audience intent, even on the VERY FIRST message:
+
+• "عاوز اتعلم انجليزى للكبار" → exclude_terms: ["أطفال", "children", "kids", "للأطفال", "for children", "for kids"]
+• "كورس انجليزي للكبار" → exclude_terms: ["أطفال", "children", "kids", "للأطفال", "for children", "for kids"]
+• "انجليزى للأطفال" → exclude_terms: ["متقدم", "advanced", "professional"]
+• "عاوز كورس فوتوشوب مش للاطفال" → exclude_terms: ["أطفال", "children", "kids", "للأطفال"]
+
 ═══ ⚠️ CRITICAL: REFINEMENT & NEGATION DETECTION ═══
 When user starts with "لا" (no) or "مش كده" or corrects the previous results:
 → This is a REFINEMENT — set is_refinement: true
@@ -831,11 +878,6 @@ REFINEMENT EXAMPLES:
 • "مش للأطفال، عاوز للمبتدئين الكبار" → exclude_terms: ["أطفال", "children", "kids"], is_refinement: true
 • "لا مش ده، عايز فوتوشوب مش اليستريتور" → exclude_terms: ["اليستريتور", "illustrator"], is_refinement: true
 • "عايز حاجة متقدمة مش للمبتدئين" → exclude_terms: ["مبتدئين", "beginner", "أساسيات"], is_refinement: true
-
-═══ ⚠️ CRITICAL: "للكبار" / "for adults" ═══
-When user specifies "للكبار" or "for adults" or "adult":
-→ exclude_terms MUST include: ["أطفال", "children", "kids", "for kids", "للأطفال", "for children"]
-→ search_terms should focus on general/adult level courses
 
 ═══ ⚠️ CRITICAL: CONTEXT RESOLUTION RULE ═══
 When user says "الموضوع ده", "عن كده", "تشرح ده", "في كورسات عن كده":
@@ -899,8 +941,8 @@ async function classify(message, history, prevIntent, prevEntity) {
         page_type: p.page_type || null,
         refers_to_previous: p.refers_to_previous || false,
         access_sub: p.access_sub || null,
-        exclude_terms: Array.isArray(p.exclude_terms) ? p.exclude_terms.filter(Boolean) : [], /* 🆕 v7.2 */
-        is_refinement: p.is_refinement || false, /* 🆕 v7.2 */
+        exclude_terms: Array.isArray(p.exclude_terms) ? p.exclude_terms.filter(Boolean) : [],
+        is_refinement: p.is_refinement || false,
       };
     }
   } catch (e) { console.error("❌ Classify error:", e.message); }
@@ -1050,24 +1092,49 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   return filtered;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.3: STRICT AI Relevance Filter ═══════════════
+   ══════════════════════════════════════════════════════════ */
 async function filterRelevantAI(courses, userQuery, entity) {
-  if (courses.length <= 3) return courses;
+  /* 🆕 v7.3: Run on 2+ results (was >3) */
+  if (courses.length < 2) return courses;
   try {
     const titles = courses.map((c, i) => `${i}: ${c.title}`).join("\n");
     const { choices } = await openai.chat.completions.create({
       model: "gpt-4o-mini", temperature: 0, max_tokens: 100,
       messages: [
-        { role: "system", content: `Filter search results. Return JSON array of RELEVANT indices. Be generous but exclude clearly unrelated results. Format: [0, 1, 2]` },
-        { role: "user", content: `Query: "${userQuery}"${entity ? ` (topic: ${entity})` : ""}\n\nCourses:\n${titles}\n\nRelevant indices:` },
+        {
+          role: "system",
+          /* 🆕 v7.3: STRICT instead of generous */
+          content: `You filter course search results for STRICT PRIMARY topic relevance.
+Return ONLY a JSON array of indices for courses whose PRIMARY SUBJECT matches the user's request.
+
+⚠️ CRITICAL RULES:
+- A course "تعليم الجرافيكس باللغة الإنجليزية" (Graphics taught in English) is a GRAPHICS course, NOT an English language course. EXCLUDE it from English language searches.
+- A course "for children/للأطفال" is NOT relevant if user wants "for adults/للكبار". EXCLUDE it.
+- A course about "تصميم" is NOT relevant if user wants "تعلم لغة". EXCLUDE it.
+- Only include courses where the MAIN SUBJECT directly matches the user's topic.
+- If a course merely MENTIONS the topic incidentally (e.g., "taught in English" but it's about graphics), EXCLUDE it.
+- If NONE are truly relevant, return empty array [].
+
+Format: [0, 1, 2]`,
+        },
+        {
+          role: "user",
+          content: `User wants: "${userQuery}"${entity ? ` (topic: ${entity})` : ""}\n\nCourses:\n${titles}\n\nRelevant indices:`,
+        },
       ],
     });
     const matchArr = choices[0].message.content.match(/\[[\d,\s]*\]/);
     if (matchArr) {
       const indices = JSON.parse(matchArr[0]);
       const filtered = indices.filter((i) => i >= 0 && i < courses.length).map((i) => courses[i]);
+      console.log(`   🎯 v7.3 STRICT AI filter: ${courses.length} → ${filtered.length}`);
       if (filtered.length >= 1) return filtered;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("   ❌ filterRelevantAI error:", e.message);
+  }
   return courses;
 }
 
@@ -1081,7 +1148,8 @@ async function searchCourses(searchTerms, entity) {
   const deduped = dedupe(courses);
   const localFiltered = localRelevanceFilter(deduped, entity, searchTerms);
   if (!localFiltered.length) return [];
-  if (localFiltered.length > 3) {
+  /* 🆕 v7.3: Always run AI filter on 2+ results (was >3) */
+  if (localFiltered.length >= 2) {
     const aiFiltered = await filterRelevantAI(localFiltered, entity || searchTerms[0] || "", entity);
     return aiFiltered.slice(0, 6);
   }
@@ -1304,7 +1372,19 @@ function makeLink(url, text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.2: Main Chat Route — Smart Filtering ════════
+   ═══ 🆕 v7.3: Merge Exclude Terms Helper ═══════════════
+   ══════════════════════════════════════════════════════════ */
+function mergeExcludeTerms(classifierExcludes, audienceExcludes, sessionExcludes) {
+  const merged = new Set([
+    ...(classifierExcludes || []),
+    ...(audienceExcludes || []),
+    ...(sessionExcludes || []),
+  ]);
+  return [...merged].filter((t) => t && t.length >= 2);
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.3: Main Chat Route — Strict Filtering ═══════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1351,30 +1431,40 @@ app.post("/chat", limiter, async (req, res) => {
       page_type,
       refers_to_previous,
       access_sub,
-      exclude_terms,     /* 🆕 v7.2 */
-      is_refinement,     /* 🆕 v7.2 */
+      exclude_terms,
+      is_refinement,
     } = classification;
 
     let intent = classifiedIntent;
     _logIntent = intent;
     _logEntity = entity || session.entity;
 
+    /* 🆕 v7.3: Auto-detect audience exclusions from message text */
+    const audienceExcludes = detectAudienceExclusions(message, entity);
+
     console.log(`\n════════════════════════════════`);
     console.log(`💬 "${message.slice(0, 60)}"`);
     console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`);
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
-    if (exclude_terms.length) console.log(`🚫 Exclude: [${exclude_terms.join(", ")}]`);
+    if (exclude_terms.length) console.log(`🚫 Classifier excludes: [${exclude_terms.join(", ")}]`);
+    if (audienceExcludes.length) console.log(`👥 v7.3 Audience excludes: [${audienceExcludes.join(", ")}]`);
     if (is_refinement) console.log(`🔄 REFINEMENT detected!`);
     if (access_sub) console.log(`🔐 Access sub: ${access_sub}`);
     if (session.accessIssueStep) console.log(`🔐 Access step: ${session.accessIssueStep}`);
 
-    /* 🆕 v7.2: Handle refinement — force COURSE_SEARCH */
+    /* 🆕 v7.3: Merge all exclude sources */
+    exclude_terms = mergeExcludeTerms(exclude_terms, audienceExcludes, []);
+
+    if (exclude_terms.length) {
+      console.log(`🚫 v7.3 MERGED excludes: [${exclude_terms.join(", ")}]`);
+    }
+
+    /* Handle refinement — force COURSE_SEARCH */
     if (is_refinement && (intent === "FOLLOW_UP" || intent === "COURSE_SEARCH")) {
       intent = "COURSE_SEARCH";
       session.intent = "COURSE_SEARCH";
       _logIntent = "COURSE_SEARCH";
-      console.log(`🔄 v7.2: Refinement → forced COURSE_SEARCH`);
-      /* Merge session exclude terms */
+      console.log(`🔄 Refinement → forced COURSE_SEARCH`);
       if (exclude_terms.length) {
         session.lastExcludeTerms = exclude_terms;
       }
@@ -1385,14 +1475,19 @@ app.post("/chat", limiter, async (req, res) => {
 
     const category = category_key ? CATEGORIES[category_key] : null;
 
-    /* 🆕 v7.2: Carry forward exclude terms from session if same topic */
+    /* Carry forward exclude terms from session if same topic */
     if (!exclude_terms.length && session.lastExcludeTerms?.length && intent === "COURSE_SEARCH") {
       exclude_terms = session.lastExcludeTerms;
-      console.log(`🚫 v7.2: Carrying forward session excludes: [${exclude_terms.join(", ")}]`);
+      console.log(`🚫 Carrying forward session excludes: [${exclude_terms.join(", ")}]`);
+    }
+
+    /* 🆕 v7.3: Store exclude terms in session for carry-forward */
+    if (exclude_terms.length && (intent === "COURSE_SEARCH" || intent === "DIPLOMA_SEARCH")) {
+      session.lastExcludeTerms = exclude_terms;
     }
 
     if (session.accessIssueStep && shouldEscapeAccessFlow(message, intent, entity)) {
-      console.log(`🔧 v6.3 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}"`);
+      console.log(`🔧 ESCAPE: Clearing accessIssueStep "${session.accessIssueStep}"`);
       session.accessIssueStep = null;
       if (intent === "FOLLOW_UP" && entity && !isVagueEntity(entity)) {
         intent = "COURSE_SEARCH";
@@ -1407,7 +1502,7 @@ app.post("/chat", limiter, async (req, res) => {
     }
 
     /* Clear exclude terms when topic changes completely */
-    if (intent !== "COURSE_SEARCH" && intent !== "FOLLOW_UP") {
+    if (intent !== "COURSE_SEARCH" && intent !== "FOLLOW_UP" && intent !== "DIPLOMA_SEARCH") {
       session.lastExcludeTerms = [];
     }
 
@@ -1466,13 +1561,12 @@ app.post("/chat", limiter, async (req, res) => {
         const expandedTerms = expandArabicTerms(terms);
         diplomas = await searchDiplomas(expandedTerms);
 
-        /* 🆕 v7.2: Filter diplomas for relevance */
         if (diplomas.length > 0) {
           diplomas = await filterRelevantDiplomas(diplomas, entity || message, entity);
         }
         if (!diplomas.length) diplomas = await getAllDiplomas();
 
-        /* 🆕 v7.2: Apply exclusions to diplomas */
+        /* Apply exclusions to diplomas */
         if (exclude_terms.length) {
           diplomas = applyDiplomaExclusions(diplomas, exclude_terms);
         }
@@ -1487,7 +1581,6 @@ app.post("/chat", limiter, async (req, res) => {
               catKey ? getCoursesByCategory(catKey) : Promise.resolve([]),
             ]);
             relatedCourses = directCourses;
-            /* 🆕 v7.2: Apply exclusions to related courses */
             if (exclude_terms.length) relatedCourses = applyExclusions(relatedCourses, exclude_terms);
             if (relatedCourses.length < 4 && catCourses.length) {
               let filteredCat = exclude_terms.length ? applyExclusions(catCourses, exclude_terms) : catCourses;
@@ -1511,7 +1604,7 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ═══ 🆕 v7.2: COURSE_SEARCH (with exclusions + diploma relevance) ═══
+    // ═══ 🆕 v7.3: COURSE_SEARCH (strict filtering + audience detection) ═══
     if (intent === "COURSE_SEARCH") {
       let resolvedEntity = entity, resolvedTerms = search_terms, resolvedCategoryKey = category_key;
       if (isVagueEntity(entity)) {
@@ -1537,14 +1630,14 @@ app.post("/chat", limiter, async (req, res) => {
         allTerms.length > 0 ? searchDiplomas(expandArabicTerms(allTerms)) : Promise.resolve([]),
       ]);
 
-      /* 🆕 v7.2: Apply exclusion filter to courses */
+      /* 🆕 v7.3: Apply exclusion filter to courses */
       let courses = coursesRaw;
       if (exclude_terms.length) {
         courses = applyExclusions(coursesRaw, exclude_terms);
-        console.log(`   🚫 v7.2: Courses after exclusion: ${coursesRaw.length} → ${courses.length}`);
+        console.log(`   🚫 v7.3: Courses after exclusion: ${coursesRaw.length} → ${courses.length}`);
       }
 
-      /* 🆕 v7.2: Apply AI relevance filter to diplomas */
+      /* Apply AI relevance filter to diplomas */
       let relatedDiplomas = relatedDiplomasRaw;
       if (relatedDiplomasRaw.length > 0) {
         relatedDiplomas = await filterRelevantDiplomas(
@@ -1552,11 +1645,10 @@ app.post("/chat", limiter, async (req, res) => {
           resolvedEntity || displayTerm,
           resolvedEntity
         );
-        /* Also apply exclusions to diplomas */
         if (exclude_terms.length) {
           relatedDiplomas = applyDiplomaExclusions(relatedDiplomas, exclude_terms);
         }
-        console.log(`   🎓 v7.2: Diplomas after filtering: ${relatedDiplomasRaw.length} → ${relatedDiplomas.length}`);
+        console.log(`   🎓 Diplomas after filtering: ${relatedDiplomasRaw.length} → ${relatedDiplomas.length}`);
       }
 
       let diplomaMention = relatedDiplomas.length > 0 ? formatDiplomaMention(relatedDiplomas) : "";
@@ -1567,11 +1659,15 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* 🆕 v7.2: Fallback — also apply exclusions to category courses */
+      /* Fallback — also apply exclusions to category courses */
       const fallbackCatKey = resolvedCategoryKey || category_key;
       if (fallbackCatKey) {
         let catCourses = await getCoursesByCategory(fallbackCatKey);
         if (exclude_terms.length) catCourses = applyExclusions(catCourses, exclude_terms);
+        /* 🆕 v7.3: Also apply strict AI filter to category fallback */
+        if (catCourses.length >= 2) {
+          catCourses = await filterRelevantAI(catCourses, resolvedEntity || displayTerm, resolvedEntity);
+        }
         if (catCourses.length > 0) {
           let reply = formatCategoryCourses(catCourses, CATEGORIES[fallbackCatKey], displayTerm);
           if (diplomaMention) reply += diplomaMention;
@@ -1586,7 +1682,7 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* 🆕 v7.2: Better no-results message for refinement */
+      /* Better no-results message for refinement */
       if (is_refinement && exclude_terms.length) {
         const catLink = resolvedCategory || (category_key ? CATEGORIES[category_key] : CATEGORIES.languages);
         let reply = `<b>🔍 للأسف مفيش كورسات عن "${displayTerm}" بالمواصفات دي حالياً.</b><br><br>`;
@@ -1691,6 +1787,10 @@ app.post("/chat", limiter, async (req, res) => {
       }
       _logEntity = followUpEntity;
 
+      /* 🆕 v7.3: Also detect audience in follow-ups */
+      const followUpAudienceExcludes = detectAudienceExclusions(message, followUpEntity);
+      const followUpExcludes = mergeExcludeTerms(exclude_terms, followUpAudienceExcludes, session.lastExcludeTerms || []);
+
       const coursePatterns = ["كورس","دورة","كورسات","دورات","تشرح","يشرح","اتعلم","course"];
       const diplomaPatterns = ["دبلومة","دبلومات","مسار","diploma"];
       const isCourseFollowUp = coursePatterns.some((p) => message.toLowerCase().includes(p));
@@ -1699,10 +1799,9 @@ app.post("/chat", limiter, async (req, res) => {
       if (isDiplomaFollowUp && followUpEntity && followUpEntity !== "الموضوع السابق") {
         const terms = [...new Set([followUpEntity, ...search_terms])].filter((t) => t.length >= 2);
         let diplomas = await searchDiplomas(expandArabicTerms(terms));
-        /* 🆕 v7.2: Filter diplomas */
         if (diplomas.length > 0) {
           diplomas = await filterRelevantDiplomas(diplomas, followUpEntity, followUpEntity);
-          if (exclude_terms.length) diplomas = applyDiplomaExclusions(diplomas, exclude_terms);
+          if (followUpExcludes.length) diplomas = applyDiplomaExclusions(diplomas, followUpExcludes);
         }
         if (diplomas.length > 0) {
           const catKey = category_key || mapDiplomaToCategory(diplomas[0].title);
@@ -1710,9 +1809,9 @@ app.post("/chat", limiter, async (req, res) => {
           if (catKey && CATEGORIES[catKey]) {
             relatedCategory = CATEGORIES[catKey];
             const [dc, cc] = await Promise.all([searchCourses(terms, followUpEntity), getCoursesByCategory(catKey)]);
-            relatedCourses = exclude_terms.length ? applyExclusions(dc, exclude_terms) : dc;
+            relatedCourses = followUpExcludes.length ? applyExclusions(dc, followUpExcludes) : dc;
             if (relatedCourses.length < 4) {
-              let filteredCc = exclude_terms.length ? applyExclusions(cc, exclude_terms) : cc;
+              let filteredCc = followUpExcludes.length ? applyExclusions(cc, followUpExcludes) : cc;
               const eu = new Set(relatedCourses.map((c) => c.url));
               for (const c of filteredCc) { if (!eu.has(c.url) && relatedCourses.length < 6) relatedCourses.push(c); }
             }
@@ -1732,10 +1831,10 @@ app.post("/chat", limiter, async (req, res) => {
         }
         const [coursesRaw, relatedDiplomasRaw] = await Promise.all([searchCourses(terms, followUpEntity), searchDiplomas(expandArabicTerms(terms))]);
 
-        /* 🆕 v7.2: Apply filters */
-        let courses = exclude_terms.length ? applyExclusions(coursesRaw, exclude_terms) : coursesRaw;
+        /* 🆕 v7.3: Apply filters */
+        let courses = followUpExcludes.length ? applyExclusions(coursesRaw, followUpExcludes) : coursesRaw;
         let relatedDiplomas = relatedDiplomasRaw.length > 0 ? await filterRelevantDiplomas(relatedDiplomasRaw, followUpEntity, followUpEntity) : [];
-        if (exclude_terms.length) relatedDiplomas = applyDiplomaExclusions(relatedDiplomas, exclude_terms);
+        if (followUpExcludes.length) relatedDiplomas = applyDiplomaExclusions(relatedDiplomas, followUpExcludes);
 
         let diplomaMention = relatedDiplomas.length > 0 ? formatDiplomaMention(relatedDiplomas) : "";
         if (courses.length > 0) {
@@ -1747,7 +1846,9 @@ app.post("/chat", limiter, async (req, res) => {
         const fallbackKey = category_key || (await resolveEntityFromHistory(session.history))?.category_key;
         if (fallbackKey && CATEGORIES[fallbackKey]) {
           let catCourses = await getCoursesByCategory(fallbackKey);
-          if (exclude_terms.length) catCourses = applyExclusions(catCourses, exclude_terms);
+          if (followUpExcludes.length) catCourses = applyExclusions(catCourses, followUpExcludes);
+          /* 🆕 v7.3: Strict AI filter on fallback too */
+          if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, followUpEntity, followUpEntity);
           if (catCourses.length > 0) {
             let reply = formatCategoryCourses(catCourses, CATEGORIES[fallbackKey], followUpEntity);
             if (diplomaMention) reply += diplomaMention;
@@ -1770,10 +1871,9 @@ app.post("/chat", limiter, async (req, res) => {
         const terms = search_terms.length ? [...new Set([entity, ...search_terms])].filter((t) => t.length >= 2) : [entity];
         const [coursesRaw, relDipRaw] = await Promise.all([searchCourses(terms, entity), searchDiplomas(expandArabicTerms(terms))]);
 
-        /* 🆕 v7.2: Apply filters */
-        let courses = exclude_terms.length ? applyExclusions(coursesRaw, exclude_terms) : coursesRaw;
+        let courses = followUpExcludes.length ? applyExclusions(coursesRaw, followUpExcludes) : coursesRaw;
         let relDip = relDipRaw.length > 0 ? await filterRelevantDiplomas(relDipRaw, entity, entity) : [];
-        if (exclude_terms.length) relDip = applyDiplomaExclusions(relDip, exclude_terms);
+        if (followUpExcludes.length) relDip = applyDiplomaExclusions(relDip, followUpExcludes);
 
         let diplomaMention = relDip.length ? formatDiplomaMention(relDip) : "";
         if (courses.length > 0) {
@@ -1784,7 +1884,8 @@ app.post("/chat", limiter, async (req, res) => {
         }
         if (category_key) {
           let catCourses = await getCoursesByCategory(category_key);
-          if (exclude_terms.length) catCourses = applyExclusions(catCourses, exclude_terms);
+          if (followUpExcludes.length) catCourses = applyExclusions(catCourses, followUpExcludes);
+          if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, entity, entity);
           if (catCourses.length > 0) {
             let reply = formatCategoryCourses(catCourses, CATEGORIES[category_key], entity);
             if (diplomaMention) reply += diplomaMention;
@@ -2178,24 +2279,42 @@ app.get("/debug/corrections/:query", async (req, res) => {
 app.get("/debug/search/:query", async (req, res) => {
   const q = decodeURIComponent(req.params.query);
   const classification = await classify(q, [], null, null);
+
+  /* 🆕 v7.3: Include audience detection in debug */
+  const audienceExcludes = detectAudienceExclusions(q, classification.entity);
+  const allExcludes = mergeExcludeTerms(classification.exclude_terms, audienceExcludes, []);
+
   const terms = classification.search_terms.length ? [...new Set([...classification.search_terms, ...(classification.entity ? [classification.entity] : [])])] : [q];
   const expanded = expandArabicTerms(terms);
-  const [courses, diplomasRaw, corrections] = await Promise.all([
+  const [coursesRaw, diplomasRaw, corrections] = await Promise.all([
     searchCourses(terms, classification.entity),
     searchDiplomas(expanded),
     searchCorrections(q, classification.intent, classification.entity),
   ]);
-  /* 🆕 v7.2: Show filtered diplomas too */
+
+  /* Apply exclusions */
+  const courses = allExcludes.length ? applyExclusions(coursesRaw, allExcludes) : coursesRaw;
   const diplomasFiltered = diplomasRaw.length ? await filterRelevantDiplomas(diplomasRaw, classification.entity || q, classification.entity) : [];
+  const diplomasFinal = allExcludes.length ? applyDiplomaExclusions(diplomasFiltered, allExcludes) : diplomasFiltered;
+
   let categoryFallback = [];
-  if (courses.length === 0 && classification.category_key) categoryFallback = await getCoursesByCategory(classification.category_key);
+  if (courses.length === 0 && classification.category_key) {
+    let catCourses = await getCoursesByCategory(classification.category_key);
+    if (allExcludes.length) catCourses = applyExclusions(catCourses, allExcludes);
+    categoryFallback = catCourses;
+  }
+
   res.json({
-    query: q, classification, expanded_terms: expanded,
-    direct_results: courses.length,
+    query: q, classification,
+    audience_excludes: audienceExcludes,
+    merged_excludes: allExcludes,
+    expanded_terms: expanded,
+    courses_before_exclusion: coursesRaw.length,
+    courses_after_exclusion: courses.length,
     courses: courses.map((c) => ({ title: c.title, url: c.url, instructor: c.instructor })),
     diplomas_raw: diplomasRaw.length,
-    diplomas_filtered: diplomasFiltered.length,
-    diplomas: diplomasFiltered.map((d) => ({ title: d.title, slug: d.slug, mapped_category: mapDiplomaToCategory(d.title) })),
+    diplomas_filtered: diplomasFinal.length,
+    diplomas: diplomasFinal.map((d) => ({ title: d.title, slug: d.slug, mapped_category: mapDiplomaToCategory(d.title) })),
     corrections_matched: corrections.length,
     corrections: corrections.map((c) => ({ id: c.id, question: c.original_question, score: c._score })),
     category_fallback_count: categoryFallback.length,
@@ -2216,7 +2335,8 @@ app.post("/debug/test-context", async (req, res) => {
       resolvedCategoryKey = historyTopic.category_key || resolvedCategoryKey;
     }
   }
-  res.json({ message, classification, resolved_entity: resolvedEntity, resolved_terms: resolvedTerms, resolved_category_key: resolvedCategoryKey, is_vague: isVagueEntity(classification.entity), history_length: history.length });
+  const audienceExcludes = detectAudienceExclusions(message, resolvedEntity);
+  res.json({ message, classification, resolved_entity: resolvedEntity, resolved_terms: resolvedTerms, resolved_category_key: resolvedCategoryKey, is_vague: isVagueEntity(classification.entity), history_length: history.length, audience_excludes: audienceExcludes });
 });
 
 app.get("/debug/test-context/:current", async (req, res) => {
@@ -2237,7 +2357,8 @@ app.get("/debug/test-context/:current", async (req, res) => {
     if (historyTopic) { resolvedEntity = historyTopic.topic || prevEntity; resolvedTerms = historyTopic.search_terms || resolvedTerms; }
     else { resolvedEntity = prevEntity; }
   }
-  res.json({ current_message: current, prev_entity: prevEntity, prev_intent: prevIntent, classification, resolved_entity: resolvedEntity, resolved_terms: resolvedTerms, entity_is_vague: isVagueEntity(classification.entity), entity_was_resolved: resolvedEntity !== classification.entity });
+  const audienceExcludes = detectAudienceExclusions(current, resolvedEntity);
+  res.json({ current_message: current, prev_entity: prevEntity, prev_intent: prevIntent, classification, resolved_entity: resolvedEntity, resolved_terms: resolvedTerms, entity_is_vague: isVagueEntity(classification.entity), entity_was_resolved: resolvedEntity !== classification.entity, audience_excludes: audienceExcludes });
 });
 
 app.get("/debug/columns", async (req, res) => {
@@ -2308,18 +2429,26 @@ app.get("/debug/test-all", async (req, res) => {
   for (const test of tests) {
     try {
       const c = await classify(test.input, [], null, null);
-      results.push({ input: test.input, expected: test.expected_intent, got: c.intent, pass: c.intent === test.expected_intent ? "✅" : "❌", entity: c.entity, search_terms: c.search_terms, exclude_terms: c.exclude_terms });
+      const aud = detectAudienceExclusions(test.input, c.entity);
+      results.push({ input: test.input, expected: test.expected_intent, got: c.intent, pass: c.intent === test.expected_intent ? "✅" : "❌", entity: c.entity, search_terms: c.search_terms, exclude_terms: c.exclude_terms, audience_excludes: aud });
     } catch (e) { results.push({ input: test.input, expected: test.expected_intent, got: "ERROR", pass: "❌" }); }
   }
   const passed = results.filter((r) => r.pass === "✅").length;
   res.json({ total: tests.length, passed, failed: tests.length - passed, score: `${Math.round((passed / tests.length) * 100)}%`, results });
 });
 
+/* 🆕 v7.3: Debug endpoint for audience detection */
+app.get("/debug/audience/:query", (req, res) => {
+  const q = decodeURIComponent(req.params.query);
+  const excludes = detectAudienceExclusions(q, null);
+  res.json({ query: q, audience_excludes: excludes, would_exclude_children: excludes.some((t) => ["أطفال", "اطفال", "children", "kids"].includes(t)), would_exclude_advanced: excludes.some((t) => ["متقدم", "advanced", "professional"].includes(t)) });
+});
+
 /* ═══ Health & 404 ═══ */
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.2-smart-filtering",
+    version: "7.3-strict-relevance",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2331,12 +2460,13 @@ app.get("/health", (req, res) => {
 app.use((req, res) => { res.status(404).json({ error: "Not Found" }); });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v7.2 🎯 Smart Filtering`);
+  console.log(`\n🤖 easyT Chatbot v7.3 🎯 Strict Relevance + 👥 Audience Filter`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   🆕 v7.2: Exclude terms (مش أطفال / للكبار → exclude children)`);
-  console.log(`   🆕 v7.2: Refinement detection (لا انا عاوز X → re-search)`);
-  console.log(`   🆕 v7.2: AI diploma relevance filter (no irrelevant suggestions)`);
-  console.log(`   🆕 v7.2: Course exclusion filter`);
+  console.log(`   🆕 v7.3: detectAudienceExclusions() — auto-detect للكبار/للأطفال`);
+  console.log(`   🆕 v7.3: STRICT AI relevance filter (no incidental matches)`);
+  console.log(`   🆕 v7.3: AI filter on 2+ results (was 3+)`);
+  console.log(`   🆕 v7.3: Classifier audience detection on first query`);
+  console.log(`   ✅ v7.2: Exclude terms + Refinement + Diploma AI filter`);
   console.log(`   🧠 v7.1: Bot learns from corrections`);
   console.log(`   🆕 v7.0: Chat logging + Admin Dashboard`);
   console.log(`   📱 v6.5: Compact horizontal cards`);
