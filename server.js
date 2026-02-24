@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v6.0 — ⚡ Performance Optimized
+   🤖 easyT Chatbot v6.1 — ⚡ Performance + Access Fix
    ✅ ALL v6.0 features preserved
    ⚡ Supabase .or() filters (N queries → 1 query per strategy)
    ⚡ Promise.all() for parallel operations
@@ -7,6 +7,7 @@
    ⚡ Parallel course + diploma search
    ⚡ Parallel buildContext (FAQ + site_pages)
    🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas HTML
+   🔧 Fixed: ACCESS_ISSUE now asks login first + correct steps
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -150,7 +151,6 @@ async function searchDiplomas(terms) {
   console.log(`\n🎓 ═══ Diploma Search ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  /* ⚡ Strategy 1: Title — single OR query instead of loop */
   try {
     const { data, error } = await supabase
       .from("diplomas")
@@ -172,7 +172,6 @@ async function searchDiplomas(terms) {
     }
   } catch (e) {}
 
-  /* ⚡ Strategy 2: Description — single OR query */
   try {
     const descTerms = clean.slice(0, 4);
     const { data, error } = await supabase
@@ -217,9 +216,6 @@ async function getAllDiplomas() {
   }
 }
 
-/**
- * Map a diploma to a category key using CATEGORY_SEARCH_TERMS
- */
 function mapDiplomaToCategory(diplomaTitle) {
   if (!diplomaTitle) return null;
   const lower = diplomaTitle.toLowerCase();
@@ -234,10 +230,6 @@ function mapDiplomaToCategory(diplomaTitle) {
   return null;
 }
 
-/**
- * Format diploma cards + optional related courses
- * 🔧 FIXED: HTML structure, title as link, text links instead of styled buttons
- */
 function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
   let html = `<b>🎓 الدبلومات المتاحة على منصة إيزي تي:</b><br><br>`;
 
@@ -273,7 +265,6 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
     html += `</div>`;
   });
 
-  /* Related courses */
   if (relatedCourses.length > 0) {
     html += `<br><b>📌 دورات مقترحة ذات صلة:</b><br><br>`;
     relatedCourses.forEach((c, i) => {
@@ -308,9 +299,6 @@ function formatDiplomas(diplomas, relatedCourses = [], relatedCategory = null) {
   return html;
 }
 
-/**
- * Small diploma mention to append inside COURSE_SEARCH results
- */
 function formatDiplomaMention(diplomas) {
   if (!diplomas.length) return "";
 
@@ -577,6 +565,14 @@ const PLATFORM_KB = `
 ◆ التجديد تلقائي — الإلغاء متاح في أي وقت
 ◆ رابط الاشتراك: https://easyt.online/p/subscriptions
 
+═══ الوصول للدورات بعد الشراء / الاشتراك ═══
+◆ الخطوة الأولى: تأكد إنك مسجل دخول لحسابك على المنصة
+◆ بعد تسجيل الدخول إلى حسابك، يمكنك الوصول إلى جميع الدورات والدبلومات التي اشتريتها في أي وقت
+◆ من القائمة الرئيسية اختر «دوراتي»
+◆ ستظهر لك جميع الدورات مع شريط يوضّح نسبة التقدم في كل دورة
+◆ لو مش لاقي الدورة بعد تسجيل الدخول → تأكد إنك بتسجل بنفس الإيميل اللي اشتركت بيه
+◆ لو المشكلة مستمرة → تواصل مع الدعم الفني واتساب 01027007899
+
 ═══ طرق الدفع ═══
 ◆ بطاقات الائتمان (Visa / MasterCard)
 ◆ PayPal
@@ -628,6 +624,7 @@ function getSession(id) {
     entity: null,
     count: 1,
     lastAccess: Date.now(),
+    accessIssueStep: null, // 🆕 track access issue conversation step
   };
   sessions.set(id, s);
   return s;
@@ -677,7 +674,7 @@ function isLikelyGibberish(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Classification (v6.0 — with DIPLOMA_SEARCH) ════
+   ═══ AI Classification (v6.1 — with ACCESS sub-types) ═══
    ══════════════════════════════════════════════════════════ */
 const CAT_LIST = Object.entries(CATEGORIES)
   .map(([k, v]) => `  ${k}: ${v.name}`)
@@ -692,7 +689,8 @@ Return ONLY valid JSON:
   "search_terms": ["term1", "term2"],
   "category_key": "key or null",
   "page_type": "payment|subscription|affiliate|author|null",
-  "refers_to_previous": true/false
+  "refers_to_previous": true/false,
+  "access_sub": "cant_find_course|cant_login|already_logged_in|null"
 }
 
 ═══ ⚠️ CRITICAL: CONTEXT RESOLUTION RULE ═══
@@ -724,11 +722,17 @@ When user says "الموضوع ده", "عن كده", "تشرح ده", "في كو
   ⚠️ "الموضوع ده" + previous topic in history → COURSE_SEARCH with entity = previous topic!
   ⚠️ If user says "كورس" or "دورة" + topic → COURSE_SEARCH (NOT DIPLOMA_SEARCH)
 
+• ACCESS_ISSUE — Can't login, can't access course, can't find course after purchase, subscription not working
+  ⚠️ Set "access_sub" field:
+    - "cant_find_course" → user bought/subscribed but can't find the course
+    - "cant_login" → user can't login to their account
+    - "already_logged_in" → user confirms they ARE logged in but still have issues
+    - null → general access issue
+
 • PLATFORM_QA — Questions about platform usage, policies, guarantees, refunds, FAQ, technical issues
 • CERTIFICATE_QA — Questions about certificates (اعتماد, شهادة, معتمدة)
 • PAYMENT — Payment methods, transfer, receipt, card issues
 • SUBSCRIPTION — Pricing, plans, offers, renewal, cancellation
-• ACCESS_ISSUE — Can't login, can't access course
 • AFFILIATE — Affiliate/commission program
 • AUTHOR — Wants to become instructor
 • FOLLOW_UP — Continuation of PREVIOUS topic
@@ -791,6 +795,7 @@ async function classify(message, history, prevIntent, prevEntity) {
             : null,
         page_type: p.page_type || null,
         refers_to_previous: p.refers_to_previous || false,
+        access_sub: p.access_sub || null,
       };
     }
   } catch (e) {
@@ -804,6 +809,7 @@ async function classify(message, history, prevIntent, prevEntity) {
     category_key: null,
     page_type: null,
     refers_to_previous: false,
+    access_sub: null,
   };
 }
 
@@ -877,7 +883,6 @@ async function searchSitePages(query) {
 
   console.log(`📄 Searching site_pages for: [${terms.join(", ")}]`);
 
-  /* ⚡ Single OR query instead of loop */
   try {
     const orFilter = buildOrFilter("content", terms);
     const { data, error } = await supabase
@@ -887,7 +892,6 @@ async function searchSitePages(query) {
       .limit(8);
 
     if (!error && data?.length) {
-      /* Dedupe by page_url + content prefix */
       const seen = new Set();
       return data.filter((row) => {
         const key = row.page_url + "|" + row.content?.slice(0, 50);
@@ -907,7 +911,6 @@ async function searchSitePages(query) {
 async function buildContext(searchQuery, options = {}) {
   const { includeFAQ = true, includeSitePages = true } = options;
 
-  /* ⚡ Run FAQ + site_pages in parallel */
   const [sitePages, faqResults] = await Promise.all([
     includeSitePages ? searchSitePages(searchQuery) : [],
     includeFAQ ? searchFAQ(searchQuery) : [],
@@ -948,7 +951,6 @@ async function searchCoursesRaw(terms) {
   console.log(`\n🔍 ═══ Course Search Start ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
 
-  /* ⚡ Strategy 1: Title — single OR query */
   try {
     const { data, error } = await supabase
       .from("courses")
@@ -962,7 +964,6 @@ async function searchCoursesRaw(terms) {
     }
   } catch (e) {}
 
-  /* ⚡ Strategy 2: Subtitle — single OR query */
   try {
     const subTerms = clean.slice(0, 5);
     const { data, error } = await supabase
@@ -976,7 +977,6 @@ async function searchCoursesRaw(terms) {
     }
   } catch (e) {}
 
-  /* ⚡ Strategy 3: Description — single OR query */
   try {
     const descTerms = clean.slice(0, 4);
     const { data, error } = await supabase
@@ -990,7 +990,6 @@ async function searchCoursesRaw(terms) {
     }
   } catch (e) {}
 
-  /* ⚡ Strategy 4: full_content — single OR query */
   try {
     const fullTerms = clean.slice(0, 3);
     const { data, error } = await supabase
@@ -1129,7 +1128,6 @@ async function getCoursesByCategory(categoryKey) {
   const terms = CATEGORY_SEARCH_TERMS[categoryKey];
   if (!terms) return [];
 
-  /* ⚡ Single OR query instead of loop */
   const searchTerms = terms.slice(0, 3);
   try {
     const { data, error } = await supabase
@@ -1150,10 +1148,9 @@ async function getCoursesByCategory(categoryKey) {
 
 /* ══════════════════════════════════════════════════════════
    ═══ Format Course Cards ════════════════════════════════
-   🔧 FIXED: text links instead of styled buttons
    ══════════════════════════════════════════════════════════ */
 function formatCourses(courses, category, diplomaMention = "") {
-  let html = `<b>🎓 إليك الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
+  let html = `<b>🎓 إليك بعض الدورات المتاحة على منصة إيزي تي:</b><br><br>`;
 
   courses.forEach((c, i) => {
     const link = c.url || (category ? category.url : ALL_COURSES_URL);
@@ -1211,9 +1208,6 @@ function formatCourses(courses, category, diplomaMention = "") {
   return html;
 }
 
-/**
- * 🔧 FIXED: Complete HTML rebuild — title, instructor, price, description, link, then </div>
- */
 function formatCategoryCourses(courses, category, originalTopic) {
   let html = `<b>🔍 مفيش كورس باسم "${originalTopic}" بالظبط، لكن في دورات قريبة في قسم ${category.name}:</b><br><br>`;
 
@@ -1269,6 +1263,49 @@ function formatNoResults(displayTerm, category) {
 }
 
 /* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v6.1: ACCESS_ISSUE Direct Responses ════════════
+   ══════════════════════════════════════════════════════════ */
+function buildAccessResponse_AskLogin() {
+  let html = `<b>🔐 عشان أقدر أساعدك، محتاج أعرف:</b><br><br>`;
+  html += `هل أنت مسجل دخول لحسابك على المنصة؟<br><br>`;
+  html += `▸ لو <b>أيوه</b> → قولي إيه المشكلة بالظبط<br>`;
+  html += `▸ لو <b>لأ</b> → سجل دخول الأول وبعدها من القائمة الرئيسية اختر «دوراتي» 📚`;
+  return html;
+}
+
+function buildAccessResponse_HowToAccess() {
+  let html = `<b>📚 طريقة الوصول للدورات:</b><br><br>`;
+  html += `بعد تسجيل الدخول إلى حسابك، يمكنك الوصول إلى جميع الدورات والدبلومات اللي اشتريتها في أي وقت:<br><br>`;
+  html += `<b>1.</b> سجّل دخول لحسابك على المنصة<br>`;
+  html += `<b>2.</b> من القائمة الرئيسية اختر <b>«دوراتي»</b><br>`;
+  html += `<b>3.</b> هتلاقي كل الدورات مع شريط يوضّح نسبة التقدم في كل دورة ✅<br><br>`;
+  html += `⚠️ <b>تأكد إنك بتسجل بنفس الإيميل اللي اشتركت بيه.</b><br><br>`;
+  html += `لو عملت كده ولسه مش لاقي الدورة → تواصل مع الدعم الفني:<br>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  return html;
+}
+
+function buildAccessResponse_AlreadyLoggedIn() {
+  let html = `<b>🔍 لو مسجل دخول ومش لاقي الدورة:</b><br><br>`;
+  html += `▸ تأكد إنك بتسجل بـ <b>نفس الإيميل</b> اللي اشتركت أو اشتريت بيه<br>`;
+  html += `▸ جرب تعمل <b>تحديث للصفحة</b> (Refresh)<br>`;
+  html += `▸ لو اشتركت بفودافون كاش أو تحويل بنكي → الدورة بتتفعل خلال <b>24 ساعة</b> من رفع الإيصال<br><br>`;
+  html += `لو المشكلة مستمرة، تواصل مع الدعم الفني وهيحلولك المشكلة فوراً:<br>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  return html;
+}
+
+function buildAccessResponse_CantLogin() {
+  let html = `<b>🔑 مشكلة في تسجيل الدخول:</b><br><br>`;
+  html += `▸ تأكد إنك بتستخدم <b>نفس الإيميل</b> اللي سجلت بيه<br>`;
+  html += `▸ جرب تضغط <b>«نسيت كلمة المرور»</b> وهيوصلك كود على الإيميل<br>`;
+  html += `▸ تأكد إن الإيميل مكتوب صح من غير مسافات<br><br>`;
+  html += `لو المشكلة مستمرة، تواصل مع الدعم الفني:<br>`;
+  html += `📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#c40000;font-weight:bold;">تواصل مع الدعم واتساب</a>`;
+  return html;
+}
+
+/* ══════════════════════════════════════════════════════════
    ═══ GPT Response Generator ═════════════════════════════
    ══════════════════════════════════════════════════════════ */
 const CATEGORY_LINKS_TEXT = Object.values(CATEGORIES)
@@ -1283,21 +1320,24 @@ const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار ا
 
 【قواعد صارمة】
 
-1. ⚠️ لا تخترع أي رابط أو اسم كورس أو تصنيف غير موجود!
-   - لو مش متأكد إن الرابط صحيح → لا تحطه
+1. ⚠️ لا تخترع أي رابط أو اسم كورس أو تصنيف أو خطوات غير موجودة!
+   - لو مش متأكد من خطوة أو معلومة → لا تقولها
    - لو عايز توجه المستخدم لتصفح الدورات → استخدم: https://easyt.online/courses
-   
-2. لا تقترح واتساب إلا لو:
+
+2. ⚠️ لا تخترع خطوات تقنية (زي "اضغط Sign In" أو "اضغط Remember Me")!
+   - استخدم فقط المعلومات الموجودة في السياق أو الأسئلة الشائعة أو PLATFORM_KB
+
+3. لا تقترح واتساب إلا لو:
    - المستخدم سأل صراحةً عن التواصل
    - مشكلة تقنية مش قادر تحلها
    - مفيش إجابة واضحة
 
-3. ⛔ ممنوع تقول "زور الموقع الرسمي" — المستخدم أصلاً على الموقع!
+4. ⛔ ممنوع تقول "زور الموقع الرسمي" — المستخدم أصلاً على الموقع!
 
-4. ⚠️ لو في "أسئلة شائعة ذات صلة" أو "محتوى من صفحات المنصة" في السياق → استخدمهم كمصدر أساسي!
+5. ⚠️ لو في "أسئلة شائعة ذات صلة" أو "محتوى من صفحات المنصة" في السياق → استخدمهم كمصدر أساسي!
 
-5. رحّب في أول رسالة فقط
-6. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
+6. رحّب في أول رسالة فقط
+7. ما تبدأش بـ "بالتأكيد" أو "بالطبع"
 
 【الروابط المسموح بيها فقط — HTML】
 ★ كل الدورات → <a href="https://easyt.online/courses" target="_blank" style="color:#c40000;font-weight:bold;">📚 تصفح جميع الدورات</a>
@@ -1396,13 +1436,14 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ── Step 1: AI Classification ── */
     const {
-      intent, entity, search_terms, category_key, page_type, refers_to_previous,
+      intent, entity, search_terms, category_key, page_type, refers_to_previous, access_sub,
     } = await classify(message, session.history, session.intent, session.entity);
 
     console.log(`\n════════════════════════════════`);
     console.log(`💬 "${message.slice(0, 60)}"`);
     console.log(`🏷️  Intent: ${intent} | Entity: ${entity} | Session: ${session.entity}`);
     console.log(`🔎 Terms: [${search_terms.slice(0, 5).join(", ")}] | Cat: ${category_key || "—"}`);
+    if (access_sub) console.log(`🔐 Access sub: ${access_sub}`);
 
     /* Save entity when detected */
     if (entity && entity.length >= 2 && !isVagueEntity(entity)) {
@@ -1494,7 +1535,6 @@ app.post("/chat", limiter, async (req, res) => {
             ? [entity]
             : [];
 
-          /* ⚡ Parallel: course search + category courses */
           if (courseSearchTerms.length) {
             const [directCourses, catCourses] = await Promise.all([
               searchCourses(courseSearchTerms, entity),
@@ -1597,7 +1637,6 @@ app.post("/chat", limiter, async (req, res) => {
         `🔍 COURSE_SEARCH "${displayTerm}" → [${allTerms.join(" | ")}]`
       );
 
-      /* ⚡ Parallel: course search + diploma search */
       const [courses, relatedDiplomas] = await Promise.all([
         searchCourses(allTerms, resolvedEntity),
         allTerms.length > 0 ? searchDiplomas(allTerms) : Promise.resolve([]),
@@ -1620,7 +1659,6 @@ app.post("/chat", limiter, async (req, res) => {
         return res.json({ reply, session_id });
       }
 
-      /* Category fallback */
       const fallbackCatKey = resolvedCategoryKey || category_key;
       if (fallbackCatKey) {
         const catCourses = await getCoursesByCategory(fallbackCatKey);
@@ -1660,10 +1698,89 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
+    // ══════════════════════════════════════════════════════
+    // ═══ 🆕 v6.1: ACCESS_ISSUE — Smart Step Flow ════════
+    // ══════════════════════════════════════════════════════
+    if (intent === "ACCESS_ISSUE") {
+      console.log(`🔐 ACCESS_ISSUE | sub: ${access_sub} | prev step: ${session.accessIssueStep}`);
+
+      let reply;
+
+      /* Sub-type: Can't login */
+      if (access_sub === "cant_login") {
+        reply = buildAccessResponse_CantLogin();
+        session.accessIssueStep = "cant_login_answered";
+      }
+      /* Sub-type: User confirms already logged in */
+      else if (
+        access_sub === "already_logged_in" ||
+        session.accessIssueStep === "asked_login"
+      ) {
+        /* Check if user said "yes logged in" or "no not logged in" */
+        const msgLower = message.toLowerCase();
+        const saysYes = /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(msgLower);
+        const saysNo = /لا|لأ|no|مش مسجل|مسجلتش/.test(msgLower);
+
+        if (saysNo) {
+          /* Not logged in → give access instructions */
+          reply = buildAccessResponse_HowToAccess();
+          session.accessIssueStep = "how_to_access_sent";
+        } else if (saysYes || access_sub === "already_logged_in") {
+          /* Logged in but still issue */
+          reply = buildAccessResponse_AlreadyLoggedIn();
+          session.accessIssueStep = "already_logged_in_answered";
+        } else {
+          /* Unclear answer → give full how to access */
+          reply = buildAccessResponse_HowToAccess();
+          session.accessIssueStep = "how_to_access_sent";
+        }
+      }
+      /* Sub-type: Can't find course after purchase */
+      else if (access_sub === "cant_find_course") {
+        /* First ask if they're logged in */
+        reply = buildAccessResponse_AskLogin();
+        session.accessIssueStep = "asked_login";
+      }
+      /* General access issue — first time */
+      else if (!session.accessIssueStep) {
+        reply = buildAccessResponse_AskLogin();
+        session.accessIssueStep = "asked_login";
+      }
+      /* Already in access flow, use FAQ context for follow-up */
+      else {
+        const context = await buildContext("وصول دورات حساب تسجيل دخول");
+        session.history.push({
+          role: "system",
+          content: `المستخدم عنده مشكلة في الوصول.
+⚠️ أجب فقط من المعلومات الموجودة في السياق أو PLATFORM_KB.
+⚠️ لا تخترع خطوات أو أزرار غير موجودة.
+المعلومة الأساسية: بعد تسجيل الدخول → القائمة الرئيسية → «دوراتي» → كل الدورات مع شريط التقدم.
+لو مش لاقي الدورة → يتأكد من الإيميل → يتواصل مع الدعم.`,
+        });
+
+        reply = await generateAIResponse(session, context, false);
+        reply = formatReply(reply);
+        session.history.pop();
+
+        if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
+          reply += `<br><br>${makeLink(
+            "https://wa.me/201027007899",
+            "📱 تواصل مع الدعم واتساب"
+          )}`;
+        }
+      }
+
+      session.history.push({ role: "assistant", content: reply });
+      return res.json({ reply, session_id });
+    }
+
     // ═══════════════════════════════════════════════════════
     // ═══ PLATFORM_QA — site_pages + FAQ ═══════════════════
     // ═══════════════════════════════════════════════════════
     if (intent === "PLATFORM_QA") {
+      /* Reset access step if user moved to different topic */
+      session.accessIssueStep = null;
+
       const searchQuery = entity || message;
       const context = await buildContext(searchQuery);
 
@@ -1671,7 +1788,7 @@ app.post("/chat", limiter, async (req, res) => {
         role: "system",
         content: `المستخدم بيسأل عن: "${searchQuery}".
 ⚠️ لو في "أسئلة شائعة" أو "محتوى صفحات" في السياق → أجب منهم!
-⚠️ لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
+⚠️ لا تخترع روابط أو خطوات. لا تقترح واتساب إلا للضرورة.`,
       });
 
       let reply = await generateAIResponse(session, context, isFirst);
@@ -1683,6 +1800,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     // ─── CERTIFICATE_QA ───
     if (intent === "CERTIFICATE_QA") {
+      session.accessIssueStep = null;
       const context = await buildContext("شهادة اعتماد");
 
       session.history.push({
@@ -1702,6 +1820,52 @@ app.post("/chat", limiter, async (req, res) => {
     // ═══ FOLLOW_UP — ⚡ Optimized ═══════════════════════
     // ══════════════════════════════════════════════════════
     if (intent === "FOLLOW_UP") {
+      /* Check if this is a follow-up to ACCESS_ISSUE */
+      if (session.intent === "ACCESS_ISSUE" || session.accessIssueStep) {
+        console.log(`🔐 FOLLOW_UP in ACCESS flow | step: ${session.accessIssueStep}`);
+
+        const msgLower = message.toLowerCase();
+        const saysYes = /أيوه|ايوه|اه|نعم|yes|اكيد|طبعا|مسجل|logged|داخل/.test(msgLower);
+        const saysNo = /لا|لأ|no|مش مسجل|مسجلتش/.test(msgLower);
+
+        let reply;
+
+        if (session.accessIssueStep === "asked_login") {
+          if (saysNo) {
+            reply = buildAccessResponse_HowToAccess();
+            session.accessIssueStep = "how_to_access_sent";
+          } else if (saysYes) {
+            reply = buildAccessResponse_AlreadyLoggedIn();
+            session.accessIssueStep = "already_logged_in_answered";
+          } else {
+            reply = buildAccessResponse_HowToAccess();
+            session.accessIssueStep = "how_to_access_sent";
+          }
+        } else {
+          /* General follow-up in access flow */
+          const context = await buildContext("وصول دورات حساب دخول دوراتي");
+          session.history.push({
+            role: "system",
+            content: `متابعة لمشكلة الوصول.
+⚠️ أجب فقط من المعلومات المتاحة.
+⚠️ لا تخترع خطوات. المعلومة الأساسية: تسجيل دخول → «دوراتي» → كل الدورات مع شريط التقدم.`,
+          });
+          reply = await generateAIResponse(session, context, false);
+          reply = formatReply(reply);
+          session.history.pop();
+
+          if (!reply.includes("wa.me")) {
+            reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 تواصل مع الدعم واتساب")}`;
+          }
+        }
+
+        session.history.push({ role: "assistant", content: reply });
+        return res.json({ reply, session_id });
+      }
+
+      /* Non-access follow-up: reset access step */
+      session.accessIssueStep = null;
+
       let followUpEntity = entity || session.entity || null;
 
       if (isVagueEntity(followUpEntity)) {
@@ -1726,7 +1890,6 @@ app.post("/chat", limiter, async (req, res) => {
         message.toLowerCase().includes(p)
       );
 
-      /* Diploma follow-up */
       if (
         isDiplomaFollowUp &&
         followUpEntity &&
@@ -1746,7 +1909,6 @@ app.post("/chat", limiter, async (req, res) => {
           if (catKey && CATEGORIES[catKey]) {
             relatedCategory = CATEGORIES[catKey];
 
-            /* ⚡ Parallel: course search + category courses */
             const [directCourses, catCourses] = await Promise.all([
               searchCourses(terms, followUpEntity),
               getCoursesByCategory(catKey),
@@ -1800,7 +1962,6 @@ app.post("/chat", limiter, async (req, res) => {
           }
         }
 
-        /* ⚡ Parallel: course search + diploma search */
         const [courses, relatedDiplomas] = await Promise.all([
           searchCourses(terms, followUpEntity),
           searchDiplomas(terms),
@@ -1873,7 +2034,6 @@ app.post("/chat", limiter, async (req, res) => {
             )
           : [entity];
 
-        /* ⚡ Parallel: course search + diploma search */
         const [courses, relDip] = await Promise.all([
           searchCourses(terms, entity),
           searchDiplomas(terms),
@@ -1934,7 +2094,7 @@ app.post("/chat", limiter, async (req, res) => {
       session.history.push({
         role: "system",
         content: `متابعة للمحادثة عن "${followUpEntity}".
-⚠️ أجب مباشرةً. لا تخترع روابط. لا تقترح واتساب إلا للضرورة.`,
+⚠️ أجب مباشرةً من المعلومات المتاحة فقط. لا تخترع روابط أو خطوات. لا تقترح واتساب إلا للضرورة.`,
       });
 
       let reply = await generateAIResponse(session, context, false);
@@ -1944,28 +2104,9 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ─── ACCESS_ISSUE ───
-    if (intent === "ACCESS_ISSUE") {
-      const context = await buildContext("مشكلة دخول حساب تسجيل");
-
-      session.history.push({
-        role: "system",
-        content: `المستخدم عنده مشكلة في الوصول. اعطيه خطوات عملية من الأسئلة الشائعة.`,
-      });
-
-      let reply = await generateAIResponse(session, context, isFirst);
-      reply = formatReply(reply);
-      session.history.pop();
-
-      if (!reply.includes("wa.me") && !reply.includes("01027007899")) {
-        reply += `<br><br>${makeLink(
-          "https://wa.me/201027007899",
-          "📱 تواصل مع الدعم واتساب"
-        )}`;
-      }
-
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+    // ─── ACCESS_ISSUE handled above, but reset step for other intents ───
+    if (!["ACCESS_ISSUE", "FOLLOW_UP"].includes(intent)) {
+      session.accessIssueStep = null;
     }
 
     // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
@@ -2092,7 +2233,6 @@ app.get("/debug/search/:query", async (req, res) => {
       ]
     : [q];
 
-  /* ⚡ Parallel: courses + diplomas */
   const [courses, diplomas] = await Promise.all([
     searchCourses(terms, classification.entity),
     searchDiplomas(terms),
@@ -2184,7 +2324,6 @@ app.post("/debug/test-context", async (req, res) => {
     ]),
   ].filter((t) => t && t.length >= 2);
 
-  /* ⚡ Parallel: courses + diplomas + FAQ */
   const [courses, diplomas, faqResults] = await Promise.all([
     searchCourses(allTerms, resolvedEntity),
     searchDiplomas(allTerms),
@@ -2274,7 +2413,6 @@ app.get("/debug/test-context/:current", async (req, res) => {
     ]),
   ].filter((t) => t && t.length >= 2);
 
-  /* ⚡ Parallel: courses + diplomas */
   const [courses, diplomas] = await Promise.all([
     searchCourses(allTerms, resolvedEntity),
     searchDiplomas(allTerms),
@@ -2297,7 +2435,6 @@ app.get("/debug/test-context/:current", async (req, res) => {
 
 app.get("/debug/columns", async (req, res) => {
   try {
-    /* ⚡ Parallel: all table checks */
     const [courseRes, spRes, faqRes, dipRes] = await Promise.all([
       supabase.from("courses").select("*").limit(1),
       supabase.from("site_pages").select("*").limit(1),
@@ -2327,7 +2464,6 @@ app.get("/debug/columns", async (req, res) => {
 
 app.get("/debug/db", async (req, res) => {
   try {
-    /* ⚡ Parallel: all counts */
     const [cRes, spRes, faqRes, dipRes] = await Promise.all([
       supabase.from("courses").select("*", { count: "exact", head: true }),
       supabase.from("site_pages").select("*", { count: "exact", head: true }),
@@ -2370,6 +2506,7 @@ app.get("/debug/test-all", async (req, res) => {
     { input: "عايز اشتغل محاضر", expected_intent: "AUTHOR" },
     { input: "برنامج العمولة", expected_intent: "AFFILIATE" },
     { input: "مش قادر ادخل حسابي", expected_intent: "ACCESS_ISSUE" },
+    { input: "مش لاقي الدورة", expected_intent: "ACCESS_ISSUE" },
     { input: "ازاي اسجل حساب", expected_intent: "PLATFORM_QA" },
     {
       input: "ايه الفرق بين الكورس والدبلومة",
@@ -2389,6 +2526,7 @@ app.get("/debug/test-all", async (req, res) => {
         pass: c.intent === test.expected_intent ? "✅" : "❌",
         entity: c.entity,
         category_key: c.category_key,
+        access_sub: c.access_sub,
       });
     } catch (e) {
       results.push({
@@ -2413,7 +2551,7 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "6.0-perf-fixed",
+    version: "6.1-access-fix",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     faq_cached: faqCache.length,
@@ -2426,13 +2564,14 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v6.0 ⚡ Performance Optimized + HTML Fixed`);
+  console.log(`\n🤖 easyT Chatbot v6.1 ⚡ Performance + Access Fix`);
   console.log(`   Port: ${PORT}`);
   console.log(`   ⚡ Supabase .or() filters (N queries → 1)`);
   console.log(`   ⚡ Promise.all() parallel operations`);
   console.log(`   ⚡ Instructor cache`);
-  console.log(`   ⚡ Parallel course + diploma search`);
-  console.log(`   🔧 Fixed: formatCourses, formatCategoryCourses, formatDiplomas`);
+  console.log(`   🔧 Fixed: ACCESS_ISSUE now uses direct responses (no AI hallucination)`);
+  console.log(`   🔧 Fixed: Smart login-first flow with step tracking`);
+  console.log(`   🔧 Fixed: PLATFORM_KB includes correct access instructions`);
   console.log(
     `   Debug: /debug/diplomas/:q | /debug/search/:q | /debug/test-all | /debug/db\n`
   );
