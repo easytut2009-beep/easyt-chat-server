@@ -1,9 +1,14 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.4 — 🔧 Full Content Search (page_content + syllabus + objectives)
-   ✅ ALL v7.9.3 code preserved EXACTLY — ONLY search enhanced
-   🆕 v7.9.4: searchCourses now searches page_content, syllabus, objectives columns
-   🆕 v7.9.4: Scoring weights: title(10) > subtitle(7) > page_content(5) > syllabus(4) > objectives(4) > description(3) > full_content(2)
-   🆕 v7.9.4: fuzzySearchFallback includes new columns
+   🤖 Ziko Chatbot v7.9.5 — 🧠 AI-Powered Reranking + Price Fix
+   ✅ ALL v7.9.4 code preserved — ONLY enhanced with AI reranking
+   🆕 v7.9.5: aiRerankCourses() — GPT filters results by full user intent
+   🆕 v7.9.5: SEARCH handler calls aiRerankCourses after broad search
+   🆕 v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
+   🐛 v7.9.5: FIXED price display $$9.99 → $9.99 (handles string/number)
+   ─── v7.9.4 features ───
+   ✅ v7.9.4: searchCourses searches page_content, syllabus, objectives columns
+   ✅ v7.9.4: Scoring weights: title(10) > subtitle(7) > page_content(5) > syllabus(4) > objectives(4) > description(3) > full_content(2)
+   ✅ v7.9.4: fuzzySearchFallback includes new columns
    ─── v7.9.3 features ───
    ✅ v7.9.3: FIXED course column names (slug→link, image_url→image, etc.)
    ✅ v7.9.3: FIXED removed is_published filter (column doesn't exist)
@@ -919,8 +924,9 @@ async function classifyIntent(message) {
     };
   }
 }
+
 /* ══════════════════════════════════════════════════════════
-   ═══ searchCourses — v7.9.4 ENHANCED: page_content + syllabus + objectives
+   ═══ searchCourses — v7.9.5: Wider candidate pool (limit 30)
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   try {
@@ -956,7 +962,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
       )
       .or(orFilters)
-      .limit(20);
+      .limit(30); // ✅ v7.9.5: increased from 20 to 30 for wider AI reranking pool
 
     if (error) {
       console.error("Supabase search error:", error.message);
@@ -1042,7 +1048,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     });
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    return scored.slice(0, 6);
+    return scored.slice(0, 10); // ✅ v7.9.5: return top 10 candidates for AI reranking
   } catch (e) {
     console.error("searchCourses error:", e.message);
     return [];
@@ -1126,7 +1132,7 @@ async function fuzzySearchFallback(terms) {
     }
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    return results.slice(0, 6);
+    return results.slice(0, 10); // ✅ v7.9.5: return top 10 for AI reranking
   } catch (e) {
     console.error("fuzzySearchFallback error:", e.message);
     return [];
@@ -1167,14 +1173,116 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Card HTML — v7.9.3 (unchanged)
+   ═══ 🆕 v7.9.5: AI Reranking — GPT filters by full user intent
+   ══════════════════════════════════════════════════════════ */
+async function aiRerankCourses(userMessage, courses, diplomas = []) {
+  const totalResults = courses.length + diplomas.length;
+
+  // Skip reranking if very few results — trust the search
+  if (totalResults <= 3) {
+    console.log("🤖 AI Rerank: skipped (≤3 results)");
+    return { courses, diplomas };
+  }
+
+  try {
+    // Prepare compact summaries for GPT
+    const courseSummaries = courses.map((c, i) => ({
+      i: i,
+      t: "course",
+      title: c.title || "",
+      subtitle: c.subtitle || "",
+      desc: (c.description || "").replace(/<[^>]*>/g, "").substring(0, 150),
+    }));
+
+    const diplomaSummaries = diplomas.map((d, i) => ({
+      i: i,
+      t: "diploma",
+      title: d.title || "",
+      desc: (d.description || "").replace(/<[^>]*>/g, "").substring(0, 150),
+    }));
+
+    const allItems = [...courseSummaries, ...diplomaSummaries];
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      max_tokens: 300,
+      messages: [
+        {
+          role: "system",
+          content: `أنت خبير في مطابقة الكورسات التعليمية مع احتياجات المستخدمين في منصة easyT.
+
+سؤال المستخدم: "${userMessage}"
+
+مهمتك:
+1. افهم نية المستخدم الكاملة من السؤال ككل (مش كلمات منفصلة)
+2. اختار من القائمة بس الكورسات/الدبلومات اللي فعلاً مناسبة للنية الكاملة
+3. رتبهم من الأنسب للأقل
+4. استبعد أي كورس مش ليه علاقة حقيقية
+
+⚠️ قواعد مهمة:
+- لو المستخدم قال "تصميم صور بالذكاء الاصطناعي" ← الكورس لازم يكون عن تصميم + ذكاء اصطناعي معاً، مش "تصميم مطبوعات" أو "تصميم مواقع" لوحدهم
+- لو المستخدم سأل عن "برمجة مواقع" ← متجيبش "برمجة ألعاب"
+- افهم المعنى الكامل مش كلمات فردية
+- لو مفيش كورس مناسب فعلاً للنية الكاملة، رجع arrays فاضية
+
+رد بـ JSON فقط:
+{
+  "courseIndices": [2, 0, 5],
+  "diplomaIndices": [0],
+  "reason": "سبب الاختيار باختصار"
+}`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(allItems),
+        },
+      ],
+    });
+
+    const result = JSON.parse(response.choices[0].message.content);
+
+    const selectedCourses = (result.courseIndices || [])
+      .filter((i) => typeof i === "number" && i >= 0 && i < courses.length)
+      .slice(0, 6)
+      .map((i) => courses[i]);
+
+    const selectedDiplomas = (result.diplomaIndices || [])
+      .filter((i) => typeof i === "number" && i >= 0 && i < diplomas.length)
+      .slice(0, 3)
+      .map((i) => diplomas[i]);
+
+    console.log(
+      `🤖 AI Rerank: ${selectedCourses.length}/${courses.length} courses, ${selectedDiplomas.length}/${diplomas.length} diplomas — ${result.reason || ""}`
+    );
+
+    return { courses: selectedCourses, diplomas: selectedDiplomas };
+  } catch (e) {
+    console.error("🤖 AI Rerank error:", e.message);
+    // Fallback: return original results (top 5 courses)
+    return { courses: courses.slice(0, 5), diplomas };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ Format Course Card HTML — v7.9.5 FIXED price display
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
-  const price = course.price || 0;
-  const priceText = price === 0 ? "مجاناً 🎉" : `$${price}`;
+
+  // ✅ v7.9.5: Fix price display — handle string "$9.99" or number 9.99
+  const rawPrice = course.price;
+  let priceNum = 0;
+  if (typeof rawPrice === "string") {
+    priceNum = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
+  } else if (typeof rawPrice === "number") {
+    priceNum = rawPrice;
+  }
+  const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
+
   const imgUrl = course.image || "https://easyt.online/default-course.png";
   const desc = course.description
     ? course.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
@@ -1194,12 +1302,21 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Diploma Card HTML — v7.9.3 (unchanged)
+   ═══ Format Diploma Card HTML — v7.9.5 FIXED price display
    ══════════════════════════════════════════════════════════ */
 function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
-  const price = diploma.price || 0;
-  const priceText = price === 0 ? "مجاناً 🎉" : `$${price}`;
+
+  // ✅ v7.9.5: Fix price display — handle string "$9.99" or number 9.99
+  const rawPrice = diploma.price;
+  let priceNum = 0;
+  if (typeof rawPrice === "string") {
+    priceNum = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
+  } else if (typeof rawPrice === "number") {
+    priceNum = rawPrice;
+  }
+  const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
+
   const imgUrl = diploma.image || "https://easyt.online/default-diploma.png";
   const desc = diploma.description
     ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
@@ -1348,7 +1465,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT (unchanged from v7.9.3)
+   ═══ MAIN CHAT ENDPOINT — v7.9.5: AI Reranking added
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1537,6 +1654,23 @@ app.post("/chat", limiter, async (req, res) => {
       }
     }
 
+    // ✅ v7.9.5: AI Reranking — GPT filters results by actual user intent
+    if (courses.length > 0 || diplomas.length > 0) {
+      console.log(
+        `🤖 Pre-rerank: ${courses.length} courses, ${diplomas.length} diplomas`
+      );
+      const reranked = await aiRerankCourses(
+        cleanMessage,
+        courses,
+        diplomas
+      );
+      courses = reranked.courses;
+      diplomas = reranked.diplomas;
+      console.log(
+        `🤖 Post-rerank: ${courses.length} courses, ${diplomas.length} diplomas`
+      );
+    }
+
     // Format response
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
@@ -1592,8 +1726,9 @@ app.post("/chat", limiter, async (req, res) => {
     });
   }
 });
+
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN API ENDPOINTS — v7.9.4
+   ═══ ADMIN API ENDPOINTS — v7.9.5
    ══════════════════════════════════════════════════════════ */
 
 /* ═══ GET /admin/stats — Dashboard Statistics ═══ */
@@ -2093,6 +2228,18 @@ app.post("/admin/test-search", async (req, res) => {
       searchDiplomas(terms),
     ]);
 
+    // ✅ v7.9.5: AI Reranking in test-search too
+    let rerankedCourses = courses;
+    let rerankedDiplomas = diplomas;
+    let rerankInfo = "skipped (test shows raw + reranked)";
+
+    if (courses.length > 0 || diplomas.length > 0) {
+      const reranked = await aiRerankCourses(query, courses, diplomas);
+      rerankedCourses = reranked.courses;
+      rerankedDiplomas = reranked.diplomas;
+      rerankInfo = `${rerankedCourses.length}/${courses.length} courses, ${rerankedDiplomas.length}/${diplomas.length} diplomas`;
+    }
+
     const elapsed = Date.now() - startTime;
 
     res.json({
@@ -2100,7 +2247,7 @@ app.post("/admin/test-search", async (req, res) => {
       query,
       intent: intentResult,
       extracted_terms: terms,
-      results: {
+      raw_results: {
         courses: courses.map((c) => ({
           id: c.id,
           title: c.title,
@@ -2113,7 +2260,22 @@ app.post("/admin/test-search", async (req, res) => {
           price: d.price,
         })),
       },
-      total_results: courses.length + diplomas.length,
+      ai_reranked: {
+        info: rerankInfo,
+        courses: rerankedCourses.map((c) => ({
+          id: c.id,
+          title: c.title,
+          score: c.relevanceScore,
+          price: c.price,
+        })),
+        diplomas: rerankedDiplomas.map((d) => ({
+          id: d.id,
+          title: d.title,
+          price: d.price,
+        })),
+      },
+      total_raw: courses.length + diplomas.length,
+      total_reranked: rerankedCourses.length + rerankedDiplomas.length,
       elapsed_ms: elapsed,
     });
   } catch (e) {
@@ -2154,7 +2316,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.4
+   ═══ ADMIN DASHBOARD (HTML) — v7.9.5
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -2162,7 +2324,7 @@ app.get("/admin", (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.4</title>
+<title>🤖 زيكو Dashboard — v7.9.5</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
@@ -2215,7 +2377,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <body>
 <div class="header">
 <h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.4 | Enhanced: page_content + syllabus + objectives</p>
+<p>easyT Chatbot Dashboard — v7.9.5 | 🧠 AI-Powered Reranking + Price Fix</p>
 </div>
 <div class="container">
 
@@ -2278,7 +2440,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <!-- Search Test Tab -->
 <div id="tab-search-test" style="display:none">
 <div class="section">
-<h2>🔍 اختبار البحث</h2>
+<h2>🔍 اختبار البحث (مع AI Reranking)</h2>
 <div class="search-box">
 <input type="text" id="testQuery" placeholder="جرب أي استعلام بحث...">
 <button class="btn-primary" onclick="testSearch()">🔍 اختبار</button>
@@ -2420,7 +2582,7 @@ const q=document.getElementById('testQuery').value;
 if(!q)return;
 const el=document.getElementById('testResult');
 el.style.display='block';
-el.textContent='⏳ جاري الاختبار...';
+el.textContent='⏳ جاري الاختبار (مع AI Reranking)...';
 try{
 const r=await fetch(API+'/admin/test-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
 const d=await r.json();
@@ -2541,8 +2703,10 @@ setInterval(loadStats,60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.4",
+    version: "7.9.5",
     features: [
+      "AI reranking",
+      "price fix",
       "page_content search",
       "syllabus search",
       "objectives search",
@@ -2562,7 +2726,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.4",
+    version: "7.9.5",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -2582,10 +2746,10 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.4                   ║
+║  🤖 زيكو Chatbot — v7.9.5                   ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin                        ║
-║  🔍 Enhanced: page_content+syllabus+objectives║
+║  🧠 AI-Powered Reranking enabled             ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
