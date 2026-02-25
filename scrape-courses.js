@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-import * as cheerio from "cheerio";
+const { createClient } = require("@supabase/supabase-js");
+const cheerio = require("cheerio");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -57,9 +57,7 @@ function extractCourseData(html) {
   });
 
   const syllabus = [];
-  $(
-    ".lesson-title, .chapter-title, .curriculum-item, .lecture-name"
-  ).each((_, el) => {
+  $(".lesson-title, .chapter-title, .curriculum-item, .lecture-name").each((_, el) => {
     const text = $(el).text().trim();
     if (text && text.length > 3) {
       syllabus.push(text);
@@ -71,11 +69,7 @@ function extractCourseData(html) {
   let match;
   while ((match = lessonPattern.exec(allText)) !== null) {
     const lessonName = match[1].trim();
-    if (
-      lessonName &&
-      !syllabus.includes(lessonName) &&
-      !lessonName.includes("سوف تكون")
-    ) {
+    if (lessonName && !syllabus.includes(lessonName) && !lessonName.includes("سوف تكون")) {
       syllabus.push(lessonName);
     }
   }
@@ -84,24 +78,19 @@ function extractCourseData(html) {
   $("h2, h3, h4").each((_, el) => {
     const heading = $(el).text().trim();
     if (heading.includes("نتائج") || heading.includes("مخرجات")) {
-      $(el)
-        .parent()
-        .find("li")
-        .each((_, li) => {
-          results.push($(li).text().trim());
-        });
+      $(el).parent().find("li").each((_, li) => {
+        results.push($(li).text().trim());
+      });
     }
   });
 
   let instructor = "";
-  $("body")
-    .find("*")
-    .each((_, el) => {
-      const text = $(el).text().trim();
-      if (text.includes("المحاضر") && text.length < 200) {
-        instructor = text;
-      }
-    });
+  $("body").find("*").each((_, el) => {
+    const text = $(el).text().trim();
+    if (text.includes("المحاضر") && text.length < 200) {
+      instructor = text;
+    }
+  });
 
   let duration = "";
   const durationMatch = allText.match(/المدة[^:]*:\s*([^\n\.]+)/);
@@ -135,7 +124,7 @@ function buildSearchableContent(data) {
 
 async function scrapeAllCourses() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-    console.error("❌ SUPABASE_URL أو SUPABASE_SERVICE_KEY مش موجودين في Environment Variables");
+    console.error("❌ SUPABASE_URL أو SUPABASE_SERVICE_KEY مش موجودين");
     process.exit(1);
   }
 
