@@ -1133,11 +1133,9 @@ async function searchDiplomas(searchTerms) {
 function formatCourseCard(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
-  // ✅ v7.9.3 FIX: Use course.link directly instead of building from slug
   const courseUrl = course.link || "https://easyt.online/courses";
   const price = course.price || 0;
   const priceText = price === 0 ? "مجاناً 🎉" : `${price}$`;
-  // ✅ v7.9.3 FIX: Use course.image instead of course.image_url
   const imgUrl = course.image || "https://easyt.online/default-course.png";
 
   return `<div style="border:1px solid #eee;border-radius:12px;overflow:hidden;margin:6px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
@@ -1148,7 +1146,7 @@ function formatCourseCard(course, instructors) {
 ${instructorName ? `<div style="font-size:11px;color:#666;margin-bottom:2px">👨‍🏫 ${instructorName}</div>` : ""}
 <div style="font-size:12px;font-weight:700;color:#e63946">${priceText}</div>
 </div>
-<a href="${courseUrl}" target="_blank" style="background:#e63946;color:#fff;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap">التفاصيل</a>
+<a href="${courseUrl}" target="_blank" style="background:#e63946;color:#fff !important;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none !important;white-space:nowrap;display:inline-block">التفاصيل</a>
 </div></div>`;
 }
 
@@ -1156,11 +1154,9 @@ ${instructorName ? `<div style="font-size:11px;color:#666;margin-bottom:2px">�
    ═══ Format Diploma Card HTML — v7.9.3 FIXED column names
    ══════════════════════════════════════════════════════════ */
 function formatDiplomaCard(diploma) {
-  // ✅ v7.9.3 FIX: Use diploma.link directly instead of building from slug
   const url = diploma.link || "https://easyt.online/p/diplomas";
   const price = diploma.price || 0;
   const priceText = price === 0 ? "مجاناً 🎉" : `${price}$`;
-  // ✅ v7.9.3 FIX: Use diploma.image instead of diploma.image_url
   const imgUrl = diploma.image || "https://easyt.online/default-diploma.png";
 
   return `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:6px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1)">
@@ -1170,7 +1166,7 @@ function formatDiplomaCard(diploma) {
 <div style="font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:3px">🎓 ${diploma.title}</div>
 <div style="font-size:12px;font-weight:700;color:#e63946">${priceText}</div>
 </div>
-<a href="${url}" target="_blank" style="background:#e63946;color:#fff;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap">التفاصيل</a>
+<a href="${url}" target="_blank" style="background:#e63946;color:#fff !important;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none !important;white-space:nowrap;display:inline-block">التفاصيل</a>
 </div></div>`;
 }
 
