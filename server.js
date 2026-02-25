@@ -1,10 +1,13 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.5 — 🧠 AI-Powered Reranking + Price Fix
-   ✅ ALL v7.9.4 code preserved — ONLY enhanced with AI reranking
-   🆕 v7.9.5: aiRerankCourses() — GPT filters results by full user intent
-   🆕 v7.9.5: SEARCH handler calls aiRerankCourses after broad search
-   🆕 v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
-   🐛 v7.9.5: FIXED price display $$9.99 → $9.99 (handles string/number)
+   🤖 Ziko Chatbot v7.9.6 — 🐛 Fix AI Reranker Empty Results
+   ✅ ALL v7.9.5 code preserved — ONLY aiRerankCourses fixed
+   🐛 v7.9.6: FIXED AI reranker returning empty arrays → shows "no results"
+   🐛 v7.9.6: FIXED reranker prompt — less aggressive, always returns top matches
+   🐛 v7.9.6: ADDED safety net in SEARCH handler — fallback to original results
+   ─── v7.9.5 features ───
+   ✅ v7.9.5: aiRerankCourses() — GPT filters results by full user intent
+   ✅ v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
+   ✅ v7.9.5: FIXED price display $$9.99 → $9.99
    ─── v7.9.4 features ───
    ✅ v7.9.4: searchCourses searches page_content, syllabus, objectives columns
    ✅ v7.9.4: Scoring weights: title(10) > subtitle(7) > page_content(5) > syllabus(4) > objectives(4) > description(3) > full_content(2)
@@ -186,7 +189,6 @@ function similarityRatio(a, b) {
    ═══ Arabic Corrections Dictionary ═══
    ═══════════════════════════════════ */
 const ARABIC_CORRECTIONS = {
-  // ماركيتنج variations
   ماركوتنج: "ماركيتنج",
   ماركوتنتج: "ماركيتنج",
   ماركتنج: "ماركيتنج",
@@ -198,8 +200,6 @@ const ARABIC_CORRECTIONS = {
   ماركتنق: "ماركيتنج",
   مارتكينج: "ماركيتنج",
   ماريكتنج: "ماركيتنج",
-
-  // ديجيتال variations
   دجيتال: "ديجيتال",
   ديجتال: "ديجيتال",
   دجتال: "ديجيتال",
@@ -207,100 +207,58 @@ const ARABIC_CORRECTIONS = {
   دجيتل: "ديجيتال",
   ديجيتل: "ديجيتال",
   دجيتيال: "ديجيتال",
-
-  // برمجه variations
   بروجرامنج: "برمجه",
   بروغرامنج: "برمجه",
   بروقرامنج: "برمجه",
-
-  // بايثون variations
   بيثون: "بايثون",
   بايتون: "بايثون",
   بايسون: "بايثون",
   باثيون: "بايثون",
-
-  // جافاسكريبت variations
   جافاسكربت: "جافاسكريبت",
   جافسكربت: "جافاسكريبت",
-
-  // ريأكت
   ريياكت: "ريأكت",
   "تايب سكريبت": "تايبسكريبت",
-
-  // جرافيك variations
   جرافك: "جرافيك",
   قرافيك: "جرافيك",
   غرافيك: "جرافيك",
   جرفيك: "جرافيك",
-
-  // فوتوشوب variations
   فتوشوب: "فوتوشوب",
   فوتشوب: "فوتوشوب",
   فوطوشوب: "فوتوشوب",
   فطوشوب: "فوتوشوب",
-
-  // اليستريتر variations
   اليستريتور: "اليستريتر",
   السترتور: "اليستريتر",
   اللستريتر: "اليستريتر",
   اليسترايتر: "اليستريتر",
-
-  // بيزنس variations
   بزنس: "بيزنس",
   بزنيس: "بيزنس",
   بيزنيس: "بيزنس",
-
-  // مانجمنت variations
   منجمنت: "مانجمنت",
   مانجمينت: "مانجمنت",
   مانيجمنت: "مانجمنت",
-
-  // اكاونتنج variations
   اكونتنج: "اكاونتنج",
   اكونتينج: "اكاونتنج",
-
-  // سيو
   "اس اي او": "سيو",
-
-  // اناليتكس variations
   انالتكس: "اناليتكس",
   انلتكس: "اناليتكس",
   اناليتيكس: "اناليتكس",
-
-  // UI/UX
   "يو اي": "ui",
   "يو اكس": "ux",
   يواي: "ui",
   يواكس: "ux",
-
-  // دبلومه variations
   دبلومه: "دبلومه",
   دبلومة: "دبلومه",
   دبلوما: "دبلومه",
-
-  // شهاده variations
   شهاده: "شهاده",
   شهادة: "شهاده",
-
-  // اونلاين variations
   اونلين: "اونلاين",
   "اون لاين": "اونلاين",
-
-  // اشتراك
   سبسكربشن: "اشتراك",
-
-  // سوشيال ميديا
   "سوشل ميديا": "سوشيال ميديا",
-
-  // سايبر سيكيورتي
   "سايبر سكيورتي": "سايبر سيكيورتي",
   سيكيورتي: "سيكيورتي",
-
-  // هاكينج
   هاكنج: "هاكينج",
   هاكينق: "هاكينج",
-
-  // ووردبريس
   وردبرس: "ووردبريس",
   وردبريس: "ووردبريس",
   "وورد بريس": "ووردبريس",
@@ -472,7 +430,6 @@ function detectAudienceExclusions(message) {
   return exclusions;
 }
 
-/* ═══ v7.9.1: Sanitize value — remove null/undefined strings ═══ */
 function sanitizeValue(val) {
   if (val === null || val === undefined) return "";
   if (typeof val === "string") {
@@ -490,13 +447,11 @@ function sanitizeValue(val) {
   return String(val);
 }
 
-/* ═══ v7.9.1: Sanitize search terms array ═══ */
 function sanitizeSearchTerms(terms) {
   if (!Array.isArray(terms)) return [];
   return terms.map((t) => sanitizeValue(t)).filter((t) => t.length > 0);
 }
 
-/* ═══ v7.9.1: Extract search terms from raw message ═══ */
 function extractSearchTermsFromMessage(message) {
   if (!message) return [];
   const words = message
@@ -507,7 +462,6 @@ function extractSearchTermsFromMessage(message) {
     .filter((w) => w.length > 1)
     .filter((w) => !ARABIC_STOP_WORDS.has(w));
 
-  // Apply corrections to each word
   const corrected = words.map((w) => {
     return ARABIC_CORRECTIONS[w] || w;
   });
@@ -515,27 +469,21 @@ function extractSearchTermsFromMessage(message) {
   return [...new Set(corrected)].filter((w) => w.length > 1);
 }
 
-/* ═══ v7.9.2: Convert Markdown links to HTML ═══ */
 function markdownToHtml(text) {
   if (!text) return "";
-  // Convert [text](url) → <a href="url" target="_blank">text</a>
   text = text.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
     '<a href="$2" target="_blank" style="color:#e63946;font-weight:600;text-decoration:underline">$1</a>'
   );
-  // Convert bare URLs that aren't already inside href="" or >url<
   text = text.replace(
     /(?<!href="|href='|">)(https?:\/\/[^\s<)"']+)/g,
     '<a href="$1" target="_blank" style="color:#e63946;font-weight:600;text-decoration:underline">$1</a>'
   );
-  // Convert **bold** to <strong>
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  // Convert *italic* to <em>
   text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return text;
 }
 
-/* ═══ v7.9.2: Detect educational English terms → force SEARCH ═══ */
 function isEducationalTerm(msg) {
   const eduTerms = [
     "unity", "unreal", "godot", "game dev", "game development",
@@ -615,20 +563,10 @@ function isAudienceQuestion(msg) {
   return audiencePatterns.some((p) => p.test(msg));
 }
 
-/* ═══ v7.9.1: Detect community/group questions ═══ */
 function isCommunityQuestion(msg) {
   const patterns = [
-    /مجتمع/i,
-    /مجتع/i,
-    /جروب/i,
-    /قروب/i,
-    /community/i,
-    /group/i,
-    /تليجرام/i,
-    /واتساب/i,
-    /واتس/i,
-    /ديسكورد/i,
-    /discord/i,
+    /مجتمع/i, /مجتع/i, /جروب/i, /قروب/i, /community/i,
+    /group/i, /تليجرام/i, /واتساب/i, /واتس/i, /ديسكورد/i, /discord/i,
   ];
   return patterns.some((p) => p.test(msg));
 }
@@ -653,20 +591,17 @@ async function searchCorrections(terms) {
       const wrongNorm = normalizeArabic((row.wrong_text || "").toLowerCase());
       if (!wrongNorm) continue;
 
-      // Exact or substring match
       if (normInput.includes(wrongNorm) || wrongNorm.includes(normInput)) {
         matches.push({ ...row, score: 100 });
         continue;
       }
 
-      // Fuzzy match
       const sim = similarityRatio(normInput, wrongNorm);
       if (sim >= 65) {
         matches.push({ ...row, score: sim });
         continue;
       }
 
-      // Word-level match
       const inputWords = normInput.split(/\s+/);
       const wrongWords = wrongNorm.split(/\s+/);
       let wordMatch = false;
@@ -682,7 +617,6 @@ async function searchCorrections(terms) {
       if (wordMatch) matches.push({ ...row, score: 70 });
     }
 
-    // Sort by score and return best
     matches.sort((a, b) => b.score - a.score);
     return matches.slice(0, 3);
   } catch (e) {
@@ -757,7 +691,6 @@ async function loadBotInstructions() {
    ═══ classifyIntent — GPT Intent Detection
    ══════════════════════════════════════════════════════════ */
 async function classifyIntent(message) {
-  // ═══ v7.9.1: Detect community questions FIRST ═══
   if (isCommunityQuestion(message)) {
     return {
       intent: "SUPPORT",
@@ -769,7 +702,6 @@ async function classifyIntent(message) {
     };
   }
 
-  // ═══ v7.9.2: Detect educational English terms — force SEARCH ═══
   const eduTerm = isEducationalTerm(message);
   if (eduTerm) {
     const extraTerms = extractSearchTermsFromMessage(message);
@@ -791,7 +723,6 @@ async function classifyIntent(message) {
     };
   }
 
-  // Conversational check
   if (isConversational(message)) {
     return {
       intent: "GENERAL",
@@ -802,7 +733,6 @@ async function classifyIntent(message) {
     };
   }
 
-  // Audience question check
   if (isAudienceQuestion(message)) {
     const terms = extractSearchTermsFromMessage(message);
     return {
@@ -815,10 +745,8 @@ async function classifyIntent(message) {
     };
   }
 
-  // Detect audience exclusions from message
   const audienceExclusions = detectAudienceExclusions(message);
 
-  // Load admin instructions
   const extraInstructions = await loadBotInstructions();
   const instructionsBlock = extraInstructions
     ? `\n\n═══ تعليمات إضافية من الأدمن ═══\n${extraInstructions}`
@@ -863,7 +791,6 @@ async function classifyIntent(message) {
 
     let parsed = JSON.parse(resp.choices[0].message.content);
 
-    /* ═══ v7.9.1 FIX: Sanitize ALL parsed values ═══ */
     parsed.entity = sanitizeValue(parsed.entity);
     parsed.search_terms = sanitizeSearchTerms(parsed.search_terms || []);
 
@@ -877,14 +804,12 @@ async function classifyIntent(message) {
 
     parsed.exclude_terms = sanitizeSearchTerms(parsed.exclude_terms || []);
 
-    // Merge audience exclusions from message analysis
     if (audienceExclusions.length > 0) {
       parsed.exclude_terms = [
         ...new Set([...(parsed.exclude_terms || []), ...audienceExclusions]),
       ];
     }
 
-    /* ═══ v7.9.1 FIX: Rescue empty search_terms for SEARCH ═══ */
     if (parsed.intent === "SEARCH" && parsed.search_terms.length === 0) {
       if (parsed.entity) {
         parsed.search_terms = parsed.entity
@@ -896,12 +821,10 @@ async function classifyIntent(message) {
       }
     }
 
-    /* ═══ v7.9.1 FIX: If entity empty but search_terms exist ═══ */
     if (!parsed.entity && parsed.search_terms.length > 0) {
       parsed.entity = parsed.search_terms.join(" ");
     }
 
-    /* ═══ v7.9.1 FIX: If SEARCH but NO entity AND NO terms → GENERAL ═══ */
     if (
       parsed.intent === "SEARCH" &&
       !parsed.entity &&
@@ -942,7 +865,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     console.log("🔍 Search terms after expansion:", allTerms);
 
-    // ✅ v7.9.4: Search across ALL content columns including page_content, syllabus, objectives
     const orFilters = allTerms
       .flatMap((t) => [
         `title.ilike.%${t}%`,
@@ -955,14 +877,13 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       ])
       .join(",");
 
-    // ✅ v7.9.4: Select includes page_content, syllabus, objectives for scoring
     const { data: courses, error } = await supabase
       .from("courses")
       .select(
         "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
       )
       .or(orFilters)
-      .limit(30); // ✅ v7.9.5: increased from 20 to 30 for wider AI reranking pool
+      .limit(30);
 
     if (error) {
       console.error("Supabase search error:", error.message);
@@ -973,7 +894,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       return await fuzzySearchFallback(allTerms);
     }
 
-    // Filter out excluded terms
     let filtered = courses;
     if (excludeTerms && excludeTerms.length > 0) {
       filtered = courses.filter((c) => {
@@ -984,7 +904,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       });
     }
 
-    // Audience filtering
     if (audience) {
       const audienceFiltered = filtered.filter((c) => {
         const titleLower = (c.title || "").toLowerCase();
@@ -1016,7 +935,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       }
     }
 
-    // ✅ v7.9.4: Enhanced scoring with page_content, syllabus, objectives
     const scored = filtered.map((c) => {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
@@ -1048,17 +966,16 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     });
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    return scored.slice(0, 10); // ✅ v7.9.5: return top 10 candidates for AI reranking
+    return scored.slice(0, 10);
   } catch (e) {
     console.error("searchCourses error:", e.message);
     return [];
   }
 }
 
-/* ═══ Fuzzy Search Fallback — v7.9.4 ENHANCED ═══ */
+/* ═══ Fuzzy Search Fallback ═══ */
 async function fuzzySearchFallback(terms) {
   try {
-    // ✅ v7.9.4: Include page_content, syllabus, objectives in fuzzy fallback
     const { data: allCourses, error } = await supabase
       .from("courses")
       .select(
@@ -1088,19 +1005,16 @@ async function fuzzySearchFallback(terms) {
       for (const term of terms) {
         const normTerm = normalizeArabic(term.toLowerCase());
 
-        // Check substring first
         if (titleNorm.includes(normTerm) || normTerm.includes(titleNorm)) {
           bestSim = Math.max(bestSim, 85);
           continue;
         }
 
-        // Check subtitle
         if (subtitleNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 75);
           continue;
         }
 
-        // ✅ v7.9.4: Check page_content, syllabus, objectives
         if (pageContentNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 72);
           continue;
@@ -1114,14 +1028,12 @@ async function fuzzySearchFallback(terms) {
           continue;
         }
 
-        // Fuzzy on title words
         const titleWords = titleNorm.split(/\s+/);
         for (const tw of titleWords) {
           const sim = similarityRatio(normTerm, tw);
           bestSim = Math.max(bestSim, sim);
         }
 
-        // Full title similarity
         const fullSim = similarityRatio(normTerm, titleNorm);
         bestSim = Math.max(bestSim, fullSim);
       }
@@ -1132,7 +1044,7 @@ async function fuzzySearchFallback(terms) {
     }
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    return results.slice(0, 10); // ✅ v7.9.5: return top 10 for AI reranking
+    return results.slice(0, 10);
   } catch (e) {
     console.error("fuzzySearchFallback error:", e.message);
     return [];
@@ -1140,7 +1052,7 @@ async function fuzzySearchFallback(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchDiplomas — v7.9.3 FIXED column names (unchanged)
+   ═══ searchDiplomas
    ══════════════════════════════════════════════════════════ */
 async function searchDiplomas(searchTerms) {
   try {
@@ -1173,7 +1085,7 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.9.5: AI Reranking — GPT filters by full user intent
+   ═══ 🐛 v7.9.6: FIXED AI Reranking — never returns empty when we had results
    ══════════════════════════════════════════════════════════ */
 async function aiRerankCourses(userMessage, courses, diplomas = []) {
   const totalResults = courses.length + diplomas.length;
@@ -1203,6 +1115,7 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
 
     const allItems = [...courseSummaries, ...diplomaSummaries];
 
+    // 🐛 v7.9.6: FIXED prompt — less aggressive, always returns closest matches
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
@@ -1216,16 +1129,17 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
 سؤال المستخدم: "${userMessage}"
 
 مهمتك:
-1. افهم نية المستخدم الكاملة من السؤال ككل (مش كلمات منفصلة)
-2. اختار من القائمة بس الكورسات/الدبلومات اللي فعلاً مناسبة للنية الكاملة
-3. رتبهم من الأنسب للأقل
-4. استبعد أي كورس مش ليه علاقة حقيقية
+1. افهم نية المستخدم الكاملة من السؤال
+2. رتّب الكورسات/الدبلومات من الأنسب للأقل مناسبة
+3. الكورسات القريبة من الموضوع مقبولة — مش لازم تطابق 100%
 
-⚠️ قواعد مهمة:
-- لو المستخدم قال "تصميم صور بالذكاء الاصطناعي" ← الكورس لازم يكون عن تصميم + ذكاء اصطناعي معاً، مش "تصميم مطبوعات" أو "تصميم مواقع" لوحدهم
-- لو المستخدم سأل عن "برمجة مواقع" ← متجيبش "برمجة ألعاب"
-- افهم المعنى الكامل مش كلمات فردية
-- لو مفيش كورس مناسب فعلاً للنية الكاملة، رجع arrays فاضية
+⚠️ قواعد:
+- رجّع على الأقل أفضل 3 نتائج حتى لو مش مطابقة تماماً
+- الكورس اللي فيه كلمتين أو أكتر من سؤال المستخدم يعتبر مناسب
+- مثال: لو المستخدم سأل "تصميم الصور بالذكاء الاصطناعي" → أي كورس فيه "ذكاء اصطناعي" + "تصميم" أو "صور" أو "فوتوشوب" أو "اليستريتور" يعتبر مناسب
+- مثال: لو المستخدم سأل "برمجة مواقع" → كورس "Node.js" أو "React" يعتبر مناسب
+- ❌ بس استبعد الكورسات اللي مالهاش أي علاقة خالص (مثلاً: كورس "محاسبة" لسؤال عن "تصميم")
+- ❌ ممنوع ترجع arrays فاضية — لازم على الأقل 1-3 نتائج
 
 رد بـ JSON فقط:
 {
@@ -1253,6 +1167,17 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
       .slice(0, 3)
       .map((i) => diplomas[i]);
 
+    // 🐛 v7.9.6: SAFETY NET — if AI returned empty, fallback to original top results
+    if (selectedCourses.length === 0 && selectedDiplomas.length === 0) {
+      console.log(
+        "🤖 AI Rerank: returned empty → falling back to original top 5"
+      );
+      return {
+        courses: courses.slice(0, 5),
+        diplomas: diplomas.slice(0, 3),
+      };
+    }
+
     console.log(
       `🤖 AI Rerank: ${selectedCourses.length}/${courses.length} courses, ${selectedDiplomas.length}/${diplomas.length} diplomas — ${result.reason || ""}`
     );
@@ -1273,7 +1198,6 @@ function formatCourseCard(course, instructors, index) {
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
 
-  // ✅ v7.9.5: Fix price display — handle string "$9.99" or number 9.99
   const rawPrice = course.price;
   let priceNum = 0;
   if (typeof rawPrice === "string") {
@@ -1307,7 +1231,6 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
 
-  // ✅ v7.9.5: Fix price display — handle string "$9.99" or number 9.99
   const rawPrice = diploma.price;
   let priceNum = 0;
   if (typeof rawPrice === "string") {
@@ -1335,7 +1258,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Chat Logging (unchanged from v7.9.3)
+   ═══ Chat Logging
    ══════════════════════════════════════════════════════════ */
 async function logChat(sessionId, role, message, intent, extra = {}) {
   try {
@@ -1353,7 +1276,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT General Response — v7.9.2: HTML links + markdownToHtml (unchanged)
+   ═══ GPT General Response
    ══════════════════════════════════════════════════════════ */
 async function getGPTResponse(message, context = "") {
   try {
@@ -1390,7 +1313,6 @@ async function getGPTResponse(message, context = "") {
       max_tokens: 300,
     });
 
-    // v7.9.2: Safety net — convert any remaining Markdown to HTML
     let reply = resp.choices[0].message.content;
     reply = markdownToHtml(reply);
     return reply;
@@ -1401,7 +1323,7 @@ async function getGPTResponse(message, context = "") {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT Support Response — v7.9.2: HTML links + markdownToHtml (unchanged)
+   ═══ GPT Support Response
    ══════════════════════════════════════════════════════════ */
 async function getGPTSupportResponse(message, supportType) {
   try {
@@ -1439,7 +1361,6 @@ async function getGPTSupportResponse(message, supportType) {
       max_tokens: 300,
     });
 
-    // v7.9.2: Safety net
     let reply = resp.choices[0].message.content;
     reply = markdownToHtml(reply);
     return reply;
@@ -1450,7 +1371,7 @@ async function getGPTSupportResponse(message, supportType) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Smart Course Suggestions for General Questions (unchanged)
+   ═══ Smart Course Suggestions for General Questions
    ══════════════════════════════════════════════════════════ */
 async function getSmartSuggestions(message) {
   try {
@@ -1465,7 +1386,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.5: AI Reranking added
+   ═══ MAIN CHAT ENDPOINT — v7.9.6: FIXED AI reranking safety
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1486,10 +1407,8 @@ app.post("/chat", limiter, async (req, res) => {
 
     console.log(`\n💬 [${sessionId}] "${cleanMessage}"`);
 
-    // Log user message FIRST (ordering fix v7.9)
     await logChat(sessionId, "user", cleanMessage, null);
 
-    // Classify intent
     const intentResult = await classifyIntent(cleanMessage);
     const {
       intent,
@@ -1588,7 +1507,6 @@ app.post("/chat", limiter, async (req, res) => {
 
       comparisonHtml += `\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
-      // v7.9.2: Convert any markdown in comparison
       reply = markdownToHtml(comparisonHtml);
       await logChat(sessionId, "bot", reply, "COMPARE", {
         compare_terms: compTerms,
@@ -1605,7 +1523,6 @@ app.post("/chat", limiter, async (req, res) => {
         ? entity.split(/\s+/).filter((w) => w.length > 1)
         : extractSearchTermsFromMessage(cleanMessage);
 
-    // v7.9.1: SAFE displayTerm — NEVER show "null"
     const displayTerm =
       entity && entity.length > 0
         ? entity
@@ -1617,23 +1534,19 @@ app.post("/chat", limiter, async (req, res) => {
       `🔍 Searching: [${termsToSearch}] | Display: "${displayTerm}"`
     );
 
-    // Check corrections first
     const corrections = await searchCorrections(termsToSearch);
 
-    // Search courses and diplomas in parallel
     let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, exclude_terms || [], audience),
       searchDiplomas(termsToSearch),
     ]);
 
-    // If corrections found and no courses, use correction course IDs
     if (courses.length === 0 && corrections.length > 0) {
       const correctionIds = corrections
         .flatMap((c) => c.correct_course_ids || [])
         .filter((id) => id);
 
       if (correctionIds.length > 0) {
-        // ✅ v7.9.4: Include new columns in corrections fallback too
         const { data: corrCourses } = await supabase
           .from("courses")
           .select(
@@ -1654,11 +1567,16 @@ app.post("/chat", limiter, async (req, res) => {
       }
     }
 
-    // ✅ v7.9.5: AI Reranking — GPT filters results by actual user intent
+    // 🐛 v7.9.6: AI Reranking with DOUBLE safety net
     if (courses.length > 0 || diplomas.length > 0) {
+      // Save originals before reranking
+      const originalCourses = [...courses];
+      const originalDiplomas = [...diplomas];
+
       console.log(
         `🤖 Pre-rerank: ${courses.length} courses, ${diplomas.length} diplomas`
       );
+
       const reranked = await aiRerankCourses(
         cleanMessage,
         courses,
@@ -1666,6 +1584,16 @@ app.post("/chat", limiter, async (req, res) => {
       );
       courses = reranked.courses;
       diplomas = reranked.diplomas;
+
+      // 🐛 v7.9.6: DOUBLE SAFETY NET — if reranking returned empty, use originals
+      if (courses.length === 0 && diplomas.length === 0) {
+        console.log(
+          "🤖 Double safety: AI rerank returned empty → using original results"
+        );
+        courses = originalCourses.slice(0, 5);
+        diplomas = originalDiplomas.slice(0, 3);
+      }
+
       console.log(
         `🤖 Post-rerank: ${courses.length} courses, ${diplomas.length} diplomas`
       );
@@ -1699,7 +1627,6 @@ app.post("/chat", limiter, async (req, res) => {
 
       reply += `\n\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
     } else {
-      // No results found
       reply = `🔍 للأسف مفيش كورس عن "${displayTerm}" على المنصة حالياً.\n\n`;
       reply += `تقدر تتصفح كل الدورات المتاحة (+600 دورة) من هنا:\n`;
       reply += `► 📊 <a href="${ALL_COURSES_URL}" target="_blank">جميع الدورات على المنصة</a>\n\n`;
@@ -1728,18 +1655,15 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN API ENDPOINTS — v7.9.5
+   ═══ ADMIN API ENDPOINTS — v7.9.6
    ══════════════════════════════════════════════════════════ */
 
-/* ═══ GET /admin/stats — Dashboard Statistics ═══ */
 app.get("/admin/stats", async (req, res) => {
   try {
-    // Total chats
     const { count: totalChats } = await supabase
       .from("chat_logs")
       .select("*", { count: "exact", head: true });
 
-    // Today's chats
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const { count: todayChats } = await supabase
@@ -1748,7 +1672,6 @@ app.get("/admin/stats", async (req, res) => {
       .gte("created_at", todayStart.toISOString())
       .eq("role", "user");
 
-    // Unique sessions
     const { data: sessionsData } = await supabase
       .from("chat_logs")
       .select("session_id")
@@ -1758,7 +1681,6 @@ app.get("/admin/stats", async (req, res) => {
       ? new Set(sessionsData.map((s) => s.session_id)).size
       : 0;
 
-    // Intent breakdown
     const { data: intentData } = await supabase
       .from("chat_logs")
       .select("intent")
@@ -1773,34 +1695,28 @@ app.get("/admin/stats", async (req, res) => {
       });
     }
 
-    // Total courses
     const { count: totalCourses } = await supabase
       .from("courses")
       .select("*", { count: "exact", head: true });
 
-    // Total diplomas
     const { count: totalDiplomas } = await supabase
       .from("diplomas")
       .select("*", { count: "exact", head: true });
 
-    // Total corrections
     const { count: totalCorrections } = await supabase
       .from("corrections")
       .select("*", { count: "exact", head: true });
 
-    // Total custom responses
     const { count: totalCustom } = await supabase
       .from("custom_responses")
       .select("*", { count: "exact", head: true });
 
-    // Recent chats (last 20)
     const { data: recentChats } = await supabase
       .from("chat_logs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // No-result searches (from metadata)
     const { data: noResults } = await supabase
       .from("chat_logs")
       .select("message, created_at, metadata")
@@ -1823,7 +1739,6 @@ app.get("/admin/stats", async (req, res) => {
       })
       .slice(0, 20);
 
-    // Hourly distribution (last 24h)
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: hourlyData } = await supabase
       .from("chat_logs")
@@ -1861,7 +1776,6 @@ app.get("/admin/stats", async (req, res) => {
   }
 });
 
-/* ═══ GET /admin/logs — Paginated Chat Logs ═══ */
 app.get("/admin/logs", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -1901,7 +1815,6 @@ app.get("/admin/logs", async (req, res) => {
   }
 });
 
-/* ═══ GET /admin/sessions/:sessionId — Session Detail ═══ */
 app.get("/admin/sessions/:sessionId", async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -2214,10 +2127,8 @@ app.post("/admin/test-search", async (req, res) => {
 
     const startTime = Date.now();
 
-    // Classify
     const intentResult = await classifyIntent(query);
 
-    // Search
     const terms =
       intentResult.search_terms.length > 0
         ? intentResult.search_terms
@@ -2228,10 +2139,9 @@ app.post("/admin/test-search", async (req, res) => {
       searchDiplomas(terms),
     ]);
 
-    // ✅ v7.9.5: AI Reranking in test-search too
     let rerankedCourses = courses;
     let rerankedDiplomas = diplomas;
-    let rerankInfo = "skipped (test shows raw + reranked)";
+    let rerankInfo = "skipped";
 
     if (courses.length > 0 || diplomas.length > 0) {
       const reranked = await aiRerankCourses(query, courses, diplomas);
@@ -2316,7 +2226,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.5
+   ═══ ADMIN DASHBOARD (HTML) — v7.9.6
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -2324,7 +2234,7 @@ app.get("/admin", (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.5</title>
+<title>🤖 زيكو Dashboard — v7.9.6</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
@@ -2377,11 +2287,10 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <body>
 <div class="header">
 <h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.5 | 🧠 AI-Powered Reranking + Price Fix</p>
+<p>easyT Chatbot Dashboard — v7.9.6 | 🐛 Fixed AI Reranker Empty Results</p>
 </div>
 <div class="container">
 
-<!-- Stats Grid -->
 <div class="stats-grid" id="statsGrid">
 <div class="stat-card"><div class="number" id="totalChats">-</div><div class="label">إجمالي المحادثات</div></div>
 <div class="stat-card"><div class="number" id="todayChats">-</div><div class="label">محادثات اليوم</div></div>
@@ -2391,7 +2300,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <div class="stat-card"><div class="number" id="totalCorrections">-</div><div class="label">التصحيحات</div></div>
 </div>
 
-<!-- Tabs -->
 <div class="tabs">
 <button class="tab active" onclick="showTab('overview')">📊 نظرة عامة</button>
 <button class="tab" onclick="showTab('logs')">💬 المحادثات</button>
@@ -2401,7 +2309,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <button class="tab" onclick="showTab('instructions')">📝 تعليمات البوت</button>
 </div>
 
-<!-- Overview Tab -->
 <div id="tab-overview">
 <div class="section">
 <h2>📈 توزيع الأهداف (Intents)</h2>
@@ -2417,7 +2324,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 </div>
 </div>
 
-<!-- Logs Tab -->
 <div id="tab-logs" style="display:none">
 <div class="section">
 <h2>💬 سجل المحادثات</h2>
@@ -2437,7 +2343,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 </div>
 </div>
 
-<!-- Search Test Tab -->
 <div id="tab-search-test" style="display:none">
 <div class="section">
 <h2>🔍 اختبار البحث (مع AI Reranking)</h2>
@@ -2449,7 +2354,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 </div>
 </div>
 
-<!-- Custom Responses Tab -->
 <div id="tab-custom-responses" style="display:none">
 <div class="section">
 <h2>💡 الردود المخصصة</h2>
@@ -2464,7 +2368,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 </div>
 </div>
 
-<!-- Corrections Tab -->
 <div id="tab-corrections" style="display:none">
 <div class="section">
 <h2>✏️ التصحيحات</h2>
@@ -2479,7 +2382,6 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 </div>
 </div>
 
-<!-- Instructions Tab -->
 <div id="tab-instructions" style="display:none">
 <div class="section">
 <h2>📝 تعليمات البوت</h2>
@@ -2522,8 +2424,6 @@ document.getElementById('uniqueSessions').textContent=s.uniqueSessions.toLocaleS
 document.getElementById('totalCourses').textContent=s.totalCourses.toLocaleString();
 document.getElementById('totalDiplomas').textContent=s.totalDiplomas.toLocaleString();
 document.getElementById('totalCorrections').textContent=s.totalCorrections.toLocaleString();
-
-// Intent chart
 const ic=s.intentCounts||{};
 const colors={SEARCH:'#4ecdc4',GENERAL:'#ffd93d',SUPPORT:'#ff6b6b',COMPARE:'#a29bfe'};
 let ih='';
@@ -2531,8 +2431,6 @@ for(const[k,v]of Object.entries(ic)){
 ih+='<div class="intent-bar" style="background:'+(colors[k]||'#888')+'">'+k+': '+v+'</div>';
 }
 document.getElementById('intentChart').innerHTML=ih||'<span style="color:#666">لا توجد بيانات</span>';
-
-// Hourly chart
 const hd=s.hourlyDistribution||[];
 const mx=Math.max(...hd,1);
 let hh='';
@@ -2541,8 +2439,6 @@ const pct=(hd[i]/mx)*100;
 hh+='<div class="hour-bar" style="height:'+Math.max(pct,2)+'%" data-count="'+i+':00 → '+hd[i]+'" title="'+i+':00 → '+hd[i]+'"></div>';
 }
 document.getElementById('hourlyChart').innerHTML=hh;
-
-// No results
 const nr=s.noResultSearches||[];
 let nrh='';
 if(nr.length===0)nrh='<span style="color:#666">لا توجد عمليات بحث فاشلة ✅</span>';
@@ -2551,7 +2447,6 @@ try{const m=typeof r.metadata==='string'?JSON.parse(r.metadata):r.metadata;
 nrh+='<div class="no-results-item"><span>🔍 '+(m.entity||m.search_terms||'—')+'</span><span style="color:#666">'+new Date(r.created_at).toLocaleString('ar-EG')+'</span></div>';}catch(e){}
 });
 document.getElementById('noResults').innerHTML=nrh;
-
 }catch(e){console.error(e)}
 }
 
@@ -2689,7 +2584,6 @@ if(!confirm('حذف هذه التعليمة؟'))return;
 try{await fetch(API+'/admin/bot-instructions/'+id,{method:'DELETE'});loadInstructions();}catch(e){console.error(e)}
 }
 
-// Initial load
 loadStats();
 setInterval(loadStats,60000);
 </script>
@@ -2703,9 +2597,10 @@ setInterval(loadStats,60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.5",
+    version: "7.9.6",
     features: [
-      "AI reranking",
+      "AI reranking (fixed)",
+      "double safety net",
       "price fix",
       "page_content search",
       "syllabus search",
@@ -2726,7 +2621,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.5",
+    version: "7.9.6",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -2746,10 +2641,10 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.5                   ║
+║  🤖 زيكو Chatbot — v7.9.6                   ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin                        ║
-║  🧠 AI-Powered Reranking enabled             ║
+║  🐛 Fixed: AI Reranker empty results bug     ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
