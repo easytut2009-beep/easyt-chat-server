@@ -1130,43 +1130,51 @@ async function searchDiplomas(searchTerms) {
 /* ══════════════════════════════════════════════════════════
    ═══ Format Course Card HTML — v7.9.3 FIXED column names
    ══════════════════════════════════════════════════════════ */
-function formatCourseCard(course, instructors) {
+function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
   const price = course.price || 0;
-  const priceText = price === 0 ? "مجاناً 🎉" : `${price}$`;
+  const priceText = price === 0 ? "مجاناً 🎉" : `$${price}`;
   const imgUrl = course.image || "https://easyt.online/default-course.png";
+  const desc = course.description
+    ? course.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
+    : "";
 
-  return `<div style="border:1px solid #eee;border-radius:12px;overflow:hidden;margin:6px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-<div style="display:flex;align-items:center;gap:10px;padding:10px">
-<img src="${imgUrl}" style="width:70px;height:70px;border-radius:8px;object-fit:cover" alt="course">
-<div style="flex:1;min-width:0">
-<div style="font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${course.title}</div>
-${instructorName ? `<div style="font-size:11px;color:#666;margin-bottom:2px">👨‍🏫 ${instructorName}</div>` : ""}
-<div style="font-size:12px;font-weight:700;color:#e63946">${priceText}</div>
+  return `<div style="border:1px solid #eee;border-radius:12px;overflow:hidden;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
+<div style="display:flex;gap:10px;align-items:start">
+<div style="flex:1">
+<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">${index !== undefined ? index + ". " : ""}${course.title}</div>
+<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
+${instructorName ? `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>` : ""}
+${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>` : ""}
+<a href="${courseUrl}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدورة والاشتراك ←</a>
 </div>
-<a href="${courseUrl}" target="_blank" style="background:#e63946;color:#fff !important;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none !important;white-space:nowrap;display:inline-block">التفاصيل</a>
+<img src="${imgUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="course">
 </div></div>`;
 }
 
 /* ══════════════════════════════════════════════════════════
    ═══ Format Diploma Card HTML — v7.9.3 FIXED column names
    ══════════════════════════════════════════════════════════ */
-function formatDiplomaCard(diploma) {
+function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
   const price = diploma.price || 0;
-  const priceText = price === 0 ? "مجاناً 🎉" : `${price}$`;
+  const priceText = price === 0 ? "مجاناً 🎉" : `$${price}`;
   const imgUrl = diploma.image || "https://easyt.online/default-diploma.png";
+  const desc = diploma.description
+    ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
+    : "";
 
-  return `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:6px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1)">
-<div style="display:flex;align-items:center;gap:10px;padding:10px">
-<img src="${imgUrl}" style="width:70px;height:70px;border-radius:8px;object-fit:cover" alt="diploma">
-<div style="flex:1;min-width:0">
-<div style="font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:3px">🎓 ${diploma.title}</div>
-<div style="font-size:12px;font-weight:700;color:#e63946">${priceText}</div>
+  return `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1);padding:12px">
+<div style="display:flex;gap:10px;align-items:start">
+<div style="flex:1">
+<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">🎓 ${index !== undefined ? index + ". " : ""}${diploma.title}</div>
+<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
+${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>` : ""}
+<a href="${url}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدبلومة والاشتراك ←</a>
 </div>
-<a href="${url}" target="_blank" style="background:#e63946;color:#fff !important;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none !important;white-space:nowrap;display:inline-block">التفاصيل</a>
+<img src="${imgUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="diploma">
 </div></div>`;
 }
 
