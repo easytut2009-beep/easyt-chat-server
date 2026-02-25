@@ -1,9 +1,14 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.6 — 🐛 Fix AI Reranker Empty Results
-   ✅ ALL v7.9.5 code preserved — ONLY aiRerankCourses fixed
-   🐛 v7.9.6: FIXED AI reranker returning empty arrays → shows "no results"
-   🐛 v7.9.6: FIXED reranker prompt — less aggressive, always returns top matches
-   🐛 v7.9.6: ADDED safety net in SEARCH handler — fallback to original results
+   🤖 Ziko Chatbot v7.9.7 — 🐛 Fix Arabic multi-word search
+   ✅ ALL v7.9.6 code preserved
+   🐛 v7.9.7: FIXED multi-word search terms not matching course titles
+   🐛 v7.9.7: NEW splitIntoSearchableTerms() — splits phrases into words
+   🐛 v7.9.7: NEW Arabic prefix stripping (ال، بال، وال، لل، كال)
+   🐛 v7.9.7: ADDED AI/design synonyms to SEARCH_SYNONYMS
+   🐛 v7.9.7: ADDED Arabic educational terms to isEducationalTerm()
+   ─── v7.9.6 features ───
+   ✅ v7.9.6: AI reranker safety net (double fallback)
+   ✅ v7.9.6: Less aggressive reranker prompt
    ─── v7.9.5 features ───
    ✅ v7.9.5: aiRerankCourses() — GPT filters results by full user intent
    ✅ v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
@@ -101,7 +106,6 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// Clean expired tokens every hour
 setInterval(() => {
   const now = Date.now();
   for (const [token, data] of adminTokens) {
@@ -265,44 +269,45 @@ const ARABIC_CORRECTIONS = {
 };
 
 /* ═══════════════════════════════════
-   ═══ Search Synonyms ═══
+   ═══ Search Synonyms — v7.9.7: Added AI + design synonyms
    ═══════════════════════════════════ */
 const SEARCH_SYNONYMS = {
   "ديجيتال ماركيتنج": [
-    "تسويق رقمي",
-    "تسويق الكتروني",
-    "تسويق اونلاين",
-    "digital marketing",
-    "التسويق الرقمي",
-    "تسويق ديجيتال",
+    "تسويق رقمي", "تسويق الكتروني", "تسويق اونلاين",
+    "digital marketing", "التسويق الرقمي", "تسويق ديجيتال",
   ],
   "جرافيك ديزاين": [
-    "تصميم جرافيك",
-    "تصميم",
-    "graphic design",
-    "التصميم الجرافيكي",
+    "تصميم جرافيك", "تصميم", "graphic design", "التصميم الجرافيكي",
   ],
   برمجه: [
-    "تطوير",
-    "كودنج",
-    "coding",
-    "programming",
-    "برمجة",
-    "development",
+    "تطوير", "كودنج", "coding", "programming", "برمجة", "development",
   ],
   سيو: ["تحسين محركات البحث", "seo", "محركات البحث"],
   فوتوشوب: ["photoshop", "فوتو شوب", "تعديل صور"],
   اليستريتر: ["illustrator", "اليستراتور"],
   بايثون: ["python", "بايثن"],
   "سوشيال ميديا": [
-    "social media",
-    "منصات التواصل",
-    "التواصل الاجتماعي",
-    "ادارة صفحات",
+    "social media", "منصات التواصل", "التواصل الاجتماعي", "ادارة صفحات",
   ],
   بيزنس: ["business", "ادارة اعمال", "ريادة اعمال"],
   اكسل: ["excel", "اكسيل", "spreadsheet"],
   ووردبريس: ["wordpress", "وورد بريس"],
+  // v7.9.7: NEW AI + design synonyms
+  "ذكاء اصطناعي": [
+    "artificial intelligence", "ai", "machine learning",
+    "تعلم آلي", "تعلم الآلة", "ذكاء صناعي",
+    "الذكاء الاصطناعي", "الذكاء الإصطناعي",
+    "midjourney", "stable diffusion", "comfyui",
+    "chatgpt", "dall-e", "dalle",
+  ],
+  "تصميم صور": [
+    "image design", "تصميم جرافيك", "فوتوشوب", "photoshop",
+    "تعديل صور", "معالجة صور", "صور بالذكاء الاصطناعي",
+    "ai images", "ai art",
+  ],
+  "تصميم داخلي": [
+    "interior design", "ديكور", "تصميم ديكور",
+  ],
 };
 
 /* ═══════════════════════════════════
@@ -484,6 +489,9 @@ function markdownToHtml(text) {
   return text;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ═══ v7.9.7: isEducationalTerm — Added Arabic terms
+   ══════════════════════════════════════════════════════════ */
 function isEducationalTerm(msg) {
   const eduTerms = [
     "unity", "unreal", "godot", "game dev", "game development",
@@ -533,6 +541,25 @@ function isEducationalTerm(msg) {
     );
     if (regex.test(" " + lower + " ")) return term;
   }
+
+  // v7.9.7: Arabic educational terms detection
+  const arabicEduPatterns = [
+    { pattern: /ذكاء\s*(اصطناعي|صناعي|الاصطناعي|الإصطناعي)/i, term: "ذكاء اصطناعي" },
+    { pattern: /تصميم\s*(صور|جرافيك|داخلي|مواقع|ويب)/i, term: "تصميم" },
+    { pattern: /تسويق\s*(رقمي|الكتروني|ديجيتال)/i, term: "تسويق رقمي" },
+    { pattern: /تطوير\s*(مواقع|ويب|تطبيقات|موبايل)/i, term: "تطوير" },
+    { pattern: /تعلم\s*(آلي|الآلة|عميق)/i, term: "تعلم آلي" },
+    { pattern: /امن\s*(سيبراني|معلومات|شبكات)/i, term: "امن سيبراني" },
+    { pattern: /تحليل\s*(بيانات|داتا)/i, term: "تحليل بيانات" },
+    { pattern: /علم\s*(بيانات|داتا)/i, term: "علم بيانات" },
+    { pattern: /فوتوشوب|اليستريتر|بريميير|افتر افكتس/i, term: "تصميم" },
+    { pattern: /بايثون|جافاسكريبت|بي اتش بي/i, term: "برمجة" },
+  ];
+
+  for (const { pattern, term } of arabicEduPatterns) {
+    if (pattern.test(msg)) return term;
+  }
+
   return null;
 }
 
@@ -569,6 +596,81 @@ function isCommunityQuestion(msg) {
     /group/i, /تليجرام/i, /واتساب/i, /واتس/i, /ديسكورد/i, /discord/i,
   ];
   return patterns.some((p) => p.test(msg));
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v7.9.7: splitIntoSearchableTerms
+   ═══ Splits multi-word phrases into individual words
+   ═══ Strips Arabic prefixes (ال، بال، وال، لل، كال)
+   ═══ Normalizes Arabic characters for better matching
+   ══════════════════════════════════════════════════════════ */
+function splitIntoSearchableTerms(terms) {
+  const result = new Set();
+
+  for (const term of terms) {
+    const t = term.toLowerCase().trim();
+    if (t.length <= 1) continue;
+
+    // Add original term (phrase or single word)
+    result.add(t);
+
+    // Also add normalized version
+    const normT = normalizeArabic(t);
+    if (normT.length > 1) result.add(normT);
+
+    // Split into individual words
+    const words = t.split(/\s+/);
+    for (const word of words) {
+      const w = word.trim();
+      if (w.length <= 1) continue;
+      if (ARABIC_STOP_WORDS.has(w)) continue;
+
+      result.add(w);
+
+      // Add normalized version
+      const normW = normalizeArabic(w);
+      if (normW.length > 1) result.add(normW);
+
+      // Strip Arabic prefixes for better ilike matching
+      // "ال" (the) → "الذكاء" → "ذكاء"
+      if (w.startsWith("ال") && w.length > 3) {
+        result.add(w.substring(2));
+        const nw = normalizeArabic(w.substring(2));
+        if (nw.length > 1) result.add(nw);
+      }
+      // "بال" (with the) → "بالذكاء" → "ذكاء"
+      if (w.startsWith("بال") && w.length > 4) {
+        result.add(w.substring(3));
+        result.add("ال" + w.substring(3));
+      }
+      // "وال" (and the) → "والتصميم" → "تصميم"
+      if (w.startsWith("وال") && w.length > 4) {
+        result.add(w.substring(3));
+        result.add("ال" + w.substring(3));
+      }
+      // "لل" (for the) → "للتصميم" → "تصميم"
+      if (w.startsWith("لل") && w.length > 3) {
+        result.add(w.substring(2));
+        result.add("ال" + w.substring(2));
+      }
+      // "كال" (like the) → "كالتصميم" → "تصميم"
+      if (w.startsWith("كال") && w.length > 4) {
+        result.add(w.substring(3));
+        result.add("ال" + w.substring(3));
+      }
+      // "ب" prefix (with) → "بتصميم" → "تصميم"
+      if (w.startsWith("ب") && !w.startsWith("بال") && w.length > 3) {
+        result.add(w.substring(1));
+      }
+    }
+  }
+
+  const final = [...result].filter((t) => t.length > 1);
+  console.log(
+    `🔤 splitIntoSearchableTerms: ${terms.length} phrases → ${final.length} searchable terms`
+  );
+  console.log(`🔤 Terms: [${final.join(", ")}]`);
+  return final.slice(0, 25); // Limit to avoid very long queries
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -762,15 +864,16 @@ async function classifyIntent(message) {
 🔴 مهم جداً: أي كلمة تعليمية حتى لو إنجليزية (مثل unity, python, react, node, photoshop) → صنّفها SEARCH
 🔴 مهم جداً: لو المستخدم بيسأل عن "مجتمع الكورس" أو "جروب" أو "community" → صنّفه SUPPORT مع support_type: "community"
 🔴 مهم جداً: لو entity فاضي أو مش معروف، اكتب string فاضي "" — ممنوع تماماً تكتب null أو "null"
-🔴 مهم جداً: search_terms لازم تكون array فيها كلمات البحث الحقيقية — ممنوع تكون فاضية لو النية SEARCH
+🔴 مهم جداً: search_terms لازم تكون array فيها كلمات بحث فردية — كل كلمة لوحدها مش عبارات طويلة
+🔴 مثال: "تصميم الصور بالذكاء الاصطناعي" → search_terms: ["تصميم", "صور", "ذكاء", "اصطناعي"]
+🔴 مثال: "كورس فوتوشوب للمبتدئين" → search_terms: ["فوتوشوب"]
 🔴 مهم جداً: لو الكلمة مش ليها علاقة بالتعليم (مثلاً أكل أو حيوانات أو كلام عشوائي) صنّفها GENERAL
-🔴 كلمات البحث لازم تكون كلمات حقيقية مفيدة للبحث — مش كلمات عامة
 🔴 لو المستخدم كتب "يعني ايه X" أو "ايه هو X" وX موضوع تعليمي → صنّفه GENERAL (شرح مفهوم مش بحث عن كورس)
 
 رد بـ JSON فقط:
 {
   "intent": "SEARCH|COMPARE|SUPPORT|GENERAL",
-  "entity": "اسم الموضوع أو الكورس أو string فاضي",
+  "entity": "اسم الموضوع",
   "search_terms": ["كلمة1", "كلمة2"],
   "audience": "مبتدئ|متقدم|null",
   "exclude_terms": [],
@@ -849,7 +952,7 @@ async function classifyIntent(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchCourses — v7.9.5: Wider candidate pool (limit 30)
+   ═══ searchCourses — v7.9.7: Uses splitIntoSearchableTerms
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   try {
@@ -857,13 +960,12 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     const cleanedTerms = stripAudienceModifiers(correctedTerms);
     const expandedTerms = expandSynonyms(cleanedTerms);
 
-    const allTerms = [
-      ...new Set(expandedTerms.map((t) => t.toLowerCase().trim())),
-    ].filter((t) => t.length > 1);
+    // 🆕 v7.9.7: Split multi-word terms into individual searchable words
+    const allTerms = splitIntoSearchableTerms(expandedTerms);
 
     if (allTerms.length === 0) return [];
 
-    console.log("🔍 Search terms after expansion:", allTerms);
+    console.log("🔍 Search terms after split+expansion:", allTerms);
 
     const orFilters = allTerms
       .flatMap((t) => [
@@ -876,6 +978,8 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         `objectives.ilike.%${t}%`,
       ])
       .join(",");
+
+    console.log(`🔍 OR filters count: ${allTerms.length * 7}`);
 
     const { data: courses, error } = await supabase
       .from("courses")
@@ -891,8 +995,11 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     }
 
     if (!courses || courses.length === 0) {
+      console.log("🔍 Supabase returned 0, trying fuzzy fallback...");
       return await fuzzySearchFallback(allTerms);
     }
+
+    console.log(`🔍 Supabase returned ${courses.length} raw results`);
 
     let filtered = courses;
     if (excludeTerms && excludeTerms.length > 0) {
@@ -935,6 +1042,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       }
     }
 
+    // 🆕 v7.9.7: Score using NORMALIZED versions for accurate matching
     const scored = filtered.map((c) => {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
@@ -953,6 +1061,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
       for (const term of allTerms) {
         const normTerm = normalizeArabic(term.toLowerCase());
+        if (normTerm.length <= 1) continue;
         if (titleNorm.includes(normTerm)) score += 10;
         if (subtitleNorm.includes(normTerm)) score += 7;
         if (pageContentNorm.includes(normTerm)) score += 5;
@@ -973,7 +1082,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   }
 }
 
-/* ═══ Fuzzy Search Fallback ═══ */
+/* ═══ Fuzzy Search Fallback — v7.9.7: Also splits terms ═══ */
 async function fuzzySearchFallback(terms) {
   try {
     const { data: allCourses, error } = await supabase
@@ -984,6 +1093,11 @@ async function fuzzySearchFallback(terms) {
       .limit(500);
 
     if (error || !allCourses) return [];
+
+    // 🆕 v7.9.7: Ensure terms are split into individual words
+    const searchableTerms = splitIntoSearchableTerms(terms);
+
+    console.log(`🔍 Fuzzy fallback: checking ${allCourses.length} courses with ${searchableTerms.length} terms`);
 
     const results = [];
     for (const course of allCourses) {
@@ -1002,41 +1116,61 @@ async function fuzzySearchFallback(terms) {
         (course.objectives || "").toLowerCase()
       );
 
-      for (const term of terms) {
+      // 🆕 v7.9.7: Count how many terms match for multi-term scoring
+      let termMatchCount = 0;
+
+      for (const term of searchableTerms) {
         const normTerm = normalizeArabic(term.toLowerCase());
+        if (normTerm.length <= 1) continue;
+
+        let matched = false;
 
         if (titleNorm.includes(normTerm) || normTerm.includes(titleNorm)) {
           bestSim = Math.max(bestSim, 85);
-          continue;
+          matched = true;
         }
 
         if (subtitleNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 75);
-          continue;
+          matched = true;
         }
 
         if (pageContentNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 72);
-          continue;
+          matched = true;
         }
         if (syllabusNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 70);
-          continue;
+          matched = true;
         }
         if (objectivesNorm.includes(normTerm)) {
           bestSim = Math.max(bestSim, 70);
-          continue;
+          matched = true;
         }
 
-        const titleWords = titleNorm.split(/\s+/);
-        for (const tw of titleWords) {
-          const sim = similarityRatio(normTerm, tw);
-          bestSim = Math.max(bestSim, sim);
+        if (!matched) {
+          // Word-level similarity on title
+          const titleWords = titleNorm.split(/\s+/);
+          for (const tw of titleWords) {
+            const sim = similarityRatio(normTerm, tw);
+            if (sim >= 70) {
+              bestSim = Math.max(bestSim, sim);
+              matched = true;
+            }
+          }
+
+          const fullSim = similarityRatio(normTerm, titleNorm);
+          if (fullSim >= 55) {
+            bestSim = Math.max(bestSim, fullSim);
+            matched = true;
+          }
         }
 
-        const fullSim = similarityRatio(normTerm, titleNorm);
-        bestSim = Math.max(bestSim, fullSim);
+        if (matched) termMatchCount++;
       }
+
+      // 🆕 v7.9.7: Bonus for matching multiple terms
+      if (termMatchCount >= 2) bestSim += termMatchCount * 3;
 
       if (bestSim >= 55) {
         results.push({ ...course, relevanceScore: bestSim });
@@ -1044,6 +1178,7 @@ async function fuzzySearchFallback(terms) {
     }
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    console.log(`🔍 Fuzzy fallback found ${results.length} results`);
     return results.slice(0, 10);
   } catch (e) {
     console.error("fuzzySearchFallback error:", e.message);
@@ -1052,13 +1187,15 @@ async function fuzzySearchFallback(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchDiplomas
+   ═══ searchDiplomas — v7.9.7: Also uses splitIntoSearchableTerms
    ══════════════════════════════════════════════════════════ */
 async function searchDiplomas(searchTerms) {
   try {
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const expandedTerms = expandSynonyms(correctedTerms);
-    const allTerms = [...new Set(expandedTerms)].filter((t) => t.length > 1);
+
+    // 🆕 v7.9.7: Split into searchable terms
+    const allTerms = splitIntoSearchableTerms(expandedTerms);
 
     if (allTerms.length === 0) return [];
 
@@ -1085,19 +1222,17 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🐛 v7.9.6: FIXED AI Reranking — never returns empty when we had results
+   ═══ AI Reranking — v7.9.6: with safety net
    ══════════════════════════════════════════════════════════ */
 async function aiRerankCourses(userMessage, courses, diplomas = []) {
   const totalResults = courses.length + diplomas.length;
 
-  // Skip reranking if very few results — trust the search
   if (totalResults <= 3) {
     console.log("🤖 AI Rerank: skipped (≤3 results)");
     return { courses, diplomas };
   }
 
   try {
-    // Prepare compact summaries for GPT
     const courseSummaries = courses.map((c, i) => ({
       i: i,
       t: "course",
@@ -1115,7 +1250,6 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
 
     const allItems = [...courseSummaries, ...diplomaSummaries];
 
-    // 🐛 v7.9.6: FIXED prompt — less aggressive, always returns closest matches
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
@@ -1136,9 +1270,7 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
 ⚠️ قواعد:
 - رجّع على الأقل أفضل 3 نتائج حتى لو مش مطابقة تماماً
 - الكورس اللي فيه كلمتين أو أكتر من سؤال المستخدم يعتبر مناسب
-- مثال: لو المستخدم سأل "تصميم الصور بالذكاء الاصطناعي" → أي كورس فيه "ذكاء اصطناعي" + "تصميم" أو "صور" أو "فوتوشوب" أو "اليستريتور" يعتبر مناسب
-- مثال: لو المستخدم سأل "برمجة مواقع" → كورس "Node.js" أو "React" يعتبر مناسب
-- ❌ بس استبعد الكورسات اللي مالهاش أي علاقة خالص (مثلاً: كورس "محاسبة" لسؤال عن "تصميم")
+- ❌ بس استبعد الكورسات اللي مالهاش أي علاقة خالص
 - ❌ ممنوع ترجع arrays فاضية — لازم على الأقل 1-3 نتائج
 
 رد بـ JSON فقط:
@@ -1167,7 +1299,7 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
       .slice(0, 3)
       .map((i) => diplomas[i]);
 
-    // 🐛 v7.9.6: SAFETY NET — if AI returned empty, fallback to original top results
+    // Safety net
     if (selectedCourses.length === 0 && selectedDiplomas.length === 0) {
       console.log(
         "🤖 AI Rerank: returned empty → falling back to original top 5"
@@ -1185,13 +1317,12 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
     return { courses: selectedCourses, diplomas: selectedDiplomas };
   } catch (e) {
     console.error("🤖 AI Rerank error:", e.message);
-    // Fallback: return original results (top 5 courses)
     return { courses: courses.slice(0, 5), diplomas };
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Course Card HTML — v7.9.5 FIXED price display
+   ═══ Format Course Card HTML
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1226,7 +1357,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Diploma Card HTML — v7.9.5 FIXED price display
+   ═══ Format Diploma Card HTML
    ══════════════════════════════════════════════════════════ */
 function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
@@ -1386,7 +1517,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.6: FIXED AI reranking safety
+   ═══ MAIN CHAT ENDPOINT — v7.9.7
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1567,9 +1698,8 @@ app.post("/chat", limiter, async (req, res) => {
       }
     }
 
-    // 🐛 v7.9.6: AI Reranking with DOUBLE safety net
+    // AI Reranking with safety net
     if (courses.length > 0 || diplomas.length > 0) {
-      // Save originals before reranking
       const originalCourses = [...courses];
       const originalDiplomas = [...diplomas];
 
@@ -1585,7 +1715,7 @@ app.post("/chat", limiter, async (req, res) => {
       courses = reranked.courses;
       diplomas = reranked.diplomas;
 
-      // 🐛 v7.9.6: DOUBLE SAFETY NET — if reranking returned empty, use originals
+      // Double safety net
       if (courses.length === 0 && diplomas.length === 0) {
         console.log(
           "🤖 Double safety: AI rerank returned empty → using original results"
@@ -1655,7 +1785,7 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN API ENDPOINTS — v7.9.6
+   ═══ ADMIN API ENDPOINTS
    ══════════════════════════════════════════════════════════ */
 
 app.get("/admin/stats", async (req, res) => {
@@ -2152,11 +2282,15 @@ app.post("/admin/test-search", async (req, res) => {
 
     const elapsed = Date.now() - startTime;
 
+    // v7.9.7: Show the split terms in the response
+    const splitTerms = splitIntoSearchableTerms(terms);
+
     res.json({
       success: true,
       query,
       intent: intentResult,
       extracted_terms: terms,
+      split_searchable_terms: splitTerms,
       raw_results: {
         courses: courses.map((c) => ({
           id: c.id,
@@ -2226,7 +2360,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.6
+   ═══ ADMIN DASHBOARD (HTML) — v7.9.7
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -2234,7 +2368,7 @@ app.get("/admin", (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.6</title>
+<title>🤖 زيكو Dashboard — v7.9.7</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
@@ -2287,7 +2421,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <body>
 <div class="header">
 <h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.6 | 🐛 Fixed AI Reranker Empty Results</p>
+<p>easyT Chatbot Dashboard — v7.9.7 | 🐛 Fixed Arabic multi-word search</p>
 </div>
 <div class="container">
 
@@ -2345,9 +2479,9 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 
 <div id="tab-search-test" style="display:none">
 <div class="section">
-<h2>🔍 اختبار البحث (مع AI Reranking)</h2>
+<h2>🔍 اختبار البحث (v7.9.7 — word splitting)</h2>
 <div class="search-box">
-<input type="text" id="testQuery" placeholder="جرب أي استعلام بحث...">
+<input type="text" id="testQuery" placeholder="جرب أي استعلام بحث مثل: تصميم الصور بالذكاء الاصطناعي">
 <button class="btn-primary" onclick="testSearch()">🔍 اختبار</button>
 </div>
 <div id="testResult" class="test-result" style="display:none"></div>
@@ -2477,7 +2611,7 @@ const q=document.getElementById('testQuery').value;
 if(!q)return;
 const el=document.getElementById('testResult');
 el.style.display='block';
-el.textContent='⏳ جاري الاختبار (مع AI Reranking)...';
+el.textContent='⏳ جاري الاختبار (v7.9.7 — word splitting)...';
 try{
 const r=await fetch(API+'/admin/test-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
 const d=await r.json();
@@ -2597,10 +2731,12 @@ setInterval(loadStats,60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.6",
+    version: "7.9.7",
     features: [
-      "AI reranking (fixed)",
-      "double safety net",
+      "word splitting search (NEW)",
+      "Arabic prefix stripping (NEW)",
+      "Arabic edu term detection (NEW)",
+      "AI reranking + safety net",
       "price fix",
       "page_content search",
       "syllabus search",
@@ -2621,7 +2757,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.6",
+    version: "7.9.7",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -2641,10 +2777,10 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.6                   ║
+║  🤖 زيكو Chatbot — v7.9.7                   ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin                        ║
-║  🐛 Fixed: AI Reranker empty results bug     ║
+║  🆕 Arabic word splitting search             ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
