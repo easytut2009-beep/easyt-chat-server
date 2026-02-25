@@ -1,10 +1,16 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.1 — 🐛 Null Entity Fix + Search Rescue
-   ✅ ALL v7.9 features preserved — COMPLETE CODE
-   🆕 v7.9.1: FIXED "null" string entity bug
-   🆕 v7.9.1: FIXED displayTerm showing "null" to users
-   🆕 v7.9.1: FIXED empty search_terms — rescue using message text
-   🆕 v7.9.1: Community questions handled properly
+   🤖 Ziko Chatbot v7.9.2 — 🔗 Link Fix + English Edu Terms
+   ✅ ALL v7.9.1 features preserved — COMPLETE CODE
+   🆕 v7.9.2: FIXED Markdown links → HTML <a> tags
+   🆕 v7.9.2: FIXED GPT prompts to request HTML links
+   🆕 v7.9.2: markdownToHtml() safety net on ALL GPT replies
+   🆕 v7.9.2: isEducationalTerm() — detects unity/python/etc → forces SEARCH
+   🆕 v7.9.2: 120+ English educational terms recognized
+   ─── v7.9.1 features ───
+   ✅ v7.9.1: FIXED "null" string entity bug
+   ✅ v7.9.1: FIXED displayTerm showing "null" to users
+   ✅ v7.9.1: FIXED empty search_terms — rescue using message text
+   ✅ v7.9.1: Community questions handled properly
    ─── Previous features ───
    ✅ v7.9: bot_instructions table — admin writes prompts in plain Arabic
    ✅ v7.9: Instructions injected into GPT system prompt
@@ -450,7 +456,7 @@ function detectAudienceExclusions(message) {
   return exclusions;
 }
 
-/* ═══ v7.9.1 NEW: Sanitize value — remove null/undefined strings ═══ */
+/* ═══ v7.9.1: Sanitize value — remove null/undefined strings ═══ */
 function sanitizeValue(val) {
   if (val === null || val === undefined) return "";
   if (typeof val === "string") {
@@ -468,13 +474,13 @@ function sanitizeValue(val) {
   return String(val);
 }
 
-/* ═══ v7.9.1 NEW: Sanitize search terms array ═══ */
+/* ═══ v7.9.1: Sanitize search terms array ═══ */
 function sanitizeSearchTerms(terms) {
   if (!Array.isArray(terms)) return [];
   return terms.map((t) => sanitizeValue(t)).filter((t) => t.length > 0);
 }
 
-/* ═══ v7.9.1 NEW: Extract search terms from raw message ═══ */
+/* ═══ v7.9.1: Extract search terms from raw message ═══ */
 function extractSearchTermsFromMessage(message) {
   if (!message) return [];
   const words = message
@@ -491,6 +497,75 @@ function extractSearchTermsFromMessage(message) {
   });
 
   return [...new Set(corrected)].filter((w) => w.length > 1);
+}
+
+/* ═══ v7.9.2 NEW: Convert Markdown links to HTML ═══ */
+function markdownToHtml(text) {
+  if (!text) return "";
+  // Convert [text](url) → <a href="url" target="_blank">text</a>
+  text = text.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    '<a href="$2" target="_blank" style="color:#e63946;font-weight:600;text-decoration:underline">$1</a>'
+  );
+  // Convert bare URLs that aren't already inside href="" or >url<
+  text = text.replace(
+    /(?<!href="|href='|">)(https?:\/\/[^\s<)"']+)/g,
+    '<a href="$1" target="_blank" style="color:#e63946;font-weight:600;text-decoration:underline">$1</a>'
+  );
+  // Convert **bold** to <strong>
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // Convert *italic* to <em>
+  text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return text;
+}
+
+/* ═══ v7.9.2 NEW: Detect educational English terms → force SEARCH ═══ */
+function isEducationalTerm(msg) {
+  const eduTerms = [
+    "unity", "unreal", "godot", "game dev", "game development",
+    "python", "java", "javascript", "react", "angular", "vue",
+    "node", "nodejs", "node.js", "express", "next", "nextjs", "next.js",
+    "nuxt", "nuxtjs", "flutter", "dart", "swift", "kotlin",
+    "html", "css", "sass", "less", "tailwind", "bootstrap",
+    "sql", "mysql", "postgresql", "mongodb", "firebase", "supabase",
+    "docker", "kubernetes", "git", "github", "gitlab",
+    "figma", "photoshop", "illustrator", "premiere", "after effects",
+    "aftereffects", "blender", "autocad", "revit", "solidworks",
+    "excel", "word", "powerpoint", "power bi", "powerbi", "tableau",
+    "seo", "wordpress", "shopify", "woocommerce", "magento",
+    "laravel", "php", "django", "flask", "ruby", "rails",
+    "typescript", "tailwindcss", "material ui",
+    "c#", "c++", "c sharp", ".net", "dotnet", "asp.net",
+    "rust", "go", "golang", "scala", "elixir",
+    "aws", "azure", "gcp", "cloud", "linux", "ubuntu", "devops",
+    "cybersecurity", "cyber security", "ethical hacking", "pentesting",
+    "machine learning", "deep learning", "ai", "artificial intelligence",
+    "data science", "data analysis", "data analytics",
+    "ui", "ux", "ui/ux", "uiux", "user experience", "user interface",
+    "3d", "3ds max", "maya", "cinema 4d", "cinema4d",
+    "motion graphics", "motion graphic", "moho",
+    "adobe", "canva", "coreldraw", "indesign", "adobe xd", "sketch",
+    "android", "ios", "mobile", "react native", "xamarin",
+    "blockchain", "web3", "solidity", "crypto",
+    "n8n", "make", "zapier", "automation",
+    "chatgpt", "openai", "langchain", "llm", "llms",
+    "comfyui", "stable diffusion", "midjourney",
+    "wireshark", "nmap", "metasploit", "burp suite",
+    "api", "rest api", "graphql", "microservices",
+    "agile", "scrum", "jira", "trello",
+    "salesforce", "hubspot", "crm",
+    "tiktok", "instagram", "facebook ads", "google ads",
+    "copywriting", "content writing", "freelancing",
+    "amazon fba", "dropshipping", "ecommerce", "e-commerce",
+  ];
+
+  const lower = msg.toLowerCase().trim();
+  for (const term of eduTerms) {
+    // Word boundary check to avoid partial matches
+    const regex = new RegExp("(?:^|\\s|[/,.])" + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "(?:$|\\s|[/,.])", "i");
+    if (regex.test(" " + lower + " ")) return term;
+  }
+  return null;
 }
 
 function isConversational(msg) {
@@ -520,7 +595,7 @@ function isAudienceQuestion(msg) {
   return audiencePatterns.some((p) => p.test(msg));
 }
 
-/* ═══ v7.9.1 NEW: Detect community/group questions ═══ */
+/* ═══ v7.9.1: Detect community/group questions ═══ */
 function isCommunityQuestion(msg) {
   const patterns = [
     /مجتمع/i,
@@ -659,7 +734,7 @@ async function loadBotInstructions() {
 
 /* ══════════════════════════════════════════════════════════
    ═══ classifyIntent — GPT Intent Detection
-   ═══ v7.9.1: NULL ENTITY FIX + COMMUNITY DETECTION
+   ═══ v7.9.2: + isEducationalTerm() force SEARCH
    ══════════════════════════════════════════════════════════ */
 async function classifyIntent(message) {
   // ═══ v7.9.1: Detect community questions FIRST ═══
@@ -671,6 +746,28 @@ async function classifyIntent(message) {
       audience: null,
       exclude_terms: [],
       support_type: "community",
+    };
+  }
+
+  // ═══ v7.9.2 NEW: Detect educational English terms — force SEARCH ═══
+  const eduTerm = isEducationalTerm(message);
+  if (eduTerm) {
+    const extraTerms = extractSearchTermsFromMessage(message);
+    const allTerms = [...new Set([eduTerm, ...extraTerms])].filter(
+      (t) => t.length > 0
+    );
+    console.log(
+      "🎓 Educational term detected:",
+      eduTerm,
+      "| All terms:",
+      allTerms
+    );
+    return {
+      intent: "SEARCH",
+      entity: eduTerm,
+      search_terms: allTerms,
+      audience: null,
+      exclude_terms: [],
     };
   }
 
@@ -709,16 +806,18 @@ async function classifyIntent(message) {
 
   const systemPrompt = `أنت مُصنِّف نوايا لشات بوت منصة easyT التعليمية.
 صنّف رسالة المستخدم إلى:
-- SEARCH: يبحث عن كورس أو دبلومة أو موضوع تعليمي
+- SEARCH: يبحث عن كورس أو دبلومة أو موضوع تعليمي (بالعربي أو الإنجليزي)
 - COMPARE: يريد مقارنة بين كورسات أو مواضيع
 - SUPPORT: مشكلة تقنية أو سؤال عن الاشتراك أو الدفع أو المجتمع أو الشهادة أو أي مشكلة
 - GENERAL: سؤال عام أو محادثة عادية أو كلمة مش ليها علاقة بالتعليم
 
+🔴 مهم جداً: أي كلمة تعليمية حتى لو إنجليزية (مثل unity, python, react, node, photoshop) → صنّفها SEARCH
 🔴 مهم جداً: لو المستخدم بيسأل عن "مجتمع الكورس" أو "جروب" أو "community" → صنّفه SUPPORT مع support_type: "community"
 🔴 مهم جداً: لو entity فاضي أو مش معروف، اكتب string فاضي "" — ممنوع تماماً تكتب null أو "null"
 🔴 مهم جداً: search_terms لازم تكون array فيها كلمات البحث الحقيقية — ممنوع تكون فاضية لو النية SEARCH
 🔴 مهم جداً: لو الكلمة مش ليها علاقة بالتعليم (مثلاً أكل أو حيوانات أو كلام عشوائي) صنّفها GENERAL
 🔴 كلمات البحث لازم تكون كلمات حقيقية مفيدة للبحث — مش كلمات عامة
+🔴 لو المستخدم كتب "يعني ايه X" أو "ايه هو X" وX موضوع تعليمي → صنّفه GENERAL (شرح مفهوم مش بحث عن كورس)
 
 رد بـ JSON فقط:
 {
@@ -744,14 +843,12 @@ async function classifyIntent(message) {
 
     let parsed = JSON.parse(resp.choices[0].message.content);
 
-    /* ═══════════════════════════════════════════════
-       v7.9.1 FIX: Sanitize ALL parsed values
-       ═══════════════════════════════════════════════ */
+    /* ═══ v7.9.1 FIX: Sanitize ALL parsed values ═══ */
 
-    // Fix entity — CRITICAL FIX for "null" bug
+    // Fix entity
     parsed.entity = sanitizeValue(parsed.entity);
 
-    // Fix search_terms — CRITICAL FIX
+    // Fix search_terms
     parsed.search_terms = sanitizeSearchTerms(parsed.search_terms || []);
 
     // Fix audience
@@ -774,33 +871,24 @@ async function classifyIntent(message) {
       ];
     }
 
-    /* ═══════════════════════════════════════════════
-       v7.9.1 FIX: Rescue empty search_terms for SEARCH
-       ═══════════════════════════════════════════════ */
+    /* ═══ v7.9.1 FIX: Rescue empty search_terms for SEARCH ═══ */
     if (parsed.intent === "SEARCH" && parsed.search_terms.length === 0) {
-      // Try to get terms from entity
       if (parsed.entity) {
         parsed.search_terms = parsed.entity
           .split(/\s+/)
           .filter((w) => w.length > 1);
       }
-      // If still empty, extract from original message
       if (parsed.search_terms.length === 0) {
         parsed.search_terms = extractSearchTermsFromMessage(message);
       }
     }
 
-    /* ═══════════════════════════════════════════════
-       v7.9.1 FIX: If entity empty but search_terms exist
-       ═══════════════════════════════════════════════ */
+    /* ═══ v7.9.1 FIX: If entity empty but search_terms exist ═══ */
     if (!parsed.entity && parsed.search_terms.length > 0) {
       parsed.entity = parsed.search_terms.join(" ");
     }
 
-    /* ═══════════════════════════════════════════════
-       v7.9.1 FIX: If SEARCH but NO entity AND NO terms
-       → Downgrade to GENERAL
-       ═══════════════════════════════════════════════ */
+    /* ═══ v7.9.1 FIX: If SEARCH but NO entity AND NO terms → GENERAL ═══ */
     if (
       parsed.intent === "SEARCH" &&
       !parsed.entity &&
@@ -813,7 +901,6 @@ async function classifyIntent(message) {
     return parsed;
   } catch (e) {
     console.error("classifyIntent error:", e.message);
-    // Fallback: try to extract from message
     const fallbackTerms = extractSearchTermsFromMessage(message);
     return {
       intent: fallbackTerms.length > 0 ? "SEARCH" : "GENERAL",
@@ -830,12 +917,10 @@ async function classifyIntent(message) {
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   try {
-    // Apply corrections and expand
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const cleanedTerms = stripAudienceModifiers(correctedTerms);
     const expandedTerms = expandSynonyms(cleanedTerms);
 
-    // Remove duplicates
     const allTerms = [
       ...new Set(expandedTerms.map((t) => t.toLowerCase().trim())),
     ].filter((t) => t.length > 1);
@@ -844,7 +929,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     console.log("🔍 Search terms after expansion:", allTerms);
 
-    // Build OR filter for Supabase
     const orFilters = allTerms
       .flatMap((t) => [
         `title.ilike.%${t}%`,
@@ -868,7 +952,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     }
 
     if (!courses || courses.length === 0) {
-      // Try fuzzy matching on all courses
       return await fuzzySearchFallback(allTerms);
     }
 
@@ -910,7 +993,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         return true;
       });
 
-      // Only apply audience filter if it doesn't eliminate all results
       if (audienceFiltered.length > 0) {
         filtered = audienceFiltered;
       }
@@ -964,10 +1046,7 @@ async function fuzzySearchFallback(terms) {
         const normTerm = normalizeArabic(term.toLowerCase());
 
         // Check substring first
-        if (
-          titleNorm.includes(normTerm) ||
-          normTerm.includes(titleNorm)
-        ) {
+        if (titleNorm.includes(normTerm) || normTerm.includes(titleNorm)) {
           bestSim = Math.max(bestSim, 85);
           continue;
         }
@@ -1097,7 +1176,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT General Response
+   ═══ GPT General Response — v7.9.2: HTML links + markdownToHtml
    ══════════════════════════════════════════════════════════ */
 async function getGPTResponse(message, context = "") {
   try {
@@ -1107,16 +1186,21 @@ async function getGPTResponse(message, context = "") {
       : "";
 
     const systemPrompt = `أنت "زيكو" 🤖 — مساعد ذكي لمنصة easyT التعليمية.
-المنصة فيها أكتر من 600 دورة في: البرمجة، التصميم، التسويق الرقمي، البيزنس، وغيرها.
+المنصة فيها أكتر من 600 دورة في: البرمجة، التصميم، التسويق الرقمي، البيزنس، الذكاء الاصطناعي، الأمن السيبراني، وغيرها.
+المنصة عليها 750,000+ متعلم و8 دبلومات متخصصة.
 
 قواعد مهمة:
 - رد بالعامية المصرية
 - خليك ودود ومختصر
 - لو السؤال عن كورسات، شجّع المستخدم يبحث أو يتصفح المنصة
-- رابط كل الكورسات: ${ALL_COURSES_URL}
-- رابط الدبلومات: ${ALL_DIPLOMAS_URL}
 - الاشتراك السنوي بـ 49$ (عرض رمضان) بيتيح كل الدورات والدبلومات
-- لو حد سأل عن حاجة مش تعليمية رد عليه بلطف وارجعه للموضوع${instructionsBlock}`;
+- لو حد سأل عن حاجة مش تعليمية رد عليه بلطف وارجعه للموضوع
+
+🔴 مهم جداً — اللينكات:
+لما تكتب أي لينك، اكتبه بصيغة HTML كده:
+<a href="https://easyt.online/courses" target="_blank">تصفح الكورسات</a>
+<a href="https://easyt.online/p/diplomas" target="_blank">تصفح الدبلومات</a>
+❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط${instructionsBlock}`;
 
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -1129,7 +1213,10 @@ async function getGPTResponse(message, context = "") {
       max_tokens: 300,
     });
 
-    return resp.choices[0].message.content;
+    // v7.9.2: Safety net — convert any remaining Markdown to HTML
+    let reply = resp.choices[0].message.content;
+    reply = markdownToHtml(reply);
+    return reply;
   } catch (e) {
     console.error("getGPTResponse error:", e.message);
     return "عذراً، حصل مشكلة تقنية. حاول تاني كمان شوية 🙏";
@@ -1137,7 +1224,7 @@ async function getGPTResponse(message, context = "") {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT Support Response
+   ═══ GPT Support Response — v7.9.2: HTML links + markdownToHtml
    ══════════════════════════════════════════════════════════ */
 async function getGPTSupportResponse(message, supportType) {
   try {
@@ -1158,7 +1245,12 @@ async function getGPTSupportResponse(message, supportType) {
 - لو بيسأل عن الاشتراك: السنوي 49$ (عرض رمضان) بيتيح كل الدورات والدبلومات
 - لو بيسأل عن الدفع: المنصة بتقبل فيزا وماستركارد وفودافون كاش
 - لو بيسأل عن الشهادة: بتحصل على شهادة إتمام بعد ما تخلص الكورس
-- لو بيسأل عن الفيديوهات مش شغالة: جرب تحدث الصفحة أو غير المتصفح أو تواصل مع الدعم${instructionsBlock}`;
+- لو بيسأل عن الفيديوهات مش شغالة: جرب تحدث الصفحة أو غير المتصفح أو تواصل مع الدعم
+
+🔴 مهم جداً — اللينكات:
+لما تكتب أي لينك، اكتبه بصيغة HTML كده:
+<a href="URL" target="_blank">النص</a>
+❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط${instructionsBlock}`;
 
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -1170,10 +1262,13 @@ async function getGPTSupportResponse(message, supportType) {
       max_tokens: 300,
     });
 
-    return resp.choices[0].message.content;
+    // v7.9.2: Safety net
+    let reply = resp.choices[0].message.content;
+    reply = markdownToHtml(reply);
+    return reply;
   } catch (e) {
     console.error("getGPTSupportResponse error:", e.message);
-    return "لو عندك مشكلة تقنية، تواصل مع الدعم على support@easyt.online 📧";
+    return 'لو عندك مشكلة تقنية، تواصل مع الدعم على <a href="mailto:support@easyt.online">support@easyt.online</a> 📧';
   }
 }
 
@@ -1237,12 +1332,10 @@ app.post("/chat", limiter, async (req, res) => {
 
     /* ═══ SUPPORT Intent ═══ */
     if (intent === "SUPPORT") {
-      // Try custom response first
       const customResp = await matchCustomResponse(cleanMessage);
       if (customResp) {
         reply = customResp.response;
       } else {
-        // GPT support fallback
         reply = await getGPTSupportResponse(cleanMessage, support_type);
       }
 
@@ -1259,7 +1352,6 @@ app.post("/chat", limiter, async (req, res) => {
     if (intent === "GENERAL") {
       const gptReply = await getGPTResponse(cleanMessage);
 
-      // Try to find related courses
       const suggestions = await getSmartSuggestions(cleanMessage);
       let suggestionsHtml = "";
 
@@ -1301,11 +1393,11 @@ app.post("/chat", limiter, async (req, res) => {
       );
 
       const instructors = await getInstructors();
-      let comparisonHtml = "📊 **مقارنة:**\n\n";
+      let comparisonHtml = "📊 <strong>مقارنة:</strong>\n\n";
 
       for (let i = 0; i < compTerms.length; i++) {
         const results = allResults[i] || [];
-        comparisonHtml += `**${compTerms[i].trim()}:**\n`;
+        comparisonHtml += `<strong>${compTerms[i].trim()}:</strong>\n`;
         if (results.length > 0) {
           comparisonHtml += results
             .slice(0, 2)
@@ -1319,7 +1411,8 @@ app.post("/chat", limiter, async (req, res) => {
 
       comparisonHtml += `\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
-      reply = comparisonHtml;
+      // v7.9.2: Convert any markdown in comparison
+      reply = markdownToHtml(comparisonHtml);
       await logChat(sessionId, "bot", reply, "COMPARE", {
         compare_terms: compTerms,
       });
@@ -1335,7 +1428,7 @@ app.post("/chat", limiter, async (req, res) => {
         ? entity.split(/\s+/).filter((w) => w.length > 1)
         : extractSearchTermsFromMessage(cleanMessage);
 
-    // ═══ v7.9.1: SAFE displayTerm — NEVER show "null" ═══
+    // v7.9.1: SAFE displayTerm — NEVER show "null"
     const displayTerm =
       entity && entity.length > 0
         ? entity
@@ -1374,7 +1467,6 @@ app.post("/chat", limiter, async (req, res) => {
         if (corrCourses && corrCourses.length > 0) courses = corrCourses;
       }
 
-      // Also try correction search_terms
       if (courses.length === 0) {
         const corrTerms = corrections
           .flatMap((c) => c.search_terms || [])
@@ -1500,13 +1592,12 @@ app.get("/admin/logs", adminAuth, async (req, res) => {
 /* ═══ Delete Chat Logs ═══ */
 app.delete("/admin/logs", adminAuth, async (req, res) => {
   try {
-    const { before } = req.query; // ISO date string
+    const { before } = req.query;
     let query = supabase.from("chat_logs").delete();
 
     if (before) {
       query = query.lt("created_at", before);
     } else {
-      // Delete all — need a condition, use a very old date
       query = query.lt("created_at", new Date().toISOString());
     }
 
@@ -1544,7 +1635,6 @@ app.get("/admin/stats", adminAuth, async (req, res) => {
       }
     }
 
-    // Unique sessions today
     const { data: todaySessions } = await supabase
       .from("chat_logs")
       .select("session_id")
@@ -1939,7 +2029,7 @@ tr:hover{background:#fafafa}
 <div class="login-container" id="loginPage">
   <div class="login-box">
     <h1>🤖 زيكو</h1>
-    <p>لوحة تحكم الأدمن — v7.9.1</p>
+    <p>لوحة تحكم الأدمن — v7.9.2</p>
     <input type="password" id="adminPass" placeholder="كلمة السر" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">دخول</button>
     <div class="login-error" id="loginError">كلمة السر غلط ❌</div>
@@ -1949,7 +2039,7 @@ tr:hover{background:#fafafa}
 <!-- DASHBOARD -->
 <div class="dashboard" id="dashboard">
   <div class="top-bar">
-    <h1>🤖 Ziko Admin — v7.9.1</h1>
+    <h1>🤖 Ziko Admin — v7.9.2</h1>
     <div class="actions">
       <button class="secondary" onclick="loadStats();showToast('تم التحديث ✅')">🔄 تحديث</button>
       <button onclick="doLogout()">تسجيل خروج</button>
@@ -2057,7 +2147,6 @@ tr:hover{background:#fafafa}
 const API=window.location.origin;
 let TOKEN='';
 
-/* ═══ Toast Notification ═══ */
 function showToast(msg,isError){
   const t=document.getElementById('toast');
   t.textContent=msg;
@@ -2066,7 +2155,6 @@ function showToast(msg,isError){
   setTimeout(()=>{t.style.display='none'},3000);
 }
 
-/* ═══ Auth ═══ */
 async function doLogin(){
   const pass=document.getElementById('adminPass').value;
   try{
@@ -2105,7 +2193,6 @@ function headers(){
   return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN};
 }
 
-/* ═══ Tabs ═══ */
 function switchTab(name){
   const tabNames=['logs','corrections','responses','instructions'];
   document.querySelectorAll('.tab').forEach((t,i)=>{
@@ -2115,7 +2202,6 @@ function switchTab(name){
   document.getElementById('tab-'+name).classList.add('active');
 }
 
-/* ═══ Stats ═══ */
 async function loadStats(){
   try{
     const r=await fetch(API+'/admin/stats',{headers:headers()});
@@ -2136,7 +2222,6 @@ async function loadStats(){
   }
 }
 
-/* ═══ Logs ═══ */
 async function loadLogs(page){
   try{
     const search=document.getElementById('logSearch').value;
@@ -2172,7 +2257,6 @@ async function loadLogs(page){
     html+='</tbody></table>';
     document.getElementById('logsTable').innerHTML=html;
 
-    // Pagination
     let pagHtml='';
     const totalPages=d.totalPages||1;
     const currentPage=d.page||1;
@@ -2199,7 +2283,6 @@ async function loadLogs(page){
   }
 }
 
-/* ═══ Corrections ═══ */
 async function loadCorrections(){
   try{
     const r=await fetch(API+'/admin/corrections',{headers:headers()});
@@ -2255,7 +2338,6 @@ async function deleteCorrection(id){
   }catch(e){showToast('خطأ في الحذف',true)}
 }
 
-/* ═══ Custom Responses ═══ */
 async function loadResponses(){
   try{
     const r=await fetch(API+'/admin/custom-responses',{headers:headers()});
@@ -2320,7 +2402,6 @@ async function deleteResponse(id){
   }catch(e){showToast('خطأ في الحذف',true)}
 }
 
-/* ═══ Bot Instructions ═══ */
 async function loadInstructions(){
   try{
     const r=await fetch(API+'/admin/instructions',{headers:headers()});
@@ -2381,12 +2462,10 @@ async function deleteInstruction(id){
   }catch(e){showToast('خطأ في الحذف',true)}
 }
 
-/* ═══ Init ═══ */
 window.onload=function(){
   const saved=localStorage.getItem('ziko_token');
   if(saved){
     TOKEN=saved;
-    // Verify token is still valid
     fetch(API+'/admin/verify',{headers:{'Authorization':'Bearer '+TOKEN}})
       .then(r=>{
         if(r.ok){showDashboard()}
@@ -2406,10 +2485,12 @@ window.onload=function(){
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.1",
+    version: "7.9.2",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     features: [
+      "markdown-to-html",
+      "educational-term-detection",
       "null-entity-fix",
       "community-detection",
       "search-rescue",
@@ -2427,9 +2508,9 @@ app.get("/health", (req, res) => {
    ═══ START SERVER
    ══════════════════════════════════════════════════════════ */
 app.listen(PORT, () => {
-  console.log(`\n🤖 Ziko Chatbot v7.9.1 running on port ${PORT}`);
+  console.log(`\n🤖 Ziko Chatbot v7.9.2 running on port ${PORT}`);
   console.log(`📊 Admin Dashboard: http://localhost:${PORT}/admin`);
   console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
-  console.log(`🐛 Fixes: null entity, community detection, search rescue`);
+  console.log(`🔗 v7.9.2: Markdown→HTML links + Educational term detection`);
   console.log(`═══════════════════════════════════════\n`);
 });
