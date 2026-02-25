@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v7.8</title>
+<title>easyT Admin Dashboard v7.9</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#f0f2f5;margin:0}
@@ -29,7 +29,7 @@ input,textarea,select{border:1px solid #d1d5db;border-radius:8px;padding:8px 12p
 input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
 
 /* =============================================
-   CHAT - Simple WhatsApp Style (FIXED)
+   CHAT - WhatsApp Style (FIXED v7.9)
    ============================================= */
 .chat-wrap{border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .chat-topbar{background:#075e54;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
@@ -42,12 +42,10 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
   max-height:72vh;
   overflow-y:auto;
 }
-/* كل صف رسالة = column flex عشان نتحكم في المحاذاة */
-.cr{display:flex;flex-direction:column;margin-bottom:8px}
-.cr-u{align-items:flex-start}  /* RTL: يمين = المستخدم */
-.cr-b{align-items:flex-end}    /* RTL: شمال = البوت */
+.cr{display:flex;flex-direction:column;margin-bottom:10px}
+.cr-u{align-items:flex-start}
+.cr-b{align-items:flex-end}
 
-/* الفقاعة نفسها - max-width مرة واحدة بس! */
 .cb{
   padding:8px 14px 6px;
   border-radius:10px;
@@ -62,14 +60,12 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
 .cb-u{background:#3b82f6;color:#fff;border-top-right-radius:2px}
 .cb-b{background:#fff;color:#1e293b;border-top-left-radius:2px}
 
-/* الوقت والـ intent */
 .cm{display:flex;align-items:center;gap:8px;margin-top:5px;justify-content:flex-end}
 .cm-tu{font-size:10px;color:rgba(255,255,255,.55)}
 .cm-tb{font-size:10px;color:#8a9aa5}
 .cm-i{font-size:9px;padding:1px 6px;border-radius:99px;background:rgba(0,0,0,.06);color:#666}
 .cm-iu{background:rgba(255,255,255,.18);color:rgba(255,255,255,.7)}
 
-/* زر التصحيح تحت فقاعة البوت */
 .cc-btn{
   display:inline-block;margin-top:3px;padding:2px 8px;
   background:#fef3c7;color:#92400e;border-radius:6px;
@@ -77,13 +73,23 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
 }
 .cc-btn:hover{background:#fde68a}
 
-/* فاصل التاريخ */
 .cd{text-align:center;margin:14px 0}
 .cd span{background:rgba(255,255,255,.85);padding:4px 14px;border-radius:99px;font-size:11px;color:#54656f;box-shadow:0 1px 1px rgba(0,0,0,.04)}
 
-/* bottom bar */
 .chat-foot{background:#f0f2f5;padding:8px 16px;text-align:center;font-size:11px;color:#8696a0;border-top:1px solid #ddd}
 .chat-foot b{margin:0 6px}
+
+/* Role labels */
+.cr-role{font-size:10px;font-weight:700;margin-bottom:2px;padding:0 4px;display:flex;align-items:center;gap:4px}
+.cr-role-u{color:#2563eb}
+.cr-role-b{color:#075e54}
+.msg-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
+.msg-num-u{background:#3b82f6}
+.msg-num-b{background:#075e54}
+
+/* Pair grouping */
+.pair-group{background:rgba(255,255,255,.15);border-radius:12px;padding:8px 6px;margin-bottom:6px}
+.pair-divider{border:none;border-top:1px dashed rgba(0,0,0,.1);margin:10px 0}
 /* ============================================= */
 
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
@@ -133,7 +139,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
 <div class="sidebar">
   <div style="padding:16px 20px;border-bottom:1px solid #334155">
     <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-    <div style="font-size:11px;color:#64748b;margin-top:4px">v7.8 🛠️</div>
+    <div style="font-size:11px;color:#64748b;margin-top:4px">v7.9 🛠️</div>
   </div>
   <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
   <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
@@ -325,12 +331,15 @@ async function loadConversations(page){
 }
 function closeConvDetail(){document.getElementById('convDetail').style.display='none';document.getElementById('convList').style.display='block';document.getElementById('convPagination').style.display='flex';}
 
-/* ═══════════════════════════════════════════════════
-   💬 CHAT DETAIL — الجزء المصلح
-   ═══════════════════════════════════════════════════
-   ★ الفرق: فقاعة واحدة بـ max-width واحد
-   ★ لا يوجد wrapper إضافي يضغط العرض
-   ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   💬 CHAT DETAIL — v7.9 FIXED
+   ═══════════════════════════════════════════════════════════
+   ★ ترتيب بالـ ID أولاً (auto-increment = صحيح)
+   ★ tiebreaker: user دايماً قبل bot لو نفس الوقت
+   ★ ليبل واضح فوق كل فقاعة (👤 / 🤖)
+   ★ ترقيم الرسائل + عرض الـ #ID
+   ★ تجميع كل سؤال مع رده في pair
+   ═══════════════════════════════════════════════════════════ */
 async function loadConvDetail(sid){
   var wrap=document.getElementById('convMessages');
   document.getElementById('convList').style.display='none';
@@ -343,78 +352,143 @@ async function loadConvDetail(sid){
     var messages=d.messages||d.data||(d.conversation&&d.conversation.messages)||d.conversation||[];
     if(!Array.isArray(messages))messages=[];
 
-    // ★ ترتيب بالوقت
+    /* ★ FIX: ترتيب صحيح */
     messages.sort(function(a,b){
+      if(a.id && b.id) return a.id - b.id;
       var ta=a.created_at?new Date(a.created_at).getTime():0;
       var tb=b.created_at?new Date(b.created_at).getTime():0;
-      return ta-tb;
+      if(ta!==tb) return ta-tb;
+      if(a.role==='user' && b.role!=='user') return -1;
+      if(a.role!=='user' && b.role==='user') return 1;
+      return 0;
     });
     _convMessages=messages;
 
-    if(!messages.length){wrap.innerHTML='<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>';return;}
+    if(!messages.length){
+      wrap.innerHTML='<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>';
+      return;
+    }
+
+    /* ★ تجميع الرسائل في أزواج (سؤال + رد) */
+    var pairs=[];
+    var currentPair=null;
+    messages.forEach(function(m){
+      if(m.role==='user'){
+        if(currentPair) pairs.push(currentPair);
+        currentPair={user:m, bot:null};
+      } else {
+        if(currentPair && !currentPair.bot){
+          currentPair.bot=m;
+          pairs.push(currentPair);
+          currentPair=null;
+        } else {
+          pairs.push({user:null, bot:m});
+        }
+      }
+    });
+    if(currentPair) pairs.push(currentPair);
 
     var h='';
-    // Top bar
     h+='<div class="chat-wrap">';
-    h+='<div class="chat-topbar"><h3>💬 '+esc(sid.slice(0,20))+'...</h3><small>'+messages.length+' رسالة</small></div>';
+    h+='<div class="chat-topbar">';
+    h+='<h3>💬 '+esc(sid.slice(0,20))+'...</h3>';
+    h+='<small>'+messages.length+' رسالة &nbsp;|&nbsp; '+pairs.length+' زوج سؤال/رد</small>';
+    h+='</div>';
     h+='<div class="chat-body" id="chatBodyScroll">';
 
-    var lastUserContent='', lastDate='';
+    var lastDate='';
+    var globalIndex=0;
 
-    messages.forEach(function(m){
-      var isUser=(m.role==='user');
-      if(isUser) lastUserContent=m.content||'';
+    pairs.forEach(function(pair, pairIdx){
 
-      // فاصل التاريخ
-      if(m.created_at){
-        var ds=new Date(m.created_at).toLocaleDateString('ar-EG');
-        if(ds!==lastDate){h+='<div class="cd"><span>'+ds+'</span></div>';lastDate=ds;}
+      /* فاصل التاريخ */
+      var refMsg = pair.user || pair.bot;
+      if(refMsg && refMsg.created_at){
+        var ds=new Date(refMsg.created_at).toLocaleDateString('ar-EG');
+        if(ds!==lastDate){
+          h+='<div class="cd"><span>'+ds+'</span></div>';
+          lastDate=ds;
+        }
       }
 
-      var time=m.created_at?new Date(m.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}):'';
-      var content=m.content||'';
+      /* بداية مجموعة الزوج */
+      h+='<div class="pair-group">';
 
-      /* ★ صف الرسالة — column flex ★ */
-      h+='<div class="cr '+(isUser?'cr-u':'cr-b')+'">';
+      /* ★ رسالة المستخدم */
+      if(pair.user){
+        globalIndex++;
+        var mu=pair.user;
+        var timeU=mu.created_at?new Date(mu.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}):'';
 
-      /* ★ الفقاعة مباشرة — بدون wrapper إضافي ★ */
-      h+='<div class="cb '+(isUser?'cb-u':'cb-b')+'">';
-
-      // المحتوى
-      if(isUser){
-        h+=esc(content.slice(0,500));
-      }else{
-        h+=content.slice(0,2000);
+        h+='<div class="cr cr-u">';
+        h+='<div class="cr-role cr-role-u">';
+        h+='<span class="msg-num msg-num-u">'+globalIndex+'</span> 👤 المستخدم';
+        h+='</div>';
+        h+='<div class="cb cb-u">';
+        h+=esc((mu.content||'').slice(0,500));
+        h+='<div class="cm">';
+        if(mu.intent) h+='<span class="cm-i cm-iu">'+esc(mu.intent)+'</span>';
+        if(mu.id) h+='<span class="cm-i cm-iu">#'+mu.id+'</span>';
+        h+='<span class="cm-tu">'+timeU+'</span>';
+        h+='</div>';
+        h+='</div>';
+        h+='</div>';
       }
 
-      // الوقت + intent (سطر صغير تحت)
-      h+='<div class="cm">';
-      if(m.intent) h+='<span class="cm-i '+(isUser?'cm-iu':'')+'">'+esc(m.intent)+'</span>';
-      h+='<span class="'+(isUser?'cm-tu':'cm-tb')+'">'+time+'</span>';
-      h+='</div>';
+      /* ★ رد البوت */
+      if(pair.bot){
+        globalIndex++;
+        var mb=pair.bot;
+        var timeB=mb.created_at?new Date(mb.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}):'';
+        var userContent=(pair.user && pair.user.content)?pair.user.content:'';
 
-      h+='</div>'; // end bubble
+        h+='<div class="cr cr-b">';
+        h+='<div class="cr-role cr-role-b" style="justify-content:flex-end">';
+        h+='🤖 زيكو <span class="msg-num msg-num-b">'+globalIndex+'</span>';
+        h+='</div>';
+        h+='<div class="cb cb-b">';
+        h+=(mb.content||'').slice(0,2000);
+        h+='<div class="cm">';
+        if(mb.intent) h+='<span class="cm-i">'+esc(mb.intent)+'</span>';
+        if(mb.id) h+='<span class="cm-i" style="background:rgba(0,0,0,.04);color:#999">#'+mb.id+'</span>';
+        h+='<span class="cm-tb">'+timeB+'</span>';
+        h+='</div>';
+        h+='</div>';
 
-      // زر تصحيح (بوت فقط)
-      if(!isUser){
-        var sq='';try{sq=btoa(unescape(encodeURIComponent(lastUserContent.slice(0,500))));}catch(e){}
-        h+='<span class="cc-btn" onclick="openCorrection('+(m.id||0)+',\''+esc(sid)+'\',\''+sq+'\',this)">✏️ تصحيح</span>';
+        var sq='';
+        try{sq=btoa(unescape(encodeURIComponent(userContent.slice(0,500))));}catch(e){}
+        h+='<span class="cc-btn" onclick="openCorrection('+(mb.id||0)+',\''+esc(sid)+'\',\''+sq+'\',this)">✏️ تصحيح</span>';
+
+        h+='</div>';
       }
 
-      h+='</div>'; // end row
+      h+='</div>'; /* end pair-group */
+
+      /* فاصل بين الأزواج */
+      if(pairIdx < pairs.length-1){
+        h+='<hr class="pair-divider">';
+      }
     });
 
-    h+='</div>'; // end chat-body
-    h+='<div class="chat-foot">🔵 <b>المستخدم</b> (يمين) &nbsp;&nbsp;|&nbsp;&nbsp; ⚪ <b>البوت</b> (شمال)</div>';
-    h+='</div>'; // end chat-wrap
+    h+='</div>'; /* end chat-body */
+    h+='<div class="chat-foot">';
+    h+='👤 <b>المستخدم</b> (الأزرق - يمين)';
+    h+=' &nbsp;|&nbsp; ';
+    h+='🤖 <b>البوت</b> (الأبيض - شمال)';
+    h+=' &nbsp;|&nbsp; ';
+    h+='الأرقام = ترتيب الرسائل &nbsp;|&nbsp; كل مجموعة = سؤال + رده';
+    h+='</div>';
+    h+='</div>'; /* end chat-wrap */
 
     wrap.innerHTML=h;
 
-    // Scroll to bottom
     var sb=document.getElementById('chatBodyScroll');
     if(sb) sb.scrollTop=sb.scrollHeight;
 
-  }catch(e){console.error(e);wrap.innerHTML='<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: '+esc(e.message)+'</p></div>';}
+  }catch(e){
+    console.error(e);
+    wrap.innerHTML='<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: '+esc(e.message)+'</p></div>';
+  }
 }
 
 /* ═══ CORRECTIONS ═══ */
