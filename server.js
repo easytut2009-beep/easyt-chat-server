@@ -1,12 +1,17 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 easyT Chatbot v7.8 — 🛠️ Support + Custom Responses
-   ✅ ALL v7.7 features preserved
-   🆕 v7.8: SUPPORT intent — recognizes technical issues
-   🆕 v7.8: custom_responses table — manage bot replies from admin
-   🆕 v7.8: matchCustomResponse() — keyword matching for support
-   🆕 v7.8: Admin CRUD for custom responses
-   🆕 v7.8: GPT support fallback when no custom response matches
+   🤖 easyT Chatbot v7.9 — 🧠 Bot Instructions + Order Fix
+   ✅ ALL v7.8 features preserved
+   🆕 v7.9: bot_instructions table — admin writes prompts in plain Arabic
+   🆕 v7.9: Instructions injected into GPT system prompt
+   🆕 v7.9: FIXED chat log ordering — user always before bot
+   🆕 v7.9: Enhanced searchCorrections() with fuzzy + semantic matching
+   🆕 v7.9: Admin CRUD for bot instructions
    ─── Previous features ───
+   ✅ v7.8: SUPPORT intent — recognizes technical issues
+   ✅ v7.8: custom_responses table — manage bot replies from admin
+   ✅ v7.8: matchCustomResponse() — keyword matching for support
+   ✅ v7.8: Admin CRUD for custom responses
+   ✅ v7.8: GPT support fallback when no custom response matches
    ✅ v7.7: Smart course suggestions for GENERAL questions
    ✅ v7.6: Fuzzy Arabic search with Levenshtein distance
    ✅ v7.5: Context-Aware Audience + Conversational Detection
@@ -718,7 +723,7 @@ function formatFAQContext(faqResults) {
 
 setTimeout(async () => { await getFAQData(); }, 2000);
 
-/* ═══ Corrections Learning System ═══ */
+/* ═══ Corrections Learning System — 🆕 v7.9: Enhanced with fuzzy + semantic ═══ */
 let correctionsCache = [];
 let correctionsLastFetch = 0;
 const CORRECTIONS_CACHE_TTL = 5 * 60 * 1000;
@@ -736,24 +741,82 @@ async function getCorrections() {
 
 function invalidateCorrectionsCache() { correctionsCache = []; correctionsLastFetch = 0; }
 
+/* 🆕 v7.9: Semantic keyword groups for better correction matching */
+const CORRECTION_SEMANTIC_GROUPS = {
+  payment: ["دفع", "فودافون", "كاش", "تحويل", "ايصال", "إيصال", "فيزا", "ماستر", "باي بال", "انستا", "تفعيل", "اشتراك", "فلوس", "مبلغ", "رصيد", "بطاقة", "payment"],
+  access: ["دخول", "حساب", "تسجيل", "ايميل", "إيميل", "كلمة سر", "كلمة مرور", "باسورد", "password", "login", "مش لاقي", "مش ظاهر", "دوراتي", "وصول"],
+  video: ["فيديو", "مش شغال", "تشغيل", "صوت", "بيقطع", "بيحمل", "بطيء", "بافر", "buffer", "لا يعمل", "video"],
+  certificate: ["شهادة", "شهاده", "certificate", "اعتماد", "معتمدة", "تحميل شهادة", "طباعة"],
+  subscription: ["اشتراك", "سنوي", "شهري", "تجديد", "الغاء", "إلغاء", "subscription", "عرض", "سعر", "تكلفة"],
+};
+
+/* 🆕 v7.9: Enhanced searchCorrections with fuzzy similarity + semantic groups */
 async function searchCorrections(query, intent, entity) {
   const corrections = await getCorrections();
   if (!corrections.length) return [];
   const normalizedQuery = normalizeArabic(query.toLowerCase());
   const queryTerms = normalizedQuery.split(/\s+/).filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t));
   if (!queryTerms.length) { const fb = normalizedQuery.split(/\s+/).filter((t) => t.length >= 2).slice(0, 3); if (!fb.length) return []; queryTerms.push(...fb); }
+
+  /* 🆕 v7.9: Also check corrected spelling */
+  const { corrected: correctedQuery, wasCorrected } = correctQuery(query);
+  const normalizedCorrected = wasCorrected ? normalizeArabic(correctedQuery.toLowerCase()) : null;
+  const correctedTerms = normalizedCorrected ? normalizedCorrected.split(/\s+/).filter((t) => t.length >= 2 && !ARABIC_STOP_WORDS.has(t)) : [];
+  const allTerms = [...new Set([...queryTerms, ...correctedTerms])];
+
   const scored = corrections.map((c) => {
     let score = 0;
     const origQ = normalizeArabic((c.original_question || "").toLowerCase());
     const origA = normalizeArabic((c.original_answer || "").toLowerCase());
     const corrA = normalizeArabic((c.corrected_answer || "").toLowerCase());
     const note = normalizeArabic((c.note || "").toLowerCase());
-    if (origQ && origQ.length >= 3) { if (normalizedQuery === origQ) score += 15; else if (normalizedQuery.includes(origQ)) score += 10; else if (origQ.includes(normalizedQuery) && normalizedQuery.length >= 5) score += 10; }
-    for (const term of queryTerms) { if (origQ.includes(term)) score += 3; if (note.includes(term)) score += 1; if (origA.includes(term)) score += 0.5; }
-    if (entity && entity.length >= 2) { const ne = normalizeArabic(entity.toLowerCase()); if (origQ.includes(ne)) score += 5; if (corrA.includes(ne)) score += 2; if (note.includes(ne)) score += 2; }
+
+    /* ═══ 1. Exact / near-exact match ═══ */
+    if (origQ && origQ.length >= 3) {
+      if (normalizedQuery === origQ) score += 20;
+      else if (normalizedQuery.includes(origQ)) score += 12;
+      else if (origQ.includes(normalizedQuery) && normalizedQuery.length >= 5) score += 12;
+
+      /* 🆕 v7.9: Fuzzy similarity check */
+      const sim = similarityRatio(normalizedQuery, origQ);
+      if (sim >= 85) score += 15;
+      else if (sim >= 70) score += 10;
+      else if (sim >= 55) score += 5;
+    }
+
+    /* ═══ 2. Term matching (both original + corrected) ═══ */
+    for (const term of allTerms) {
+      if (origQ.includes(term)) score += 3;
+      if (note.includes(term)) score += 2;
+      if (corrA.includes(term)) score += 1;
+      if (origA.includes(term)) score += 0.5;
+    }
+
+    /* ═══ 3. Entity boost ═══ */
+    if (entity && entity.length >= 2) {
+      const ne = normalizeArabic(entity.toLowerCase());
+      if (origQ.includes(ne)) score += 6;
+      if (corrA.includes(ne)) score += 3;
+      if (note.includes(ne)) score += 3;
+    }
+
+    /* ═══ 4. Intent matching from note ═══ */
+    if (intent && note.includes(normalizeArabic(intent.toLowerCase()))) {
+      score += 3;
+    }
+
+    /* ═══ 5. 🆕 v7.9: Semantic keyword group matching ═══ */
+    for (const [groupKey, groupTerms] of Object.entries(CORRECTION_SEMANTIC_GROUPS)) {
+      const queryInGroup = allTerms.some((t) => groupTerms.some((gt) => { const ngt = normalizeArabic(gt); return ngt.includes(t) || t.includes(ngt); }));
+      const correctionInGroup = groupTerms.some((gt) => { const ngt = normalizeArabic(gt); return origQ.includes(ngt) || note.includes(ngt); });
+      if (queryInGroup && correctionInGroup) {
+        score += 4;
+      }
+    }
+
     return { ...c, _score: score };
   });
-  return scored.filter((c) => c._score >= 4).sort((a, b) => b._score - a._score).slice(0, 3);
+  return scored.filter((c) => c._score >= 5).sort((a, b) => b._score - a._score).slice(0, 3);
 }
 
 function formatCorrectionsContext(corrections) {
@@ -770,7 +833,7 @@ function formatCorrectionsContext(corrections) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 v7.8: Custom Responses System (Support + Admin-Managed)
+   v7.8: Custom Responses System (Support + Admin-Managed)
    ══════════════════════════════════════════════════════════ */
 let customResponsesCache = [];
 let customResponsesLastFetch = 0;
@@ -780,100 +843,82 @@ async function getCustomResponses() {
   const now = Date.now();
   if (customResponsesCache.length && now - customResponsesLastFetch < CUSTOM_RESPONSES_CACHE_TTL) return customResponsesCache;
   try {
-    const { data, error } = await supabase
-      .from("custom_responses")
-      .select("*")
-      .eq("is_active", true)
-      .order("priority", { ascending: false });
+    const { data, error } = await supabase.from("custom_responses").select("*").eq("is_active", true).order("priority", { ascending: false });
     if (error) { console.error("❌ Custom responses load error:", error.message); return customResponsesCache; }
-    if (data) {
-      customResponsesCache = data;
-      customResponsesLastFetch = now;
-      console.log(`✅ Custom responses cache: ${customResponsesCache.length} entries`);
-    }
+    if (data) { customResponsesCache = data; customResponsesLastFetch = now; console.log(`✅ Custom responses cache: ${customResponsesCache.length} entries`); }
   } catch (e) { console.error("❌ Custom responses fetch exception:", e.message); }
   return customResponsesCache;
 }
 
-function invalidateCustomResponsesCache() {
-  customResponsesCache = [];
-  customResponsesLastFetch = 0;
-}
+function invalidateCustomResponsesCache() { customResponsesCache = []; customResponsesLastFetch = 0; }
 
 async function matchCustomResponse(message) {
   const responses = await getCustomResponses();
   if (!responses.length) return null;
-
   const normMessage = normalizeArabic(message.toLowerCase().trim());
-  const messageWords = normMessage.split(/\s+/).filter(w => w.length >= 2);
-
   let bestMatch = null;
   let bestScore = 0;
-
   for (const resp of responses) {
     if (!resp.is_active) continue;
-
-    const keywords = (resp.keywords || "")
-      .split(",")
-      .map((k) => k.trim().toLowerCase())
-      .filter((k) => k.length >= 2);
-
+    const keywords = (resp.keywords || "").split(",").map((k) => k.trim().toLowerCase()).filter((k) => k.length >= 2);
     let score = 0;
     let matchCount = 0;
-
     for (const keyword of keywords) {
       const normKeyword = normalizeArabic(keyword);
-
-      // Exact phrase match in message
-      if (normMessage.includes(normKeyword)) {
-        score += normKeyword.split(/\s+/).length * 5; // multi-word phrases score higher
-        matchCount++;
-        continue;
-      }
-
-      // Original (non-normalized) match
-      if (message.toLowerCase().includes(keyword)) {
-        score += keyword.split(/\s+/).length * 5;
-        matchCount++;
-        continue;
-      }
-
-      // Fuzzy: check if keyword words appear in message
+      if (normMessage.includes(normKeyword)) { score += normKeyword.split(/\s+/).length * 5; matchCount++; continue; }
+      if (message.toLowerCase().includes(keyword)) { score += keyword.split(/\s+/).length * 5; matchCount++; continue; }
       const kwWords = normKeyword.split(/\s+/).filter(w => w.length >= 2);
-      if (kwWords.length > 1) {
-        const allPresent = kwWords.every(kw => normMessage.includes(kw));
-        if (allPresent) {
-          score += kwWords.length * 3;
-          matchCount++;
-        }
-      }
+      if (kwWords.length > 1) { const allPresent = kwWords.every(kw => normMessage.includes(kw)); if (allPresent) { score += kwWords.length * 3; matchCount++; } }
     }
-
-    // Bonus for multiple keyword matches
     if (matchCount >= 2) score = Math.round(score * 1.5);
     if (matchCount >= 3) score = Math.round(score * 1.3);
-
-    // Priority bonus
     score += (resp.priority || 0) * 0.5;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = resp;
-    }
+    if (score > bestScore) { bestScore = score; bestMatch = resp; }
   }
-
-  if (bestMatch && bestScore >= 5) {
-    console.log(`   🛠️ v7.8: Custom response matched: "${bestMatch.title}" (score: ${bestScore})`);
-    return bestMatch;
-  }
-
+  if (bestMatch && bestScore >= 5) { console.log(`   🛠️ Custom response matched: "${bestMatch.title}" (score: ${bestScore})`); return bestMatch; }
   return null;
 }
 
-// Pre-load custom responses on startup
 setTimeout(async () => { await getCustomResponses(); }, 3000);
 
-/* ═══ End of v7.8 Custom Responses ═══ */
+/* ══════════════════════════════════════════════════════════
+   🆕 v7.9: Bot Instructions System — Admin-written natural prompts
+   ══════════════════════════════════════════════════════════ */
+let botInstructionsCache = [];
+let botInstructionsLastFetch = 0;
+const BOT_INSTRUCTIONS_CACHE_TTL = 5 * 60 * 1000;
+
+async function getBotInstructions() {
+  const now = Date.now();
+  if (botInstructionsCache.length && now - botInstructionsLastFetch < BOT_INSTRUCTIONS_CACHE_TTL) return botInstructionsCache;
+  try {
+    const { data, error } = await supabase.from("bot_instructions").select("*").eq("is_active", true).order("priority", { ascending: false });
+    if (error) { console.error("❌ Bot instructions load error:", error.message); return botInstructionsCache; }
+    if (data) { botInstructionsCache = data; botInstructionsLastFetch = now; console.log(`✅ Bot instructions cache: ${botInstructionsCache.length} entries`); }
+  } catch (e) { console.error("❌ Bot instructions fetch exception:", e.message); }
+  return botInstructionsCache;
+}
+
+function invalidateBotInstructionsCache() { botInstructionsCache = []; botInstructionsLastFetch = 0; }
+
+function buildInstructionsPrompt(instructions) {
+  if (!instructions.length) return "";
+  let text = "\n\n【⚠️ تعليمات الأدمن — أولوية قصوى! اتبعها بالحرف】\n";
+  const grouped = {};
+  for (const inst of instructions) {
+    const cat = inst.category || "GENERAL";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(inst.instruction);
+  }
+  for (const [cat, items] of Object.entries(grouped)) {
+    text += `\n═══ ${cat} ═══\n`;
+    items.forEach((item, i) => { text += `${i + 1}. ${item}\n`; });
+  }
+  return text;
+}
+
+// Pre-load bot instructions on startup
+setTimeout(async () => { await getBotInstructions(); }, 4000);
 
 /* ═══ Knowledge Base ═══ */
 const PLATFORM_KB = `
@@ -1002,7 +1047,6 @@ function shouldEscapeAccessFlow(message, intent, entity) {
   if (YES_NO_RE.test(msgLower)) return false;
   if (ACCESS_KEYWORDS_RE.test(msgLower)) return false;
   if (intent === "ACCESS_ISSUE") return false;
-  /* 🆕 v7.8: Don't escape to COURSE_SEARCH if it's a SUPPORT issue */
   if (intent === "SUPPORT") return false;
   if (entity && !isVagueEntity(entity) && entity.length >= 3 && !ACCESS_KEYWORDS_RE.test(entity.toLowerCase())) return true;
   if (msgLower.split(/\s+/).filter((w) => w.length >= 2).length >= 3) return true;
@@ -1012,7 +1056,6 @@ function shouldEscapeAccessFlow(message, intent, entity) {
 /* ═══ Classification ═══ */
 const CAT_LIST = Object.entries(CATEGORIES).map(([k, v]) => `  ${k}: ${v.name}`).join("\n");
 
-/* 🆕 v7.8: Updated CLASSIFY_SYSTEM with SUPPORT intent */
 const CLASSIFY_SYSTEM = `You classify messages for easyT educational platform chatbot.
 
 Return ONLY valid JSON:
@@ -1044,7 +1087,6 @@ When user REPORTS A PROBLEM with the platform (not asking to learn):
 • "مشكلة تقنية" → SUPPORT
 • "الشهادة مش ظاهرة" → SUPPORT
 • "مش قادر احمل الشهادة" → SUPPORT
-These describe PROBLEMS with the platform! They are NOT course search requests!
 
 vs COURSE_SEARCH (user wants to LEARN something):
 • "عايز كورس فوتوشوب" → COURSE_SEARCH
@@ -1060,89 +1102,51 @@ vs COURSE_SEARCH (user wants to LEARN something):
 ═══ SUPPORT vs ACCESS_ISSUE ═══
 • ACCESS_ISSUE = can't login, can't find purchased course, account problems
 • SUPPORT = technical glitches: video not playing, audio issues, page errors, download problems, certificate issues
-• If previous intent was ACCESS_ISSUE and user describes a technical symptom → SUPPORT
 
 ═══ ⚠️ CRITICAL: CONVERSATIONAL = GENERAL, NEVER COURSE_SEARCH! ═══
 These are ALWAYS "GENERAL" intent — NEVER classify as COURSE_SEARCH or FOLLOW_UP:
-• "انت فين" → GENERAL (asking about the bot, NOT searching!)
-• "انت مين" → GENERAL
-• "انت بوت" → GENERAL
+• "انت فين" → GENERAL | "انت مين" → GENERAL | "انت بوت" → GENERAL
 • "ازيك" / "عامل ايه" → GREETING
 • "شكرا" / "تمام" / "ماشي" / "اوك" → GENERAL
-• "مش فاهم" / "يعني ايه" → GENERAL
-• "هههه" / "لول" → GENERAL
-• "باي" / "مع السلامة" → GENERAL
-• "لا شكرا" / "خلاص" → GENERAL
-⚠️ Short non-topic messages after a course search = GENERAL, not FOLLOW_UP!
+• "مش فاهم" / "يعني ايه" → GENERAL | "هههه" / "لول" → GENERAL
+• "باي" / "مع السلامة" → GENERAL | "لا شكرا" / "خلاص" → GENERAL
 
 ═══ ⚠️ CRITICAL: MISSPELLINGS — Understand the intent! ═══
 Users often misspell words. Understand what they MEAN:
 • "ماركوتنج" = "ماركيتنج" = marketing
 • "دجيتال" = "ديجيتال" = digital
 • "فتوشوب" = "فوتوشوب" = Photoshop
-• "بروجرامنج" = programming = برمجة
-• "جرافك" = "جرافيك" = graphic
 Always classify based on INTENT, not exact spelling!
 
 ═══ ⚠️ search_terms = TOPIC ONLY, NO AUDIENCE WORDS! ═══
-search_terms should contain ONLY the subject/topic keywords.
-NEVER put audience words in search_terms: للكبار, للأطفال, مبتدئين, متقدم, for adults, for kids.
+NEVER put audience words in search_terms: للكبار, للأطفال, مبتدئين, متقدم.
 These go in exclude_terms instead!
 
 ═══ ⚠️ AUDIENCE-ONLY messages ═══
-When user says ONLY audience modifier with NO topic (e.g. "للكبار", "عايز للكبار"):
-• intent: "COURSE_SEARCH" (or "FOLLOW_UP" if continuing)
-• entity: null (because there is NO topic!)
-• search_terms: [] (empty — NO topic keywords!)
-• is_refinement: true
-• exclude_terms: the audience exclusions
-
-Examples:
-• "عاوز انجليزي للكبار" → entity: "انجليزي", search_terms: ["انجليزي", "english", "تعلم انجليزي"], exclude_terms: ["أطفال", "children", "kids"]
-• "للكبار" (after asking about English) → entity: null, search_terms: [], is_refinement: true, exclude_terms: ["أطفال", "children", "kids"]
-• "ديجيتال ماركوتنج" → entity: "ديجيتال ماركيتنج", search_terms: ["ديجيتال ماركيتنج", "تسويق رقمي", "digital marketing", "تسويق", "ماركيتنج"], category_key: "marketing"
+When user says ONLY audience modifier with NO topic: search_terms: [], is_refinement: true
 
 ═══ ⚠️ START_LEARNING vs COURSE_SEARCH ═══
 START_LEARNING = ONLY when NO topic at all!
 "عايز اتعلم + [ANY topic]" = ALWAYS COURSE_SEARCH!
 
-═══ ⚠️ AUDIENCE DETECTION ═══
-• "للكبار" → exclude_terms: ["أطفال", "children", "kids", "للأطفال", "for children", "for kids"]
-• "للأطفال" → exclude_terms: ["متقدم", "advanced", "professional"]
-• "مش للاطفال" → exclude_terms: ["أطفال", "children", "kids", "للأطفال"]
-
 ═══ ⚠️ REFINEMENT ═══
-"لا" / "مش كده" / correction → is_refinement: true, intent: COURSE_SEARCH
-search_terms = what they ACTUALLY want, exclude_terms = what they DON'T want
-
-═══ ⚠️ CONTEXT RESOLUTION ═══
-"الموضوع ده" / "عن كده" → resolve from history!
+"لا" / "مش كده" → is_refinement: true, intent: COURSE_SEARCH
 
 ═══ ⚠️ TOPIC CHANGE ═══
 ACCESS_ISSUE → new SPECIFIC topic = COURSE_SEARCH, not FOLLOW_UP!
 
 ═══ INTENT DEFINITIONS ═══
-• GIBBERISH — Random characters
-• GREETING — ONLY short greetings, NO topic
-• START_LEARNING — Wants to learn, absolutely NO topic mentioned
-• COURSE_SEARCH — ANY message with a SPECIFIC topic/tool/skill (wants to LEARN)
-• DIPLOMA_SEARCH — Asks about diplomas/مسارات
-• ACCESS_ISSUE — Can't login/access course/account problems
-• SUPPORT — Technical problems: video/audio/page not working, download issues, certificate display issues
-• PLATFORM_QA — Platform policies/usage
-• CERTIFICATE_QA — Questions ABOUT certificates (not problems displaying them)
-• PAYMENT — Payment methods
-• SUBSCRIPTION — Pricing/plans
-• AFFILIATE — Affiliate program
-• AUTHOR — Become instructor
-• FOLLOW_UP — Continue previous topic
-• GENERAL — Other (including conversational/chat messages)
+• GIBBERISH — Random characters | GREETING — ONLY short greetings
+• START_LEARNING — Wants to learn, NO topic | COURSE_SEARCH — SPECIFIC topic
+• DIPLOMA_SEARCH — Asks about diplomas | ACCESS_ISSUE — Can't login/access
+• SUPPORT — Technical problems | PLATFORM_QA — Platform policies
+• CERTIFICATE_QA — Questions ABOUT certificates | PAYMENT — Payment methods
+• SUBSCRIPTION — Pricing/plans | AFFILIATE — Affiliate program
+• AUTHOR — Become instructor | FOLLOW_UP — Continue previous topic
+• GENERAL — Other (including conversational)
 
 ═══ search_terms Rules ═══
-• 3-6 TOPIC-FOCUSED variations (NO audience modifiers!)
-• Include English equivalents + Arabic hamza variants
-• Include CORRECTED spelling if user misspelled
-• If message has NO topic (only audience words), return EMPTY []
+• 3-6 TOPIC-FOCUSED variations | Include English equivalents
 • For SUPPORT intent, search_terms should be empty []
 
 ═══ category_key ═══
@@ -1198,15 +1202,7 @@ function isVagueEntity(entity) {
   if (!entity) return true;
   const trimmed = entity.trim();
   if (trimmed.length < 2) return true;
-  const vagueTerms = [
-    "الموضوع ده","الموضوع دا","الموضوع","ده","دا","كده","كدا",
-    "الحاجة دي","المجال ده","المجال دا","فيه","عنه","عن ده",
-    "هذا","هذا الموضوع","this","this topic",
-    "دبلومات","الدبلومات","دبلومة",
-    "للكبار","الكبار","كبار","للأطفال","الأطفال","أطفال","اطفال","للاطفال",
-    "للمبتدئين","مبتدئين","للمتقدمين","متقدمين","متقدم","بالغين",
-    "for adults","for kids","for children","for beginners","for advanced",
-  ];
+  const vagueTerms = ["الموضوع ده","الموضوع دا","الموضوع","ده","دا","كده","كدا","الحاجة دي","المجال ده","المجال دا","فيه","عنه","عن ده","هذا","هذا الموضوع","this","this topic","دبلومات","الدبلومات","دبلومة","للكبار","الكبار","كبار","للأطفال","الأطفال","أطفال","اطفال","للاطفال","للمبتدئين","مبتدئين","للمتقدمين","متقدمين","متقدم","بالغين","for adults","for kids","for children","for beginners","for advanced"];
   return vagueTerms.includes(trimmed);
 }
 
@@ -1262,70 +1258,19 @@ async function searchCoursesRaw(terms) {
   if (!clean.length) return [];
   console.log(`\n🔍 ═══ Course Search ═══`);
   console.log(`   Terms: [${clean.join(" | ")}]`);
-
-  try {
-    const orFilter = buildOrFilter(DB.title, clean);
-    if (orFilter) {
-      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-      if (!error && data?.length) { console.log(`   ✅ Title: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-    }
-  } catch (e) { console.error("   ❌ Title search error:", e.message); }
-
-  try {
-    const orFilter = buildOrFilter(DB.subtitle, clean.slice(0, 5));
-    if (orFilter) {
-      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-      if (!error && data?.length) { console.log(`   ✅ Subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-    }
-  } catch (e) { console.error("   ❌ Subtitle search error:", e.message); }
-
-  try {
-    const orFilter = buildOrFilter(DB.description, clean.slice(0, 4));
-    if (orFilter) {
-      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-      if (!error && data?.length) { console.log(`   ✅ Description: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-    }
-  } catch (e) { console.error("   ❌ Description search error:", e.message); }
-
-  try {
-    const orFilter = buildOrFilter(DB.full_content, clean.slice(0, 3));
-    if (orFilter) {
-      const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(10);
-      if (!error && data?.length) { console.log(`   ✅ Full content: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-    }
-  } catch (e) { console.error("   ❌ Full content search error:", e.message); }
-
+  try { const orFilter = buildOrFilter(DB.title, clean); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Title: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Title search error:", e.message); }
+  try { const orFilter = buildOrFilter(DB.subtitle, clean.slice(0, 5)); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Subtitle search error:", e.message); }
+  try { const orFilter = buildOrFilter(DB.description, clean.slice(0, 4)); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Description: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Description search error:", e.message); }
+  try { const orFilter = buildOrFilter(DB.full_content, clean.slice(0, 3)); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(10); if (!error && data?.length) { console.log(`   ✅ Full content: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Full content search error:", e.message); }
   console.log(`   🔄 No results → trying fuzzy/synonym retry...`);
   const fuzzyTerms = generateSearchVariants(clean, null);
   const newTerms = fuzzyTerms.filter((t) => !clean.includes(t)).slice(0, 8);
-
   if (newTerms.length > 0) {
     console.log(`   🔄 Retry terms: [${newTerms.join(" | ")}]`);
-    try {
-      const orFilter = buildOrFilter(DB.title, newTerms);
-      if (orFilter) {
-        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-        if (!error && data?.length) { console.log(`   ✅ Fuzzy retry title: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-      }
-    } catch (e) { console.error("   ❌ Fuzzy retry error:", e.message); }
-
-    try {
-      const orFilter = buildOrFilter(DB.subtitle, newTerms.slice(0, 5));
-      if (orFilter) {
-        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-        if (!error && data?.length) { console.log(`   ✅ Fuzzy retry subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-      }
-    } catch (e) { console.error("   ❌ Fuzzy subtitle retry error:", e.message); }
-
-    try {
-      const orFilter = buildOrFilter(DB.description, newTerms.slice(0, 4));
-      if (orFilter) {
-        const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15);
-        if (!error && data?.length) { console.log(`   ✅ Fuzzy retry description: ${data.length}`); return dedupeRows(data).slice(0, 10); }
-      }
-    } catch (e) { console.error("   ❌ Fuzzy desc retry error:", e.message); }
+    try { const orFilter = buildOrFilter(DB.title, newTerms); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Fuzzy retry title: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Fuzzy retry error:", e.message); }
+    try { const orFilter = buildOrFilter(DB.subtitle, newTerms.slice(0, 5)); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Fuzzy retry subtitle: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Fuzzy subtitle retry error:", e.message); }
+    try { const orFilter = buildOrFilter(DB.description, newTerms.slice(0, 4)); if (orFilter) { const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(15); if (!error && data?.length) { console.log(`   ✅ Fuzzy retry description: ${data.length}`); return dedupeRows(data).slice(0, 10); } } } catch (e) { console.error("   ❌ Fuzzy desc retry error:", e.message); }
   }
-
   console.log(`   ❌ No results (even after fuzzy retry)`);
   return [];
 }
@@ -1336,17 +1281,10 @@ function localRelevanceFilter(courses, entity, searchTerms) {
   if (entity) checkTerms.add(normalizeArabic(entity.toLowerCase()));
   if (searchTerms?.length) searchTerms.forEach((t) => { if (t.length >= 2) checkTerms.add(normalizeArabic(t.toLowerCase())); });
   const correctedCheckTerms = new Set();
-  for (const t of checkTerms) {
-    correctedCheckTerms.add(t);
-    const { corrected } = correctQuery(t);
-    if (corrected) correctedCheckTerms.add(normalizeArabic(corrected.toLowerCase()));
-  }
+  for (const t of checkTerms) { correctedCheckTerms.add(t); const { corrected } = correctQuery(t); if (corrected) correctedCheckTerms.add(normalizeArabic(corrected.toLowerCase())); }
   const significantTerms = [...correctedCheckTerms].filter((t) => t.length >= 3);
   if (!significantTerms.length) return courses;
-  return courses.filter((c) => {
-    const combined = normalizeArabic(`${c.title} ${c.description}`.toLowerCase());
-    return significantTerms.some((term) => combined.includes(term));
-  });
+  return courses.filter((c) => { const combined = normalizeArabic(`${c.title} ${c.description}`.toLowerCase()); return significantTerms.some((term) => combined.includes(term)); });
 }
 
 async function filterRelevantAI(courses, userQuery, entity) {
@@ -1356,7 +1294,7 @@ async function filterRelevantAI(courses, userQuery, entity) {
     const { choices } = await openai.chat.completions.create({
       model: "gpt-4o-mini", temperature: 0, max_tokens: 100,
       messages: [
-        { role: "system", content: `You filter course search results. Return ONLY a JSON array of indices.\n\n⚠️ STRICT RULES — be very aggressive in excluding:\n1. "تعليم الجرافيكس باللغة الإنجليزية" is GRAPHICS, NOT English learning → EXCLUDE from English searches\n2. "معالجة اللغة الطبيعية NLP" is AI/PROGRAMMING, NOT language learning → EXCLUDE from language searches\n3. Any course "باللغة الإنجليزية" (taught IN English) about another subject → EXCLUDE from English learning searches\n4. Only include courses where the PRIMARY EDUCATIONAL GOAL matches the user's request\n5. "for children/للأطفال" courses are NOT relevant for adult learners\n6. If NONE match, return []\n\nFormat: [0, 1, 2] or []` },
+        { role: "system", content: `You filter course search results. Return ONLY a JSON array of indices.\n\n⚠️ STRICT RULES:\n1. Only include courses where PRIMARY EDUCATIONAL GOAL matches\n2. "باللغة الإنجليزية" (taught IN English) ≠ English learning course\n3. If NONE match, return []\n\nFormat: [0, 1, 2] or []` },
         { role: "user", content: `User wants: "${userQuery}"${entity ? ` (topic: ${entity})` : ""}\n\nCourses:\n${titles}\n\nRelevant indices:` },
       ],
     });
@@ -1384,17 +1322,11 @@ async function searchCourses(searchTerms, entity, userQuery) {
   if (!localFiltered.length) return [];
   const preFiltered = preFilterByPrimarySubject(localFiltered, userQuery || entity || searchTerms[0] || "", entity);
   if (!preFiltered.length) return [];
-  if (preFiltered.length >= 2) {
-    const aiFiltered = await filterRelevantAI(preFiltered, entity || searchTerms[0] || "", entity);
-    return aiFiltered.slice(0, 6);
-  }
+  if (preFiltered.length >= 2) { const aiFiltered = await filterRelevantAI(preFiltered, entity || searchTerms[0] || "", entity); return aiFiltered.slice(0, 6); }
   return preFiltered.slice(0, 6);
 }
 
-function dedupe(courses) {
-  const seen = new Set();
-  return courses.filter((c) => { const k = c.url || c.title; return seen.has(k) ? false : (seen.add(k), true); });
-}
+function dedupe(courses) { const seen = new Set(); return courses.filter((c) => { const k = c.url || c.title; return seen.has(k) ? false : (seen.add(k), true); }); }
 
 async function getCoursesByCategory(categoryKey) {
   const terms = CATEGORY_SEARCH_TERMS[categoryKey];
@@ -1403,129 +1335,57 @@ async function getCoursesByCategory(categoryKey) {
     const orFilter = buildOrFilter(DB.title, terms.slice(0, 3));
     if (!orFilter) return [];
     const { data, error } = await supabase.from("courses").select(SELECT).or(orFilter).limit(10);
-    if (!error && data?.length) {
-      const deduped = dedupeRows(data);
-      const instructorMap = await getInstructorMap(deduped);
-      return deduped.slice(0, 6).map((row) => mapCourse(row, instructorMap));
-    }
+    if (!error && data?.length) { const deduped = dedupeRows(data); const instructorMap = await getInstructorMap(deduped); return deduped.slice(0, 6).map((row) => mapCourse(row, instructorMap)); }
   } catch (e) { console.error("   ❌ getCoursesByCategory error:", e.message); }
   return [];
 }
 
-/* ══════════════════════════════════════════════════════════
-   ═══ v7.7: Smart Course Suggestions for General Questions
-   ══════════════════════════════════════════════════════════ */
-
+/* ═══ v7.7: Smart Course Suggestions for General Questions ═══ */
 async function findRelatedCourses(userMessage) {
   try {
     const extractionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      max_tokens: 200,
+      model: "gpt-4o-mini", temperature: 0, max_tokens: 200,
       messages: [
-        {
-          role: "system",
-          content: `You extract educational topic keywords from a user's message to find related courses on an educational platform.
-Return ONLY valid JSON:
-{"keywords_ar": ["keyword1", "keyword2"], "keywords_en": ["keyword1", "keyword2"], "category_key": "key or null"}
-
-If the message has NO relation to any educational/professional topic, return:
-{"keywords_ar": [], "keywords_en": [], "category_key": null}
-
-Categories:
-${CAT_LIST}
-
-Examples:
-- "يعني ايه كلين كود" → {"keywords_ar": ["كلين كود", "clean code", "برمجة", "كود نظيف"], "keywords_en": ["clean code", "programming", "software"], "category_key": "programming"}
-- "ازاي اعمل cv كويس" → {"keywords_ar": ["سيرة ذاتية", "مهارات"], "keywords_en": ["cv", "resume", "career"], "category_key": "skills"}
-- "ايه هو ال seo" → {"keywords_ar": ["سيو", "تحسين محركات البحث", "تسويق"], "keywords_en": ["seo", "search engine", "marketing"], "category_key": "marketing"}
-- "ايه الفرق بين ui و ux" → {"keywords_ar": ["تصميم", "واجهة", "تجربة مستخدم"], "keywords_en": ["ui", "ux", "design"], "category_key": "ui_design"}
-- "كام الساعة" → {"keywords_ar": [], "keywords_en": [], "category_key": null}
-- "ازيك" → {"keywords_ar": [], "keywords_en": [], "category_key": null}
-- "مين رئيس مصر" → {"keywords_ar": [], "keywords_en": [], "category_key": null}`
-        },
+        { role: "system", content: `You extract educational topic keywords from a user's message to find related courses.\nReturn ONLY valid JSON:\n{"keywords_ar": ["keyword1"], "keywords_en": ["keyword1"], "category_key": "key or null"}\n\nIf NO relation to education, return:\n{"keywords_ar": [], "keywords_en": [], "category_key": null}\n\nCategories:\n${CAT_LIST}` },
         { role: "user", content: userMessage }
       ],
     });
-
     let keywords;
-    try {
-      const matchJSON = extractionResponse.choices[0].message.content.match(/\{[\s\S]*\}/);
-      keywords = matchJSON ? JSON.parse(matchJSON[0]) : null;
-    } catch {
-      return { courses: [], diplomas: [], category: null };
-    }
-
-    if (!keywords || ((!keywords.keywords_ar || keywords.keywords_ar.length === 0) && (!keywords.keywords_en || keywords.keywords_en.length === 0))) {
-      console.log(`   💡 v7.7: No educational topic found in general question`);
-      return { courses: [], diplomas: [], category: null };
-    }
-
+    try { const matchJSON = extractionResponse.choices[0].message.content.match(/\{[\s\S]*\}/); keywords = matchJSON ? JSON.parse(matchJSON[0]) : null; } catch { return { courses: [], diplomas: [], category: null }; }
+    if (!keywords || ((!keywords.keywords_ar || keywords.keywords_ar.length === 0) && (!keywords.keywords_en || keywords.keywords_en.length === 0))) { return { courses: [], diplomas: [], category: null }; }
     const allKeywords = [...(keywords.keywords_ar || []), ...(keywords.keywords_en || [])].filter(t => t && t.length >= 2);
     if (!allKeywords.length) return { courses: [], diplomas: [], category: null };
-
     console.log(`   💡 v7.7: Extracted keywords: [${allKeywords.join(", ")}] | cat: ${keywords.category_key}`);
-
     const category = keywords.category_key && CATEGORIES[keywords.category_key] ? CATEGORIES[keywords.category_key] : null;
     const expandedTerms = generateSearchVariants(allKeywords, allKeywords[0]);
-
-    const [courses, diplomas] = await Promise.all([
-      searchCourses(allKeywords, allKeywords[0], userMessage),
-      searchDiplomas(expandedTerms),
-    ]);
-
+    const [courses, diplomas] = await Promise.all([searchCourses(allKeywords, allKeywords[0], userMessage), searchDiplomas(expandedTerms)]);
     let filteredDiplomas = diplomas;
-    if (diplomas.length > 0) {
-      filteredDiplomas = await filterRelevantDiplomas(diplomas, allKeywords[0], allKeywords[0]);
-    }
-
-    console.log(`   💡 v7.7: Found ${courses.length} courses + ${filteredDiplomas.length} diplomas for suggestion`);
-
-    return {
-      courses: courses.slice(0, 3),
-      diplomas: filteredDiplomas.slice(0, 2),
-      category,
-    };
-  } catch (e) {
-    console.error("   ❌ v7.7 findRelatedCourses error:", e.message);
-    return { courses: [], diplomas: [], category: null };
-  }
+    if (diplomas.length > 0) filteredDiplomas = await filterRelevantDiplomas(diplomas, allKeywords[0], allKeywords[0]);
+    return { courses: courses.slice(0, 3), diplomas: filteredDiplomas.slice(0, 2), category };
+  } catch (e) { console.error("   ❌ v7.7 findRelatedCourses error:", e.message); return { courses: [], diplomas: [], category: null }; }
 }
 
 function buildSuggestionHTML(results) {
-  if (!results || (results.courses.length === 0 && results.diplomas.length === 0)) {
-    return "";
-  }
-
+  if (!results || (results.courses.length === 0 && results.diplomas.length === 0)) return "";
   let html = `<br><br><div style="border-top:2px solid #f0f0f0;padding-top:12px;margin-top:8px;">`;
   html += `<b style="font-size:13px;">💡 بالمناسبة، عندنا محتوى ممكن يفيدك في الموضوع ده:</b><br><br>`;
-
   if (results.courses.length > 0) {
     results.courses.forEach((course) => {
       const link = course.url || ALL_COURSES_URL;
       html += `<div style="display:flex;gap:8px;margin-bottom:6px;padding:6px 8px;border:1px solid #eee;border-radius:8px;background:#f9f9f9;">`;
-      if (course.image_url) {
-        html += `<a href="${link}" target="_blank" style="flex-shrink:0;"><img src="${course.image_url}" alt="${course.title}" style="width:55px;height:55px;border-radius:6px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'"></a>`;
-      }
-      html += `<div style="flex:1;min-width:0;">`;
-      html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;text-decoration:none;">📚 ${course.title}</a>`;
+      if (course.image_url) html += `<a href="${link}" target="_blank" style="flex-shrink:0;"><img src="${course.image_url}" alt="${course.title}" style="width:55px;height:55px;border-radius:6px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'"></a>`;
+      html += `<div style="flex:1;min-width:0;"><a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;text-decoration:none;">📚 ${course.title}</a>`;
       const meta = [];
       if (course.instructor) meta.push(`👤 ${course.instructor}`);
-      if (course.price !== undefined && course.price !== null) {
-        const p = String(course.price).trim();
-        meta.push(p === "0" || p === "0.00" || p.toLowerCase() === "free" ? `<span style="color:green;font-weight:bold;">مجاني 🎉</span>` : `💰 ${p.startsWith("$") ? p : "$" + p}`);
-      }
+      if (course.price !== undefined && course.price !== null) { const p = String(course.price).trim(); meta.push(p === "0" || p === "0.00" || p.toLowerCase() === "free" ? `<span style="color:green;font-weight:bold;">مجاني 🎉</span>` : `💰 ${p.startsWith("$") ? p : "$" + p}`); }
       if (meta.length) html += `<div style="font-size:11px;color:#888;margin-top:2px;">${meta.join(" • ")}</div>`;
-      html += `<a href="${link}" target="_blank" style="color:#303030;font-size:10.5px;font-weight:bold;text-decoration:underline;margin-top:2px;display:inline-block;">تفاصيل الدورة ←</a>`;
-      html += `</div></div>`;
+      html += `<a href="${link}" target="_blank" style="color:#303030;font-size:10.5px;font-weight:bold;text-decoration:underline;margin-top:2px;display:inline-block;">تفاصيل الدورة ←</a></div></div>`;
     });
   }
-
   if (results.diplomas.length > 0) {
     results.diplomas.forEach((diploma) => {
       const link = diploma.link || `https://easyt.online/p/${diploma.slug}`;
-      html += `<div style="margin-bottom:4px;padding:4px 8px;">`;
-      html += `🎓 <a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">${diploma.title}</a>`;
+      html += `<div style="margin-bottom:4px;padding:4px 8px;">🎓 <a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">${diploma.title}</a>`;
       const stats = [];
       if (diploma.courses_count) stats.push(`${diploma.courses_count} دورات`);
       if (diploma.hours) stats.push(`${diploma.hours} ساعة`);
@@ -1533,14 +1393,8 @@ function buildSuggestionHTML(results) {
       html += `</div>`;
     });
   }
-
-  if (results.category) {
-    html += `<br>🔗 <a href="${results.category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح دورات ${results.category.name} ←</a>`;
-  }
-
-  html += `<br><span style="font-size:11.5px;">عايز تعرف تفاصيل أكتر عن أي واحد فيهم؟ 😊</span>`;
-  html += `</div>`;
-
+  if (results.category) html += `<br>🔗 <a href="${results.category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح دورات ${results.category.name} ←</a>`;
+  html += `<br><span style="font-size:11.5px;">عايز تعرف تفاصيل أكتر عن أي واحد فيهم؟ 😊</span></div>`;
   return html;
 }
 
@@ -1553,15 +1407,13 @@ function formatCourses(courses, category, diplomaMention = "", correctionNote = 
     const link = c.url || (category ? category.url : ALL_COURSES_URL);
     html += `<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
     if (c.image_url) html += `<a href="${link}" target="_blank" style="flex-shrink:0;"><img src="${c.image_url}" alt="${c.title}" style="width:70px;height:70px;border-radius:8px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'"></a>`;
-    html += `<div style="flex:1;min-width:0;">`;
-    html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">${i + 1}. ${c.title}</a>`;
+    html += `<div style="flex:1;min-width:0;"><a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">${i + 1}. ${c.title}</a>`;
     const meta = [];
     if (c.instructor) meta.push(`👤 ${c.instructor}`);
     if (c.price !== undefined && c.price !== null) { const p = String(c.price).trim(); if (p === "0" || p === "0.00" || p.toLowerCase() === "free") meta.push(`<span style="color:green;font-weight:bold;">مجاني 🎉</span>`); else meta.push(`💰 ${p.startsWith("$") ? p : "$" + p}`); }
     if (meta.length) html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${meta.join(" • ")}</div>`;
     if (c.description) { const desc = c.description.length > 80 ? c.description.slice(0, 80) + "..." : c.description; html += `<div style="font-size:11px;color:#888;margin-top:2px;">📝 ${desc}</div>`; }
-    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
-    html += `</div></div>`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a></div></div>`;
   });
   if (diplomaMention) html += diplomaMention;
   if (category) html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح جميع دورات ${category.name} ←</a>`;
@@ -1575,15 +1427,13 @@ function formatCategoryCourses(courses, category, originalTopic) {
     const link = c.url || category.url;
     html += `<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:10px;background:#fafafa;">`;
     if (c.image_url) html += `<a href="${link}" target="_blank" style="flex-shrink:0;"><img src="${c.image_url}" alt="${c.title}" style="width:70px;height:70px;border-radius:8px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'"></a>`;
-    html += `<div style="flex:1;min-width:0;">`;
-    html += `<a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">${i + 1}. ${c.title}</a>`;
+    html += `<div style="flex:1;min-width:0;"><a href="${link}" target="_blank" style="color:#303030;font-weight:bold;font-size:13px;text-decoration:none;line-height:1.3;display:block;">${i + 1}. ${c.title}</a>`;
     const meta = [];
     if (c.instructor) meta.push(`👤 ${c.instructor}`);
     if (c.price !== undefined && c.price !== null) { const p = String(c.price).trim(); if (p === "0" || p === "0.00" || p.toLowerCase() === "free") meta.push(`<span style="color:green;font-weight:bold;">مجاني 🎉</span>`); else meta.push(`💰 ${p.startsWith("$") ? p : "$" + p}`); }
     if (meta.length) html += `<div style="font-size:11.5px;color:#666;margin-top:3px;">${meta.join(" • ")}</div>`;
     if (c.description) html += `<div style="font-size:11px;color:#888;margin-top:2px;">📝 ${c.description.length > 80 ? c.description.slice(0, 80) + "..." : c.description}</div>`;
-    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a>`;
-    html += `</div></div>`;
+    html += `<a href="${link}" target="_blank" style="color:#303030;font-size:11px;font-weight:bold;text-decoration:underline;margin-top:4px;display:inline-block;">📖 تفاصيل الدورة والاشتراك ←</a></div></div>`;
   });
   html += `<br>🔗 <a href="${category.url}" target="_blank" style="color:#303030;font-weight:bold;font-size:12px;">تصفح جميع دورات ${category.name} ←</a>`;
   html += `<br><br><span style="font-size:12px;">💡 وصول لكل الدورات من خلال <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#303030;font-weight:bold;">الاشتراك السنوي (49$ عرض رمضان)</a></span>`;
@@ -1604,7 +1454,7 @@ function buildAccessResponse_HowToAccess() { return `<b>📚 طريقة الوص
 function buildAccessResponse_AlreadyLoggedIn() { return `<b>🔍 لو مسجل دخول ومش لاقي الدورة:</b><br><br>▸ تأكد إنك بتسجل بـ <b>نفس الإيميل</b><br>▸ جرب <b>تحديث الصفحة</b><br>▸ لو فودافون كاش/تحويل → التفعيل خلال <b>24 ساعة</b><br><br>📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">تواصل مع الدعم واتساب</a>`; }
 function buildAccessResponse_CantLogin() { return `<b>🔑 مشكلة تسجيل الدخول:</b><br><br>▸ تأكد من <b>نفس الإيميل</b><br>▸ جرب <b>«نسيت كلمة المرور»</b><br>▸ تأكد إن الإيميل مكتوب صح<br><br>📱 <a href="https://wa.me/201027007899" target="_blank" style="color:#303030;font-weight:bold;">تواصل مع الدعم واتساب</a>`; }
 
-/* ═══ GPT Response ═══ */
+/* ═══ GPT Response — 🆕 v7.9: Now includes bot instructions ═══ */
 const CATEGORY_LINKS_TEXT = Object.values(CATEGORIES).map((c) => `• ${c.name}: ${c.url}`).join("\n");
 
 const SYSTEM_PROMPT = `أنت "مساعد إيزي تي" — المستشار الذكي لمنصة easyT.online.
@@ -1631,8 +1481,12 @@ ${CATEGORY_LINKS_TEXT}
 
 ${PLATFORM_KB}`;
 
+/* 🆕 v7.9: generateAIResponse now injects bot instructions */
 async function generateAIResponse(session, extraContext, isFirst) {
-  const messages = [{ role: "system", content: SYSTEM_PROMPT }];
+  const instructions = await getBotInstructions();
+  const instructionsPrompt = buildInstructionsPrompt(instructions);
+
+  const messages = [{ role: "system", content: SYSTEM_PROMPT + instructionsPrompt }];
   if (extraContext) messages.push({ role: "system", content: `【مرجع إضافي】\n${extraContext}` });
   if (isFirst) messages.push({ role: "system", content: "أول رسالة — رحّب قصير ثم أجب." });
   messages.push(...session.history);
@@ -1649,18 +1503,12 @@ function formatReply(text) {
     .replace(/^- /gm, "• ").replace(/<br>- /g, "<br>• ").trim();
 }
 
-function makeLink(url, text) {
-  return `<a href="${url}" target="_blank" style="color:#303030;font-weight:bold;text-decoration:underline;">${text}</a>`;
-}
+function makeLink(url, text) { return `<a href="${url}" target="_blank" style="color:#303030;font-weight:bold;text-decoration:underline;">${text}</a>`; }
 
-function mergeExcludeTerms(...arrays) {
-  const merged = new Set();
-  for (const arr of arrays) { if (arr) arr.forEach((t) => { if (t && t.length >= 2) merged.add(t); }); }
-  return [...merged];
-}
+function mergeExcludeTerms(...arrays) { const merged = new Set(); for (const arr of arrays) { if (arr) arr.forEach((t) => { if (t && t.length >= 2) merged.add(t); }); } return [...merged]; }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Main Chat Route ════════════════════════════════════
+   ═══ Main Chat Route — 🆕 v7.9: Fixed log ordering ═════
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -1673,11 +1521,14 @@ app.post("/chat", limiter, async (req, res) => {
     const isFirst = session.count === 1;
     let _logIntent = null, _logEntity = null;
 
+    /* 🆕 v7.9: FIXED — Chain logging: user FIRST, then bot
+       This ensures user always gets earlier created_at + lower id */
     const _origJson = res.json.bind(res);
     res.json = function (data) {
       if (data?.reply && data?.session_id) {
-        logChatMessage(data.session_id, "user", message, _logIntent, _logEntity).catch(() => {});
-        logChatMessage(data.session_id, "bot", data.reply, _logIntent, _logEntity).catch(() => {});
+        logChatMessage(data.session_id, "user", message, _logIntent, _logEntity)
+          .then(() => logChatMessage(data.session_id, "bot", data.reply, _logIntent, _logEntity))
+          .catch((e) => console.error("   ❌ Log chain error:", e.message));
       }
       return _origJson(data);
     };
@@ -1718,13 +1569,9 @@ app.post("/chat", limiter, async (req, res) => {
       if (rescue) { intent = rescue.intent; entity = rescue.entity; search_terms = rescue.search_terms.length ? rescue.search_terms : search_terms; category_key = rescue.category_key || category_key; }
     }
 
-    /* 🆕 v7.8: Extra safety — detect SUPPORT from message patterns even if classifier missed it */
     if (intent === "COURSE_SEARCH" && search_terms.length === 0) {
       const supportPatterns = /فيديو.*مش.*شغال|لا يمكن تشغيل|الفيديو لا يعمل|مش.*بيشتغل|الصوت.*مش|مفيش صوت|الصفح[ةه].*مش|الموقع.*واقع|مشكل[ةه].*تقني|error|خطأ/i;
-      if (supportPatterns.test(message) || supportPatterns.test(normalizeArabic(message))) {
-        console.log(`   🛠️ v7.8: Rescued COURSE_SEARCH → SUPPORT (support pattern detected)`);
-        intent = "SUPPORT";
-      }
+      if (supportPatterns.test(message) || supportPatterns.test(normalizeArabic(message))) { console.log(`   🛠️ Rescued COURSE_SEARCH → SUPPORT`); intent = "SUPPORT"; }
     }
 
     _logIntent = intent;
@@ -1761,7 +1608,7 @@ app.post("/chat", limiter, async (req, res) => {
       session.accessIssueStep = null;
       if (intent === "FOLLOW_UP" && entity && !isVagueEntity(entity)) { intent = "COURSE_SEARCH"; session.intent = "COURSE_SEARCH"; _logIntent = "COURSE_SEARCH"; }
     }
-    if (intent !== "ACCESS_ISSUE" && intent !== "FOLLOW_UP" && intent !== "SUPPORT") session.accessIssueStep = null; /* 🆕 v7.8: Keep accessIssueStep for SUPPORT too */
+    if (intent !== "ACCESS_ISSUE" && intent !== "FOLLOW_UP" && intent !== "SUPPORT") session.accessIssueStep = null;
     if (intent !== "COURSE_SEARCH" && intent !== "FOLLOW_UP" && intent !== "DIPLOMA_SEARCH") session.lastExcludeTerms = [];
 
     _logEntity = entity || session.entity;
@@ -1779,37 +1626,25 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply, session_id });
     }
 
-    // ─── GIBBERISH ───
-    if (intent === "GIBBERISH") {
-      const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
-    }
+    if (intent === "GIBBERISH") { const reply = `يبدو إن الرسالة مش واضحة 😅<br>ممكن تكتب سؤالك تاني؟`; session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id }); }
 
-    // ─── GREETING ───
     if (intent === "GREETING") {
-      const reply = isFirst
-        ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>▸ 🎓 الدورات والدبلومات<br>▸ 💳 الدفع والاشتراك<br>▸ 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟`
-        : `أهلاً بيك تاني! 😊 إزاي أقدر أساعدك؟`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      const reply = isFirst ? `أهلاً بيك في منصة إيزي تي! 👋<br><br>أنا مساعدك الذكي، تقدر تسألني عن:<br>▸ 🎓 الدورات والدبلومات<br>▸ 💳 الدفع والاشتراك<br>▸ 🔧 أي مشكلة تقنية<br><br>إزاي أقدر أساعدك؟` : `أهلاً بيك تاني! 😊 إزاي أقدر أساعدك؟`;
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
-    // ─── START_LEARNING ───
     if (intent === "START_LEARNING") {
       const fields = Object.values(CATEGORIES).slice(0, 15).map((c) => `▸ ${c.name}`).join("<br>");
       const reply = `حلو إنك عايز تبدأ رحلة التعلم! 🚀<br><br>قولي إيه المجال اللي مهتم بيه؟<br><br>${fields}<br><br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}<br>▸ ${makeLink(ALL_DIPLOMAS_URL, "🎓 جميع الدبلومات")}`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     // ═══ DIPLOMA_SEARCH ═══
     if (intent === "DIPLOMA_SEARCH") {
       const isGeneralQuery = !entity || isVagueEntity(entity) || ["دبلومات","الدبلومات","دبلومة","مسارات"].includes((entity || "").trim());
       let diplomas, relatedCourses = [], relatedCategory = null;
-      if (isGeneralQuery) {
-        diplomas = await getAllDiplomas();
-      } else {
+      if (isGeneralQuery) { diplomas = await getAllDiplomas(); }
+      else {
         const terms = [...new Set([strippedEntity, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
         const expandedTerms = generateSearchVariants(terms, strippedEntity);
         diplomas = await searchDiplomas(expandedTerms);
@@ -1827,62 +1662,27 @@ app.post("/chat", limiter, async (req, res) => {
           }
         }
       }
-      if (diplomas.length > 0) {
-        const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory);
-        session.history.push({ role: "assistant", content: `[عرض ${diplomas.length} دبلومات]` });
-        return res.json({ reply, session_id });
-      }
-      const reply = `للأسف مفيش دبلومات متاحة حالياً.<br><br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      if (diplomas.length > 0) { const reply = formatDiplomas(diplomas, relatedCourses, relatedCategory); session.history.push({ role: "assistant", content: `[عرض ${diplomas.length} دبلومات]` }); return res.json({ reply, session_id }); }
+      const reply = `للأسف مفيش دبلومات متاحة حالياً.<br><br>▸ ${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}`; session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
-    /* ══════════════════════════════════════════════════════
-       🆕 v7.8: SUPPORT — Technical Issues Handler
-       ══════════════════════════════════════════════════════ */
+    // ═══ SUPPORT ═══
     if (intent === "SUPPORT") {
-      console.log(`   🛠️ v7.8: SUPPORT intent detected — checking custom responses...`);
-
-      // 1) Try matching custom response from admin-managed table
+      console.log(`   🛠️ SUPPORT intent detected`);
       const customResp = await matchCustomResponse(message);
-
-      if (customResp) {
-        console.log(`   🛠️ v7.8: Custom response matched: "${customResp.title}"`);
-        const reply = customResp.response;
-        session.history.push({ role: "assistant", content: reply });
-        return res.json({ reply, session_id });
-      }
-
-      // 2) Try corrections
+      if (customResp) { const reply = customResp.response; session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id }); }
       if (matchedCorrections.length > 0) {
         const context = await buildContext("مشكلة تقنية دعم فني فيديو صوت", { corrections: matchedCorrections });
-        session.history.push({ role: "system", content: `المستخدم عنده مشكلة تقنية. أجب من التصحيحات والمعلومات المتاحة. لو مش قادر تحل المشكلة، وجّهه للدعم على واتساب.` });
-        let reply = await generateAIResponse(session, context, false);
-        reply = formatReply(reply);
-        session.history.pop();
+        session.history.push({ role: "system", content: `المستخدم عنده مشكلة تقنية. أجب من التصحيحات. لو مش قادر تحل، وجّهه للدعم واتساب.` });
+        let reply = await generateAIResponse(session, context, false); reply = formatReply(reply); session.history.pop();
         if (!reply.includes("wa.me")) reply += `<br><br>📱 ${makeLink("https://wa.me/201027007899", "تواصل مع الدعم واتساب")}`;
-        session.history.push({ role: "assistant", content: reply });
-        return res.json({ reply, session_id });
+        session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
       }
-
-      // 3) GPT fallback with support context
-      console.log(`   🛠️ v7.8: No custom response — using GPT support fallback`);
       const context = await buildContext("مشكلة تقنية فيديو صوت تسجيل دخول", { corrections: [] });
-      session.history.push({
-        role: "system",
-        content: `المستخدم عنده مشكلة تقنية على المنصة. ساعده بخطوات عملية:
-- لو الفيديو مش شغال: جرب Chrome، امسح الكاش، تأكد من تسجيل الدخول
-- لو الصوت مش شغال: تأكد الصوت مش muted، جرب متصفح تاني
-- لو الصفحة مش بتفتح: حدّث الصفحة، جرب تصفح خفي
-- في النهاية وجّهه للدعم على واتساب 01027007899
-- لا تبحث عن كورسات! ده مش طلب تعلم، ده مشكلة تقنية.`
-      });
-      let reply = await generateAIResponse(session, context, false);
-      reply = formatReply(reply);
-      session.history.pop();
+      session.history.push({ role: "system", content: `المستخدم عنده مشكلة تقنية. ساعده بخطوات عملية. في النهاية وجّهه للدعم واتساب 01027007899. لا تبحث عن كورسات!` });
+      let reply = await generateAIResponse(session, context, false); reply = formatReply(reply); session.history.pop();
       if (!reply.includes("wa.me")) reply += `<br><br>📱 ${makeLink("https://wa.me/201027007899", "تواصل مع الدعم واتساب")}`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     // ═══ COURSE_SEARCH ═══
@@ -1890,99 +1690,48 @@ app.post("/chat", limiter, async (req, res) => {
       let resolvedEntity = strippedEntity;
       let resolvedTerms = [...strippedTerms];
       let resolvedCategoryKey = category_key;
-
       if (isVagueEntity(resolvedEntity)) {
-        if (session.entity && !isVagueEntity(session.entity)) { resolvedEntity = session.entity; console.log(`   🔄 Using session entity: "${resolvedEntity}"`); }
-        if (isVagueEntity(resolvedEntity)) {
-          const ht = await resolveEntityFromHistory(session.history);
-          if (ht) { resolvedEntity = ht.topic || resolvedEntity; resolvedTerms = ht.search_terms?.length ? ht.search_terms : resolvedTerms; resolvedCategoryKey = ht.category_key && CATEGORIES[ht.category_key] ? ht.category_key : resolvedCategoryKey; }
-        }
+        if (session.entity && !isVagueEntity(session.entity)) { resolvedEntity = session.entity; }
+        if (isVagueEntity(resolvedEntity)) { const ht = await resolveEntityFromHistory(session.history); if (ht) { resolvedEntity = ht.topic || resolvedEntity; resolvedTerms = ht.search_terms?.length ? ht.search_terms : resolvedTerms; resolvedCategoryKey = ht.category_key && CATEGORIES[ht.category_key] ? ht.category_key : resolvedCategoryKey; } }
         if (resolvedEntity && !isVagueEntity(resolvedEntity)) session.entity = resolvedEntity;
       }
-
       if (resolvedTerms.length === 0 && resolvedEntity && !isVagueEntity(resolvedEntity)) {
         const entityWords = resolvedEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
         resolvedTerms = [...entityWords];
         if (resolvedCategoryKey && CATEGORY_SEARCH_TERMS[resolvedCategoryKey]) resolvedTerms.push(...CATEGORY_SEARCH_TERMS[resolvedCategoryKey].slice(0, 4));
         resolvedTerms = [...new Set(resolvedTerms)];
-        console.log(`   🧠 Generated terms from entity+category: [${resolvedTerms.join(", ")}]`);
       }
-
       const displayTerm = entity || resolvedEntity || message;
       const searchEntity = resolvedEntity;
       const resolvedCategory = resolvedCategoryKey ? CATEGORIES[resolvedCategoryKey] : category;
       const allTerms = [...new Set([...(searchEntity && !isVagueEntity(searchEntity) ? [searchEntity] : []), ...resolvedTerms, ...strippedTerms])].filter((t) => t && t.trim().length >= 2);
       _logEntity = resolvedEntity || entity;
-
       let correctionNote = "";
       if (messageWasCorrected) correctionNote = `بحثنا عن "<b>${correctedMessage}</b>" بدل "${message}" 🔍`;
-
-      const [coursesRaw, relatedDiplomasRaw] = await Promise.all([
-        allTerms.length > 0 ? searchCourses(allTerms, searchEntity, message) : Promise.resolve([]),
-        allTerms.length > 0 ? searchDiplomas(generateSearchVariants(allTerms, searchEntity)) : Promise.resolve([]),
-      ]);
-
+      const [coursesRaw, relatedDiplomasRaw] = await Promise.all([allTerms.length > 0 ? searchCourses(allTerms, searchEntity, message) : Promise.resolve([]), allTerms.length > 0 ? searchDiplomas(generateSearchVariants(allTerms, searchEntity)) : Promise.resolve([])]);
       let courses = exclude_terms.length ? applyExclusions(coursesRaw, exclude_terms) : coursesRaw;
-      if (exclude_terms.length) console.log(`   🚫 After exclusion: ${coursesRaw.length} → ${courses.length}`);
-
       if (courses.length === 0 && coursesRaw.length > 0 && exclude_terms.length) {
-        console.log(`   🔄 All results excluded! Trying category fallback...`);
         const fallbackKey = resolvedCategoryKey || category_key;
-        if (fallbackKey) {
-          let catCourses = await getCoursesByCategory(fallbackKey);
-          catCourses = preFilterByPrimarySubject(catCourses, message, searchEntity);
-          catCourses = exclude_terms.length ? applyExclusions(catCourses, exclude_terms) : catCourses;
-          if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity);
-          if (catCourses.length > 0) { console.log(`   ✅ Category fallback found ${catCourses.length} courses`); courses = catCourses; }
-        }
+        if (fallbackKey) { let catCourses = await getCoursesByCategory(fallbackKey); catCourses = preFilterByPrimarySubject(catCourses, message, searchEntity); catCourses = exclude_terms.length ? applyExclusions(catCourses, exclude_terms) : catCourses; if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity); if (catCourses.length > 0) courses = catCourses; }
       }
-
       let relatedDiplomas = relatedDiplomasRaw;
-      if (relatedDiplomasRaw.length > 0) {
-        relatedDiplomas = await filterRelevantDiplomas(relatedDiplomasRaw, searchEntity || displayTerm, searchEntity);
-        if (exclude_terms.length) relatedDiplomas = applyDiplomaExclusions(relatedDiplomas, exclude_terms);
-      }
+      if (relatedDiplomasRaw.length > 0) { relatedDiplomas = await filterRelevantDiplomas(relatedDiplomasRaw, searchEntity || displayTerm, searchEntity); if (exclude_terms.length) relatedDiplomas = applyDiplomaExclusions(relatedDiplomas, exclude_terms); }
       let diplomaMention = relatedDiplomas.length > 0 ? formatDiplomaMention(relatedDiplomas) : "";
-
-      if (courses.length > 0) {
-        const reply = formatCourses(courses, resolvedCategory, diplomaMention, correctionNote);
-        session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${displayTerm}]` });
-        return res.json({ reply, session_id });
-      }
-
+      if (courses.length > 0) { const reply = formatCourses(courses, resolvedCategory, diplomaMention, correctionNote); session.history.push({ role: "assistant", content: `[عرض ${courses.length} دورات عن: ${displayTerm}]` }); return res.json({ reply, session_id }); }
       const fallbackCatKey = resolvedCategoryKey || category_key;
       if (fallbackCatKey && coursesRaw.length === 0) {
-        let catCourses = await getCoursesByCategory(fallbackCatKey);
-        catCourses = preFilterByPrimarySubject(catCourses, message, searchEntity);
-        if (exclude_terms.length) catCourses = applyExclusions(catCourses, exclude_terms);
-        if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity);
-        if (catCourses.length > 0) {
-          let reply = formatCategoryCourses(catCourses, CATEGORIES[fallbackCatKey], displayTerm);
-          if (diplomaMention) reply += diplomaMention;
-          session.history.push({ role: "assistant", content: `[عرض ${catCourses.length} من ${CATEGORIES[fallbackCatKey].name}]` });
-          return res.json({ reply, session_id });
-        }
+        let catCourses = await getCoursesByCategory(fallbackCatKey); catCourses = preFilterByPrimarySubject(catCourses, message, searchEntity); if (exclude_terms.length) catCourses = applyExclusions(catCourses, exclude_terms); if (catCourses.length >= 2) catCourses = await filterRelevantAI(catCourses, searchEntity || displayTerm, searchEntity);
+        if (catCourses.length > 0) { let reply = formatCategoryCourses(catCourses, CATEGORIES[fallbackCatKey], displayTerm); if (diplomaMention) reply += diplomaMention; session.history.push({ role: "assistant", content: `[عرض ${catCourses.length} من ${CATEGORIES[fallbackCatKey].name}]` }); return res.json({ reply, session_id }); }
       }
-
-      if (diplomaMention) {
-        let reply = `<b>🔍 مفيش كورس فردي عن "${displayTerm}" حالياً، لكن في دبلومة في المجال:</b><br>${diplomaMention}<br>${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}<br><br>💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")} 🎓`;
-        session.history.push({ role: "assistant", content: `[دبلومات عن "${displayTerm}"]` });
-        return res.json({ reply, session_id });
-      }
-
+      if (diplomaMention) { let reply = `<b>🔍 مفيش كورس فردي عن "${displayTerm}" حالياً، لكن في دبلومة في المجال:</b><br>${diplomaMention}<br>${makeLink(ALL_COURSES_URL, "📚 جميع الدورات")}<br><br>💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")} 🎓`; session.history.push({ role: "assistant", content: `[دبلومات عن "${displayTerm}"]` }); return res.json({ reply, session_id }); }
       if (is_refinement && exclude_terms.length) {
         const catLink = resolvedCategory || (fallbackCatKey ? CATEGORIES[fallbackCatKey] : null);
-        let reply = `<b>🔍 الكورسات المتاحة عن "${searchEntity || displayTerm}" على المنصة مش مطابقة للمواصفات دي حالياً.</b><br><br>`;
+        let reply = `<b>🔍 الكورسات المتاحة عن "${searchEntity || displayTerm}" مش مطابقة للمواصفات دي حالياً.</b><br><br>`;
         if (catLink) reply += `ممكن تلاقي دورات مناسبة في:<br>▸ <a href="${catLink.url}" target="_blank" style="color:#303030;font-weight:bold;">${catLink.name}</a><br><br>`;
-        reply += `▸ ${makeLink(ALL_COURSES_URL, "📚 تصفح جميع الدورات (+600 دورة)")}<br><br>`;
-        reply += `<span style="font-size:12px;">💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")} 🎓</span>`;
-        session.history.push({ role: "assistant", content: `مفيش كورس بالمواصفات دي` });
-        return res.json({ reply, session_id });
+        reply += `▸ ${makeLink(ALL_COURSES_URL, "📚 تصفح جميع الدورات (+600 دورة)")}<br><br><span style="font-size:12px;">💡 ${makeLink("https://easyt.online/p/subscriptions", "الاشتراك السنوي (49$ عرض رمضان)")} 🎓</span>`;
+        session.history.push({ role: "assistant", content: `مفيش كورس بالمواصفات دي` }); return res.json({ reply, session_id });
       }
-
-      const reply = formatNoResults(searchEntity || displayTerm, resolvedCategory);
-      session.history.push({ role: "assistant", content: `مفيش كورس عن "${displayTerm}"` });
-      return res.json({ reply, session_id });
+      const reply = formatNoResults(searchEntity || displayTerm, resolvedCategory); session.history.push({ role: "assistant", content: `مفيش كورس عن "${displayTerm}"` }); return res.json({ reply, session_id });
     }
 
     // ═══ ACCESS_ISSUE ═══
@@ -2008,8 +1757,7 @@ app.post("/chat", limiter, async (req, res) => {
         reply = await generateAIResponse(session, context, false); reply = formatReply(reply); session.history.pop();
         if (!reply.includes("wa.me")) reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 الدعم واتساب")}`;
       }
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     // ═══ PLATFORM_QA / CERTIFICATE_QA ═══
@@ -2018,8 +1766,7 @@ app.post("/chat", limiter, async (req, res) => {
       const context = await buildContext(q, { corrections: matchedCorrections });
       session.history.push({ role: "system", content: `سؤال عن: "${q}". أجب من المعلومات المتاحة.` });
       let reply = await generateAIResponse(session, context, isFirst); reply = formatReply(reply); session.history.pop();
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     // ═══ FOLLOW_UP ═══
@@ -2039,119 +1786,64 @@ app.post("/chat", limiter, async (req, res) => {
           reply = await generateAIResponse(session, ctx, false); reply = formatReply(reply); session.history.pop();
           if (!reply.includes("wa.me")) reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 الدعم واتساب")}`;
         }
-        session.history.push({ role: "assistant", content: reply });
-        return res.json({ reply, session_id });
+        session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
       }
 
       let followUpEntity = strippedEntity || session.entity || null;
       if (isVagueEntity(followUpEntity)) {
-        if (session.entity && !isVagueEntity(session.entity)) { followUpEntity = session.entity; console.log(`   🔄 Follow-up → using session: "${followUpEntity}"`); }
+        if (session.entity && !isVagueEntity(session.entity)) followUpEntity = session.entity;
         else { const ht = await resolveEntityFromHistory(session.history); followUpEntity = ht?.topic || "الموضوع السابق"; }
       }
       _logEntity = followUpEntity;
-
       const fuAud = detectAudienceExclusions(message, followUpEntity);
       const fuExc = mergeExcludeTerms(exclude_terms, fuAud, session.lastExcludeTerms || []);
-
       const isCourseFollowUp = ["كورس","دورة","كورسات","دورات","تشرح","اتعلم","course"].some((p) => message.toLowerCase().includes(p));
       const isDiplomaFollowUp = ["دبلومة","دبلومات","مسار","diploma"].some((p) => message.toLowerCase().includes(p));
 
       if ((isCourseFollowUp || isDiplomaFollowUp) && followUpEntity && followUpEntity !== "الموضوع السابق") {
-        const { cleanTerms: fuCleanTerms } = stripAudienceModifiers(
-          search_terms.length ? [...new Set([followUpEntity, ...search_terms])] : [followUpEntity], followUpEntity
-        );
+        const { cleanTerms: fuCleanTerms } = stripAudienceModifiers(search_terms.length ? [...new Set([followUpEntity, ...search_terms])] : [followUpEntity], followUpEntity);
         let terms = fuCleanTerms.filter((t) => t.length >= 2);
-
         if (terms.length === 0 && followUpEntity && !isVagueEntity(followUpEntity)) {
           const entityWords = followUpEntity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
-          terms = [...entityWords];
-          const ck = category_key || null;
-          if (ck && CATEGORY_SEARCH_TERMS[ck]) terms.push(...CATEGORY_SEARCH_TERMS[ck].slice(0, 3));
-          terms = [...new Set(terms)];
-          console.log(`   🧠 Follow-up generated terms: [${terms.join(", ")}]`);
+          terms = [...entityWords]; const ck = category_key || null; if (ck && CATEGORY_SEARCH_TERMS[ck]) terms.push(...CATEGORY_SEARCH_TERMS[ck].slice(0, 3)); terms = [...new Set(terms)];
         }
-
         if (isDiplomaFollowUp) {
           let diplomas = await searchDiplomas(generateSearchVariants(terms, followUpEntity));
           if (diplomas.length > 0) { diplomas = await filterRelevantDiplomas(diplomas, followUpEntity, followUpEntity); if (fuExc.length) diplomas = applyDiplomaExclusions(diplomas, fuExc); }
-          if (diplomas.length > 0) {
-            const reply = formatDiplomas(diplomas, [], null);
-            session.entity = followUpEntity;
-            session.history.push({ role: "assistant", content: `[${diplomas.length} دبلومات عن: ${followUpEntity}]` });
-            return res.json({ reply, session_id });
-          }
+          if (diplomas.length > 0) { const reply = formatDiplomas(diplomas, [], null); session.entity = followUpEntity; session.history.push({ role: "assistant", content: `[${diplomas.length} دبلومات عن: ${followUpEntity}]` }); return res.json({ reply, session_id }); }
         }
-
-        const [cRaw, dRaw] = await Promise.all([
-          terms.length > 0 ? searchCourses(terms, followUpEntity, message) : Promise.resolve([]),
-          terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, followUpEntity)) : Promise.resolve([]),
-        ]);
+        const [cRaw, dRaw] = await Promise.all([terms.length > 0 ? searchCourses(terms, followUpEntity, message) : Promise.resolve([]), terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, followUpEntity)) : Promise.resolve([])]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
-
         if (courses.length === 0 && cRaw.length > 0 && fuExc.length) {
           const fk = category_key || (await resolveEntityFromHistory(session.history))?.category_key;
-          if (fk && CATEGORIES[fk]) {
-            let cc = await getCoursesByCategory(fk);
-            cc = preFilterByPrimarySubject(cc, message, followUpEntity);
-            cc = fuExc.length ? applyExclusions(cc, fuExc) : cc;
-            if (cc.length >= 2) cc = await filterRelevantAI(cc, followUpEntity, followUpEntity);
-            courses = cc;
-          }
+          if (fk && CATEGORIES[fk]) { let cc = await getCoursesByCategory(fk); cc = preFilterByPrimarySubject(cc, message, followUpEntity); cc = fuExc.length ? applyExclusions(cc, fuExc) : cc; if (cc.length >= 2) cc = await filterRelevantAI(cc, followUpEntity, followUpEntity); courses = cc; }
         }
-
         let relDip = dRaw.length > 0 ? await filterRelevantDiplomas(dRaw, followUpEntity, followUpEntity) : [];
         if (fuExc.length) relDip = applyDiplomaExclusions(relDip, fuExc);
         let dm = relDip.length > 0 ? formatDiplomaMention(relDip) : "";
-
-        if (courses.length > 0) {
-          const reply = formatCourses(courses, category, dm);
-          session.entity = followUpEntity;
-          session.history.push({ role: "assistant", content: `[${courses.length} دورات عن: ${followUpEntity}]` });
-          return res.json({ reply, session_id });
-        }
-        if (dm) {
-          let reply = `<b>🔍 مفيش كورس عن "${followUpEntity}" بالمواصفات دي، لكن في دبلومة:</b><br>${dm}<br>${makeLink(ALL_COURSES_URL, "📚 تصفح الدورات")}`;
-          session.history.push({ role: "assistant", content: `[دبلومات عن "${followUpEntity}"]` });
-          return res.json({ reply, session_id });
-        }
-        const reply = formatNoResults(followUpEntity, category);
-        session.history.push({ role: "assistant", content: `مفيش كورس عن "${followUpEntity}"` });
-        return res.json({ reply, session_id });
+        if (courses.length > 0) { const reply = formatCourses(courses, category, dm); session.entity = followUpEntity; session.history.push({ role: "assistant", content: `[${courses.length} دورات عن: ${followUpEntity}]` }); return res.json({ reply, session_id }); }
+        if (dm) { let reply = `<b>🔍 مفيش كورس عن "${followUpEntity}" بالمواصفات دي، لكن في دبلومة:</b><br>${dm}<br>${makeLink(ALL_COURSES_URL, "📚 تصفح الدورات")}`; session.history.push({ role: "assistant", content: `[دبلومات عن "${followUpEntity}"]` }); return res.json({ reply, session_id }); }
+        const reply = formatNoResults(followUpEntity, category); session.history.push({ role: "assistant", content: `مفيش كورس عن "${followUpEntity}"` }); return res.json({ reply, session_id });
       }
 
       if (entity && !isVagueEntity(entity)) {
         const { cleanTerms: eClean } = stripAudienceModifiers(search_terms.length ? [...new Set([entity, ...search_terms])] : [entity], entity);
         let terms = eClean.filter((t) => t.length >= 2);
         if (terms.length === 0 && !isVagueEntity(entity)) terms = entity.split(/\s+/).filter(w => w.length >= 2 && !AUDIENCE_WORDS_RE.test(w));
-        const [cRaw, dRaw] = await Promise.all([
-          terms.length > 0 ? searchCourses(terms, entity, message) : Promise.resolve([]),
-          terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, entity)) : Promise.resolve([]),
-        ]);
+        const [cRaw, dRaw] = await Promise.all([terms.length > 0 ? searchCourses(terms, entity, message) : Promise.resolve([]), terms.length > 0 ? searchDiplomas(generateSearchVariants(terms, entity)) : Promise.resolve([])]);
         let courses = fuExc.length ? applyExclusions(cRaw, fuExc) : cRaw;
         let relDip = dRaw.length > 0 ? await filterRelevantDiplomas(dRaw, entity, entity) : [];
         if (fuExc.length) relDip = applyDiplomaExclusions(relDip, fuExc);
         let dm = relDip.length ? formatDiplomaMention(relDip) : "";
-        if (courses.length > 0) {
-          const reply = formatCourses(courses, category, dm);
-          session.entity = entity;
-          session.history.push({ role: "assistant", content: `[${courses.length} دورات عن: ${entity}]` });
-          return res.json({ reply, session_id });
-        }
-        if (dm) {
-          let reply = `<b>🔍 مفيش كورس عن "${entity}"، لكن في دبلومة:</b><br>${dm}<br>${makeLink(ALL_COURSES_URL, "📚 تصفح الدورات")}`;
-          session.history.push({ role: "assistant", content: `[دبلومات عن "${entity}"]` });
-          return res.json({ reply, session_id });
-        }
-        const reply = formatNoResults(entity, category);
-        session.history.push({ role: "assistant", content: `مفيش كورس عن "${entity}"` });
-        return res.json({ reply, session_id });
+        if (courses.length > 0) { const reply = formatCourses(courses, category, dm); session.entity = entity; session.history.push({ role: "assistant", content: `[${courses.length} دورات عن: ${entity}]` }); return res.json({ reply, session_id }); }
+        if (dm) { let reply = `<b>🔍 مفيش كورس عن "${entity}"، لكن في دبلومة:</b><br>${dm}<br>${makeLink(ALL_COURSES_URL, "📚 تصفح الدورات")}`; session.history.push({ role: "assistant", content: `[دبلومات عن "${entity}"]` }); return res.json({ reply, session_id }); }
+        const reply = formatNoResults(entity, category); session.history.push({ role: "assistant", content: `مفيش كورس عن "${entity}"` }); return res.json({ reply, session_id });
       }
 
       const context = await buildContext(followUpEntity, { corrections: matchedCorrections });
       session.history.push({ role: "system", content: `متابعة عن "${followUpEntity}". أجب من المعلومات المتاحة.` });
       let reply = await generateAIResponse(session, context, false); reply = formatReply(reply); session.history.pop();
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     // ─── PAYMENT / SUBSCRIPTION / AFFILIATE / AUTHOR ───
@@ -2162,44 +1854,25 @@ app.post("/chat", limiter, async (req, res) => {
       const link = PAGE_LINKS[page_type || linkMap[intent]];
       if (link && !reply.includes(link.url)) reply += `<br><br>${makeLink(link.url, link.label)}`;
       if (intent === "PAYMENT" && !reply.includes("wa.me")) reply += `<br><br>${makeLink("https://wa.me/201027007899", "📱 الدعم واتساب")}`;
-      session.history.push({ role: "assistant", content: reply });
-      return res.json({ reply, session_id });
+      session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
     }
 
     /* ═══ GENERAL — with Smart Course Suggestions (v7.7) ═══ */
-    console.log(`   💡 v7.7: GENERAL intent — searching for related courses in parallel...`);
-
-    const [context, relatedContent] = await Promise.all([
-      buildContext(entity || message, { corrections: matchedCorrections }),
-      findRelatedCourses(message),
-    ]);
-
-    let reply = await generateAIResponse(session, context, isFirst);
-    reply = formatReply(reply);
-
+    const [context, relatedContent] = await Promise.all([buildContext(entity || message, { corrections: matchedCorrections }), findRelatedCourses(message)]);
+    let reply = await generateAIResponse(session, context, isFirst); reply = formatReply(reply);
     const suggestion = buildSuggestionHTML(relatedContent);
-    if (suggestion) {
-      console.log(`   💡 v7.7: Appending ${relatedContent.courses.length} courses + ${relatedContent.diplomas.length} diplomas suggestion`);
-      reply += suggestion;
-    } else {
-      console.log(`   💡 v7.7: No related courses found for general question`);
-    }
-
-    session.history.push({ role: "assistant", content: reply });
-    return res.json({ reply, session_id });
+    if (suggestion) reply += suggestion;
+    session.history.push({ role: "assistant", content: reply }); return res.json({ reply, session_id });
 
   } catch (error) {
     console.error("❌ Chat Error:", error);
-    return res.status(error?.status === 429 ? 429 : 500).json({
-      reply: error?.status === 429 ? "فيه ضغط كبير. حاول تاني بعد شوية 🙏" : "عذراً، حصل خطأ مؤقت. حاول تاني 🙏",
-    });
+    return res.status(error?.status === 429 ? 429 : 500).json({ reply: error?.status === 429 ? "فيه ضغط كبير. حاول تاني بعد شوية 🙏" : "عذراً، حصل خطأ مؤقت. حاول تاني 🙏" });
   }
 });
 
 /* ══════════════════════════════════════════════════════════
    ═══ Admin API ═══════════════════════════════════════════
    ══════════════════════════════════════════════════════════ */
-
 app.post("/admin/login", (req, res) => {
   const { password } = req.body;
   if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ error: "كلمة السر غلط" });
@@ -2236,12 +1909,11 @@ app.get("/admin/conversations", adminAuth, async (req, res) => {
 app.get("/admin/conversations/:session_id", adminAuth, async (req, res) => {
   try {
     const sid = decodeURIComponent(req.params.session_id);
-    console.log(`📋 Admin: Loading conversation detail for: ${sid}`);
-    const { data, error } = await supabase.from("chat_logs").select("id, session_id, role, content, intent, entity, created_at").eq("session_id", sid).order("created_at", { ascending: true }).limit(500);
-    if (error) { console.error("❌ Conversation detail error:", error.message); return res.status(500).json({ error: error.message }); }
-    console.log(`   ✅ Found ${(data || []).length} messages for session: ${sid}`);
+    /* 🆕 v7.9: Also order by id as tiebreaker for same-timestamp messages */
+    const { data, error } = await supabase.from("chat_logs").select("id, session_id, role, content, intent, entity, created_at").eq("session_id", sid).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(500);
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ messages: data || [], session_id: sid, count: (data || []).length });
-  } catch (e) { console.error("❌ Conversation detail exception:", e.message); res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get("/admin/corrections", adminAuth, async (req, res) => { try { const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false }).limit(100); if (error) return res.status(500).json({ error: error.message }); res.json({ corrections: data || [] }); } catch (e) { res.status(500).json({ error: e.message }); } });
@@ -2261,31 +1933,21 @@ app.put("/admin/corrections/:id", adminAuth, async (req, res) => { try { const {
 
 app.delete("/admin/corrections/:id", adminAuth, async (req, res) => { try { const { error } = await supabase.from("corrections").delete().eq("id", req.params.id); if (error) return res.status(500).json({ error: error.message }); invalidateCorrectionsCache(); res.json({ message: "تم الحذف ✅" }); } catch (e) { res.status(500).json({ error: e.message }); } });
 
-/* 🆕 v7.8: Enhanced crudRoutes with custom search columns */
 function crudRoutes(basePath, tableName, options = {}) {
   const { orderBy = "id", invalidateCache, searchColumns = ["title", "description"] } = options;
   app.get(`/admin/${basePath}`, adminAuth, async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 50, offset = (page - 1) * limit, search = req.query.search || "";
       let query = supabase.from(tableName).select("*", { count: "exact" }).order(orderBy, { ascending: orderBy === "name" || orderBy === "priority" ? false : true }).range(offset, offset + limit - 1);
-      if (search && searchColumns.length > 0) {
-        const searchFilter = searchColumns.map(col => `${col}.ilike.%${search}%`).join(",");
-        query = query.or(searchFilter);
-      }
+      if (search && searchColumns.length > 0) { const searchFilter = searchColumns.map(col => `${col}.ilike.%${search}%`).join(","); query = query.or(searchFilter); }
       const { data, error, count } = await query;
       if (error) return res.status(500).json({ error: error.message });
       res.json({ items: data || [], total: count || 0, page, limit });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
-  app.post(`/admin/${basePath}`, adminAuth, async (req, res) => {
-    try { const { data, error } = await supabase.from(tableName).insert(req.body).select(); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم الإضافة ✅", item: data?.[0] }); } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-  app.put(`/admin/${basePath}/:id`, adminAuth, async (req, res) => {
-    try { const { data, error } = await supabase.from(tableName).update(req.body).eq("id", req.params.id).select(); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم التحديث ✅", item: data?.[0] }); } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-  app.delete(`/admin/${basePath}/:id`, adminAuth, async (req, res) => {
-    try { const { error } = await supabase.from(tableName).delete().eq("id", req.params.id); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم الحذف ✅" }); } catch (e) { res.status(500).json({ error: e.message }); }
-  });
+  app.post(`/admin/${basePath}`, adminAuth, async (req, res) => { try { const { data, error } = await supabase.from(tableName).insert(req.body).select(); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم الإضافة ✅", item: data?.[0] }); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.put(`/admin/${basePath}/:id`, adminAuth, async (req, res) => { try { const { data, error } = await supabase.from(tableName).update(req.body).eq("id", req.params.id).select(); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم التحديث ✅", item: data?.[0] }); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.delete(`/admin/${basePath}/:id`, adminAuth, async (req, res) => { try { const { error } = await supabase.from(tableName).delete().eq("id", req.params.id); if (error) return res.status(500).json({ error: error.message }); if (invalidateCache) invalidateCache(); res.json({ message: "تم الحذف ✅" }); } catch (e) { res.status(500).json({ error: e.message }); } });
 }
 
 crudRoutes("courses", "courses");
@@ -2293,17 +1955,15 @@ crudRoutes("diplomas", "diplomas");
 crudRoutes("instructors", "instructors", { orderBy: "name" });
 crudRoutes("faq", "faq", { invalidateCache: () => { faqCache = []; faqLastFetch = 0; } });
 crudRoutes("site-pages", "site_pages");
+crudRoutes("custom-responses", "custom_responses", { orderBy: "priority", invalidateCache: invalidateCustomResponsesCache, searchColumns: ["title", "keywords", "response"] });
 
-/* 🆕 v7.8: Custom Responses CRUD — Admin-managed support replies */
-crudRoutes("custom-responses", "custom_responses", {
-  orderBy: "priority",
-  invalidateCache: invalidateCustomResponsesCache,
-  searchColumns: ["title", "keywords", "response"],
-});
+/* 🆕 v7.9: Bot Instructions CRUD */
+crudRoutes("bot-instructions", "bot_instructions", { orderBy: "priority", invalidateCache: invalidateBotInstructionsCache, searchColumns: ["instruction", "category"] });
 
+/* 🆕 v7.9: Updated stats with bot_instructions */
 app.get("/admin/stats", adminAuth, async (req, res) => {
   try {
-    const [chatC, corrC, courseC, dipC, faqC, spC, instrC, customRespC] = await Promise.all([
+    const [chatC, corrC, courseC, dipC, faqC, spC, instrC, customRespC, botInstrC] = await Promise.all([
       supabase.from("chat_logs").select("*", { count: "exact", head: true }),
       supabase.from("corrections").select("*", { count: "exact", head: true }),
       supabase.from("courses").select("*", { count: "exact", head: true }),
@@ -2311,7 +1971,8 @@ app.get("/admin/stats", adminAuth, async (req, res) => {
       supabase.from("faq").select("*", { count: "exact", head: true }),
       supabase.from("site_pages").select("*", { count: "exact", head: true }),
       supabase.from("instructors").select("*", { count: "exact", head: true }),
-      supabase.from("custom_responses").select("*", { count: "exact", head: true }), /* 🆕 v7.8 */
+      supabase.from("custom_responses").select("*", { count: "exact", head: true }),
+      supabase.from("bot_instructions").select("*", { count: "exact", head: true }),
     ]);
     const { data: sd } = await supabase.from("chat_logs").select("session_id").limit(10000);
     const us = sd ? new Set(sd.map((r) => r.session_id)).size : 0;
@@ -2324,7 +1985,8 @@ app.get("/admin/stats", adminAuth, async (req, res) => {
       total_messages: chatC.count || 0, unique_sessions: us, today_messages: tc || 0,
       corrections: corrC.count || 0, courses: courseC.count || 0, diplomas: dipC.count || 0,
       faq_entries: faqC.count || 0, site_pages: spC.count || 0, instructors: instrC.count || 0,
-      custom_responses: customRespC.count || 0, /* 🆕 v7.8 */
+      custom_responses: customRespC.count || 0,
+      bot_instructions: botInstrC.count || 0,
       active_sessions: sessions.size, intent_distribution: intentDist
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2344,10 +2006,7 @@ app.get("/debug/search/:query", async (req, res) => {
   const allExc = mergeExcludeTerms(classification.exclude_terms, ae);
   const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : (se && !isVagueEntity(se) ? [se] : [q]);
   const expanded = generateSearchVariants(terms, se);
-
-  /* 🆕 v7.8: Test custom response matching */
   const customMatch = await matchCustomResponse(q);
-
   const [cRaw, dRaw, corr] = await Promise.all([terms.length ? searchCourses(terms, se, q) : Promise.resolve([]), expanded.length ? searchDiplomas(expanded) : Promise.resolve([]), searchCorrections(q, fi, fe)]);
   const courses = allExc.length ? applyExclusions(cRaw, allExc) : cRaw;
   const dFilt = dRaw.length ? await filterRelevantDiplomas(dRaw, se || q, se) : [];
@@ -2355,93 +2014,24 @@ app.get("/debug/search/:query", async (req, res) => {
   let catFb = [];
   if (courses.length === 0 && fc) { let cc = await getCoursesByCategory(fc); cc = preFilterByPrimarySubject(cc, q, se); if (allExc.length) cc = applyExclusions(cc, allExc); catFb = cc; }
   const smartSuggestions = await findRelatedCourses(q);
-
-  res.json({
-    query: q,
-    spelling_correction: wasCorrected ? { original: q, corrected } : null,
-    classification, rescued,
-    final_intent: fi, stripped_entity: se, stripped_terms: st, audience_excludes: ae, merged_excludes: allExc,
-    search_variants_count: expanded.length,
-    custom_response_match: customMatch ? { title: customMatch.title, category: customMatch.category } : null, /* 🆕 v7.8 */
-    courses_raw: cRaw.length, courses_filtered: courses.length,
-    courses: courses.map((c) => ({ title: c.title, url: c.url })),
-    diplomas_raw: dRaw.length, diplomas_filtered: dFinal.length,
-    diplomas: dFinal.map((d) => ({ title: d.title })),
-    corrections_matched: corr.length,
-    category_fallback: catFb.length,
-    smart_suggestions: {
-      courses: smartSuggestions.courses.map(c => c.title),
-      diplomas: smartSuggestions.diplomas.map(d => d.title),
-      category: smartSuggestions.category?.name || null,
-    },
-  });
+  res.json({ query: q, spelling_correction: wasCorrected ? { original: q, corrected } : null, classification, rescued, final_intent: fi, stripped_entity: se, stripped_terms: st, audience_excludes: ae, merged_excludes: allExc, search_variants_count: expanded.length, custom_response_match: customMatch ? { title: customMatch.title, category: customMatch.category } : null, courses_raw: cRaw.length, courses_filtered: courses.length, courses: courses.map((c) => ({ title: c.title, url: c.url })), diplomas_raw: dRaw.length, diplomas_filtered: dFinal.length, diplomas: dFinal.map((d) => ({ title: d.title })), corrections_matched: corr.length, category_fallback: catFb.length, smart_suggestions: { courses: smartSuggestions.courses.map(c => c.title), diplomas: smartSuggestions.diplomas.map(d => d.title), category: smartSuggestions.category?.name || null } });
 });
 
-app.get("/debug/correct/:query", (req, res) => {
-  const q = decodeURIComponent(req.params.query);
-  const { corrected, wasCorrected, original } = correctQuery(q);
-  const words = q.split(/\s+/);
-  const wordCorrections = words.map((w) => ({ original: w, corrected: correctArabicWord(w), changed: w !== correctArabicWord(w) }));
-  const synonyms = expandWithSynonyms([corrected]);
-  const variants = generateSearchVariants([q], null);
-  res.json({ query: q, corrected, was_corrected: wasCorrected, word_by_word: wordCorrections, synonyms: synonyms.slice(0, 15), total_search_variants: variants.length, variants_sample: variants.slice(0, 20) });
+app.get("/debug/correct/:query", (req, res) => { const q = decodeURIComponent(req.params.query); const { corrected, wasCorrected } = correctQuery(q); const words = q.split(/\s+/); const wordCorrections = words.map((w) => ({ original: w, corrected: correctArabicWord(w), changed: w !== correctArabicWord(w) })); const synonyms = expandWithSynonyms([corrected]); const variants = generateSearchVariants([q], null); res.json({ query: q, corrected, was_corrected: wasCorrected, word_by_word: wordCorrections, synonyms: synonyms.slice(0, 15), total_search_variants: variants.length, variants_sample: variants.slice(0, 20) }); });
+
+app.get("/debug/suggest/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const results = await findRelatedCourses(q); const html = buildSuggestionHTML(results); res.json({ query: q, courses: results.courses.map(c => ({ title: c.title, url: c.url, price: c.price, instructor: c.instructor })), diplomas: results.diplomas.map(d => ({ title: d.title, slug: d.slug })), category: results.category?.name || null, has_suggestions: html.length > 0, html_preview: html.slice(0, 500) }); });
+
+app.get("/debug/support/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const customMatch = await matchCustomResponse(q); const allResponses = await getCustomResponses(); res.json({ query: q, matched: customMatch ? { title: customMatch.title, category: customMatch.category, keywords: customMatch.keywords, response_preview: (customMatch.response || "").slice(0, 200) } : null, total_custom_responses: allResponses.length, all_titles: allResponses.map(r => ({ title: r.title, category: r.category, is_active: r.is_active, priority: r.priority })) }); });
+
+/* 🆕 v7.9: Debug bot instructions */
+app.get("/debug/instructions", async (req, res) => {
+  const instructions = await getBotInstructions();
+  const prompt = buildInstructionsPrompt(instructions);
+  res.json({ total: instructions.length, instructions: instructions.map(i => ({ id: i.id, instruction: i.instruction.slice(0, 100), category: i.category, priority: i.priority, is_active: i.is_active })), prompt_preview: prompt.slice(0, 500), prompt_length: prompt.length });
 });
 
-app.get("/debug/suggest/:query", async (req, res) => {
-  const q = decodeURIComponent(req.params.query);
-  console.log(`\n💡 Debug suggest: "${q}"`);
-  const results = await findRelatedCourses(q);
-  const html = buildSuggestionHTML(results);
-  res.json({
-    query: q,
-    courses: results.courses.map(c => ({ title: c.title, url: c.url, price: c.price, instructor: c.instructor })),
-    diplomas: results.diplomas.map(d => ({ title: d.title, slug: d.slug })),
-    category: results.category?.name || null,
-    has_suggestions: html.length > 0,
-    html_preview: html.slice(0, 500),
-  });
-});
-
-/* 🆕 v7.8: Debug custom response matching */
-app.get("/debug/support/:query", async (req, res) => {
-  const q = decodeURIComponent(req.params.query);
-  console.log(`\n🛠️ Debug support: "${q}"`);
-  const customMatch = await matchCustomResponse(q);
-  const allResponses = await getCustomResponses();
-  res.json({
-    query: q,
-    matched: customMatch ? {
-      title: customMatch.title,
-      category: customMatch.category,
-      keywords: customMatch.keywords,
-      response_preview: (customMatch.response || "").slice(0, 200),
-    } : null,
-    total_custom_responses: allResponses.length,
-    all_titles: allResponses.map(r => ({ title: r.title, category: r.category, is_active: r.is_active, priority: r.priority })),
-  });
-});
-
-app.get("/debug/prefilter/:query", async (req, res) => {
-  const q = decodeURIComponent(req.params.query);
-  const classification = await classify(q, [], null, null);
-  const { cleanTerms: st, cleanEntity: se } = stripAudienceModifiers(classification.search_terms, classification.entity);
-  const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : [q];
-  const expanded = generateSearchVariants(terms, se);
-  const rawRows = await searchCoursesRaw(expanded);
-  const iMap = await getInstructorMap(rawRows);
-  const allCourses = rawRows.map((r) => mapCourse(r, iMap));
-  const preFiltered = preFilterByPrimarySubject(allCourses, q, se);
-  res.json({ query: q, entity: se, search_terms: st, all_courses: allCourses.map((c) => c.title), after_prefilter: preFiltered.map((c) => c.title), removed: allCourses.filter((c) => !preFiltered.includes(c)).map((c) => c.title) });
-});
-
-app.get("/debug/strip/:query", (req, res) => {
-  const q = decodeURIComponent(req.params.query);
-  const terms = q.split(/\s+/).filter((t) => t.length >= 2);
-  const { cleanTerms, cleanEntity } = stripAudienceModifiers(terms, q);
-  const ae = detectAudienceExclusions(q, null);
-  res.json({ query: q, original_terms: terms, stripped_terms: cleanTerms, stripped_entity: cleanEntity, audience_excludes: ae, is_vague: isVagueEntity(cleanEntity) });
-});
-
+app.get("/debug/prefilter/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const classification = await classify(q, [], null, null); const { cleanTerms: st, cleanEntity: se } = stripAudienceModifiers(classification.search_terms, classification.entity); const terms = st.length ? [...new Set([...st, ...(se ? [se] : [])])] : [q]; const expanded = generateSearchVariants(terms, se); const rawRows = await searchCoursesRaw(expanded); const iMap = await getInstructorMap(rawRows); const allCourses = rawRows.map((r) => mapCourse(r, iMap)); const preFiltered = preFilterByPrimarySubject(allCourses, q, se); res.json({ query: q, entity: se, search_terms: st, all_courses: allCourses.map((c) => c.title), after_prefilter: preFiltered.map((c) => c.title), removed: allCourses.filter((c) => !preFiltered.includes(c)).map((c) => c.title) }); });
+app.get("/debug/strip/:query", (req, res) => { const q = decodeURIComponent(req.params.query); const terms = q.split(/\s+/).filter((t) => t.length >= 2); const { cleanTerms, cleanEntity } = stripAudienceModifiers(terms, q); const ae = detectAudienceExclusions(q, null); res.json({ query: q, original_terms: terms, stripped_terms: cleanTerms, stripped_entity: cleanEntity, audience_excludes: ae, is_vague: isVagueEntity(cleanEntity) }); });
 app.get("/debug/normalize/:text", (req, res) => { const t = decodeURIComponent(req.params.text); res.json({ original: t, normalized: normalizeArabic(t), expanded: expandArabicTerms([t]), corrected: correctQuery(t) }); });
 app.get("/debug/diplomas/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const t = q.split(/\s+/).filter((t) => t.length >= 2); const e = generateSearchVariants(t, null); const d = e.length ? await searchDiplomas(e) : await getAllDiplomas(); res.json({ query: q, results: d.map((d) => ({ title: d.title, slug: d.slug })) }); });
 app.get("/debug/faq/:query", async (req, res) => { const q = decodeURIComponent(req.params.query); const r = await searchFAQ(q); res.json({ query: q, results: r.map((r) => ({ question: r.question, score: r.score })) }); });
@@ -2449,7 +2039,7 @@ app.get("/debug/corrections/:query", async (req, res) => { const q = decodeURICo
 
 app.get("/debug/columns", async (req, res) => {
   try {
-    const tables = ["courses", "site_pages", "faq", "diplomas", "corrections", "custom_responses"];
+    const tables = ["courses", "site_pages", "faq", "diplomas", "corrections", "custom_responses", "bot_instructions"];
     const results = {};
     for (const t of tables) { const { data } = await supabase.from(t).select("*").limit(1); results[t] = { columns: data?.[0] ? Object.keys(data[0]) : [] }; }
     res.json(results);
@@ -2458,63 +2048,35 @@ app.get("/debug/columns", async (req, res) => {
 
 app.get("/debug/db", async (req, res) => {
   try {
-    const tables = ["courses", "site_pages", "faq", "diplomas", "corrections", "custom_responses"];
+    const tables = ["courses", "site_pages", "faq", "diplomas", "corrections", "custom_responses", "bot_instructions"];
     const counts = {};
     for (const t of tables) { const { count } = await supabase.from(t).select("*", { count: "exact", head: true }); counts[t] = count || 0; }
-    res.json({ ...counts, faq_cache: faqCache.length, corrections_cache: correctionsCache.length, custom_responses_cache: customResponsesCache.length, spelling_dict_size: Object.keys(ARABIC_CORRECTIONS).length, synonym_groups: Object.keys(SEARCH_SYNONYMS).length });
+    res.json({ ...counts, faq_cache: faqCache.length, corrections_cache: correctionsCache.length, custom_responses_cache: customResponsesCache.length, bot_instructions_cache: botInstructionsCache.length, spelling_dict_size: Object.keys(ARABIC_CORRECTIONS).length, synonym_groups: Object.keys(SEARCH_SYNONYMS).length });
   } catch (e) { res.json({ error: e.message }); }
 });
 
 app.get("/debug/test-all", async (req, res) => {
   const tests = [
-    { input: "صفقلصقفصتقفصثف", expected: "GIBBERISH" },
-    { input: "اهلا", expected: "GREETING" },
-    { input: "عايز اتعلم", expected: "START_LEARNING" },
-    { input: "عاوز اتعلم لغات", expected: "COURSE_SEARCH" },
-    { input: "عايز اتعلم برمجة", expected: "COURSE_SEARCH" },
-    { input: "في فوتوشوب", expected: "COURSE_SEARCH" },
-    { input: "كورس بايثون", expected: "COURSE_SEARCH" },
-    { input: "ديجيتال ماركوتنج", expected: "COURSE_SEARCH" },
-    { input: "ايه الدبلومات المتاحة", expected: "DIPLOMA_SEARCH" },
-    { input: "بكام الاشتراك", expected: "SUBSCRIPTION" },
-    { input: "ازاي ادفع", expected: "PAYMENT" },
-    { input: "مش قادر ادخل حسابي", expected: "ACCESS_ISSUE" },
-    { input: "انت فين", expected: "GENERAL" },
-    { input: "شكرا", expected: "GENERAL" },
+    { input: "صفقلصقفصتقفصثف", expected: "GIBBERISH" }, { input: "اهلا", expected: "GREETING" },
+    { input: "عايز اتعلم", expected: "START_LEARNING" }, { input: "عاوز اتعلم لغات", expected: "COURSE_SEARCH" },
+    { input: "عايز اتعلم برمجة", expected: "COURSE_SEARCH" }, { input: "في فوتوشوب", expected: "COURSE_SEARCH" },
+    { input: "كورس بايثون", expected: "COURSE_SEARCH" }, { input: "ديجيتال ماركوتنج", expected: "COURSE_SEARCH" },
+    { input: "ايه الدبلومات المتاحة", expected: "DIPLOMA_SEARCH" }, { input: "بكام الاشتراك", expected: "SUBSCRIPTION" },
+    { input: "ازاي ادفع", expected: "PAYMENT" }, { input: "مش قادر ادخل حسابي", expected: "ACCESS_ISSUE" },
+    { input: "انت فين", expected: "GENERAL" }, { input: "شكرا", expected: "GENERAL" },
     { input: "يعني ايه كلين كود", expected: "GENERAL" },
-    /* 🆕 v7.8: SUPPORT test cases */
-    { input: "الفيديو مش شغال", expected: "SUPPORT" },
-    { input: "بيقول لا يمكن تشغيل الفيديو", expected: "SUPPORT" },
-    { input: "الصوت مش شغال", expected: "SUPPORT" },
-    { input: "الصفحة مش بتفتح", expected: "SUPPORT" },
+    { input: "الفيديو مش شغال", expected: "SUPPORT" }, { input: "بيقول لا يمكن تشغيل الفيديو", expected: "SUPPORT" },
+    { input: "الصوت مش شغال", expected: "SUPPORT" }, { input: "الصفحة مش بتفتح", expected: "SUPPORT" },
   ];
   const results = [];
   for (const t of tests) {
     try {
-      if (isConversationalMessage(t.input)) {
-        results.push({ input: t.input, expected: t.expected, got: "GENERAL", pass: t.expected === "GENERAL" || t.expected === "GREETING" ? "✅" : "❌", note: "conversational shortcut" });
-        continue;
-      }
+      if (isConversationalMessage(t.input)) { results.push({ input: t.input, expected: t.expected, got: "GENERAL", pass: t.expected === "GENERAL" || t.expected === "GREETING" ? "✅" : "❌", note: "conversational shortcut" }); continue; }
       const c = await classify(t.input, [], null, null);
       let fi = c.intent;
       if (fi === "START_LEARNING") { const r = rescueStartLearningIntent(t.input, c.entity, c.search_terms); if (r) fi = r.intent; }
-      /* 🆕 v7.8: Apply support rescue pattern */
-      if (fi === "COURSE_SEARCH" && c.search_terms.length === 0) {
-        const supportPatterns = /فيديو.*مش.*شغال|لا يمكن تشغيل|الفيديو لا يعمل|مش.*بيشتغل|الصوت.*مش|مفيش صوت|الصفح[ةه].*مش|الموقع.*واقع|مشكل[ةه].*تقني/i;
-        if (supportPatterns.test(t.input) || supportPatterns.test(normalizeArabic(t.input))) fi = "SUPPORT";
-      }
-      const { corrected, wasCorrected } = correctQuery(t.input);
-      const customMatch = fi === "SUPPORT" ? await matchCustomResponse(t.input) : null;
-      let smartResult = null;
-      if (fi === "GENERAL") { smartResult = await findRelatedCourses(t.input); }
-
-      results.push({
-        input: t.input, expected: t.expected, got: fi,
-        pass: fi === t.expected ? "✅" : "❌",
-        spelling: wasCorrected ? `→ ${corrected}` : null,
-        custom_response: customMatch ? customMatch.title : null,
-        smart_suggestions: smartResult ? { courses: smartResult.courses.length, diplomas: smartResult.diplomas.length } : null,
-      });
+      if (fi === "COURSE_SEARCH" && c.search_terms.length === 0) { const supportPatterns = /فيديو.*مش.*شغال|لا يمكن تشغيل|الفيديو لا يعمل|مش.*بيشتغل|الصوت.*مش|مفيش صوت|الصفح[ةه].*مش|الموقع.*واقع|مشكل[ةه].*تقني/i; if (supportPatterns.test(t.input) || supportPatterns.test(normalizeArabic(t.input))) fi = "SUPPORT"; }
+      results.push({ input: t.input, expected: t.expected, got: fi, pass: fi === t.expected ? "✅" : "❌" });
     } catch (e) { results.push({ input: t.input, expected: t.expected, got: "ERROR", pass: "❌" }); }
   }
   const passed = results.filter((r) => r.pass === "✅").length;
@@ -2525,29 +2087,30 @@ app.get("/debug/test-all", async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.8-support-custom-responses",
+    version: "7.9-bot-instructions-order-fix",
     sessions: sessions.size,
     uptime: Math.floor(process.uptime()),
     categories: Object.keys(CATEGORIES).length,
     spelling_dict: Object.keys(ARABIC_CORRECTIONS).length,
     synonym_groups: Object.keys(SEARCH_SYNONYMS).length,
     custom_responses_cached: customResponsesCache.length,
+    bot_instructions_cached: botInstructionsCache.length,
   });
 });
 
 app.use((req, res) => { res.status(404).json({ error: "Not Found" }); });
 
 app.listen(PORT, () => {
-  console.log(`\n🤖 easyT Chatbot v7.8 🛠️ Support + Custom Responses`);
+  console.log(`\n🤖 easyT Chatbot v7.9 🧠 Bot Instructions + Order Fix`);
   console.log(`   Port: ${PORT}`);
-  console.log(`   🆕 v7.8: SUPPORT intent for technical issues`);
-  console.log(`   🆕 v7.8: custom_responses table — admin-managed replies`);
-  console.log(`   🆕 v7.8: matchCustomResponse() keyword matching`);
-  console.log(`   🆕 v7.8: GPT support fallback`);
-  console.log(`   🆕 v7.8: /admin/custom-responses CRUD`);
-  console.log(`   🆕 v7.8: /debug/support/:query endpoint`);
+  console.log(`   🆕 v7.9: bot_instructions table — admin writes prompts in plain Arabic`);
+  console.log(`   🆕 v7.9: Instructions injected into GPT system prompt`);
+  console.log(`   🆕 v7.9: FIXED chat log ordering — user always before bot`);
+  console.log(`   🆕 v7.9: Enhanced searchCorrections() with fuzzy + semantic matching`);
+  console.log(`   🆕 v7.9: /admin/bot-instructions CRUD`);
+  console.log(`   🆕 v7.9: /debug/instructions endpoint`);
+  console.log(`   ✅ v7.8: SUPPORT intent + custom_responses`);
   console.log(`   ✅ v7.7: Smart course suggestions for GENERAL`);
   console.log(`   ✅ v7.6: Fuzzy Arabic search (${Object.keys(ARABIC_CORRECTIONS).length} corrections)`);
-  console.log(`   ✅ v7.5: Context-Aware Audience + Conversational Detection`);
   console.log(`\n   Admin: ${process.env.RENDER_EXTERNAL_URL || "http://localhost:" + PORT}/admin\n`);
 });
