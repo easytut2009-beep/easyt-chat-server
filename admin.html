@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v9.0</title>
+<title>easyT Admin Dashboard v10</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#f0f2f5;margin:0}
@@ -29,120 +29,164 @@ input,textarea,select{border:1px solid #d1d5db;border-radius:8px;padding:8px 12p
 input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
 
 /* =============================================
-   CHAT v9.0 - TIMELINE (عمود واحد)
+   CHAT v10 - GROUPED Q&A CARDS
    ============================================= */
 .chat-wrap{border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .chat-topbar{background:#075e54;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
 .chat-topbar h3{margin:0;font-size:15px;font-weight:600}
 .chat-topbar small{font-size:12px;color:#a7f3d0}
-.chat-body{background:#f8fafc;padding:20px 16px;min-height:300px;max-height:75vh;overflow-y:auto}
+.chat-body{background:#f1f5f9;padding:20px 16px;min-height:300px;max-height:75vh;overflow-y:auto}
 
-/* Timeline message block - FULL WIDTH */
-.tl-msg{
-  margin-bottom:3px;
-  padding:14px 18px;
-  border-radius:10px;
-  position:relative;
+/* ═══ Grouped Q&A Card ═══ */
+.qa-card{
+  background:#fff;
+  border-radius:14px;
+  margin-bottom:16px;
+  overflow:hidden;
+  box-shadow:0 2px 6px rgba(0,0,0,.08);
+  border:2px solid #e2e8f0;
 }
-.tl-msg-user{
-  background:#dbeafe;
-  border-right:5px solid #3b82f6;
-}
-.tl-msg-bot{
-  background:#dcfce7;
-  border-right:5px solid #10b981;
-}
-/* Header */
-.tl-head{
+.qa-card-header{
+  background:#f8fafc;
+  padding:10px 16px;
   display:flex;
   align-items:center;
   gap:10px;
-  margin-bottom:8px;
-  flex-wrap:wrap;
-}
-.tl-role{
+  border-bottom:1px solid #e2e8f0;
   font-size:13px;
-  font-weight:800;
-  padding:3px 10px;
-  border-radius:99px;
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
+  color:#64748b;
 }
-.tl-role-user{background:#3b82f6;color:#fff}
-.tl-role-bot{background:#10b981;color:#fff}
-.tl-num{
-  font-size:11px;
+.qa-num{
+  background:#334155;
+  color:#fff;
   font-weight:800;
-  background:rgba(0,0,0,.08);
-  color:#475569;
-  width:26px;height:26px;
+  font-size:13px;
+  width:28px;height:28px;
   border-radius:50%;
   display:inline-flex;
   align-items:center;justify-content:center;
+  flex-shrink:0;
 }
-.tl-time{font-size:11px;color:#64748b}
-.tl-tag{font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(0,0,0,.06);color:#64748b}
-.tl-id-tag{font-size:10px;color:#94a3b8}
+.qa-time{font-size:11px;color:#94a3b8;margin-right:auto}
+.qa-tag{font-size:10px;padding:2px 8px;border-radius:99px;background:#e0e7ff;color:#4338ca;font-weight:600}
+.qa-id-tag{font-size:10px;color:#94a3b8}
 
-/* Content */
-.tl-content{
+/* Question part */
+.qa-question{
+  padding:14px 18px;
+  background:#eff6ff;
+  border-bottom:2px dashed #bfdbfe;
+  position:relative;
+}
+.qa-question::before{
+  content:"👤 سؤال المستخدم";
+  display:block;
+  font-size:11px;
+  font-weight:800;
+  color:#2563eb;
+  margin-bottom:6px;
+  padding:2px 10px;
+  background:#dbeafe;
+  border-radius:99px;
+  display:inline-block;
+}
+.qa-question-text{
   font-size:14px;
   line-height:1.8;
   color:#1e293b;
-  padding:10px 14px;
-  background:rgba(255,255,255,.7);
+  padding:8px 12px;
+  background:#fff;
   border-radius:8px;
-  border:1px solid rgba(0,0,0,.05);
+  border:1px solid #bfdbfe;
 }
 
-/* Reply indicator between messages */
-.tl-reply-arrow{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:4px 0;
-}
-.tl-reply-arrow span{
-  font-size:11px;
-  color:#10b981;
-  font-weight:700;
+/* Answer part */
+.qa-answer{
+  padding:14px 18px;
   background:#f0fdf4;
-  padding:2px 12px;
-  border-radius:99px;
-  border:1px dashed #86efac;
+  position:relative;
 }
-.tl-no-reply-arrow span{
+.qa-answer::before{
+  content:"🤖 رد البوت";
+  display:block;
   font-size:11px;
-  color:#f59e0b;
-  font-weight:700;
-  background:#fffbeb;
-  padding:2px 12px;
+  font-weight:800;
+  color:#16a34a;
+  margin-bottom:6px;
+  padding:2px 10px;
+  background:#dcfce7;
   border-radius:99px;
-  border:1px dashed #fde68a;
+  display:inline-block;
+}
+.qa-answer-text{
+  font-size:14px;
+  line-height:1.8;
+  color:#1e293b;
+  padding:8px 12px;
+  background:#fff;
+  border-radius:8px;
+  border:1px solid #bbf7d0;
+}
+.qa-answer + .qa-answer{
+  border-top:2px dashed #bbf7d0;
+}
+.qa-answer-label{
+  font-size:11px;
+  font-weight:800;
+  color:#16a34a;
+  margin-bottom:6px;
+  padding:2px 10px;
+  background:#dcfce7;
+  border-radius:99px;
+  display:inline-block;
+}
+
+/* Bot-only card (no question, like initial greeting) */
+.qa-bot-only{
+  padding:14px 18px;
+  background:#f0fdf4;
+}
+.qa-bot-only::before{
+  content:"🤖 رسالة البوت (تلقائية)";
+  display:block;
+  font-size:11px;
+  font-weight:800;
+  color:#16a34a;
+  margin-bottom:6px;
+  padding:2px 10px;
+  background:#dcfce7;
+  border-radius:99px;
+  display:inline-block;
+}
+
+/* No reply warning */
+.qa-no-reply{
+  padding:10px 18px;
+  background:#fef3c7;
+  border-top:2px dashed #fde68a;
+  font-size:12px;
+  color:#92400e;
+  text-align:center;
+  font-weight:600;
 }
 
 /* Correction button */
-.tl-correct{
-  margin-top:6px;
-  text-align:left;
-}
-.tl-correct-btn{
-  display:inline-block;padding:3px 10px;
+.qa-correct-btn{
+  display:inline-block;padding:4px 12px;
   background:#fef3c7;color:#92400e;border-radius:6px;
   font-size:11px;cursor:pointer;border:1px solid #fde68a;
+  margin-top:8px;
 }
-.tl-correct-btn:hover{background:#fde68a}
+.qa-correct-btn:hover{background:#fde68a}
 
 /* Date divider */
-.tl-date{text-align:center;margin:16px 0}
-.tl-date span{background:#fff;padding:5px 16px;border-radius:99px;font-size:12px;color:#54656f;box-shadow:0 1px 2px rgba(0,0,0,.06);border:1px solid #e5e7eb}
+.qa-date{text-align:center;margin:16px 0}
+.qa-date span{background:#fff;padding:5px 16px;border-radius:99px;font-size:12px;color:#54656f;box-shadow:0 1px 2px rgba(0,0,0,.06);border:1px solid #e5e7eb}
 
 /* Footer */
 .chat-foot{background:#f0f2f5;padding:12px 16px;text-align:center;font-size:11px;color:#8696a0;border-top:1px solid #e5e7eb}
-.chat-legend{display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap}
-.legend-item{display:flex;align-items:center;gap:5px;font-size:11px}
-.legend-dot{width:14px;height:14px;border-radius:4px;border:2px solid}
+.chat-legend{display:flex;gap:20px;align-items:center;justify-content:center;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600}
 /* ============================================= */
 
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
@@ -191,7 +235,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6;box-sh
 <div class="sidebar">
   <div style="padding:16px 20px;border-bottom:1px solid #334155">
     <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-    <div style="font-size:11px;color:#64748b;margin-top:4px">v9.0</div>
+    <div style="font-size:11px;color:#64748b;margin-top:4px">v10</div>
   </div>
   <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
   <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
@@ -376,12 +420,21 @@ async function loadConversations(page){
 function closeConvDetail(){document.getElementById('convDetail').style.display='none';document.getElementById('convList').style.display='block';document.getElementById('convPagination').style.display='flex';}
 
 /* ═══════════════════════════════════════════════════════════
-   💬 CHAT v9.0 — TIMELINE عمود واحد بسيط
+   💬 CHAT v10 — GROUPED Q&A CARDS
    ═══════════════════════════════════════════════════════════
-   ★ كل الرسائل تحت بعض — عمود واحد — مفيش يمين وشمال
-   ★ رسالة المستخدم: خلفية زرقا + خط أزرق
-   ★ رد البوت: خلفية خضرا + خط أخضر + "↩️ رد"
-   ★ ترتيب: من فوق لتحت = من الأقدم للأحدث
+   
+   الفكرة:
+   --------
+   بنجمع كل سؤال مستخدم + رد(ردود) البوت عليه في كارت واحد
+   
+   ┌─── محادثة ① ───────────────────────┐
+   │ 👤 سؤال: ......                     │
+   │ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ │
+   │ 🤖 رد: ......                       │
+   └─────────────────────────────────────┘
+   
+   لو البوت بعت رسالة من غير سؤال (greeting مثلاً) → كارت لوحده
+   لو المستخدم بعت ومحدش رد → كارت فيه تحذير
    ═══════════════════════════════════════════════════════════ */
 async function loadConvDetail(sid){
   var wrap=document.getElementById('convMessages');
@@ -395,12 +448,9 @@ async function loadConvDetail(sid){
     var messages=d.messages||d.data||(d.conversation&&d.conversation.messages)||d.conversation||[];
     if(!Array.isArray(messages))messages=[];
 
-    /* Sort by ID first, then by time */
     messages.sort(function(a,b){
       if(a.id && b.id) return a.id - b.id;
-      var ta=a.created_at?new Date(a.created_at).getTime():0;
-      var tb=b.created_at?new Date(b.created_at).getTime():0;
-      return ta-tb;
+      return (new Date(a.created_at||0))-(new Date(b.created_at||0));
     });
 
     if(!messages.length){
@@ -408,95 +458,134 @@ async function loadConvDetail(sid){
       return;
     }
 
+    /* ═══ Step 1: Group messages into Q&A pairs ═══ */
+    var groups=[]; // each group = { question: msg|null, answers: [msg, ...], num: N }
+    var currentGroup=null;
+    var groupNum=0;
+
+    messages.forEach(function(m){
+      var isUser = (m.role==='user');
+      
+      if(isUser){
+        /* If there's an existing group with a question but no answers, mark it as unanswered */
+        if(currentGroup && currentGroup.question && currentGroup.answers.length===0){
+          currentGroup.unanswered=true;
+        }
+        /* Save previous group */
+        if(currentGroup) groups.push(currentGroup);
+        /* Start new group with this user question */
+        groupNum++;
+        currentGroup={question:m, answers:[], num:groupNum, unanswered:false};
+      } else {
+        /* Bot message */
+        if(currentGroup && currentGroup.question){
+          /* Add as answer to current question */
+          currentGroup.answers.push(m);
+        } else {
+          /* Bot message without a preceding question (e.g., auto-greeting) */
+          if(currentGroup) groups.push(currentGroup);
+          groupNum++;
+          currentGroup={question:null, answers:[m], num:groupNum, botOnly:true};
+        }
+      }
+    });
+    /* Don't forget last group */
+    if(currentGroup){
+      if(currentGroup.question && currentGroup.answers.length===0) currentGroup.unanswered=true;
+      groups.push(currentGroup);
+    }
+
+    /* ═══ Step 2: Render grouped cards ═══ */
     var h='';
     h+='<div class="chat-wrap">';
-
-    /* Top bar */
     h+='<div class="chat-topbar">';
     h+='<h3>💬 '+esc(sid.slice(0,30))+'...</h3>';
-    h+='<small>'+messages.length+' رسالة</small>';
+    h+='<small>'+messages.length+' رسالة | '+groups.length+' محادثة</small>';
     h+='</div>';
-
-    /* Chat body */
     h+='<div class="chat-body" id="chatBodyScroll">';
 
     var lastDate='';
-    var lastUserQ='';
-    var userCount=0, botCount=0;
 
-    messages.forEach(function(m, idx){
-      var isUser = (m.role==='user');
-      var content = m.content || '';
-      var time = m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
-
-      /* Date divider */
-      if(m.created_at){
-        var ds=new Date(m.created_at).toLocaleDateString('ar-EG');
+    groups.forEach(function(g){
+      /* Date divider from first message in group */
+      var firstMsg = g.question || g.answers[0];
+      if(firstMsg && firstMsg.created_at){
+        var ds=new Date(firstMsg.created_at).toLocaleDateString('ar-EG');
         if(ds!==lastDate){
-          h+='<div class="tl-date"><span>📅 '+ds+'</span></div>';
+          h+='<div class="qa-date"><span>📅 '+ds+'</span></div>';
           lastDate=ds;
         }
       }
 
-      /* Reply arrow: if bot follows user */
-      if(!isUser && idx>0 && messages[idx-1].role==='user'){
-        h+='<div class="tl-reply-arrow"><span>↩️ رد البوت على السؤال اللي فوق</span></div>';
+      h+='<div class="qa-card">';
+
+      /* Card header */
+      h+='<div class="qa-card-header">';
+      h+='<span class="qa-num">'+g.num+'</span>';
+      if(g.botOnly){
+        h+='<span style="font-weight:700;color:#16a34a">🤖 رسالة تلقائية من البوت</span>';
+      } else if(g.question){
+        var intent=g.question.intent||'';
+        if(intent) h+='<span class="qa-tag">'+esc(intent)+'</span>';
       }
-      /* Warning: user sent again without getting reply */
-      if(isUser && idx>0 && messages[idx-1].role==='user'){
-        h+='<div class="tl-reply-arrow tl-no-reply-arrow"><span>⚠️ المستخدم بعت تاني قبل ما البوت يرد</span></div>';
-      }
+      var timeMsg=firstMsg&&firstMsg.created_at?new Date(firstMsg.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}):'';
+      h+='<span class="qa-time">🕐 '+timeMsg;
+      if(firstMsg&&firstMsg.id) h+=' | #'+firstMsg.id;
+      h+='</span>';
+      h+='</div>';
 
-      if(isUser) userCount++; else botCount++;
-
-      /* ════ MESSAGE BLOCK ════ */
-      h+='<div class="tl-msg '+(isUser?'tl-msg-user':'tl-msg-bot')+'">';
-
-      /* Header */
-      h+='<div class="tl-head">';
-      h+='<span class="tl-num">'+(idx+1)+'</span>';
-      if(isUser){
-        h+='<span class="tl-role tl-role-user">👤 المستخدم</span>';
-      } else {
-        h+='<span class="tl-role tl-role-bot">🤖 البوت</span>';
-      }
-      if(m.intent) h+='<span class="tl-tag">'+esc(m.intent)+'</span>';
-      if(m.id) h+='<span class="tl-id-tag">#'+m.id+'</span>';
-      h+='<span class="tl-time">🕐 '+time+'</span>';
-      h+='</div>'; // end head
-
-      /* Content */
-      h+='<div class="tl-content">';
-      if(isUser){
-        h+=esc(content.slice(0,1500));
-      } else {
-        h+=content.slice(0,5000);
-      }
-      h+='</div>'; // end content
-
-      /* Correction button for bot */
-      if(!isUser){
-        var safeQ='';
-        try{safeQ=btoa(unescape(encodeURIComponent(lastUserQ.slice(0,500))));}catch(e){}
-        h+='<div class="tl-correct">';
-        h+='<span class="tl-correct-btn" onclick="openCorrection('+(m.id||0)+',\''+esc(sid)+'\',\''+safeQ+'\',this)">✏️ تصحيح الرد ده</span>';
+      /* ═══ QUESTION SECTION ═══ */
+      if(g.question){
+        h+='<div class="qa-question">';
+        h+='<div class="qa-question-text">'+esc(g.question.content||'').slice(0,1500)+'</div>';
         h+='</div>';
       }
 
-      h+='</div>'; // end tl-msg
+      /* ═══ ANSWER SECTION(S) ═══ */
+      if(g.answers.length > 0){
+        g.answers.forEach(function(ans, ai){
+          h+='<div class="qa-answer">';
+          if(ai > 0){
+            /* Multiple bot answers - label them */
+            h+='<div style="margin-bottom:6px"><span class="qa-answer-label">🤖 رد إضافي '+(ai+1)+'</span></div>';
+          }
+          h+='<div class="qa-answer-text">'+ans.content.slice(0,5000)+'</div>';
+          
+          /* Intent tag for answer */
+          var ansInfo='';
+          if(ans.intent) ansInfo+='<span class="qa-tag" style="background:#dcfce7;color:#166534">'+esc(ans.intent)+'</span> ';
+          if(ans.id) ansInfo+='<span style="font-size:10px;color:#94a3b8">#'+ans.id+'</span> ';
+          if(ans.created_at){
+            var at=new Date(ans.created_at).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
+            ansInfo+='<span style="font-size:10px;color:#94a3b8">🕐 '+at+'</span>';
+          }
+          if(ansInfo) h+='<div style="margin-top:6px">'+ansInfo+'</div>';
 
-      if(isUser) lastUserQ=content;
+          /* Correction button */
+          var safeQ='';
+          try{safeQ=btoa(unescape(encodeURIComponent((g.question?g.question.content:'').slice(0,500))));}catch(e){}
+          h+='<span class="qa-correct-btn" onclick="openCorrection('+(ans.id||0)+',\''+esc(sid)+'\',\''+safeQ+'\',this)">✏️ تصحيح الرد ده</span>';
+          
+          h+='</div>';
+        });
+      }
+
+      /* No answer warning */
+      if(g.unanswered){
+        h+='<div class="qa-no-reply">⚠️ المستخدم سأل ومحدش رد عليه!</div>';
+      }
+
+      h+='</div>'; // end qa-card
     });
 
     h+='</div>'; // end chat-body
 
-    /* Footer */
+    /* Footer legend */
     h+='<div class="chat-foot">';
     h+='<div class="chat-legend">';
-    h+='<div class="legend-item"><div class="legend-dot" style="background:#dbeafe;border-color:#3b82f6"></div> 👤 المستخدم (أزرق) - '+userCount+' رسالة</div>';
-    h+='<div class="legend-item"><div class="legend-dot" style="background:#dcfce7;border-color:#10b981"></div> 🤖 البوت (أخضر) - '+botCount+' رد</div>';
-    h+='<div class="legend-item">↩️ = رد على اللي فوقه</div>';
-    h+='<div class="legend-item">الأرقام = ترتيب المحادثة الفعلي</div>';
+    h+='<span class="legend-item" style="color:#2563eb">🔵 أزرق = سؤال المستخدم</span>';
+    h+='<span class="legend-item" style="color:#16a34a">🟢 أخضر = رد البوت</span>';
+    h+='<span class="legend-item" style="color:#64748b">📦 كل كارت = سؤال + الرد بتاعه</span>';
     h+='</div>';
     h+='</div>';
 
@@ -515,9 +604,9 @@ async function loadConvDetail(sid){
 
 /* ═══ CORRECTIONS ═══ */
 function openCorrection(logId,sid,safeQ,btn){
-  var tl=btn.closest('.tl-msg');
+  var qaAnswer=btn.closest('.qa-answer');
   var original='';
-  if(tl){var c=tl.querySelector('.tl-content');if(c)original=c.textContent||'';}
+  if(qaAnswer){var c=qaAnswer.querySelector('.qa-answer-text');if(c)original=c.textContent||'';}
   var uq='';try{uq=decodeURIComponent(escape(atob(safeQ)));}catch(e){}
   modalState={type:'correction',logId:logId,sid:sid,original:original,userQuestion:uq};
   document.getElementById('modalTitle').textContent='✏️ تصحيح الإجابة';
