@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v11</title>
+<title>easyT Admin Dashboard v12</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body {
@@ -131,9 +131,6 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* ═══════════════════════════════════════
-   CHAT v11 — FLAT + GROUPED VIEWS
-   ═══════════════════════════════════════ */
 .chat-wrap {
   border-radius: 12px;
   overflow: hidden;
@@ -187,7 +184,6 @@ input:focus, textarea:focus, select:focus {
   color: #075e54;
 }
 
-/* ═══ FLAT VIEW — WhatsApp style ═══ */
 .flat-date {
   text-align: center;
   margin: 12px 0;
@@ -290,7 +286,6 @@ input:focus, textarea:focus, select:focus {
 
 .flat-correct-btn:hover { background: #ffe0b2; }
 
-/* Sequence number badge */
 .flat-seq {
   display: inline-flex;
   align-items: center;
@@ -313,7 +308,6 @@ input:focus, textarea:focus, select:focus {
   color: #fff;
 }
 
-/* ═══ GROUPED VIEW (Q&A Cards) ═══ */
 .qa-card {
   background: #fff;
   border-radius: 14px;
@@ -471,8 +465,6 @@ input:focus, textarea:focus, select:focus {
   border-top: 1px solid #e5e7eb;
 }
 
-/* ═══════════════════════════════════════ */
-
 .badge {
   display: inline-block;
   padding: 2px 8px;
@@ -487,6 +479,7 @@ input:focus, textarea:focus, select:focus {
 .badge-red { background: #fee2e2; color: #991b1b; }
 .badge-purple { background: #f3e8ff; color: #7c3aed; }
 .badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-indigo { background: #e0e7ff; color: #4338ca; }
 
 .login-box { max-width: 360px; margin: 120px auto; text-align: center; }
 
@@ -532,6 +525,16 @@ input:focus, textarea:focus, select:focus {
   padding: 6px 10px;
   font-size: 11px;
   color: #c2410c;
+  margin-top: 8px;
+}
+
+.prompt-badge {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #4338ca;
   margin-top: 8px;
 }
 
@@ -599,7 +602,75 @@ input:focus, textarea:focus, select:focus {
   margin: 2px;
 }
 
-/* Debug row highlight */
+.instruction-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fff;
+  transition: 0.2s;
+}
+
+.instruction-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.instruction-card.inactive {
+  background: #fef2f2;
+  border-color: #fee2e2;
+}
+
+.instruction-text {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #334155;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.category-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.cat-GENERAL { background: #dbeafe; color: #1d4ed8; }
+.cat-COURSE_SEARCH { background: #dcfce7; color: #166534; }
+.cat-SUPPORT { background: #ffedd5; color: #c2410c; }
+.cat-PAYMENT { background: #fef9c3; color: #854d0e; }
+.cat-ACCESS { background: #fee2e2; color: #991b1b; }
+.cat-GREETING { background: #f3e8ff; color: #7c3aed; }
+.cat-STYLE { background: #e0e7ff; color: #4338ca; }
+.cat-RULES { background: #fce7f3; color: #be185d; }
+
+.priority-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.priority-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.priority-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.priority-dot.filled { background: #f59e0b; }
+
 .debug-row { font-family: monospace; font-size: 11px; }
 .debug-row:nth-child(odd) { background: #f9fafb; }
 
@@ -630,11 +701,12 @@ input:focus, textarea:focus, select:focus {
   <div class="sidebar">
     <div style="padding:16px 20px;border-bottom:1px solid #334155">
       <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v11 — Fixed Order</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12 — Bot Instructions</div>
     </div>
     <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
     <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
     <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات</a>
+    <a href="#" onclick="showTab('botinstructions')" id="nav-botinstructions">🧠 تعليمات البوت</a>
     <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
     <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
     <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
@@ -675,15 +747,30 @@ input:focus, textarea:focus, select:focus {
     <!-- Corrections -->
     <div id="tab-corrections" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">✅ التصحيحات</h2>
-      <div class="learning-badge" style="margin-bottom:12px">🧠 البوت بيقرأ التصحيحات دي قبل ما يرد</div>
+      <div class="learning-badge" style="margin-bottom:12px">🧠 البوت بيقرأ التصحيحات دي قبل ما يرد — أولوية قصوى!</div>
       <button class="btn btn-success btn-sm" onclick="openAddCorrectionModal()" style="margin-bottom:12px">+ إضافة تصحيح</button>
       <div class="card" id="corrList"></div>
+    </div>
+
+    <!-- 🆕 Bot Instructions -->
+    <div id="tab-botinstructions" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🧠 تعليمات البوت</h2>
+      <div class="prompt-badge" style="margin-bottom:12px">
+        📝 اكتب هنا التعليمات بالعربي العادي — البوت هيتبعها بالحرف في كل ردوده.<br>
+        <b>مثال:</b> "لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان" أو "ما تقولش للعميل يروح موقع تاني"
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="botInstructionsSearch" placeholder="🔍 بحث في التعليمات..." onkeydown="if(event.key==='Enter')loadBotInstructions()" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadBotInstructions()">بحث</button>
+        <button class="btn btn-success btn-sm" onclick="openAddBotInstructionModal()">+ تعليمة جديدة</button>
+      </div>
+      <div id="botInstructionsList"></div>
     </div>
 
     <!-- Custom Responses -->
     <div id="tab-customresponses" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة</h2>
-      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT</div>
+      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT — ردود ثابتة بكلمات مفتاحية</div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <input type="text" id="customresponsesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
@@ -780,10 +867,10 @@ var currentConvPage = 1;
 var _confirmResolve = null;
 var _crudCache = {};
 var _customResponsesCache = [];
+var _botInstructionsCache = [];
 
-// ═══ Chat view state ═══
-var _convViewMode = 'flat'; // 'flat' or 'grouped'
-var _convSortedMessages = []; // Sorted messages for current conversation
+var _convViewMode = 'flat';
+var _convSortedMessages = [];
 var _convSessionId = '';
 
 // ═══════════════════════════════════════
@@ -835,6 +922,17 @@ function fmtFull(d) {
   if (!d) return '';
   try { return new Date(d).toLocaleString('ar-EG'); }
   catch(e) { return ''; }
+}
+
+function renderPriorityDots(p) {
+  var max = 5;
+  var filled = Math.min(Math.round((p || 0) / 20), max);
+  var h = '<span class="priority-dots">';
+  for (var i = 0; i < max; i++) {
+    h += '<span class="priority-dot' + (i < filled ? ' filled' : '') + '"></span>';
+  }
+  h += '</span>';
+  return h;
 }
 
 // ═══════════════════════════════════════
@@ -893,6 +991,7 @@ function showTab(tab) {
   if(tab==='stats') loadStats();
   else if(tab==='conversations') loadConversations(1);
   else if(tab==='corrections') loadCorrections();
+  else if(tab==='botinstructions') loadBotInstructions();
   else if(tab==='customresponses') loadCustomResponses();
   else if(tab==='courses') loadCrud('courses');
   else if(tab==='diplomas') loadCrud('diplomas');
@@ -914,6 +1013,7 @@ async function loadStats() {
       ['📅',d.today_messages,'رسائل اليوم'],
       ['🟢',d.active_sessions,'جلسات نشطة'],
       ['🧠',d.corrections,'تصحيحات'],
+      ['📝',d.bot_instructions||0,'تعليمات البوت'],
       ['🛠️',d.custom_responses||0,'ردود مخصصة'],
       ['📚',d.courses,'كورسات'],
       ['🎓',d.diplomas,'دبلومات'],
@@ -963,7 +1063,6 @@ async function loadConversations(page) {
     el.innerHTML = html;
     el.style.display='block';
     document.getElementById('convDetail').style.display='none';
-    // Pagination
     var pag = d.pagination||{};
     var pagEl = document.getElementById('convPagination');
     var ph = '';
@@ -983,38 +1082,19 @@ function closeConvDetail() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 💬 CHAT v11 — FIXED SORTING + FLAT/GROUPED VIEWS
+// 💬 CHAT — FIXED SORTING + FLAT/GROUPED VIEWS
 // ═══════════════════════════════════════════════════════════
-//
-// الإصلاحات:
-// ----------
-// 1) الترتيب بيعتمد على created_at أولاً ثم id ثم role
-// 2) عرض مسطح (Flat) = كل رسالة لوحدها زي WhatsApp بالظبط
-// 3) عرض مجمّع (Grouped) = سؤال + رد في كارت
-// 4) الـ Flat هو الـ Default عشان تشوف الترتيب الحقيقي
-//
-// ═══════════════════════════════════════════════════════════
-
-/**
- * ترتيب الرسائل — الأهم!
- * Priority: created_at → id → role (user قبل bot)
- */
 function sortMessages(messages) {
   return messages.slice().sort(function(a, b) {
-    // 1) Sort by created_at timestamp
     var tA = 0, tB = 0;
     try { tA = new Date(a.created_at).getTime(); } catch(e) {}
     try { tB = new Date(b.created_at).getTime(); } catch(e) {}
     if (isNaN(tA)) tA = 0;
     if (isNaN(tB)) tB = 0;
     if (tA !== tB) return tA - tB;
-
-    // 2) If same timestamp → sort by numeric id
     var idA = parseInt(a.id);
     var idB = parseInt(b.id);
     if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idA - idB;
-
-    // 3) If same time AND same id → user before bot
     var roleOrder = {'user': 0, 'assistant': 1, 'bot': 1, 'system': 2};
     var rA = roleOrder[a.role] !== undefined ? roleOrder[a.role] : 1;
     var rB = roleOrder[b.role] !== undefined ? roleOrder[b.role] : 1;
@@ -1028,54 +1108,32 @@ async function loadConvDetail(sid) {
   document.getElementById('convPagination').style.display = 'none';
   document.getElementById('convDetail').style.display = 'block';
   wrap.innerHTML = '<p style="text-align:center;padding:40px;color:#94a3b8">⏳ جاري التحميل...</p>';
-
   _convSessionId = sid;
-
   try {
     var d = await apiCall('/admin/conversations/' + encodeURIComponent(sid));
     var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || [];
     if (!Array.isArray(messages)) messages = [];
-
     if (!messages.length) {
       wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>';
       return;
     }
-
-    // ═══ SORT ═══
     _convSortedMessages = sortMessages(messages);
-
-    // ═══ Log sort result to console for debugging ═══
-    console.log('═══ Sorted Messages ═══');
-    _convSortedMessages.forEach(function(m, i) {
-      console.log('#' + i, 'id:' + m.id, 'role:' + m.role, 'time:' + m.created_at, 'text:' + (m.content||'').slice(0,50));
-    });
-
-    // Render
     renderConversation();
-
   } catch(e) {
     console.error(e);
     wrap.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p></div>';
   }
 }
 
-/**
- * Main render — switches between flat and grouped
- */
 function renderConversation() {
   var wrap = document.getElementById('convMessages');
   var messages = _convSortedMessages;
   var sid = _convSessionId;
-
   if (!messages.length) {
     wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>';
     return;
   }
-
-  var h = '';
-  h += '<div class="chat-wrap">';
-
-  // ═══ Top bar with view toggle ═══
+  var h = '<div class="chat-wrap">';
   h += '<div class="chat-topbar">';
   h += '<div><h3 style="margin:0">💬 ' + esc(sid.slice(0,30)) + '...</h3>';
   h += '<small>' + messages.length + ' رسالة</small></div>';
@@ -1083,100 +1141,57 @@ function renderConversation() {
   h += '<button class="view-toggle-btn' + (_convViewMode === 'flat' ? ' active' : '') + '" onclick="_convViewMode=\'flat\';renderConversation()">📋 مسطح</button>';
   h += '<button class="view-toggle-btn' + (_convViewMode === 'grouped' ? ' active' : '') + '" onclick="_convViewMode=\'grouped\';renderConversation()">📦 مجمّع</button>';
   h += '<button class="view-toggle-btn' + (_convViewMode === 'debug' ? ' active' : '') + '" onclick="_convViewMode=\'debug\';renderConversation()">🔧 Debug</button>';
-  h += '</div>';
-  h += '</div>';
-
-  // ═══ Chat body ═══
+  h += '</div></div>';
   h += '<div class="chat-body" id="chatBodyScroll">';
-
-  if (_convViewMode === 'flat') {
-    h += renderFlat(messages, sid);
-  } else if (_convViewMode === 'grouped') {
-    h += renderGrouped(messages, sid);
-  } else {
-    h += renderDebug(messages);
-  }
-
-  h += '</div>'; // end chat-body
-
-  // Footer
-  h += '<div class="chat-foot">';
-  if (_convViewMode === 'flat') {
-    h += '🟢 أخضر = المستخدم | ⬜ أبيض = البوت | الترتيب حسب الوقت الفعلي';
-  } else if (_convViewMode === 'grouped') {
-    h += '🔵 سؤال المستخدم | 🟢 رد البوت | 📦 كل كارت = سؤال + رد';
-  } else {
-    h += '🔧 Debug view — البيانات الخام مرتبة';
-  }
+  if (_convViewMode === 'flat') h += renderFlat(messages, sid);
+  else if (_convViewMode === 'grouped') h += renderGrouped(messages, sid);
+  else h += renderDebug(messages);
   h += '</div>';
-
-  h += '</div>'; // end chat-wrap
-
+  h += '<div class="chat-foot">';
+  if (_convViewMode === 'flat') h += '🟢 أخضر = المستخدم | ⬜ أبيض = البوت | الترتيب حسب الوقت الفعلي';
+  else if (_convViewMode === 'grouped') h += '🔵 سؤال المستخدم | 🟢 رد البوت | 📦 كل كارت = سؤال + رد';
+  else h += '🔧 Debug view — البيانات الخام مرتبة';
+  h += '</div></div>';
   wrap.innerHTML = h;
-
-  // Scroll to bottom
   var sb = document.getElementById('chatBodyScroll');
   if(sb) sb.scrollTop = sb.scrollHeight;
 }
 
-// ═══════════════════════════════════════
-// 📋 FLAT VIEW — WhatsApp Style
-// ═══════════════════════════════════════
 function renderFlat(messages, sid) {
   var h = '';
   var lastDate = '';
   var seq = 0;
-
   messages.forEach(function(m) {
     seq++;
     var isUser = (m.role === 'user');
-
-    // Date divider
     var ds = fmtDate(m.created_at);
     if (ds && ds !== lastDate) {
       h += '<div class="flat-date"><span>📅 ' + ds + '</span></div>';
       lastDate = ds;
     }
-
     h += '<div class="flat-msg ' + (isUser ? 'user-msg' : 'bot-msg') + '">';
     h += '<div class="flat-bubble">';
-
-    // Role label
     h += '<div class="flat-role">';
     h += '<span class="flat-seq">' + seq + '</span> ';
     h += isUser ? '👤 المستخدم' : '🤖 البوت';
     if (m.intent) h += ' <span class="flat-intent">' + esc(m.intent) + '</span>';
     h += '</div>';
-
-    // Content
     h += '<div>' + esc(m.content || '').slice(0, 3000) + '</div>';
-
-    // Meta
     h += '<div class="flat-meta">';
     h += '<span class="flat-id">ID: ' + (m.id || '?') + '</span>';
     h += '<span class="flat-time">' + fmtTime(m.created_at) + '</span>';
     h += '</div>';
-
-    // Correction button (for bot messages only)
     if (!isUser) {
       var prevUser = findPrevUserMsg(messages, seq - 1);
       var safeQ = '';
-      try {
-        if (prevUser) safeQ = btoa(unescape(encodeURIComponent((prevUser.content || '').slice(0, 500))));
-      } catch(e) {}
+      try { if (prevUser) safeQ = btoa(unescape(encodeURIComponent((prevUser.content || '').slice(0, 500)))); } catch(e) {}
       h += '<span class="flat-correct-btn" onclick="openCorrection(' + (m.id||0) + ',\'' + esc(sid) + '\',\'' + safeQ + '\',this)">✏️ تصحيح</span>';
     }
-
-    h += '</div>'; // end bubble
-    h += '</div>'; // end flat-msg
+    h += '</div></div>';
   });
-
   return h;
 }
 
-/**
- * Find previous user message before index
- */
 function findPrevUserMsg(messages, beforeIdx) {
   for (var i = beforeIdx - 1; i >= 0; i--) {
     if (messages[i].role === 'user') return messages[i];
@@ -1184,20 +1199,14 @@ function findPrevUserMsg(messages, beforeIdx) {
   return null;
 }
 
-// ═══════════════════════════════════════
-// 📦 GROUPED VIEW — Q&A Cards
-// ═══════════════════════════════════════
 function renderGrouped(messages, sid) {
   var h = '';
   var groups = [];
   var currentGroup = null;
   var groupNum = 0;
-
   messages.forEach(function(m) {
     var isUser = (m.role === 'user');
-
     if (isUser) {
-      // Save previous group
       if (currentGroup) {
         if (currentGroup.question && currentGroup.answers.length === 0) currentGroup.unanswered = true;
         groups.push(currentGroup);
@@ -1218,33 +1227,21 @@ function renderGrouped(messages, sid) {
     if (currentGroup.question && currentGroup.answers.length === 0) currentGroup.unanswered = true;
     groups.push(currentGroup);
   }
-
   var lastDate = '';
-
   groups.forEach(function(g) {
     var firstMsg = g.question || (g.answers[0] || null);
-
-    // Date
     var ds = fmtDate(firstMsg ? firstMsg.created_at : '');
     if (ds && ds !== lastDate) {
       h += '<div class="qa-date"><span>📅 ' + ds + '</span></div>';
       lastDate = ds;
     }
-
     h += '<div class="qa-card">';
-
-    // Header
     h += '<div class="qa-card-header">';
     h += '<span class="qa-num">' + g.num + '</span>';
-    if (g.botOnly) {
-      h += '<span style="font-weight:700;color:#16a34a">🤖 رسالة تلقائية</span>';
-    } else if (g.question && g.question.intent) {
-      h += '<span class="qa-tag">' + esc(g.question.intent) + '</span>';
-    }
+    if (g.botOnly) h += '<span style="font-weight:700;color:#16a34a">🤖 رسالة تلقائية</span>';
+    else if (g.question && g.question.intent) h += '<span class="qa-tag">' + esc(g.question.intent) + '</span>';
     h += '<span class="qa-time">🕐 ' + fmtTime(firstMsg ? firstMsg.created_at : '') + '</span>';
     h += '</div>';
-
-    // Question
     if (g.question) {
       h += '<div class="qa-question">';
       h += '<span class="qa-question-label">👤 سؤال المستخدم</span>';
@@ -1252,14 +1249,11 @@ function renderGrouped(messages, sid) {
       h += '<div class="qa-question-text">' + esc(g.question.content || '').slice(0, 1500) + '</div>';
       h += '</div>';
     }
-
-    // Answers
     g.answers.forEach(function(ans, ai) {
       h += '<div class="qa-answer">';
       h += '<span class="qa-answer-label">🤖 ' + (g.botOnly ? 'رسالة تلقائية' : (ai === 0 ? 'رد البوت' : 'رد إضافي ' + (ai+1))) + '</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (ans.id||'?') + ' | ' + fmtTime(ans.created_at) + '</span>';
       h += '<div class="qa-answer-text">' + esc(ans.content || '').slice(0, 5000) + '</div>';
-
       if (!g.botOnly) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent((g.question ? g.question.content : '').slice(0,500)))); } catch(e){}
@@ -1267,27 +1261,18 @@ function renderGrouped(messages, sid) {
       }
       h += '</div>';
     });
-
-    if (g.unanswered) {
-      h += '<div class="qa-no-reply">⚠️ المستخدم بعت رسالة ومفيش رد!</div>';
-    }
-
-    h += '</div>'; // end qa-card
+    if (g.unanswered) h += '<div class="qa-no-reply">⚠️ المستخدم بعت رسالة ومفيش رد!</div>';
+    h += '</div>';
   });
-
   return h;
 }
 
-// ═══════════════════════════════════════
-// 🔧 DEBUG VIEW — Raw data table
-// ═══════════════════════════════════════
 function renderDebug(messages) {
   var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto">';
   h += '<h4 style="margin:0 0 8px;font-size:13px;color:#64748b">🔧 ترتيب الرسائل الفعلي (مرتب حسب created_at → id)</h4>';
   h += '<table style="font-size:11px"><thead><tr>';
   h += '<th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>created_at</th><th>Content (أول 80 حرف)</th>';
   h += '</tr></thead><tbody>';
-
   messages.forEach(function(m, i) {
     var rowColor = m.role === 'user' ? '#dcf8c6' : '#fff';
     h += '<tr class="debug-row" style="background:' + rowColor + '">';
@@ -1299,13 +1284,10 @@ function renderDebug(messages) {
     h += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content || '').slice(0, 80)) + '</td>';
     h += '</tr>';
   });
-
   h += '</tbody></table>';
   h += '<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">';
-  h += '💡 <b>لو الترتيب غلط هنا</b> يبقى المشكلة من الباك اند (الداتا نفسها مش مرتبة صح). ';
-  h += 'لو الترتيب صح هنا بس غلط في العرض المجمّع، يبقى مشكلة الـ grouping.';
-  h += '</div>';
-  h += '</div>';
+  h += '💡 <b>لو الترتيب غلط هنا</b> يبقى المشكلة من الباك اند. لو صح هنا بس غلط في المجمّع، يبقى مشكلة الـ grouping.';
+  h += '</div></div>';
   return h;
 }
 
@@ -1321,7 +1303,6 @@ function openCorrection(logId, sid, safeQ, btn) {
   }
   var uq = '';
   try { uq = decodeURIComponent(escape(atob(safeQ))); } catch(e) {}
-
   modalState = { type:'correction', logId:logId, sid:sid, original:original, userQuestion:uq };
   document.getElementById('modalTitle').textContent = '✏️ تصحيح الإجابة';
   document.getElementById('modalBody').innerHTML =
@@ -1369,6 +1350,196 @@ async function loadCorrections() {
 }
 
 // ═══════════════════════════════════════
+// 🧠 BOT INSTRUCTIONS — 🆕 v12
+// ═══════════════════════════════════════
+var BOT_INSTRUCTION_CATEGORIES = [
+  { value: 'GENERAL', label: '🌐 عام', desc: 'تعليمات تنطبق على كل الردود' },
+  { value: 'STYLE', label: '🎨 أسلوب الكلام', desc: 'طريقة الرد واللهجة' },
+  { value: 'RULES', label: '⛔ قواعد وممنوعات', desc: 'حاجات البوت مش هيعملها' },
+  { value: 'COURSE_SEARCH', label: '📚 البحث عن كورسات', desc: 'تعليمات خاصة بعرض الكورسات' },
+  { value: 'SUPPORT', label: '🛠️ الدعم الفني', desc: 'تعليمات للمشاكل التقنية' },
+  { value: 'PAYMENT', label: '💳 الدفع', desc: 'تعليمات خاصة بالدفع والاشتراك' },
+  { value: 'ACCESS', label: '🔐 الوصول', desc: 'تعليمات مشاكل تسجيل الدخول' },
+  { value: 'GREETING', label: '👋 الترحيب', desc: 'تعليمات الرسالة الأولى' },
+];
+
+async function loadBotInstructions() {
+  var el = document.getElementById('botInstructionsList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var se = document.getElementById('botInstructionsSearch');
+    var s = se ? se.value : '';
+    var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
+    var items = d.items || [];
+    _botInstructionsCache = items.slice();
+
+    if (!items.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:30px">' +
+        '<div style="font-size:48px;margin-bottom:12px">📝</div>' +
+        '<p style="color:#94a3b8;margin-bottom:12px">مفيش تعليمات لسه — البوت بيستخدم الإعدادات الافتراضية</p>' +
+        '<button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف أول تعليمة</button>' +
+        '</div>';
+      return;
+    }
+
+    // Group by category
+    var grouped = {};
+    items.forEach(function(item) {
+      var cat = item.category || 'GENERAL';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(item);
+    });
+
+    var html = '';
+
+    // Summary bar
+    var activeCount = items.filter(function(i) { return i.is_active !== false; }).length;
+    html += '<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:12px">';
+    html += '<span style="font-size:13px"><b>' + items.length + '</b> تعليمة</span>';
+    html += '<span style="font-size:13px;color:#16a34a"><b>' + activeCount + '</b> مفعّلة ✅</span>';
+    html += '<span style="font-size:13px;color:#dc2626"><b>' + (items.length - activeCount) + '</b> موقفة ❌</span>';
+    html += '<span style="font-size:11px;color:#94a3b8;margin-right:auto">البوت بيقرأ كل التعليمات المفعّلة قبل كل رد</span>';
+    html += '</div>';
+
+    // Render each category group
+    for (var catKey in grouped) {
+      var catItems = grouped[catKey];
+      var catInfo = BOT_INSTRUCTION_CATEGORIES.find(function(c) { return c.value === catKey; });
+      var catLabel = catInfo ? catInfo.label : catKey;
+      var catDesc = catInfo ? catInfo.desc : '';
+
+      html += '<div class="card" style="margin-bottom:12px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0">';
+      html += '<span class="category-tag cat-' + catKey + '">' + catLabel + '</span>';
+      html += '<span style="font-size:11px;color:#94a3b8">' + catDesc + '</span>';
+      html += '<span style="font-size:12px;color:#64748b;margin-right:auto">' + catItems.length + ' تعليمة</span>';
+      html += '</div>';
+
+      html += '<div style="display:grid;gap:10px">';
+      catItems.forEach(function(item, idx) {
+        var ia = item.is_active !== false;
+        var globalIdx = _botInstructionsCache.indexOf(item);
+        html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '">';
+
+        // Header
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+        html += '<div style="display:flex;align-items:center;gap:8px">';
+        html += '<span style="font-size:11px;color:#94a3b8">#' + item.id + '</span>';
+        html += '<div class="priority-bar">';
+        html += '<span>أولوية: ' + (item.priority || 0) + '</span>';
+        html += renderPriorityDots(item.priority);
+        html += '</div>';
+        html += '</div>';
+        html += '<span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + ';font-weight:700">' + (ia ? '✅ مفعّل' : '❌ موقف') + '</span>';
+        html += '</div>';
+
+        // Instruction text
+        html += '<div class="instruction-text">' + esc(item.instruction || '') + '</div>';
+
+        // Footer
+        html += '<div style="display:flex;gap:6px;margin-top:8px;align-items:center">';
+        html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + globalIdx + ')">✏️ تعديل</button>';
+        html += '<button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️ إيقاف' : '▶️ تفعيل') + '</button>';
+        html += '<button class="btn btn-danger btn-sm" onclick="deleteBotInstruction(\'' + item.id + '\')">🗑️</button>';
+        html += '<span style="font-size:10px;color:#94a3b8;margin-right:auto">' + fmtFull(item.created_at) + '</span>';
+        html += '</div>';
+
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p></div>';
+  }
+}
+
+function openAddBotInstructionModal() {
+  modalState = { type: 'bot_instruction_add' };
+  document.getElementById('modalTitle').textContent = '➕ تعليمة جديدة للبوت';
+  document.getElementById('modalBody').innerHTML = buildBIForm(null);
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditBotInstruction(idx) {
+  var item = _botInstructionsCache[idx];
+  if (!item) return;
+  modalState = { type: 'bot_instruction_edit', id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل التعليمة #' + item.id;
+  document.getElementById('modalBody').innerHTML = buildBIForm(item);
+  document.getElementById('modal').classList.add('show');
+}
+
+function buildBIForm(item) {
+  var inst = item ? esc(item.instruction || '') : '';
+  var cat = item ? (item.category || 'GENERAL') : 'GENERAL';
+  var p = item ? (item.priority != null ? item.priority : 10) : 10;
+  var a = item ? (item.is_active !== false) : true;
+
+  var h = '';
+  h += '<div class="prompt-badge" style="margin-bottom:12px">📝 اكتب التعليمة بالعربي العادي — البوت هيفهمها ويتبعها</div>';
+
+  h += '<label style="font-size:12px;font-weight:600">التعليمة:</label>';
+  h += '<textarea id="bi_instruction" rows="6" style="margin-top:4px;margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="مثلاً: لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان...">' + inst + '</textarea>';
+
+  h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+
+  h += '<div style="flex:1;min-width:180px">';
+  h += '<label style="font-size:12px;font-weight:600">التصنيف:</label>';
+  h += '<select id="bi_category" style="margin-top:4px">';
+  BOT_INSTRUCTION_CATEGORIES.forEach(function(c) {
+    h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + ' — ' + c.desc + '</option>';
+  });
+  h += '</select>';
+  h += '</div>';
+
+  h += '<div style="flex:0 0 120px">';
+  h += '<label style="font-size:12px;font-weight:600">الأولوية:</label>';
+  h += '<input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px">';
+  h += '<div style="font-size:10px;color:#94a3b8;margin-top:2px">0 = أقل | 100 = أعلى</div>';
+  h += '</div>';
+
+  h += '</div>';
+
+  h += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#f8fafc;border-radius:8px">';
+  h += '<label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+  h += '<span style="font-size:13px">مفعّل — البوت هيقرأ التعليمة دي</span>';
+  h += '</div>';
+
+  // Examples
+  h += '<div style="margin-top:12px;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">';
+  h += '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">💡 أمثلة لتعليمات:</div>';
+  h += '<div style="font-size:11px;color:#78350f;line-height:2">';
+  h += '▸ "لما حد يسأل عن سعر الاشتراك قوله إن العرض الحالي 49$ بدل 59$"<br>';
+  h += '▸ "ما تقترحش أي منصة تانية غير إيزي تي"<br>';
+  h += '▸ "لو حد قالك مشكلة في الفيديو، قوله يجرب Chrome ويمسح الكاش"<br>';
+  h += '▸ "كلم العميل بعامية مصرية واستخدم إيموجي خفيف"<br>';
+  h += '▸ "لو حد سأل عن كورس مش موجود، اقترح عليه أقرب كورس متاح"<br>';
+  h += '</div></div>';
+
+  return h;
+}
+
+async function toggleBotInstruction(id, val) {
+  try {
+    await apiCall('/admin/bot-instructions/' + id, { method: 'PUT', body: JSON.stringify({ is_active: val }) });
+    toast(val ? '✅ تم التفعيل' : '⏸️ تم الإيقاف');
+    loadBotInstructions();
+  } catch(e) { toast('خطأ', 'error'); }
+}
+
+async function deleteBotInstruction(id) {
+  var ok = await showConfirm('حذف التعليمة؟');
+  if (!ok) return;
+  try {
+    await apiCall('/admin/bot-instructions/' + id, { method: 'DELETE' });
+    toast('تم الحذف ✅');
+    loadBotInstructions();
+  } catch(e) { toast('خطأ', 'error'); }
+}
+
+// ═══════════════════════════════════════
 // CUSTOM RESPONSES
 // ═══════════════════════════════════════
 async function loadCustomResponses() {
@@ -1380,12 +1551,10 @@ async function loadCustomResponses() {
     var d = await apiCall('/admin/custom-responses?limit=100'+(s?'&search='+encodeURIComponent(s):''));
     var items = d.items||[];
     _customResponsesCache = items.slice();
-
     if (!items.length) {
       el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد ردود مخصصة</p>';
       return;
     }
-
     var html = '<div style="display:grid;gap:12px">';
     items.forEach(function(item, idx) {
       var ia = item.is_active !== false;
@@ -1453,9 +1622,7 @@ async function loadCrud(entity) {
     var el = document.getElementById(entity+'-table');
     _crudCache[entity] = {};
     items.forEach(function(i){_crudCache[entity][i.id]=i;});
-
     if(!items.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center">لا توجد بيانات</p>'; return; }
-
     var cols = Object.keys(items[0]).filter(function(k){return k!=='full_content'&&k!=='content';}).slice(0,6);
     var html = '<div style="overflow-x:auto"><table><thead><tr>';
     cols.forEach(function(c){html+='<th>'+esc(c)+'</th>';});
@@ -1535,7 +1702,7 @@ async function saveModal() {
       };
       if(!b.corrected_answer) { toast('اكتب الإجابة!','error'); return; }
       await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
-      closeModal(); toast('تم ✅');
+      closeModal(); toast('تم التصحيح ✅');
       if(currentTab==='corrections') loadCorrections();
       return;
     }
@@ -1557,6 +1724,24 @@ async function saveModal() {
         await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
       }
       closeModal(); toast('تم ✅'); loadCustomResponses();
+      return;
+    }
+
+    // 🆕 Bot Instruction
+    if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
+      var bi = {
+        instruction: document.getElementById('bi_instruction').value,
+        category: document.getElementById('bi_category').value,
+        priority: parseInt(document.getElementById('bi_priority').value)||0,
+        is_active: document.getElementById('bi_active').checked
+      };
+      if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة واضحة (5 حروف على الأقل)!','error'); return; }
+      if(modalState.type==='bot_instruction_add') {
+        await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
+      } else {
+        await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
+      }
+      closeModal(); toast('تم حفظ التعليمة ✅'); loadBotInstructions();
       return;
     }
 
