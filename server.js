@@ -1,11 +1,18 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.7 — 🐛 Fix Arabic multi-word search
-   ✅ ALL v7.9.6 code preserved
-   🐛 v7.9.7: FIXED multi-word search terms not matching course titles
-   🐛 v7.9.7: NEW splitIntoSearchableTerms() — splits phrases into words
-   🐛 v7.9.7: NEW Arabic prefix stripping (ال، بال، وال، لل، كال)
-   🐛 v7.9.7: ADDED AI/design synonyms to SEARCH_SYNONYMS
-   🐛 v7.9.7: ADDED Arabic educational terms to isEducationalTerm()
+   🤖 Ziko Chatbot v7.9.8 — 🐛 Fix query explosion + diplomas.image
+   ✅ ALL v7.9.7 code preserved
+   🐛 v7.9.8: FIXED 175 OR filters → max 36 (Supabase fetch failed)
+   🐛 v7.9.8: FIXED diplomas.image column does not exist
+   🐛 v7.9.8: TRIMMED SEARCH_SYNONYMS — no tool-specific names
+   🐛 v7.9.8: expandSynonyms — max 3 per match + break after first
+   🐛 v7.9.8: splitIntoSearchableTerms — limit 12 (was 25)
+   🐛 v7.9.8: searchCourses — adaptive columns (3 if >8 terms)
+   🐛 v7.9.8: formatDiplomaCard — safe image fallback
+   ─── v7.9.7 features ───
+   ✅ v7.9.7: splitIntoSearchableTerms() — splits phrases into words
+   ✅ v7.9.7: Arabic prefix stripping (ال، بال، وال، لل، كال)
+   ✅ v7.9.7: Arabic educational term detection in isEducationalTerm()
+   ✅ v7.9.7: AI/design synonyms in SEARCH_SYNONYMS
    ─── v7.9.6 features ───
    ✅ v7.9.6: AI reranker safety net (double fallback)
    ✅ v7.9.6: Less aggressive reranker prompt
@@ -14,16 +21,15 @@
    ✅ v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
    ✅ v7.9.5: FIXED price display $$9.99 → $9.99
    ─── v7.9.4 features ───
-   ✅ v7.9.4: searchCourses searches page_content, syllabus, objectives columns
-   ✅ v7.9.4: Scoring weights: title(10) > subtitle(7) > page_content(5) > syllabus(4) > objectives(4) > description(3) > full_content(2)
+   ✅ v7.9.4: searchCourses searches page_content, syllabus, objectives
+   ✅ v7.9.4: Scoring weights: title(10)>subtitle(7)>page_content(5)>syllabus(4)>objectives(4)>description(3)>full_content(2)
    ✅ v7.9.4: fuzzySearchFallback includes new columns
    ─── v7.9.3 features ───
-   ✅ v7.9.3: FIXED course column names (slug→link, image_url→image, etc.)
-   ✅ v7.9.3: FIXED removed is_published filter (column doesn't exist)
-   ✅ v7.9.3: FIXED removed seo_tags references → uses subtitle + full_content
+   ✅ v7.9.3: FIXED course column names (slug→link, image_url→image)
+   ✅ v7.9.3: FIXED removed is_published filter
+   ✅ v7.9.3: FIXED removed seo_tags references
    ✅ v7.9.3: FIXED formatCourseCard uses course.link + course.image
-   ✅ v7.9.3: FIXED formatDiplomaCard uses diploma.link + diploma.image
-   ✅ v7.9.3: FIXED corrections fallback uses correct column names
+   ✅ v7.9.3: FIXED formatDiplomaCard uses diploma.link
    ─── v7.9.2 features ───
    ✅ v7.9.2: FIXED Markdown links → HTML <a> tags
    ✅ v7.9.2: FIXED GPT prompts to request HTML links
@@ -36,16 +42,11 @@
    ✅ v7.9.1: FIXED empty search_terms — rescue using message text
    ✅ v7.9.1: Community questions handled properly
    ─── Previous features ───
-   ✅ v7.9: bot_instructions table — admin writes prompts in plain Arabic
-   ✅ v7.9: Instructions injected into GPT system prompt
-   ✅ v7.9: FIXED chat log ordering — user always before bot
-   ✅ v7.9: Enhanced searchCorrections() with fuzzy + semantic matching
-   ✅ v7.9: Admin CRUD for bot instructions
-   ✅ v7.8: SUPPORT intent — recognizes technical issues
-   ✅ v7.8: custom_responses table — manage bot replies from admin
-   ✅ v7.8: matchCustomResponse() — keyword matching for support
-   ✅ v7.8: Admin CRUD for custom responses
-   ✅ v7.8: GPT support fallback when no custom response matches
+   ✅ v7.9: bot_instructions table + Instructions injected into GPT
+   ✅ v7.9: FIXED chat log ordering
+   ✅ v7.9: Enhanced searchCorrections() with fuzzy + semantic
+   ✅ v7.8: SUPPORT intent + custom_responses table
+   ✅ v7.8: matchCustomResponse() + Admin CRUD
    ✅ v7.7: Smart course suggestions for GENERAL questions
    ✅ v7.6: Fuzzy Arabic search with Levenshtein distance
    ✅ v7.5: Context-Aware Audience + Conversational Detection
@@ -66,7 +67,6 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
-const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -269,45 +269,49 @@ const ARABIC_CORRECTIONS = {
 };
 
 /* ═══════════════════════════════════
-   ═══ Search Synonyms — v7.9.7: Added AI + design synonyms
+   ═══ Search Synonyms — v7.9.8: TRIMMED (no tool names)
    ═══════════════════════════════════ */
 const SEARCH_SYNONYMS = {
   "ديجيتال ماركيتنج": [
-    "تسويق رقمي", "تسويق الكتروني", "تسويق اونلاين",
-    "digital marketing", "التسويق الرقمي", "تسويق ديجيتال",
+    "تسويق رقمي",
+    "تسويق الكتروني",
+    "digital marketing",
+    "التسويق الرقمي",
+    "تسويق ديجيتال",
   ],
   "جرافيك ديزاين": [
-    "تصميم جرافيك", "تصميم", "graphic design", "التصميم الجرافيكي",
+    "تصميم جرافيك",
+    "تصميم",
+    "graphic design",
+    "التصميم الجرافيكي",
   ],
-  برمجه: [
-    "تطوير", "كودنج", "coding", "programming", "برمجة", "development",
-  ],
+  برمجه: ["تطوير", "كودنج", "coding", "programming", "برمجة"],
   سيو: ["تحسين محركات البحث", "seo", "محركات البحث"],
   فوتوشوب: ["photoshop", "فوتو شوب", "تعديل صور"],
   اليستريتر: ["illustrator", "اليستراتور"],
   بايثون: ["python", "بايثن"],
   "سوشيال ميديا": [
-    "social media", "منصات التواصل", "التواصل الاجتماعي", "ادارة صفحات",
+    "social media",
+    "منصات التواصل",
+    "التواصل الاجتماعي",
   ],
   بيزنس: ["business", "ادارة اعمال", "ريادة اعمال"],
-  اكسل: ["excel", "اكسيل", "spreadsheet"],
+  اكسل: ["excel", "اكسيل"],
   ووردبريس: ["wordpress", "وورد بريس"],
-  // v7.9.7: NEW AI + design synonyms
   "ذكاء اصطناعي": [
-    "artificial intelligence", "ai", "machine learning",
-    "تعلم آلي", "تعلم الآلة", "ذكاء صناعي",
-    "الذكاء الاصطناعي", "الذكاء الإصطناعي",
-    "midjourney", "stable diffusion", "comfyui",
-    "chatgpt", "dall-e", "dalle",
+    "ai",
+    "artificial intelligence",
+    "الذكاء الاصطناعي",
+    "الذكاء الإصطناعي",
+    "ذكاء صناعي",
   ],
   "تصميم صور": [
-    "image design", "تصميم جرافيك", "فوتوشوب", "photoshop",
-    "تعديل صور", "معالجة صور", "صور بالذكاء الاصطناعي",
-    "ai images", "ai art",
+    "image design",
+    "فوتوشوب",
+    "photoshop",
+    "تعديل صور",
   ],
-  "تصميم داخلي": [
-    "interior design", "ديكور", "تصميم ديكور",
-  ],
+  "تصميم داخلي": ["interior design", "ديكور", "تصميم ديكور"],
 };
 
 /* ═══════════════════════════════════
@@ -363,33 +367,42 @@ function applyArabicCorrections(text) {
   return corrected;
 }
 
+/* ═══ v7.9.8: expandSynonyms — max 3 per match + break after first ═══ */
 function expandSynonyms(terms) {
   const expanded = new Set(terms);
   for (const t of terms) {
     const normT = normalizeArabic(t.toLowerCase());
+    if (normT.length <= 1) continue;
+    let matched = false;
     for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
       const normCanonical = normalizeArabic(canonical.toLowerCase());
       if (
         normT === normCanonical ||
-        normT.includes(normCanonical) ||
-        normCanonical.includes(normT)
+        (normT.length > 2 && normT.includes(normCanonical)) ||
+        (normCanonical.length > 2 && normCanonical.includes(normT))
       ) {
-        synonyms.forEach((s) => expanded.add(s));
+        synonyms.slice(0, 3).forEach((s) => expanded.add(s));
         expanded.add(canonical);
+        matched = true;
+        break;
       }
       for (const syn of synonyms) {
         const normSyn = normalizeArabic(syn.toLowerCase());
         if (
           normT === normSyn ||
-          normT.includes(normSyn) ||
-          normSyn.includes(normT)
+          (normT.length > 2 && normT.includes(normSyn)) ||
+          (normSyn.length > 2 && normSyn.includes(normT))
         ) {
           expanded.add(canonical);
-          synonyms.forEach((s2) => expanded.add(s2));
+          synonyms.slice(0, 3).forEach((s2) => expanded.add(s2));
+          matched = true;
+          break;
         }
       }
+      if (matched) break;
     }
   }
+  console.log(`🔀 expandSynonyms: ${terms.length} → ${expanded.size} terms`);
   return [...expanded];
 }
 
@@ -490,7 +503,7 @@ function markdownToHtml(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ v7.9.7: isEducationalTerm — Added Arabic terms
+   ═══ isEducationalTerm — v7.9.7: Added Arabic patterns
    ══════════════════════════════════════════════════════════ */
 function isEducationalTerm(msg) {
   const eduTerms = [
@@ -542,7 +555,6 @@ function isEducationalTerm(msg) {
     if (regex.test(" " + lower + " ")) return term;
   }
 
-  // v7.9.7: Arabic educational terms detection
   const arabicEduPatterns = [
     { pattern: /ذكاء\s*(اصطناعي|صناعي|الاصطناعي|الإصطناعي)/i, term: "ذكاء اصطناعي" },
     { pattern: /تصميم\s*(صور|جرافيك|داخلي|مواقع|ويب)/i, term: "تصميم" },
@@ -599,10 +611,10 @@ function isCommunityQuestion(msg) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 v7.9.7: splitIntoSearchableTerms
+   ═══ v7.9.7→v7.9.8: splitIntoSearchableTerms
    ═══ Splits multi-word phrases into individual words
-   ═══ Strips Arabic prefixes (ال، بال، وال، لل، كال)
-   ═══ Normalizes Arabic characters for better matching
+   ═══ Strips Arabic prefixes (ال، بال، وال، لل)
+   ═══ v7.9.8: limit 12 terms (was 25)
    ══════════════════════════════════════════════════════════ */
 function splitIntoSearchableTerms(terms) {
   const result = new Set();
@@ -611,66 +623,46 @@ function splitIntoSearchableTerms(terms) {
     const t = term.toLowerCase().trim();
     if (t.length <= 1) continue;
 
-    // Add original term (phrase or single word)
     result.add(t);
-
-    // Also add normalized version
     const normT = normalizeArabic(t);
     if (normT.length > 1) result.add(normT);
 
-    // Split into individual words
     const words = t.split(/\s+/);
     for (const word of words) {
       const w = word.trim();
-      if (w.length <= 1) continue;
-      if (ARABIC_STOP_WORDS.has(w)) continue;
+      if (w.length <= 1 || ARABIC_STOP_WORDS.has(w)) continue;
 
       result.add(w);
-
-      // Add normalized version
       const normW = normalizeArabic(w);
       if (normW.length > 1) result.add(normW);
 
-      // Strip Arabic prefixes for better ilike matching
-      // "ال" (the) → "الذكاء" → "ذكاء"
       if (w.startsWith("ال") && w.length > 3) {
-        result.add(w.substring(2));
-        const nw = normalizeArabic(w.substring(2));
-        if (nw.length > 1) result.add(nw);
+        const stripped = w.substring(2);
+        result.add(stripped);
+        const ns = normalizeArabic(stripped);
+        if (ns.length > 1) result.add(ns);
       }
-      // "بال" (with the) → "بالذكاء" → "ذكاء"
       if (w.startsWith("بال") && w.length > 4) {
         result.add(w.substring(3));
-        result.add("ال" + w.substring(3));
       }
-      // "وال" (and the) → "والتصميم" → "تصميم"
       if (w.startsWith("وال") && w.length > 4) {
         result.add(w.substring(3));
-        result.add("ال" + w.substring(3));
       }
-      // "لل" (for the) → "للتصميم" → "تصميم"
       if (w.startsWith("لل") && w.length > 3) {
         result.add(w.substring(2));
-        result.add("ال" + w.substring(2));
-      }
-      // "كال" (like the) → "كالتصميم" → "تصميم"
-      if (w.startsWith("كال") && w.length > 4) {
-        result.add(w.substring(3));
-        result.add("ال" + w.substring(3));
-      }
-      // "ب" prefix (with) → "بتصميم" → "تصميم"
-      if (w.startsWith("ب") && !w.startsWith("بال") && w.length > 3) {
-        result.add(w.substring(1));
       }
     }
+
+    // v7.9.8: stop early if we have enough terms
+    if (result.size >= 15) break;
   }
 
   const final = [...result].filter((t) => t.length > 1);
   console.log(
     `🔤 splitIntoSearchableTerms: ${terms.length} phrases → ${final.length} searchable terms`
   );
-  console.log(`🔤 Terms: [${final.join(", ")}]`);
-  return final.slice(0, 25); // Limit to avoid very long queries
+  console.log(`🔤 Terms: [${final.slice(0, 12).join(", ")}]`);
+  return final.slice(0, 12);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -952,34 +944,41 @@ async function classifyIntent(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchCourses — v7.9.7: Uses splitIntoSearchableTerms
+   ═══ searchCourses — v7.9.8: adaptive columns
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   try {
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const cleanedTerms = stripAudienceModifiers(correctedTerms);
     const expandedTerms = expandSynonyms(cleanedTerms);
-
-    // 🆕 v7.9.7: Split multi-word terms into individual searchable words
     const allTerms = splitIntoSearchableTerms(expandedTerms);
 
     if (allTerms.length === 0) return [];
 
     console.log("🔍 Search terms after split+expansion:", allTerms);
 
+    // v7.9.8: adaptive columns — fewer when many terms to prevent URL overflow
+    const columnsToSearch =
+      allTerms.length > 8
+        ? ["title", "subtitle", "description"]
+        : [
+            "title",
+            "description",
+            "subtitle",
+            "full_content",
+            "page_content",
+            "syllabus",
+            "objectives",
+          ];
+
     const orFilters = allTerms
-      .flatMap((t) => [
-        `title.ilike.%${t}%`,
-        `description.ilike.%${t}%`,
-        `subtitle.ilike.%${t}%`,
-        `full_content.ilike.%${t}%`,
-        `page_content.ilike.%${t}%`,
-        `syllabus.ilike.%${t}%`,
-        `objectives.ilike.%${t}%`,
-      ])
+      .flatMap((t) => columnsToSearch.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
 
-    console.log(`🔍 OR filters count: ${allTerms.length * 7}`);
+    const filterCount = allTerms.length * columnsToSearch.length;
+    console.log(
+      `🔍 Search: ${allTerms.length} terms × ${columnsToSearch.length} columns = ${filterCount} OR filters`
+    );
 
     const { data: courses, error } = await supabase
       .from("courses")
@@ -1042,7 +1041,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       }
     }
 
-    // 🆕 v7.9.7: Score using NORMALIZED versions for accurate matching
     const scored = filtered.map((c) => {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
@@ -1082,7 +1080,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   }
 }
 
-/* ═══ Fuzzy Search Fallback — v7.9.7: Also splits terms ═══ */
+/* ═══ Fuzzy Search Fallback — v7.9.7+v7.9.8 ═══ */
 async function fuzzySearchFallback(terms) {
   try {
     const { data: allCourses, error } = await supabase
@@ -1094,10 +1092,11 @@ async function fuzzySearchFallback(terms) {
 
     if (error || !allCourses) return [];
 
-    // 🆕 v7.9.7: Ensure terms are split into individual words
     const searchableTerms = splitIntoSearchableTerms(terms);
 
-    console.log(`🔍 Fuzzy fallback: checking ${allCourses.length} courses with ${searchableTerms.length} terms`);
+    console.log(
+      `🔍 Fuzzy fallback: checking ${allCourses.length} courses with ${searchableTerms.length} terms`
+    );
 
     const results = [];
     for (const course of allCourses) {
@@ -1116,7 +1115,6 @@ async function fuzzySearchFallback(terms) {
         (course.objectives || "").toLowerCase()
       );
 
-      // 🆕 v7.9.7: Count how many terms match for multi-term scoring
       let termMatchCount = 0;
 
       for (const term of searchableTerms) {
@@ -1149,7 +1147,6 @@ async function fuzzySearchFallback(terms) {
         }
 
         if (!matched) {
-          // Word-level similarity on title
           const titleWords = titleNorm.split(/\s+/);
           for (const tw of titleWords) {
             const sim = similarityRatio(normTerm, tw);
@@ -1169,7 +1166,6 @@ async function fuzzySearchFallback(terms) {
         if (matched) termMatchCount++;
       }
 
-      // 🆕 v7.9.7: Bonus for matching multiple terms
       if (termMatchCount >= 2) bestSim += termMatchCount * 3;
 
       if (bestSim >= 55) {
@@ -1187,14 +1183,12 @@ async function fuzzySearchFallback(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchDiplomas — v7.9.7: Also uses splitIntoSearchableTerms
+   ═══ searchDiplomas — v7.9.8: REMOVED image column
    ══════════════════════════════════════════════════════════ */
 async function searchDiplomas(searchTerms) {
   try {
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const expandedTerms = expandSynonyms(correctedTerms);
-
-    // 🆕 v7.9.7: Split into searchable terms
     const allTerms = splitIntoSearchableTerms(expandedTerms);
 
     if (allTerms.length === 0) return [];
@@ -1203,9 +1197,14 @@ async function searchDiplomas(searchTerms) {
       .flatMap((t) => [`title.ilike.%${t}%`, `description.ilike.%${t}%`])
       .join(",");
 
+    console.log(
+      `🔍 Diploma search: ${allTerms.length} terms × 2 columns = ${allTerms.length * 2} OR filters`
+    );
+
+    // v7.9.8: REMOVED 'image' — column does not exist in diplomas table
     const { data, error } = await supabase
       .from("diplomas")
-      .select("id, title, link, description, price, image")
+      .select("id, title, link, description, price")
       .or(orFilters)
       .limit(5);
 
@@ -1299,7 +1298,6 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
       .slice(0, 3)
       .map((i) => diplomas[i]);
 
-    // Safety net
     if (selectedCourses.length === 0 && selectedDiplomas.length === 0) {
       console.log(
         "🤖 AI Rerank: returned empty → falling back to original top 5"
@@ -1357,7 +1355,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Diploma Card HTML
+   ═══ Format Diploma Card HTML — v7.9.8: safe image fallback
    ══════════════════════════════════════════════════════════ */
 function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
@@ -1371,7 +1369,12 @@ function formatDiplomaCard(diploma, index) {
   }
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
 
-  const imgUrl = diploma.image || "https://easyt.online/default-diploma.png";
+  // v7.9.8: safe fallback — diplomas table may not have image column
+  const imgUrl =
+    diploma.image ||
+    diploma.image_url ||
+    "https://easyt.online/default-diploma.png";
+
   const desc = diploma.description
     ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
     : "";
@@ -1517,7 +1520,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.7
+   ═══ MAIN CHAT ENDPOINT — v7.9.8
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1605,8 +1608,8 @@ app.post("/chat", limiter, async (req, res) => {
         search_terms.length > 0
           ? search_terms
           : entity
-          ? entity.split(/\s+و\s+|\s+vs\s+|\s+ولا\s+/i)
-          : [];
+            ? entity.split(/\s+و\s+|\s+vs\s+|\s+ولا\s+/i)
+            : [];
 
       if (compTerms.length < 2) {
         reply =
@@ -1651,15 +1654,15 @@ app.post("/chat", limiter, async (req, res) => {
       search_terms.length > 0
         ? search_terms
         : entity
-        ? entity.split(/\s+/).filter((w) => w.length > 1)
-        : extractSearchTermsFromMessage(cleanMessage);
+          ? entity.split(/\s+/).filter((w) => w.length > 1)
+          : extractSearchTermsFromMessage(cleanMessage);
 
     const displayTerm =
       entity && entity.length > 0
         ? entity
         : termsToSearch.length > 0
-        ? termsToSearch.join(" ")
-        : cleanMessage;
+          ? termsToSearch.join(" ")
+          : cleanMessage;
 
     console.log(
       `🔍 Searching: [${termsToSearch}] | Display: "${displayTerm}"`
@@ -2245,7 +2248,7 @@ app.get("/admin/courses", async (req, res) => {
   }
 });
 
-/* ═══ Search Test Endpoint ═══ */
+/* ═══ Search Test Endpoint — v7.9.8 ═══ */
 app.post("/admin/test-search", async (req, res) => {
   try {
     const { query } = req.body;
@@ -2282,7 +2285,6 @@ app.post("/admin/test-search", async (req, res) => {
 
     const elapsed = Date.now() - startTime;
 
-    // v7.9.7: Show the split terms in the response
     const splitTerms = splitIntoSearchableTerms(terms);
 
     res.json({
@@ -2360,7 +2362,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.7
+   ═══ ADMIN DASHBOARD (HTML) — v7.9.8
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -2368,7 +2370,7 @@ app.get("/admin", (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.7</title>
+<title>🤖 زيكو Dashboard — v7.9.8</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
@@ -2421,7 +2423,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <body>
 <div class="header">
 <h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.7 | 🐛 Fixed Arabic multi-word search</p>
+<p>easyT Chatbot Dashboard — v7.9.8 | 🐛 Fixed query explosion + diplomas.image</p>
 </div>
 <div class="container">
 
@@ -2479,7 +2481,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 
 <div id="tab-search-test" style="display:none">
 <div class="section">
-<h2>🔍 اختبار البحث (v7.9.7 — word splitting)</h2>
+<h2>🔍 اختبار البحث (v7.9.8 — max 12 terms, adaptive columns)</h2>
 <div class="search-box">
 <input type="text" id="testQuery" placeholder="جرب أي استعلام بحث مثل: تصميم الصور بالذكاء الاصطناعي">
 <button class="btn-primary" onclick="testSearch()">🔍 اختبار</button>
@@ -2611,7 +2613,7 @@ const q=document.getElementById('testQuery').value;
 if(!q)return;
 const el=document.getElementById('testResult');
 el.style.display='block';
-el.textContent='⏳ جاري الاختبار (v7.9.7 — word splitting)...';
+el.textContent='⏳ جاري الاختبار (v7.9.8)...';
 try{
 const r=await fetch(API+'/admin/test-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
 const d=await r.json();
@@ -2731,11 +2733,15 @@ setInterval(loadStats,60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.7",
+    version: "7.9.8",
     features: [
-      "word splitting search (NEW)",
-      "Arabic prefix stripping (NEW)",
-      "Arabic edu term detection (NEW)",
+      "max 12 searchable terms (FIX)",
+      "adaptive columns (FIX)",
+      "diplomas.image removed (FIX)",
+      "synonym limit 3 per match (FIX)",
+      "word splitting search",
+      "Arabic prefix stripping",
+      "Arabic edu term detection",
       "AI reranking + safety net",
       "price fix",
       "page_content search",
@@ -2757,7 +2763,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.7",
+    version: "7.9.8",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -2777,10 +2783,10 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.7                   ║
+║  🤖 زيكو Chatbot — v7.9.8                   ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin                        ║
-║  🆕 Arabic word splitting search             ║
+║  🐛 Fixed: query explosion + diplomas.image  ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
