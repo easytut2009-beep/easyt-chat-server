@@ -1370,10 +1370,6 @@ function formatDiplomaCard(diploma, index) {
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
 
   // v7.9.8: safe fallback — diplomas table may not have image column
-  const imgUrl =
-    diploma.image ||
-    diploma.image_url ||
-    "https://easyt.online/default-diploma.png";
 
   const desc = diploma.description
     ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
@@ -1387,7 +1383,6 @@ function formatDiplomaCard(diploma, index) {
 ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>` : ""}
 <a href="${url}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدبلومة والاشتراك ←</a>
 </div>
-<img src="${imgUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="diploma">
 </div></div>`;
 }
 
@@ -1736,8 +1731,7 @@ app.post("/chat", limiter, async (req, res) => {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      reply = `🔎 نتائج البحث عن "${displayTerm}":\n\n`;
-
+reply = ``;
       if (diplomas.length > 0) {
         reply += diplomas.map((d) => formatDiplomaCard(d)).join("");
         reply += "\n";
