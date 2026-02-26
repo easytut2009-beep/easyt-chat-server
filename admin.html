@@ -881,6 +881,13 @@ function esc(t) {
   return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function closeTags(html) {
+  if (!html) return '';
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.innerHTML;
+}
+
 function stripHtml(t) {
   return t ? String(t).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim() : '';
 }
@@ -1237,7 +1244,7 @@ function renderConversation() {
 
     // ✅ FIX: Bot messages render as HTML, user messages are escaped
     var msgText = (m.content || m.message || '').slice(0, 3000);
-    h += '<div>' + (isUser ? esc(msgText) : msgText) + '</div>';
+h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
 
     h += '<div class="flat-meta">';
     h += '<span class="flat-id">ID: ' + (m.id || '?') + '</span>';
@@ -1315,7 +1322,7 @@ function renderGrouped(messages, sid) {
       h += '<div class="qa-answer">';
       h += '<span class="qa-answer-label">🤖 ' + (g.botOnly ? 'رسالة تلقائية' : (ai === 0 ? 'رد البوت' : 'رد إضافي ' + (ai+1))) + '</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (ans.id||'?') + ' | ' + fmtTime(ans.created_at) + '</span>';
-h += '<div class="qa-answer-text">' + (ans.content || ans.message || '').slice(0, 5000) + '</div>';
+h += '<div class="qa-answer-text">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div>';
       if (!g.botOnly) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent((g.question ? (g.question.content || g.question.message || '') : '').slice(0,500)))); } catch(e){}
