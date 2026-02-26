@@ -1,14 +1,20 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v8.0 — 🔧 Bot Instructions Fix + Subscription Detection
-   ✅ ALL v7.9.9-fix4 code preserved
-   🆕 FIX: isSubscriptionQuestion() — detects pricing/subscription questions
-   🆕 FIX: Subscription questions handled BEFORE custom responses (no confusion)
-   🆕 FIX: loadBotInstructions — reads category field with fallback
-   🆕 FIX: GET /admin/bot-instructions — returns ALL (active + inactive)
-   🆕 FIX: POST /admin/bot-instructions — accepts category + priority
-   🆕 FIX: PUT /admin/bot-instructions/:id — accepts category + priority
-   🐛 FIX: GPT no longer confuses "اشتراك" with "مجتمع"
-   ─── Previous features (v7.9.9-fix4) ───
+   🤖 Ziko Chatbot v8.1 — 🔧 Admin Instructions MAX Priority
+   ✅ ALL v8.0 code preserved
+   🆕 FIX: loadBotInstructions — priority ordering + prefix labels
+   🆕 FIX: getGPTResponse — admin instructions at TOP as mandatory orders
+   🆕 FIX: getGPTSupportResponse — admin instructions at TOP as mandatory orders
+   🆕 FIX: classifyIntent — instructions framed as mandatory
+   🆕 FIX: buildSubscriptionResponse — handles new instruction format
+   🆕 NEW: validateResponse() — post-response validation layer
+   🆕 FIX: /chat endpoint — uses validateResponse for GENERAL + SUPPORT
+   ─── Previous features (v8.0) ───
+   ✅ isSubscriptionQuestion() — detects pricing/subscription questions
+   ✅ Subscription questions handled BEFORE custom responses
+   ✅ loadBotInstructions — reads category field with fallback
+   ✅ GET /admin/bot-instructions — returns ALL (active + inactive)
+   ✅ POST /admin/bot-instructions — accepts category + priority
+   ✅ PUT /admin/bot-instructions/:id — accepts category + priority
    ✅ Beginner detection + category keywords + display order
    ✅ Environment variable validation on startup
    ✅ Supabase connection test on startup
@@ -574,7 +580,6 @@ function detectBeginnerIntent(message) {
 
 /* ══════════════════════════════════════════════════════════
    ═══ 🆕 v8.0: Subscription/Pricing Question Detection
-   ═══ يكتشف أسئلة الاشتراك والأسعار قبل ما GPT يخلط بينها وبين المجتمع
    ══════════════════════════════════════════════════════════ */
 function isSubscriptionQuestion(msg) {
   const lower = msg.toLowerCase();
@@ -610,8 +615,6 @@ function isSubscriptionQuestion(msg) {
     /بكام الدبلومات/i,
     /بكم دخول المنصة/i,
     /بكام دخول المنصة/i,
-
-    // 🆕 v8.1: أسئلة طرق الدفع المتوفرة
     /متوفر.*(دفع|الدفع)/i,
     /الدفع.*(متوفر|متاح|ينفع|ممكن)/i,
     /متاح.*(دفع|الدفع)/i,
@@ -627,8 +630,7 @@ function isSubscriptionQuestion(msg) {
   return patterns.some((p) => p.test(msg));
 }
 
-
-/* ═══ 🆕 v8.0: Build subscription response (reads bot instructions for custom pricing) ═══ */
+/* ═══ 🆕 v8.0: Build subscription response ═══ */
 async function buildSubscriptionResponse(message) {
   const extraInstructions = await loadBotInstructions();
 
@@ -636,7 +638,9 @@ async function buildSubscriptionResponse(message) {
   if (extraInstructions) {
     const lines = extraInstructions.split("\n");
     for (const line of lines) {
-      const normLine = normalizeArabic(line.toLowerCase());
+      /* 🆕 v8.1: strip prefix like [🔴 إلزامي] before checking content */
+      const cleanLine = line.replace(/^\[.*?\]\s*/, "").replace(/^-\s*[^:]+:\s*/, "").trim();
+      const normLine = normalizeArabic(cleanLine.toLowerCase());
       if (
         normLine.includes("سعر") ||
         normLine.includes("اشتراك") ||
@@ -651,15 +655,14 @@ async function buildSubscriptionResponse(message) {
         normLine.includes("فودافون") ||
         normLine.includes("redotpay")
       ) {
-        customPriceInfo += line.replace(/^-\s*[^:]+:\s*/, "").trim() + "\n";
+        customPriceInfo += cleanLine + "\n";
       }
     }
   }
 
-  /* Always use GPT to give a natural response to the specific question */
   if (openai) {
     try {
-  const systemContent = `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن الاشتراك أو الدفع.
+      const systemContent = `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن الاشتراك أو الدفع.
 
 ${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPriceInfo}\n` : ""}
 
@@ -692,7 +695,6 @@ ${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPri
 - ❌ ممنوع ماركداون [text](url)
 - ❌ ممنوع تخترع طرق دفع مش موجودة`;
 
-
       const resp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -702,32 +704,32 @@ ${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPri
         temperature: 0.5,
         max_tokens: 300,
       });
- let reply = resp.choices[0].message.content;
-reply = markdownToHtml(reply);
 
-// Always append links if missing
-const subscriptionLink = `https://easyt.online/p/subscriptions`;
-const paymentLink = `https://easyt.online/p/Payments`;
+      let reply = resp.choices[0].message.content;
+      reply = markdownToHtml(reply);
 
-let links = "";
+      const subscriptionLink = `https://easyt.online/p/subscriptions`;
+      const paymentLink = `https://easyt.online/p/Payments`;
 
-if (!reply.includes(subscriptionLink)) {
-  links += `\n🎓 <a href="${subscriptionLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
-}
+      let links = "";
 
-if (!reply.includes(paymentLink)) {
-  links += `\n💳 <a href="${paymentLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
-}
+      if (!reply.includes(subscriptionLink)) {
+        links += `\n🎓 <a href="${subscriptionLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
+      }
 
-if (links) {
-  reply += "\n" + links;
-}
+      if (!reply.includes(paymentLink)) {
+        links += `\n💳 <a href="${paymentLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
+      }
 
-return reply;
+      if (links) {
+        reply += "\n" + links;
+      }
 
-} catch (e) {
-    console.error("Subscription response error:", e);
-    return `💰 <strong>أسعار الاشتراك في easyT:</strong>
+      return reply;
+
+    } catch (e) {
+      console.error("Subscription response error:", e);
+      return `💰 <strong>أسعار الاشتراك في easyT:</strong>
 
 🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
 بدل 59$ — وفّر 10$! يعني 4$ بس في الشهر 💸
@@ -751,7 +753,6 @@ return reply;
     }
   }
 
-  // fallback لو مفيش OpenAI
   return `💰 <strong>أسعار الاشتراك في easyT:</strong>
 
 🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
@@ -940,7 +941,6 @@ function isAudienceQuestion(msg) {
 }
 
 function isCommunityQuestion(msg) {
-  // لو فيه كلمة تعليمية → مش community question
   if (isEducationalTerm(msg)) return false;
 
   const patterns = [
@@ -1126,11 +1126,7 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ matchCustomResponse
-   ══════════════════════════════════════════════════════════ */
-/* ══════════════════════════════════════════════════════════
    ═══ matchCustomResponse — v8.2 FIX: Strict keyword matching
-   ═══ يفرّق بين كلمات عامة (كورس، المنصة) وكلمات متخصصة (شهادة، فيديو)
    ══════════════════════════════════════════════════════════ */
 async function matchCustomResponse(message) {
   if (!supabase) return null;
@@ -1160,7 +1156,7 @@ async function matchCustomResponse(message) {
     let bestMatch = null;
     let bestScore = 0;
     let bestSpecificCount = 0;
-    let anyGenericOnlyMatch = false;  // ✅ FIX Bug 1: tracked outside loop
+    let anyGenericOnlyMatch = false;
 
     for (const resp of responses) {
       const keywords = resp.keywords || [];
@@ -1185,12 +1181,10 @@ async function matchCustomResponse(message) {
 
       const score = matchCount / keywords.length;
 
-      // ✅ FIX Bug 2: لازم على الأقل كلمة متخصصة واحدة
-      // الـ score لوحده مش كافي — لازم specific match
       const qualifies = specificMatchCount >= 1;
 
       if (!qualifies) {
-        anyGenericOnlyMatch = true;  // ✅ FIX Bug 1
+        anyGenericOnlyMatch = true;
         console.log(
           `⚠️ Custom response REJECTED (only generic matches): keywords=[${keywords.join(", ")}] matched=${matchCount}/${keywords.length} for "${message.substring(0, 50)}"`
         );
@@ -1211,7 +1205,7 @@ async function matchCustomResponse(message) {
       console.log(
         `✅ Custom response MATCHED: score=${(bestScore * 100).toFixed(0)}%, specific=${bestSpecificCount}, keywords=[${(bestMatch.keywords || []).join(", ")}]`
       );
-    } else if (anyGenericOnlyMatch) {  // ✅ FIX Bug 1
+    } else if (anyGenericOnlyMatch) {
       console.log(`❌ No custom response qualified for: "${message.substring(0, 50)}" (generic keywords only)`);
     }
 
@@ -1223,20 +1217,29 @@ async function matchCustomResponse(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🔧 v8.0: loadBotInstructions — reads category field with fallback
+   ═══ 🆕 v8.1: loadBotInstructions — priority ordering + prefix labels
    ══════════════════════════════════════════════════════════ */
 async function loadBotInstructions() {
   if (!supabase) return "";
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
-      .select("label, category, instruction")
-      .eq("is_active", true);
+      .select("label, category, instruction, priority")
+      .eq("is_active", true)
+      .order("priority", { ascending: false });
 
     if (error || !data || data.length === 0) return "";
 
     return data
-      .map((row) => `- ${row.label || row.category || "custom"}: ${row.instruction}`)
+      .map((row) => {
+        const priority = row.priority || 10;
+        const prefix = priority >= 80
+          ? "🔴 إلزامي"
+          : priority >= 50
+            ? "🟡 مهم"
+            : "📌 عام";
+        return `[${prefix}] ${row.instruction}`;
+      })
       .join("\n");
   } catch (e) {
     console.error("loadBotInstructions error:", e.message);
@@ -1245,7 +1248,7 @@ async function loadBotInstructions() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ classifyIntent
+   ═══ 🆕 v8.1: classifyIntent — instructions framed as mandatory
    ══════════════════════════════════════════════════════════ */
 async function classifyIntent(message) {
   if (isCommunityQuestion(message)) {
@@ -1317,7 +1320,7 @@ async function classifyIntent(message) {
 
   const extraInstructions = await loadBotInstructions();
   const instructionsBlock = extraInstructions
-    ? `\n\n═══ تعليمات إضافية من الأدمن ═══\n${extraInstructions}`
+    ? `\n\n⛔ أوامر إلزامية من الأدمن:\n${extraInstructions}`
     : "";
 
   const systemPrompt = `أنت مُصنِّف نوايا لشات بوت منصة easyT التعليمية.
@@ -1880,17 +1883,21 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT General Response
+   ═══ 🆕 v8.1: GPT General Response — Instructions at TOP
    ══════════════════════════════════════════════════════════ */
 async function getGPTResponse(message, context = "") {
   if (!openai) return "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏";
   try {
     const extraInstructions = await loadBotInstructions();
-    const instructionsBlock = extraInstructions
-      ? `\n\nتعليمات إضافية:\n${extraInstructions}`
-      : "";
 
-    const systemPrompt = `أنت "زيكو" 🤖 — مساعد ذكي لمنصة easyT التعليمية.
+    const systemPrompt = `${extraInstructions ? `╔══════════════════════════════════════════╗
+║  ⛔ أوامر إلزامية — ممنوع تخالفها أبداً  ║
+╚══════════════════════════════════════════╝
+${extraInstructions}
+
+⚠️ الأوامر اللي فوق دي أولوية قصوى — لو حصل تعارض بينها وبين أي حاجة تانية، نفّذ الأوامر دي.
+
+` : ""}أنت "زيكو" 🤖 — مساعد ذكي لمنصة easyT التعليمية.
 المنصة فيها أكتر من 600 دورة في: البرمجة، التصميم، التسويق الرقمي، البيزنس، الذكاء الاصطناعي، الأمن السيبراني، وغيرها.
 المنصة عليها 750,000+ متعلم و8 دبلومات متخصصة.
 
@@ -1905,7 +1912,7 @@ async function getGPTResponse(message, context = "") {
 لما تكتب أي لينك، اكتبه بصيغة HTML كده:
 <a href="https://easyt.online/courses" target="_blank">تصفح الكورسات</a>
 <a href="https://easyt.online/p/diplomas" target="_blank">تصفح الدبلومات</a>
-❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط${instructionsBlock}`;
+❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط`;
 
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -1928,17 +1935,21 @@ async function getGPTResponse(message, context = "") {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ GPT Support Response
+   ═══ 🆕 v8.1: GPT Support Response — Instructions at TOP
    ══════════════════════════════════════════════════════════ */
 async function getGPTSupportResponse(message, supportType) {
   if (!openai) return 'لو عندك مشكلة، تواصل مع الدعم على <a href="mailto:support@easyt.online">support@easyt.online</a> 📧';
   try {
     const extraInstructions = await loadBotInstructions();
-    const instructionsBlock = extraInstructions
-      ? `\n\nتعليمات إضافية:\n${extraInstructions}`
-      : "";
 
-    const systemPrompt = `أنت "زيكو" 🤖 — مساعد دعم فني لمنصة easyT.
+    const systemPrompt = `${extraInstructions ? `╔══════════════════════════════════════════╗
+║  ⛔ أوامر إلزامية — ممنوع تخالفها أبداً  ║
+╚══════════════════════════════════════════╝
+${extraInstructions}
+
+⚠️ الأوامر اللي فوق دي أولوية قصوى — لو حصل تعارض بينها وبين أي حاجة تانية، نفّذ الأوامر دي.
+
+` : ""}أنت "زيكو" 🤖 — مساعد دعم فني لمنصة easyT.
 
 نوع المشكلة: ${supportType || "عام"}
 
@@ -1955,7 +1966,7 @@ async function getGPTSupportResponse(message, supportType) {
 🔴 مهم جداً — اللينكات:
 لما تكتب أي لينك، اكتبه بصيغة HTML كده:
 <a href="URL" target="_blank">النص</a>
-❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط${instructionsBlock}`;
+❌ ممنوع تماماً تكتب لينكات بصيغة ماركداون [text](url) — لازم HTML فقط`;
 
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -1992,7 +2003,58 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v8.0
+   ═══ 🆕 v8.1: Post-Response Validation
+   ═══ يتأكد إن الرد ماشي مع التعليمات عالية الأولوية
+   ══════════════════════════════════════════════════════════ */
+async function validateResponse(reply, message) {
+  if (!supabase) return reply;
+
+  try {
+    const { data, error } = await supabase
+      .from("bot_instructions")
+      .select("instruction, priority, label")
+      .eq("is_active", true)
+      .gte("priority", 70);
+
+    if (error || !data || data.length === 0) return reply;
+
+    const replyLower = normalizeArabic(reply.toLowerCase());
+    const msgLower = normalizeArabic(message.toLowerCase());
+
+    for (const rule of data) {
+      const inst = rule.instruction.toLowerCase();
+
+      if (inst.includes("متقولش") && inst.includes("دعم")) {
+        const hasSupportRef = /تواصل مع (الدعم|فريق الدعم|support)/i.test(reply);
+        const isRealProblem = /مش شغال|مش بيفتح|مشكله كبير|خطأ|error/i.test(message);
+
+        if (hasSupportRef && !isRealProblem) {
+          reply = reply.replace(
+            /تواصل مع (الدعم|فريق الدعم|support)[^.،\n]*/gi,
+            "جرب الخطوات دي الأول"
+          );
+          console.log("🛡️ Validation: removed unnecessary support reference");
+        }
+      }
+
+      if (inst.includes("عربي") && (inst.includes("رد ب") || inst.includes("بالعربي"))) {
+        const englishRatio = (reply.match(/[a-zA-Z]/g) || []).length / reply.length;
+        if (englishRatio > 0.4) {
+          console.log("🛡️ Validation: too much English detected, flagged");
+        }
+      }
+    }
+
+    return reply;
+
+  } catch (e) {
+    console.error("validateResponse error:", e.message);
+    return reply;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ MAIN CHAT ENDPOINT — v8.1
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -2051,74 +2113,73 @@ app.post("/chat", limiter, async (req, res) => {
 
     let reply = "";
 
-/* ═══ SUPPORT Intent ═══ */
-/* ═══ SUPPORT Intent — v8.2 FIX: Topic validation ═══ */
-if (intent === "SUPPORT") {
-    const customResp = await matchCustomResponse(cleanMessage);
+    /* ═══ SUPPORT Intent — v8.2 FIX: Topic validation ═══ */
+    if (intent === "SUPPORT") {
+      const customResp = await matchCustomResponse(cleanMessage);
 
-    const isPaymentQ = support_type === "payment" || support_type === "subscription"
-        || /دفع|الدفع|فيزا|فودافون|ماستر|كارت|redotpay|payment/i.test(cleanMessage);
+      const isPaymentQ = support_type === "payment" || support_type === "subscription"
+          || /دفع|الدفع|فيزا|فودافون|ماستر|كارت|redotpay|payment/i.test(cleanMessage);
 
-    // 🆕 v8.2: Topic cross-validation — تأكد إن الرد المخصص مطابق لموضوع السؤال
-    let useCustomResp = !!customResp;
+      let useCustomResp = !!customResp;
 
-    if (customResp) {
+      if (customResp) {
         const respText = (customResp.response || "").toLowerCase();
 
-        // === اكتشف موضوع الرد المخصص ===
         const isCommunityResp = /مجتمع|community|تبادل.*خبرات|جروب|group/i.test(respText);
         const isCertificateResp = /شهاد[ةه]|certificate|شهادات|إتمام|اتمام|بتظهر بعد/i.test(respText);
         const isPaymentResp = /دفع|payment|فيزا|فودافون|اشتراك|subscription/i.test(respText);
 
-        // === اكتشف موضوع السؤال ===
         const isCertificateQ = support_type === "certificate"
             || /شهاد[ةه]|شهادت|certificate|الشهاد/i.test(cleanMessage);
         const isCommunityQ = support_type === "community"
             || /مجتمع|جروب|قروب|community|group|تليجرام|واتساب|ديسكورد/i.test(cleanMessage);
 
-        // ❌ امنع رد الشهادة لو السؤال مش عن الشهادة
         if (isCertificateResp && !isCertificateQ) {
-            useCustomResp = false;
-            console.log(`🚫 Blocked CERTIFICATE response for non-certificate question (support_type=${support_type})`);
+          useCustomResp = false;
+          console.log(`🚫 Blocked CERTIFICATE response for non-certificate question (support_type=${support_type})`);
         }
 
-        // ❌ امنع رد المجتمع لو السؤال مش عن المجتمع
         if (isCommunityResp && !isCommunityQ) {
-            useCustomResp = false;
-            console.log(`🚫 Blocked COMMUNITY response for non-community question`);
+          useCustomResp = false;
+          console.log(`🚫 Blocked COMMUNITY response for non-community question`);
         }
 
-        // ❌ امنع رد الشهادة/المجتمع لو السؤال عن الدفع
         if (isPaymentQ && !isPaymentResp) {
-            useCustomResp = false;
-            console.log(`🚫 Blocked non-payment response for payment question`);
+          useCustomResp = false;
+          console.log(`🚫 Blocked non-payment response for payment question`);
         }
-    }
+      }
 
-    if (useCustomResp) {
+      if (useCustomResp) {
         reply = customResp.response;
         console.log(`✅ Using custom response`);
-    } else if (isPaymentQ) {
+      } else if (isPaymentQ) {
         reply = await buildSubscriptionResponse(cleanMessage);
         console.log(`💰 Using subscription response`);
-    } else {
+      } else {
         reply = await getGPTSupportResponse(cleanMessage, support_type);
         console.log(`🤖 Using GPT support response (support_type=${support_type})`);
-    }
+      }
 
-    await logChat(sessionId, "bot", reply, "SUPPORT", {
+      /* 🆕 v8.1: Validate response against high-priority instructions */
+      reply = await validateResponse(reply, cleanMessage);
+
+      await logChat(sessionId, "bot", reply, "SUPPORT", {
         support_type,
         custom_response_used: useCustomResp,
         custom_response_blocked: !!customResp && !useCustomResp,
-    });
+      });
 
-    console.log(`⏱️ ${Date.now() - startTime}ms`);
-    return res.json({ reply });
-}
+      console.log(`⏱️ ${Date.now() - startTime}ms`);
+      return res.json({ reply });
+    }
 
     /* ═══ GENERAL Intent ═══ */
     if (intent === "GENERAL") {
-      const gptReply = await getGPTResponse(cleanMessage);
+      let gptReply = await getGPTResponse(cleanMessage);
+
+      /* 🆕 v8.1: Validate response against high-priority instructions */
+      gptReply = await validateResponse(gptReply, cleanMessage);
 
       const suggestions = await getSmartSuggestions(cleanMessage);
       let suggestionsHtml = "";
@@ -3095,10 +3156,9 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🔧 v8.0: Bot Instructions CRUD — FIXED
+   ═══ Bot Instructions CRUD
    ══════════════════════════════════════════════════════════ */
 
-/* 🔧 FIX: Returns ALL instructions (active + inactive) so admin sees everything */
 app.get("/admin/bot-instructions", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
@@ -3114,7 +3174,6 @@ app.get("/admin/bot-instructions", async (req, res) => {
   }
 });
 
-/* 🔧 FIX: Accepts category + priority from admin dashboard */
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
@@ -3145,7 +3204,6 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
   }
 });
 
-/* 🔧 FIX: Accepts category + priority from admin dashboard */
 app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
@@ -3368,7 +3426,7 @@ app.get("/admin/debug", async (req, res) => {
 
   const diagnostics = {
     timestamp: new Date().toISOString(),
-    version: "8.0",
+    version: "8.1",
     environment: {
       NODE_ENV: process.env.NODE_ENV || "not set",
       PORT: PORT,
@@ -3432,10 +3490,13 @@ app.get("/health", async (req, res) => {
 
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "8.0",
+    version: "8.1",
     database: dbStatus,
     openai: openai ? "initialized" : "not initialized",
     features: [
+      "🆕 v8.1: Admin instructions at TOP of GPT prompts (mandatory)",
+      "🆕 v8.1: Priority ordering for bot instructions",
+      "🆕 v8.1: Post-response validation (validateResponse)",
       "🆕 v8.0: isSubscriptionQuestion() — detects pricing questions",
       "🆕 v8.0: Subscription handled BEFORE custom responses",
       "🆕 v8.0: Bot instructions save with category + priority",
@@ -3456,7 +3517,7 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "8.0",
+    version: "8.1",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -3476,7 +3537,7 @@ app.get("/", (req, res) => {
    ═══ START SERVER
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v8.0...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v8.1...\n");
 
   if (missingEnv.length > 0) {
     console.error(`⚠️  Missing env vars: ${missingEnv.join(", ")}`);
@@ -3496,13 +3557,14 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v8.0                     ║
+║  🤖 زيكو Chatbot — v8.1                     ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin (from admin.html)      ║
 ║  🔧 Debug: /admin/debug                      ║
 ║  💊 Health: /health                           ║
 ║  💰 Subscription detection: ENABLED          ║
-║  🧠 Bot Instructions: category+priority FIX  ║
+║  🧠 Bot Instructions: MANDATORY PRIORITY ⛔  ║
+║  🛡️  Post-Response Validation: ENABLED       ║
 ║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected" : "❌ NOT connected"}               ║
 ║  🤖 OpenAI: ${openai ? "✅ Ready     " : "❌ NOT ready  "}                  ║
 ║  ⏰ ${new Date().toISOString()}              ║
