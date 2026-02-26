@@ -1874,12 +1874,9 @@ async function smartChat(message, sessionId) {
       analysis.search_terms = merged;
       console.log(`🔄 Merged follow-up terms: ${merged.join(", ")}`);
     }
-  } // ← ✅ CLOSED HERE — follow-up injection is DONE
-
-} // ← ✅ CLOSED HERE — follow-up injection is DONE
+  } // ← closes: if (isContextFollowUp && !analysis.is_follow_up)
 
   // 🔴 FIX: Prevent GPT false follow-ups
-  // GPT says follow-up but our local check disagrees → verify
   if (
     analysis.is_follow_up &&
     !isContextFollowUp &&
@@ -1897,7 +1894,6 @@ async function smartChat(message, sessionId) {
       );
       analysis.is_follow_up = false;
 
-      // Strip old topic's terms from search
       const oldTermsSet = new Set(
         (sessionMem.lastSearchTerms || []).map((t) =>
           normalizeArabic(t.toLowerCase())
@@ -1907,7 +1903,6 @@ async function smartChat(message, sessionId) {
         (t) => !oldTermsSet.has(normalizeArabic(t.toLowerCase()))
       );
 
-      // If all terms were from old topic, extract fresh from message
       if (analysis.search_terms.length === 0) {
         analysis.search_terms = dialectNormalized
           .split(/\s+/)
@@ -1919,10 +1914,7 @@ async function smartChat(message, sessionId) {
         `   Clean terms: [${analysis.search_terms.join(", ")}]`
       );
     }
-  }
-
-  // 3. Route based on action
-  let reply = "";
+  } // ← closes: if (analysis.is_follow_up && !isContextFollowUp ...)
 
 
   // 3. Route based on action
