@@ -924,18 +924,38 @@ function formatCourseCard(course, instructors, index) {
       ? rawPrice
       : 0;
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `${priceNum}$`;
-  const desc = course.description
-    ? course.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..."
-    : "";
+
+  /* ✅ FIX: Clean description properly — remove HTML, entities, newlines, collapse spaces */
+  let desc = "";
+  if (course.description) {
+    desc = course.description
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&[a-z]+;/gi, " ")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (desc.length > 200) {
+      desc = desc.substring(0, 200) + "...";
+    }
+  }
+
   const num = index !== undefined ? `${index}. ` : "";
 
-  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
-<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
-<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
-${instructorName ? `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>` : ""}
-${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>` : ""}
-<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>
-</div>`;
+  /* ✅ FIX: Build card with concatenation (no template newlines → no phantom <br>) */
+  let card = `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">`;
+  card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>`;
+  card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
+  if (instructorName) {
+    card += `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>`;
+  }
+  if (desc) {
+    card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>`;
+  }
+  card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+  card += `</div>`;
+
+  return card;
 }
 
 function formatDiplomaCard(diploma) {
@@ -948,16 +968,31 @@ function formatDiplomaCard(diploma) {
       ? rawPrice
       : 0;
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
-  const desc = diploma.description
-    ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
-    : "";
 
-  return `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1);padding:12px">
-<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">🎓 ${diploma.title}</div>
-<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
-${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>` : ""}
-<a href="${url}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدبلومة والاشتراك ←</a>
-</div>`;
+  let desc = "";
+  if (diploma.description) {
+    desc = diploma.description
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&[a-z]+;/gi, " ")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (desc.length > 250) {
+      desc = desc.substring(0, 250) + "...";
+    }
+  }
+
+  let card = `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1);padding:12px">`;
+  card += `<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">🎓 ${diploma.title}</div>`;
+  card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
+  if (desc) {
+    card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>`;
+  }
+  card += `<a href="${url}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدبلومة والاشتراك ←</a>`;
+  card += `</div>`;
+
+  return card;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -2063,30 +2098,32 @@ async function smartChat(message, sessionId) {
       `🔍 Search complete: ${courses.length} courses, ${diplomas.length} diplomas`
     );
 
-  } else if (analysis.action === "SUBSCRIPTION") {
-    /* ═══ SUBSCRIPTION FLOW ═══ */
-    reply = analysis.response_message || "";
+} else if (analysis.action === "SUBSCRIPTION") {
+    /* ═══ SUBSCRIPTION FLOW — Always structured ═══ */
+    const gptMsg = (analysis.response_message || "").trim();
 
-    if (!reply || reply.trim().length < 20) {
-      reply = `أهلاً بيك! 🎉<br><br>`;
-      reply += `<strong>طرق الدفع المتاحة:</strong><br><br>`;
-      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
-      reply += `3. 📱 <strong>InstaPay</strong><br>`;
-      reply += `4. 📱 <strong>فودافون كاش</strong> (رقم: 01027007899)<br>`;
-      reply += `5. 🏦 <strong>تحويل بنكي</strong> (Alexandria Bank - 202069901001)<br>`;
-      reply += `6. 💰 <strong>Skrill</strong> (info@easyt.online)<br><br>`;
-      reply += `💰 <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$) — بيشمل كل الدورات والدبلومات!<br><br>`;
-      reply += `🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a><br>`;
-      reply += `💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">صفحة طرق الدفع ←</a>`;
-    } else {
-      if (!reply.includes("easyt.online/p/subscriptions")) {
-        reply += `<br><br>🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
-      }
-      if (!reply.includes("easyt.online/p/Payments")) {
-        reply += `<br>💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
-      }
+    /* Use GPT's greeting if short, otherwise default */
+    let intro = "أهلاً بيك! 🎉";
+    if (gptMsg.length > 5 && gptMsg.length <= 120) {
+      intro = gptMsg.replace(/\n/g, "<br>");
+    } else if (gptMsg.length > 120) {
+      const firstLine = gptMsg.split(/[\n<]/).find((l) => l.trim().length > 5);
+      if (firstLine) intro = firstLine.trim();
     }
+
+    reply = `${intro}<br><br>`;
+    reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+    reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+    reply += `2. 🅿️ <strong>PayPal</strong><br>`;
+    reply += `3. 📱 <strong>InstaPay</strong><br>`;
+    reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+    reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+    reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+    reply += `✨ <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$)<br>`;
+    reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
+    reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
+    reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+
     intent = "SUBSCRIPTION";
 
   } else if (analysis.action === "CATEGORIES") {
