@@ -1,6 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.9-fix — 📂 Categories + Marketing terms
-   ✅ ALL v7.9.9 code preserved
+   🤖 Ziko Chatbot v7.9.9-fix3 — 📂 Categories + Marketing terms
+   ✅ ALL v7.9.9-fix2 code preserved
+   🐛 FIX: Environment variable validation on startup
+   🐛 FIX: Supabase connection test on startup
+   🐛 FIX: /admin/stats — each query isolated (one failure ≠ all fail)
+   🐛 FIX: /health — now tests Supabase connection
+   🆕 FIX: /admin/debug — comprehensive diagnostics endpoint
    🐛 FIX: loadBotInstructions — was reading key,value → now label,instruction
    🐛 FIX: searchCorrections — was reading wrong_text → now wrong_terms (array)
    🆕 FIX: POST /admin/login endpoint added
@@ -72,6 +77,7 @@
    🔤 v6.4: Arabic normalization
    📱 v6.5: Compact horizontal card layout
    🆕 v7.9.9-fix2: Admin served from admin.html file
+   🆕 v7.9.9-fix3: Startup validation + debug endpoint + stats isolation
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -86,11 +92,56 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+/* ═══════════════════════════════════
+   ═══ 🆕 fix3: Environment Validation ═══
+   ═══════════════════════════════════ */
+const REQUIRED_ENV = {
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+};
+
+const missingEnv = Object.entries(REQUIRED_ENV)
+  .filter(([key, val]) => !val)
+  .map(([key]) => key);
+
+if (missingEnv.length > 0) {
+  console.error(`\n❌ CRITICAL: Missing environment variables: ${missingEnv.join(", ")}`);
+  console.error(`⚠️  Server will start but database/AI features will NOT work!\n`);
+}
+
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+const supabase =
+  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
+    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+    : null;
+
+/* ═══════════════════════════════════
+   ═══ 🆕 fix3: Supabase Connection Test ═══
+   ═══════════════════════════════════ */
+let supabaseConnected = false;
+
+async function testSupabaseConnection() {
+  if (!supabase) {
+    console.error("❌ Supabase client not initialized — check SUPABASE_URL and SUPABASE_SERVICE_KEY");
+    return false;
+  }
+  try {
+    const { data, error } = await supabase.from("courses").select("id").limit(1);
+    if (error) {
+      console.error("❌ Supabase connection test FAILED:", error.message);
+      return false;
+    }
+    console.log("✅ Supabase connection test PASSED");
+    return true;
+  } catch (e) {
+    console.error("❌ Supabase connection test EXCEPTION:", e.message);
+    return false;
+  }
+}
 
 /* ═══════════════════════════════════
    ═══ Admin Configuration ═══
@@ -450,16 +501,22 @@ let instructorCache = { data: null, ts: 0 };
 const CACHE_TTL = 10 * 60 * 1000;
 
 async function getInstructors() {
+  if (!supabase) return [];
   if (instructorCache.data && Date.now() - instructorCache.ts < CACHE_TTL)
     return instructorCache.data;
-  const { data } = await supabase
-    .from("instructors")
-    .select("id, name, avatar_url");
-  if (data) {
-    instructorCache.data = data;
-    instructorCache.ts = Date.now();
+  try {
+    const { data } = await supabase
+      .from("instructors")
+      .select("id, name, avatar_url");
+    if (data) {
+      instructorCache.data = data;
+      instructorCache.ts = Date.now();
+    }
+    return data || [];
+  } catch (e) {
+    console.error("getInstructors error:", e.message);
+    return instructorCache.data || [];
   }
-  return data || [];
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -651,7 +708,6 @@ function isEducationalTerm(msg) {
     "tiktok", "instagram", "facebook ads", "google ads",
     "copywriting", "content writing", "freelancing",
     "amazon fba", "dropshipping", "ecommerce", "e-commerce",
-    // v7.9.9: Marketing & Business terms
     "roas", "roi", "cpa", "cpc", "ctr", "cpm",
     "funnel", "funnels", "sales funnel",
     "performance marketing", "media buying",
@@ -689,7 +745,6 @@ function isEducationalTerm(msg) {
     { pattern: /علم\s*(بيانات|داتا)/i, term: "علم بيانات" },
     { pattern: /فوتوشوب|اليستريتر|بريميير|افتر افكتس/i, term: "تصميم" },
     { pattern: /بايثون|جافاسكريبت|بي اتش بي/i, term: "برمجة" },
-    // v7.9.9: Marketing & Business patterns
     { pattern: /roas|roi|cpa|cpc|ctr|cpm/i, term: "ديجيتال ماركيتنج" },
     { pattern: /(ميديا|media)\s*(باينج|buying)/i, term: "ميديا باينج" },
     { pattern: /(سيلز|sales)?\s*(فانل|funnel)/i, term: "سيلز فانل" },
@@ -815,9 +870,6 @@ function formatCategoriesList() {
 
 /* ══════════════════════════════════════════════════════════
    ═══ v7.9.7→v7.9.8: splitIntoSearchableTerms
-   ═══ Splits multi-word phrases into individual words
-   ═══ Strips Arabic prefixes (ال، بال، وال، لل)
-   ═══ v7.9.8: limit 12 terms (was 25)
    ══════════════════════════════════════════════════════════ */
 function splitIntoSearchableTerms(terms) {
   const result = new Set();
@@ -869,9 +921,9 @@ function splitIntoSearchableTerms(terms) {
 
 /* ══════════════════════════════════════════════════════════
    ═══ searchCorrections — Fuzzy + Semantic
-   ═══ 🐛 v7.9.9-fix: FIXED wrong_text → wrong_terms (array)
    ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
+  if (!supabase) return [];
   try {
     if (!terms || terms.length === 0) return [];
 
@@ -929,6 +981,7 @@ async function searchCorrections(terms) {
    ═══ matchCustomResponse — keyword matching for SUPPORT
    ══════════════════════════════════════════════════════════ */
 async function matchCustomResponse(message) {
+  if (!supabase) return null;
   try {
     const { data: responses, error } = await supabase
       .from("custom_responses")
@@ -970,9 +1023,9 @@ async function matchCustomResponse(message) {
 
 /* ══════════════════════════════════════════════════════════
    ═══ loadBotInstructions — from admin table
-   ═══ 🐛 v7.9.9-fix: FIXED key,value → label,instruction
    ══════════════════════════════════════════════════════════ */
 async function loadBotInstructions() {
+  if (!supabase) return "";
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
@@ -1047,6 +1100,17 @@ async function classifyIntent(message) {
   }
 
   const audienceExclusions = detectAudienceExclusions(message);
+
+  if (!openai) {
+    const fallbackTerms = extractSearchTermsFromMessage(message);
+    return {
+      intent: fallbackTerms.length > 0 ? "SEARCH" : "GENERAL",
+      entity: fallbackTerms.join(" "),
+      search_terms: fallbackTerms,
+      audience: null,
+      exclude_terms: [],
+    };
+  }
 
   const extraInstructions = await loadBotInstructions();
   const instructionsBlock = extraInstructions
@@ -1154,6 +1218,7 @@ async function classifyIntent(message) {
    ═══ searchCourses — v7.9.8: adaptive columns
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
+  if (!supabase) return [];
   try {
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const cleanedTerms = stripAudienceModifiers(correctedTerms);
@@ -1286,8 +1351,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   }
 }
 
-/* ═══ Fuzzy Search Fallback — v7.9.7+v7.9.8 ═══ */
+/* ═══ Fuzzy Search Fallback ═══ */
 async function fuzzySearchFallback(terms) {
+  if (!supabase) return [];
   try {
     const { data: allCourses, error } = await supabase
       .from("courses")
@@ -1392,6 +1458,7 @@ async function fuzzySearchFallback(terms) {
    ═══ searchDiplomas — v7.9.8: REMOVED image column
    ══════════════════════════════════════════════════════════ */
 async function searchDiplomas(searchTerms) {
+  if (!supabase) return [];
   try {
     const correctedTerms = searchTerms.map((t) => applyArabicCorrections(t));
     const expandedTerms = expandSynonyms(correctedTerms);
@@ -1431,8 +1498,8 @@ async function searchDiplomas(searchTerms) {
 async function aiRerankCourses(userMessage, courses, diplomas = []) {
   const totalResults = courses.length + diplomas.length;
 
-  if (totalResults <= 3) {
-    console.log("🤖 AI Rerank: skipped (≤3 results)");
+  if (totalResults <= 3 || !openai) {
+    console.log("🤖 AI Rerank: skipped (≤3 results or no OpenAI)");
     return { courses, diplomas };
   }
 
@@ -1560,7 +1627,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ Format Diploma Card HTML — v7.9.8: safe image fallback
+   ═══ Format Diploma Card HTML
    ══════════════════════════════════════════════════════════ */
 function formatDiplomaCard(diploma, index) {
   const url = diploma.link || "https://easyt.online/p/diplomas";
@@ -1593,6 +1660,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
    ═══ Chat Logging
    ══════════════════════════════════════════════════════════ */
 async function logChat(sessionId, role, message, intent, extra = {}) {
+  if (!supabase) return;
   try {
     await supabase.from("chat_logs").insert({
       session_id: sessionId || "unknown",
@@ -1611,6 +1679,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
    ═══ GPT General Response
    ══════════════════════════════════════════════════════════ */
 async function getGPTResponse(message, context = "") {
+  if (!openai) return "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏";
   try {
     const extraInstructions = await loadBotInstructions();
     const instructionsBlock = extraInstructions
@@ -1658,6 +1727,7 @@ async function getGPTResponse(message, context = "") {
    ═══ GPT Support Response
    ══════════════════════════════════════════════════════════ */
 async function getGPTSupportResponse(message, supportType) {
+  if (!openai) return 'لو عندك مشكلة، تواصل مع الدعم على <a href="mailto:support@easyt.online">support@easyt.online</a> 📧';
   try {
     const extraInstructions = await loadBotInstructions();
     const instructionsBlock = extraInstructions
@@ -1741,7 +1811,6 @@ app.post("/chat", limiter, async (req, res) => {
 
     await logChat(sessionId, "user", cleanMessage, null);
 
-    // v7.9.9: Handle category questions FIRST
     if (isCategoryQuestion(cleanMessage)) {
       const catReply = formatCategoriesList();
       await logChat(sessionId, "bot", catReply, "CATEGORIES");
@@ -1886,7 +1955,7 @@ app.post("/chat", limiter, async (req, res) => {
         .flatMap((c) => c.correct_course_ids || [])
         .filter((id) => id);
 
-      if (correctionIds.length > 0) {
+      if (correctionIds.length > 0 && supabase) {
         const { data: corrCourses } = await supabase
           .from("courses")
           .select(
@@ -1907,7 +1976,6 @@ app.post("/chat", limiter, async (req, res) => {
       }
     }
 
-    // AI Reranking with safety net
     if (courses.length > 0 || diplomas.length > 0) {
       const originalCourses = [...courses];
       const originalDiplomas = [...diplomas];
@@ -1924,7 +1992,6 @@ app.post("/chat", limiter, async (req, res) => {
       courses = reranked.courses;
       diplomas = reranked.diplomas;
 
-      // Double safety net
       if (courses.length === 0 && diplomas.length === 0) {
         console.log(
           "🤖 Double safety: AI rerank returned empty → using original results"
@@ -1938,7 +2005,6 @@ app.post("/chat", limiter, async (req, res) => {
       );
     }
 
-    // Format response
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
@@ -1963,7 +2029,6 @@ app.post("/chat", limiter, async (req, res) => {
         reply += `\n\n💡 لو عايز تعرف مستوى كورس معين، ادخل صفحة الكورس هتلاقي التفاصيل كاملة`;
       }
 
-      // v7.9.9: Add category link
       const detectedCat = detectRelevantCategory(termsToSearch);
       if (detectedCat) {
         reply += `\n\n<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
@@ -2001,7 +2066,7 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN LOGIN ENDPOINT — v7.9.9-fix (NEW)
+   ═══ ADMIN LOGIN ENDPOINT
    ══════════════════════════════════════════════════════════ */
 app.post("/admin/login", (req, res) => {
   const { password } = req.body;
@@ -2017,129 +2082,203 @@ app.post("/admin/login", (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN API ENDPOINTS
-   ═══ v7.9.9-fix: adminAuth applied to write endpoints
+   ═══ ADMIN STATS — 🆕 fix3: Each query isolated
    ══════════════════════════════════════════════════════════ */
-
 app.get("/admin/stats", async (req, res) => {
+  console.log("📊 Admin stats requested");
+
+  if (!supabase) {
+    console.error("❌ Admin stats: Supabase not initialized");
+    return res.status(500).json({
+      success: false,
+      error: "Database not connected — check SUPABASE_URL and SUPABASE_SERVICE_KEY",
+    });
+  }
+
   try {
-    const { count: totalChats } = await supabase
-      .from("chat_logs")
-      .select("*", { count: "exact", head: true });
+    /* 🆕 fix3: Each query in its own try-catch so one failure doesn't kill all stats */
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const { count: todayChats } = await supabase
-      .from("chat_logs")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", todayStart.toISOString())
-      .eq("role", "user");
-
-    const { data: sessionsData } = await supabase
-      .from("chat_logs")
-      .select("session_id")
-      .eq("role", "user");
-
-    const uniqueSessions = sessionsData
-      ? new Set(sessionsData.map((s) => s.session_id)).size
-      : 0;
-
-    const { data: intentData } = await supabase
-      .from("chat_logs")
-      .select("intent")
-      .eq("role", "bot")
-      .not("intent", "is", null);
-
-    const intentCounts = {};
-    if (intentData) {
-      intentData.forEach((row) => {
-        const i = row.intent || "UNKNOWN";
-        intentCounts[i] = (intentCounts[i] || 0) + 1;
-      });
+    let totalChats = 0;
+    try {
+      const { count } = await supabase
+        .from("chat_logs")
+        .select("*", { count: "exact", head: true });
+      totalChats = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (totalChats):", e.message);
     }
 
-    const { count: totalCourses } = await supabase
-      .from("courses")
-      .select("*", { count: "exact", head: true });
-
-    const { count: totalDiplomas } = await supabase
-      .from("diplomas")
-      .select("*", { count: "exact", head: true });
-
-    const { count: totalCorrections } = await supabase
-      .from("corrections")
-      .select("*", { count: "exact", head: true });
-
-    const { count: totalCustom } = await supabase
-      .from("custom_responses")
-      .select("*", { count: "exact", head: true });
-
-    const { data: recentChats } = await supabase
-      .from("chat_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    const { data: noResults } = await supabase
-      .from("chat_logs")
-      .select("message, created_at, metadata")
-      .eq("role", "bot")
-      .eq("intent", "SEARCH")
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    const noResultSearches = (noResults || [])
-      .filter((r) => {
-        try {
-          const meta =
-            typeof r.metadata === "string"
-              ? JSON.parse(r.metadata)
-              : r.metadata;
-          return meta && meta.results_count === 0;
-        } catch {
-          return false;
-        }
-      })
-      .slice(0, 20);
-
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: hourlyData } = await supabase
-      .from("chat_logs")
-      .select("created_at")
-      .eq("role", "user")
-      .gte("created_at", last24h);
-
-    const hourlyDist = new Array(24).fill(0);
-    if (hourlyData) {
-      hourlyData.forEach((row) => {
-        const hour = new Date(row.created_at).getHours();
-        hourlyDist[hour]++;
-      });
+    let todayChats = 0;
+    try {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const { count } = await supabase
+        .from("chat_logs")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", todayStart.toISOString())
+        .eq("role", "user");
+      todayChats = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (todayChats):", e.message);
     }
+
+    let uniqueSessions = 0;
+    try {
+      const { data: sessionsData } = await supabase
+        .from("chat_logs")
+        .select("session_id")
+        .eq("role", "user");
+      uniqueSessions = sessionsData
+        ? new Set(sessionsData.map((s) => s.session_id)).size
+        : 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (uniqueSessions):", e.message);
+    }
+
+    let intentCounts = {};
+    try {
+      const { data: intentData } = await supabase
+        .from("chat_logs")
+        .select("intent")
+        .eq("role", "bot")
+        .not("intent", "is", null);
+      if (intentData) {
+        intentData.forEach((row) => {
+          const i = row.intent || "UNKNOWN";
+          intentCounts[i] = (intentCounts[i] || 0) + 1;
+        });
+      }
+    } catch (e) {
+      console.error("❌ Stats query failed (intentCounts):", e.message);
+    }
+
+    let totalCourses = 0;
+    try {
+      const { count } = await supabase
+        .from("courses")
+        .select("*", { count: "exact", head: true });
+      totalCourses = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (totalCourses):", e.message);
+    }
+
+    let totalDiplomas = 0;
+    try {
+      const { count } = await supabase
+        .from("diplomas")
+        .select("*", { count: "exact", head: true });
+      totalDiplomas = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (totalDiplomas):", e.message);
+    }
+
+    let totalCorrections = 0;
+    try {
+      const { count } = await supabase
+        .from("corrections")
+        .select("*", { count: "exact", head: true });
+      totalCorrections = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (totalCorrections):", e.message);
+    }
+
+    let totalCustom = 0;
+    try {
+      const { count } = await supabase
+        .from("custom_responses")
+        .select("*", { count: "exact", head: true });
+      totalCustom = count || 0;
+    } catch (e) {
+      console.error("❌ Stats query failed (totalCustom):", e.message);
+    }
+
+    let recentChats = [];
+    try {
+      const { data } = await supabase
+        .from("chat_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      recentChats = data || [];
+    } catch (e) {
+      console.error("❌ Stats query failed (recentChats):", e.message);
+    }
+
+    let noResultSearches = [];
+    try {
+      const { data: noResults } = await supabase
+        .from("chat_logs")
+        .select("message, created_at, metadata")
+        .eq("role", "bot")
+        .eq("intent", "SEARCH")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      noResultSearches = (noResults || [])
+        .filter((r) => {
+          try {
+            const meta =
+              typeof r.metadata === "string"
+                ? JSON.parse(r.metadata)
+                : r.metadata;
+            return meta && meta.results_count === 0;
+          } catch {
+            return false;
+          }
+        })
+        .slice(0, 20);
+    } catch (e) {
+      console.error("❌ Stats query failed (noResultSearches):", e.message);
+    }
+
+    let hourlyDist = new Array(24).fill(0);
+    try {
+      const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: hourlyData } = await supabase
+        .from("chat_logs")
+        .select("created_at")
+        .eq("role", "user")
+        .gte("created_at", last24h);
+
+      if (hourlyData) {
+        hourlyData.forEach((row) => {
+          const hour = new Date(row.created_at).getHours();
+          hourlyDist[hour]++;
+        });
+      }
+    } catch (e) {
+      console.error("❌ Stats query failed (hourlyDist):", e.message);
+    }
+
+    console.log(`📊 Stats: ${totalChats} chats, ${totalCourses} courses, ${totalDiplomas} diplomas`);
 
     res.json({
       success: true,
       stats: {
-        totalChats: totalChats || 0,
-        todayChats: todayChats || 0,
+        totalChats,
+        todayChats,
         uniqueSessions,
         intentCounts,
-        totalCourses: totalCourses || 0,
-        totalDiplomas: totalDiplomas || 0,
-        totalCorrections: totalCorrections || 0,
-        totalCustomResponses: totalCustom || 0,
-        recentChats: recentChats || [],
+        totalCourses,
+        totalDiplomas,
+        totalCorrections,
+        totalCustomResponses: totalCustom,
+        recentChats,
         noResultSearches,
         hourlyDistribution: hourlyDist,
       },
     });
   } catch (e) {
-    console.error("Admin stats error:", e.message);
+    console.error("❌ Admin stats FATAL error:", e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
+/* ══════════════════════════════════════════════════════════
+   ═══ ADMIN LOGS
+   ══════════════════════════════════════════════════════════ */
 app.get("/admin/logs", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
@@ -2179,6 +2318,7 @@ app.get("/admin/logs", async (req, res) => {
 });
 
 app.get("/admin/sessions/:sessionId", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { sessionId } = req.params;
 
@@ -2203,6 +2343,7 @@ app.get("/admin/sessions/:sessionId", async (req, res) => {
 
 /* ═══ Custom Responses CRUD ═══ */
 app.get("/admin/custom-responses", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { data, error } = await supabase
       .from("custom_responses")
@@ -2217,6 +2358,7 @@ app.get("/admin/custom-responses", async (req, res) => {
 });
 
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { keywords, response, match_type, is_active } = req.body;
 
@@ -2247,6 +2389,7 @@ app.post("/admin/custom-responses", adminAuth, async (req, res) => {
 });
 
 app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
     const { keywords, response, match_type, is_active } = req.body;
@@ -2275,6 +2418,7 @@ app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
 });
 
 app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
     const { error } = await supabase
@@ -2291,6 +2435,7 @@ app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
 
 /* ═══ Corrections CRUD ═══ */
 app.get("/admin/corrections", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { data, error } = await supabase
       .from("corrections")
@@ -2305,6 +2450,7 @@ app.get("/admin/corrections", async (req, res) => {
 });
 
 app.post("/admin/corrections", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { wrong_terms, search_terms, correct_course_ids } = req.body;
 
@@ -2339,6 +2485,7 @@ app.post("/admin/corrections", adminAuth, async (req, res) => {
 });
 
 app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
     const { error } = await supabase
@@ -2355,6 +2502,7 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
 
 /* ═══ Bot Instructions CRUD ═══ */
 app.get("/admin/bot-instructions", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
@@ -2370,6 +2518,7 @@ app.get("/admin/bot-instructions", async (req, res) => {
 });
 
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { instruction, label, is_active } = req.body;
 
@@ -2397,6 +2546,7 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
 });
 
 app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
     const { instruction, label, is_active } = req.body;
@@ -2421,6 +2571,7 @@ app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
 });
 
 app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
     const { error } = await supabase
@@ -2437,6 +2588,7 @@ app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
 
 /* ═══ Courses Browse (Admin) ═══ */
 app.get("/admin/courses", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
@@ -2478,7 +2630,7 @@ app.get("/admin/courses", async (req, res) => {
   }
 });
 
-/* ═══ Search Test Endpoint — v7.9.9 ═══ */
+/* ═══ Search Test Endpoint ═══ */
 app.post("/admin/test-search", async (req, res) => {
   try {
     const { query } = req.body;
@@ -2517,7 +2669,6 @@ app.post("/admin/test-search", async (req, res) => {
 
     const splitTerms = splitIntoSearchableTerms(terms);
 
-    // v7.9.9: include detected category
     const detectedCategory = detectRelevantCategory(terms);
 
     res.json({
@@ -2565,6 +2716,7 @@ app.post("/admin/test-search", async (req, res) => {
 
 /* ═══ Export Chat Logs ═══ */
 app.get("/admin/export-logs", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const days = parseInt(req.query.days) || 7;
     const since = new Date(
@@ -2597,25 +2749,93 @@ app.get("/admin/export-logs", async (req, res) => {
 
 /* ══════════════════════════════════════════════════════════
    ═══ ADMIN DASHBOARD — served from admin.html file
-   ═══ 🆕 v7.9.9-fix2: Replaced inline HTML with external file
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ HEALTH & ROOT ENDPOINTS
+   ═══ 🆕 fix3: DEBUG ENDPOINT — comprehensive diagnostics
    ══════════════════════════════════════════════════════════ */
-app.get("/health", (req, res) => {
+app.get("/admin/debug", async (req, res) => {
+  console.log("🔧 Debug endpoint requested");
+
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    version: "7.9.9-fix3",
+    environment: {
+      NODE_ENV: process.env.NODE_ENV || "not set",
+      PORT: PORT,
+      SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET (" + process.env.SUPABASE_URL.substring(0, 30) + "...)" : "❌ NOT SET",
+      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET (length: " + process.env.SUPABASE_SERVICE_KEY.length + ")" : "❌ NOT SET",
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "✅ SET (length: " + process.env.OPENAI_API_KEY.length + ")" : "❌ NOT SET",
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? "✅ SET (custom)" : "⚠️ Using default",
+      ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN || "not set",
+    },
+    clients: {
+      supabase: supabase ? "✅ Initialized" : "❌ NOT initialized",
+      openai: openai ? "✅ Initialized" : "❌ NOT initialized",
+    },
+    supabase_connection: supabaseConnected ? "✅ Connected" : "❌ Not connected",
+    admin_sessions: adminTokens.size,
+    tables: {},
+  };
+
+  if (supabase) {
+    const tables = ["courses", "diplomas", "chat_logs", "corrections", "custom_responses", "bot_instructions", "instructors"];
+
+    for (const table of tables) {
+      try {
+        const { count, error } = await supabase
+          .from(table)
+          .select("*", { count: "exact", head: true });
+
+        if (error) {
+          diagnostics.tables[table] = `❌ ERROR: ${error.message}`;
+        } else {
+          diagnostics.tables[table] = `✅ ${count} rows`;
+        }
+      } catch (e) {
+        diagnostics.tables[table] = `❌ EXCEPTION: ${e.message}`;
+      }
+    }
+  } else {
+    diagnostics.tables = "❌ Cannot check — Supabase not initialized";
+  }
+
+  console.log("🔧 Debug result:", JSON.stringify(diagnostics.tables));
+  res.json(diagnostics);
+});
+
+/* ══════════════════════════════════════════════════════════
+   ═══ HEALTH & ROOT ENDPOINTS — 🆕 fix3: tests Supabase
+   ══════════════════════════════════════════════════════════ */
+app.get("/health", async (req, res) => {
+  let dbStatus = "unknown";
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from("courses").select("id").limit(1);
+      dbStatus = error ? `error: ${error.message}` : "connected";
+    } catch (e) {
+      dbStatus = `exception: ${e.message}`;
+    }
+  } else {
+    dbStatus = "not initialized — check SUPABASE_URL and SUPABASE_SERVICE_KEY";
+  }
+
   res.json({
-    status: "ok",
-    version: "7.9.9-fix2",
+    status: dbStatus === "connected" ? "ok" : "degraded",
+    version: "7.9.9-fix3",
+    database: dbStatus,
+    openai: openai ? "initialized" : "not initialized",
     features: [
-      "🆕 Admin served from admin.html file",
-      "🐛 FIX: loadBotInstructions reads label,instruction (was key,value)",
-      "🐛 FIX: searchCorrections reads wrong_terms array (was wrong_text)",
-      "🆕 FIX: POST /admin/login endpoint",
-      "🆕 FIX: adminAuth on write endpoints",
+      "🆕 Environment validation on startup",
+      "🆕 Supabase connection test on startup",
+      "🆕 /admin/debug diagnostic endpoint",
+      "🆕 Stats queries isolated (one failure ≠ all fail)",
+      "🆕 Null-safe Supabase client checks",
+      "Admin served from admin.html file",
       "22 categories with URLs + keywords",
       "isCategoryQuestion detection",
       "detectRelevantCategory mapping",
@@ -2649,13 +2869,14 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.9-fix2",
+    version: "7.9.9-fix3",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
       admin: "GET /admin",
       adminLogin: "POST /admin/login",
       health: "GET /health",
+      debug: "GET /admin/debug",
       stats: "GET /admin/stats",
       logs: "GET /admin/logs",
       testSearch: "POST /admin/test-search",
@@ -2665,17 +2886,41 @@ app.get("/", (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ START SERVER
+   ═══ START SERVER — 🆕 fix3: with startup checks
    ══════════════════════════════════════════════════════════ */
-app.listen(PORT, () => {
-  console.log(`
+async function startServer() {
+  console.log("\n🚀 Starting Ziko Chatbot v7.9.9-fix3...\n");
+
+  if (missingEnv.length > 0) {
+    console.error(`⚠️  Missing env vars: ${missingEnv.join(", ")}`);
+    console.error(`⚠️  Some features will NOT work!\n`);
+  }
+
+  supabaseConnected = await testSupabaseConnection();
+
+  if (!supabaseConnected) {
+    console.error("\n⚠️  ═══════════════════════════════════════════");
+    console.error("⚠️  SUPABASE IS NOT CONNECTED!");
+    console.error("⚠️  Admin dashboard will show EMPTY DATA.");
+    console.error("⚠️  Check your SUPABASE_URL and SUPABASE_SERVICE_KEY.");
+    console.error("⚠️  ═══════════════════════════════════════════\n");
+  }
+
+  app.listen(PORT, () => {
+    console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.9-fix2              ║
+║  🤖 زيكو Chatbot — v7.9.9-fix3              ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin (from admin.html)      ║
+║  🔧 Debug: /admin/debug                      ║
+║  💊 Health: /health                           ║
 ║  📂 Categories + Marketing terms             ║
-║  🆕 Admin served from external file          ║
+║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected" : "❌ NOT connected"}               ║
+║  🤖 OpenAI: ${openai ? "✅ Ready     " : "❌ NOT ready  "}                  ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}
+
+startServer();
