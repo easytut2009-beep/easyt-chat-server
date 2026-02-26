@@ -1006,45 +1006,63 @@ function showTab(tab) {
 async function loadStats() {
   try {
     var resp = await apiCall('/admin/stats');
-    
-    // 🔧 DEBUG - شيله بعدين
-    console.log('📊 Stats response:', JSON.stringify(resp));
-    
-    // ✅ FIX: جرب كل الاحتمالات
-    var d;
-    if (resp && resp.stats) {
-      d = resp.stats;
-      console.log('✅ Found data in resp.stats');
-    } else if (resp && resp.data) {
-      d = resp.data;
-      console.log('✅ Found data in resp.data');
-    } else {
-      d = resp;
-      console.log('✅ Using resp directly');
-    }
-    
-    console.log('📊 Final d:', JSON.stringify(d));
-    
+    var d = resp.stats || resp.data || resp;
+
+    // 🔧 Fetch missing counts from individual endpoints
+    var extra = {};
+    try {
+      var biResp = await apiCall('/admin/bot-instructions');
+      extra.totalBotInstructions = (biResp.instructions || []).length;
+    } catch(e) { extra.totalBotInstructions = 0; }
+
+    try {
+      var crResp = await apiCall('/admin/corrections');
+      extra.totalCorrections = (crResp.corrections || []).length;
+    } catch(e) {}
+
+    try {
+      var custResp = await apiCall('/admin/custom-responses');
+      extra.totalCustomResponses = (custResp.responses || []).length;
+    } catch(e) {}
+
+    try {
+      var faqResp = await apiCall('/admin/faq');
+      extra.totalFaq = (faqResp.faqs || faqResp.entries || []).length;
+    } catch(e) { extra.totalFaq = 0; }
+
+    try {
+      var instResp = await apiCall('/admin/instructors');
+      extra.totalInstructors = (instResp.instructors || []).length;
+    } catch(e) { extra.totalInstructors = 0; }
+
+    try {
+      var spResp = await apiCall('/admin/site-pages');
+      extra.totalSitePages = (spResp.pages || []).length;
+    } catch(e) { extra.totalSitePages = 0; }
+
+    console.log('📊 Stats:', d);
+    console.log('📊 Extra:', extra);
+
     var g = document.getElementById('statsGrid');
     var items = [
-      ['💬', d.totalChats || d.total_messages || d.totalMessages || 0, 'إجمالي الرسائل'],
-      ['👥', d.uniqueSessions || d.unique_sessions || 0, 'جلسات فريدة'],
-      ['📅', d.todayChats || d.today_messages || d.todayMessages || 0, 'رسائل اليوم'],
-      ['🟢', d.activeSessions || d.active_sessions || 0, 'جلسات نشطة'],
-      ['🧠', d.totalCorrections || d.corrections || 0, 'تصحيحات'],
-      ['📝', d.totalBotInstructions || d.bot_instructions || 0, 'تعليمات البوت'],
-      ['🛠️', d.totalCustomResponses || d.custom_responses || 0, 'ردود مخصصة'],
-      ['📚', d.totalCourses || d.courses || 0, 'كورسات'],
-      ['🎓', d.totalDiplomas || d.diplomas || 0, 'دبلومات'],
-      ['👤', d.totalInstructors || d.instructors || 0, 'محاضرين'],
-      ['❓', d.totalFaq || d.faq_entries || 0, 'أسئلة شائعة'],
-      ['📄', d.totalSitePages || d.site_pages || 0, 'صفحات']
+      ['💬', d.totalChats || 0, 'إجمالي الرسائل'],
+      ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
+      ['📅', d.todayChats || 0, 'رسائل اليوم'],
+      ['🟢', d.activeSessions || 0, 'جلسات نشطة'],
+      ['🧠', extra.totalCorrections != null ? extra.totalCorrections : (d.totalCorrections || 0), 'تصحيحات'],
+      ['📝', extra.totalBotInstructions != null ? extra.totalBotInstructions : (d.totalBotInstructions || 0), 'تعليمات البوت'],
+      ['🛠️', extra.totalCustomResponses != null ? extra.totalCustomResponses : (d.totalCustomResponses || 0), 'ردود مخصصة'],
+      ['📚', d.totalCourses || 0, 'كورسات'],
+      ['🎓', d.totalDiplomas || 0, 'دبلومات'],
+      ['👤', extra.totalInstructors != null ? extra.totalInstructors : (d.totalInstructors || 0), 'محاضرين'],
+      ['❓', extra.totalFaq != null ? extra.totalFaq : (d.totalFaq || 0), 'أسئلة شائعة'],
+      ['📄', extra.totalSitePages != null ? extra.totalSitePages : (d.totalSitePages || 0), 'صفحات']
     ];
     g.innerHTML = items.map(function(a) {
       return '<div class="card stat-card"><div style="font-size:24px">' + a[0] + '</div><div class="stat-num">' + (a[1] != null ? a[1] : 0) + '</div><div class="stat-label">' + a[2] + '</div></div>';
     }).join('');
 
-    var intentData = d.intentCounts || d.intent_distribution || {};
+    var intentData = d.intentCounts || {};
     var ic = document.getElementById('intentChart');
     if (intentData && Object.keys(intentData).length) {
       var entries = Object.entries(intentData).sort(function(a, b) { return b[1] - a[1]; });
