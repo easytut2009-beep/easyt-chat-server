@@ -1,15 +1,14 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v9.1 — Full GPT Intelligence + Context Fix
+   🤖 Ziko Chatbot v10.0 — Two-Phase RAG Intelligence
    
-   ✅ FIXED: loadRecentHistory cleans HTML from bot messages
-   ✅ FIXED: smartChat removes duplicate current user message
-   ✅ FIXED: buildMasterPrompt includes follow-up/context rules
-   ✅ ONE smart GPT call understands everything
-   ✅ Reads bot_instructions + custom_responses + chat history
+   ✅ TWO-PHASE ARCHITECTURE: Analyze → Recommend
+   ✅ RAG: GPT sees actual course content before recommending
+   ✅ SESSION MEMORY: Remembers user interests & level
+   ✅ SMART MODEL ROUTING: gpt-4o for recommendations
+   ✅ CONVERSATION SUMMARY: Auto-generated every 4 messages
    ✅ ALL admin endpoints preserved
    ✅ ALL database functionality preserved
    ✅ Search engine preserved (courses + diplomas + fuzzy)
-   ✅ AI reranking preserved
    ✅ Chat logging preserved
    ══════════════════════════════════════════════════════════ */
 
@@ -390,7 +389,7 @@ function formatCategoriesList() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 8: Search Engine (PRESERVED)
+   SECTION 8: Search Engine
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
@@ -427,9 +426,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     if (audience) {
       const af = filtered.filter(c => {
-        const combined = ((c.title||"")+" "+(c.description||"")).toLowerCase();
-        if (audience === "مبتدئ") return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics/.test(combined);
-        if (audience === "متقدم") return /متقدم|advanced|محترف|pro/.test(combined);
+        const combined = ((c.title||"")+" "+(c.description||"")+" "+(c.subtitle||"")).toLowerCase();
+        if (audience === "مبتدئ") return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(combined);
+        if (audience === "متقدم") return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
         return true;
       });
       if (af.length > 0) filtered = af;
@@ -547,56 +546,19 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 9: AI Reranking (PRESERVED)
-   ══════════════════════════════════════════════════════════ */
-async function aiRerankCourses(userMessage, courses, diplomas = []) {
-  if (courses.length + diplomas.length <= 3 || !openai) return { courses, diplomas };
-
-  try {
-    const items = [
-      ...courses.map((c, i) => ({ i, t: "course", title: c.title||"", desc: (c.description||"").replace(/<[^>]*>/g,"").substring(0,150) })),
-      ...diplomas.map((d, i) => ({ i, t: "diploma", title: d.title||"", desc: (d.description||"").replace(/<[^>]*>/g,"").substring(0,150) })),
-    ];
-
-    const resp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      max_tokens: 300,
-      messages: [
-        { role: "system", content: `رتّب النتائج دي حسب مناسبتها لسؤال المستخدم: "${userMessage}"
-رجّع على الأقل 3 نتائج. رد بـ JSON:
-{"courseIndices":[2,0,5],"diplomaIndices":[0],"reason":"سبب"}` },
-        { role: "user", content: JSON.stringify(items) },
-      ],
-    });
-
-    const result = JSON.parse(resp.choices[0].message.content);
-    const sc = (result.courseIndices||[]).filter(i => i >= 0 && i < courses.length).slice(0, 6).map(i => courses[i]);
-    const sd = (result.diplomaIndices||[]).filter(i => i >= 0 && i < diplomas.length).slice(0, 3).map(i => diplomas[i]);
-
-    if (sc.length === 0 && sd.length === 0) return { courses: courses.slice(0, 5), diplomas: diplomas.slice(0, 3) };
-    return { courses: sc, diplomas: sd };
-  } catch (e) {
-    console.error("Rerank error:", e.message);
-    return { courses: courses.slice(0, 5), diplomas };
-  }
-}
-
-/* ══════════════════════════════════════════════════════════
-   SECTION 10: Card Formatting (PRESERVED)
+   SECTION 9: Card Formatting
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find(i => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
   const rawPrice = course.price;
-  let priceNum = typeof rawPrice === "string" 
-    ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0 
+  let priceNum = typeof rawPrice === "string"
+    ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0
     : (typeof rawPrice === "number" ? rawPrice : 0);
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `${priceNum}$`;
-  const desc = course.description 
-    ? course.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..." 
+  const desc = course.description
+    ? course.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..."
     : "";
   const num = index !== undefined ? `${index}. ` : "";
 
@@ -625,7 +587,7 @@ ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.
 }
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 11: Chat Logging (PRESERVED)
+   SECTION 10: Chat Logging
    ══════════════════════════════════════════════════════════ */
 async function logChat(sessionId, role, message, intent, extra = {}) {
   if (!supabase) return;
@@ -642,12 +604,66 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 12: 🧠 THE BRAIN — Smart GPT System v9.1  ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.0                    ██
+   ██   Two-Phase RAG Intelligence Engine                  ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
 
-/* ═══ Load Bot Instructions (from admin panel) ═══ */
+/* ═══════════════════════════════════
+   11-A: Session Memory System
+   ═══════════════════════════════════ */
+const sessionMemory = new Map();
+const SESSION_MEMORY_TTL = 30 * 60 * 1000;
+
+function getSessionMemory(sessionId) {
+  if (!sessionMemory.has(sessionId)) {
+    sessionMemory.set(sessionId, {
+      summary: "",
+      topics: [],
+      lastSearchTerms: [],
+      userLevel: null,
+      interests: [],
+      messageCount: 0,
+      lastActivity: Date.now(),
+    });
+  }
+  const mem = sessionMemory.get(sessionId);
+  mem.lastActivity = Date.now();
+  return mem;
+}
+
+function updateSessionMemory(sessionId, updates) {
+  const mem = getSessionMemory(sessionId);
+  mem.messageCount++;
+  if (updates.searchTerms && updates.searchTerms.length > 0) {
+    mem.lastSearchTerms = updates.searchTerms;
+  }
+  if (updates.userLevel) {
+    mem.userLevel = updates.userLevel;
+  }
+  if (updates.topics && updates.topics.length > 0) {
+    mem.topics = [...new Set([...mem.topics, ...updates.topics])].slice(-15);
+  }
+  if (updates.interests && updates.interests.length > 0) {
+    mem.interests = [...new Set([...mem.interests, ...updates.interests])].slice(-10);
+  }
+  if (updates.summary) {
+    mem.summary = updates.summary;
+  }
+}
+
+// Cleanup stale sessions every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [sid, mem] of sessionMemory) {
+    if (now - mem.lastActivity > SESSION_MEMORY_TTL) sessionMemory.delete(sid);
+  }
+}, 10 * 60 * 1000);
+
+/* ═══════════════════════════════════
+   11-B: Context Loaders
+   ═══════════════════════════════════ */
 async function loadBotInstructions() {
   if (!supabase) return "";
   try {
@@ -665,8 +681,7 @@ async function loadBotInstructions() {
   } catch (e) { console.error("loadBotInstructions error:", e.message); return ""; }
 }
 
-/* ═══ 🔧 FIX #1: Load Recent Chat History — cleans HTML from bot messages ═══ */
-async function loadRecentHistory(sessionId, limit = 8) {
+async function loadRecentHistory(sessionId, limit = 10) {
   if (!supabase || !sessionId) return [];
   try {
     const { data } = await supabase
@@ -679,33 +694,22 @@ async function loadRecentHistory(sessionId, limit = 8) {
 
     return data.reverse().map(m => {
       let content = m.message || "";
-
-      // For bot messages: strip HTML cards and tags so GPT sees clean text
       if (m.role !== "user") {
-        // Remove full HTML card divs (course/diploma cards)
         content = content.replace(/<div style="border[^>]*>[\s\S]*?<\/div>/gi, "");
-        // Remove any remaining HTML tags
         content = content.replace(/<[^>]*>/g, " ");
-        // Collapse whitespace
         content = content.replace(/\s+/g, " ").trim();
-        // If nothing meaningful remains, summarize from intent
         if (content.length < 10 && m.intent) {
-          content = `[رديت على المستخدم بنتائج بحث - intent: ${m.intent}]`;
+          content = `[رديت بنتائج بحث - ${m.intent}]`;
         }
       }
-
       return {
         role: m.role === "user" ? "user" : "assistant",
-        content: content.substring(0, 600),
+        content: content.substring(0, 500),
       };
     });
-  } catch (e) {
-    console.error("loadRecentHistory error:", e.message);
-    return [];
-  }
+  } catch (e) { return []; }
 }
 
-/* ═══ Load Custom Responses Summary (for GPT context) ═══ */
 async function loadCustomResponsesSummary() {
   if (!supabase) return "";
   try {
@@ -724,123 +728,84 @@ async function loadCustomResponsesSummary() {
   } catch (e) { return ""; }
 }
 
-/* ═══ 🔧 FIX #3: Build Master System Prompt — includes follow-up/context rules ═══ */
-function buildMasterPrompt(botInstructions, customResponses) {
+/* ═══════════════════════════════════
+   11-C: Phase 1 — Smart Analyzer
+   (gpt-4o-mini — fast & cheap)
+   ═══════════════════════════════════ */
+function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
-    .map(([name, info], i) => `${i+1}. ${name}: ${info.url}`)
+    .map(([name], i) => `${i+1}. ${name}`)
     .join("\n");
 
-  return `أنت "زيكو" 🤖 — المساعد الذكي لمنصة easyT التعليمية.
+  const memoryContext = sessionMem.messageCount > 0
+    ? `
+═══ ذاكرة الجلسة ═══
+- المواضيع السابقة: ${sessionMem.topics.join(", ") || "لا يوجد"}
+- آخر كلمات بحث: ${sessionMem.lastSearchTerms.join(", ") || "لا يوجد"}
+- مستوى المستخدم: ${sessionMem.userLevel || "غير محدد"}
+- اهتماماته: ${sessionMem.interests.join(", ") || "غير محدد"}
+- عدد الرسائل: ${sessionMem.messageCount}
+- ملخص المحادثة: ${sessionMem.summary || "بداية محادثة"}
+` : "";
 
-${botInstructions ? `╔══════════════════════════════════════════╗
-║  ⛔ تعليمات إلزامية من الأدمن (أولوية قصوى) ║
-╚══════════════════════════════════════════╝
-${botInstructions}
+  return `أنت محلل ذكي لمنصة easyT التعليمية. مهمتك: فهم رسالة المستخدم بدقة وتحديد ماذا يريد.
 
-⚠️ التعليمات دي أعلى أولوية — لو فيه تعارض، نفّذها.
-` : ""}
-═══ شخصيتك ═══
-- اسمك "زيكو" مساعد منصة easyT
-- بتتكلم بالعامية المصرية بشكل طبيعي وودود
-- مختصر وواضح (2-4 جمل إلا لو محتاج تفصيل)
-- إيموجي خفيف وطبيعي
-- مستشار تعليمي حقيقي مش بياع
-- لو حد كلمك بالإنجليزي رد بالإنجليزي
+${botInstructions ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n` : ""}
+${memoryContext}
+${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
 
-═══ 🔴 قواعد المتابعة والسياق (مهم جداً!) ═══
-- لو المستخدم قال حاجة زي "عاوز مستوى أعلى" أو "فيه حاجة أصعب" أو "عايز متقدم" أو "حاجة تانية" أو "كمان" أو "غير كده":
-  → ارجع لآخر موضوع اتكلمتوا فيه في المحادثة
-  → أضف كلمات بحث تعكس الطلب الجديد (متقدم/مبتدئ/مختلف)
-  → مثال: لو كان بيسأل عن "برمجة" وقال "عاوز مستوى أعلى" → search_terms: ["برمجة", "متقدم", "advanced", "احتراف", "programming"]
-  → مثال: لو كان بيسأل عن "تصميم" وقال "حاجة تانية" → search_terms: ["تصميم", "design", "جرافيك"]
-- ❌ ممنوع تقول "أقدر أساعدك في إيه" لو المستخدم بيكمل نفس الموضوع!
-- ❌ ممنوع تتجاهل السياق — لازم تقرأ المحادثة السابقة
-- ✅ لو مش فاهم يقصد إيه بالظبط، اسأل سؤال محدد: "تقصد كورسات [الموضوع] مستوى متقدم؟"
-- ✅ لو المستخدم رفض اقتراح أو طلب بديل، جيبله نتائج مختلفة بكلمات بحث مختلفة
-
-═══ معلومات المنصة ═══
-- منصة easyT: +600 دورة، +27 دبلومة، +750,000 طالب
-- 15 دورة جديدة كل شهر
-- الاشتراك السنوي الشامل: 49$ (عرض رمضان!) بدل 59$ — يعني 4$/شهر
-- الاشتراك بيتيح: كل الدورات + الدبلومات + شهادات PDF + مجتمع طلاب + مساعد AI
-- الوصول فوري بعد الدفع، ممكن إلغاء أي وقت
-- التجديد تلقائي بنفس السعر المخفض
-
-═══ طرق الدفع ═══
-- الأساسية: بطاقات ائتمان (Visa/MasterCard) – PayPal
-- البديلة: إنستا باي (InstaPay) – فودافون كاش (01027007899) – تحويل بنكي (Alexandria Bank, Account: 202069901001) – Skrill (info@easyt.online)
-- رابط الاشتراك: https://easyt.online/p/subscriptions
-- رابط طرق الدفع: https://easyt.online/p/Payments
-
-═══ التصنيفات المتاحة (22 تصنيف) ═══
+═══ التصنيفات المتاحة ═══
 ${categoriesList}
 
-- رابط كل الدورات: ${ALL_COURSES_URL}
-- رابط الدبلومات: ${ALL_DIPLOMAS_URL}
-
-${customResponses ? `═══ ردود مرجعية (استخدمها لما المستخدم يسأل عن الموضوع ده) ═══
-${customResponses}
-` : ""}
-
-═══ تنسيق الرد — لازم JSON صالح ═══
+═══ مهمتك ═══
+حلل رسالة المستخدم وارجع JSON:
 {
   "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "CHAT" | "SUPPORT",
   "search_terms": ["كلمة1", "كلمة2"],
-  "message": "ردك هنا",
-  "intent": "SEARCH|GREETING|SUBSCRIPTION|SUPPORT|GENERAL|CATEGORIES|COMPARE"
+  "response_message": "ردك المبدئي (للأكشنز غير SEARCH فقط)",
+  "intent": "SEARCH|GREETING|SUBSCRIPTION|SUPPORT|GENERAL|CATEGORIES|COMPARE|COURSE_DETAILS",
+  "user_level": "مبتدئ" | "متوسط" | "متقدم" | null,
+  "topics": ["موضوع1", "موضوع2"],
+  "is_follow_up": true/false,
+  "previous_topic_reference": "الموضوع السابق إن وجد",
+  "audience_filter": "مبتدئ" | "متقدم" | null,
+  "language": "ar" | "en"
 }
 
-═══ قواعد الـ action ═══
+═══ قواعد التحليل ═══
+🔍 SEARCH — لما يدور على كورس/دبلومة/موضوع تعليمي/يطلب بديل/مستوى مختلف:
+- search_terms: كلمات مفردة بالعربي + الإنجليزي (5-8 كلمات)
+- لو متابعة لموضوع سابق: ادمج كلمات الموضوع السابق مع الطلب الجديد
+- مثال: "عاوز أصعب" + سياق سابق "برمجة" → ["برمجة","advanced","متقدم","احتراف","programming","مشاريع"]
+- مثال: "عايز فوتوشوب" → ["فوتوشوب","photoshop","تصميم","design","تعديل صور"]
+- مثال: "الكورس ده فيه ايه" → SEARCH + اسم الكورس من السياق
 
-🔍 SEARCH — لما المستخدم يدور على كورس/دبلومة/موضوع تعليمي أو يطلب بديل/مستوى مختلف:
-- حط search_terms فيها كلمات بحث مفردة (عربي + إنجليزي)
-- مثال: "عايز اتعلم فوتوشوب" → search_terms: ["فوتوشوب", "photoshop", "تصميم"]
-- مثال: "كورسات برمجة للمبتدئين" → search_terms: ["برمجة", "programming", "اساسيات", "مبتدئ"]
-- مثال متابعة: "عاوز مستوى أعلى" (وكان بيتكلم عن برمجة) → search_terms: ["برمجة", "متقدم", "advanced", "احتراف", "مشاريع"]
-- message = رد ودود يقول إنك بتجيبله النتائج
+💰 SUBSCRIPTION — أسعار/اشتراك/دفع
+📂 CATEGORIES — "عندكم ايه"/مجالات متاحة  
+🛠️ SUPPORT — مشاكل تقنية/شكاوي
+💬 CHAT — ترحيب/أسئلة عامة/محادثة
 
-💰 SUBSCRIPTION — لما يسأل عن أسعار/اشتراك/دفع:
-- message = رد فيه كل التفاصيل (السعر، طرق الدفع، المميزات)
-- حط لينكات الاشتراك وطرق الدفع في الرد
+لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (عامية مصرية ودودة)
+لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
 
-📂 CATEGORIES — لما يسأل "عندكم ايه" أو "المجالات المتاحة":
-- message = رد ودود
-
-🛠️ SUPPORT — لما يحتاج دعم فني أو عنده مشكلة:
-- message = رد مساعد مع خطوات واضحة
-- لو المشكلة كبيرة وجّهه لـ support@easyt.online
-
-💬 CHAT — محادثة عامة/ترحيب/أسئلة عامة:
-- message = رد ودود طبيعي
+═══ معلومات المنصة ═══
+- +600 دورة، +27 دبلومة، +750,000 طالب
+- الاشتراك السنوي: 49$ عرض رمضان (بدل 59$)
+- كل الدورات + الدبلومات + شهادات + مجتمع + مساعد AI
+- رابط الاشتراك: https://easyt.online/p/subscriptions
+- رابط طرق الدفع: https://easyt.online/p/Payments
+- طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
 
 ═══ قواعد مهمة ═══
-- اللينكات لازم HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
-- ❌ ممنوع ماركداون [text](url)
-- ❌ ممنوع تخترع كورسات أو معلومات
-- search_terms لازم كلمات مفردة مش جمل طويلة
-- حط كلمات البحث بالعربي والإنجليزي عشان تحسّن النتائج
-- لو المستخدم سأل عن حاجة مش تعليمية، رد بلطف وارجعه للموضوع
-- لو رفض اقتراح، احترم ومتلحّش
-- لو في الردود المرجعية فيه رد مناسب، استخدمه (أو استلهم منه)`;
+- اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
+- لو المستخدم بالإنجليزي رد بالإنجليزي
+- ❌ ممنوع تخترع كورسات
+- لو في الردود المرجعية فيه رد مناسب، استخدمه`;
 }
 
-/* ═══ 🧠 The Main Brain Function — 🔧 FIX #2: removes duplicate user message ═══ */
-async function smartChat(message, sessionId) {
-  const startTime = Date.now();
+async function analyzeMessage(message, chatHistory, sessionMem, botInstructions, customResponses) {
+  const systemPrompt = buildAnalyzerPrompt(botInstructions, customResponses, sessionMem);
 
-  // 1. Load all context in parallel
-  const [botInstructions, chatHistory, customResponses] = await Promise.all([
-    loadBotInstructions(),
-    loadRecentHistory(sessionId, 8),
-    loadCustomResponsesSummary(),
-  ]);
-
-  console.log(`📦 Context loaded: instructions=${botInstructions?'yes':'no'}, history=${chatHistory.length}msgs, customResp=${customResponses?'yes':'no'}`);
-
-  // 2. Build the master prompt
-  const systemPrompt = buildMasterPrompt(botInstructions, customResponses);
-
-  // 3. Build conversation messages — remove duplicate current user message
   let filteredHistory = [...chatHistory];
   if (
     filteredHistory.length > 0 &&
@@ -850,50 +815,244 @@ async function smartChat(message, sessionId) {
     filteredHistory.pop();
   }
 
-  const gptMessages = [
+  // Keep only last 6 messages for analyzer (efficiency)
+  filteredHistory = filteredHistory.slice(-6);
+
+  const messages = [
     { role: "system", content: systemPrompt },
     ...filteredHistory,
     { role: "user", content: message },
   ];
 
-  // 4. GPT Call — ONE call that understands everything
-  let decision;
   try {
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: gptMessages,
+      messages,
       response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 600,
+      temperature: 0.3,
+      max_tokens: 500,
     });
 
     const raw = resp.choices[0].message.content;
+    let result;
     try {
-      decision = JSON.parse(raw);
+      result = JSON.parse(raw);
     } catch {
       const match = raw.match(/\{[\s\S]*\}/);
-      decision = match ? JSON.parse(match[0]) : null;
+      result = match ? JSON.parse(match[0]) : null;
     }
 
-    if (!decision || !decision.message) {
-      decision = { action: "CHAT", search_terms: [], message: raw.replace(/[{}"]/g,"").trim() || "أقدر أساعدك في إيه؟ 😊", intent: "GENERAL" };
+    if (!result) {
+      return {
+        action: "CHAT", search_terms: [], response_message: "أقدر أساعدك في إيه؟ 😊",
+        intent: "GENERAL", user_level: null, topics: [], is_follow_up: false,
+        previous_topic_reference: null, audience_filter: null, language: "ar",
+      };
     }
+
+    return {
+      action: result.action || "CHAT",
+      search_terms: Array.isArray(result.search_terms) ? result.search_terms.filter(t => t && t.length > 0) : [],
+      response_message: result.response_message || "",
+      intent: result.intent || result.action || "GENERAL",
+      user_level: result.user_level || null,
+      topics: Array.isArray(result.topics) ? result.topics : [],
+      is_follow_up: !!result.is_follow_up,
+      previous_topic_reference: result.previous_topic_reference || null,
+      audience_filter: result.audience_filter || null,
+      language: result.language || "ar",
+    };
   } catch (e) {
-    console.error("❌ GPT error:", e.message);
-    return { reply: "عذراً، حصل مشكلة تقنية 😅 حاول تاني كمان شوية 🙏", intent: "ERROR" };
+    console.error("❌ Analyzer error:", e.message);
+    return {
+      action: "CHAT", search_terms: [], response_message: "",
+      intent: "ERROR", user_level: null, topics: [], is_follow_up: false,
+      previous_topic_reference: null, audience_filter: null, language: "ar",
+    };
   }
+}
 
-  console.log(`🧠 GPT Decision: action=${decision.action} | terms=[${(decision.search_terms||[]).join(",")}] | intent=${decision.intent}`);
+/* ═══════════════════════════════════
+   11-D: Phase 2 — RAG Recommender
+   (gpt-4o — smart & personalized)
+   ═══════════════════════════════════ */
+function prepareCourseForRAG(course, instructors) {
+  const instructor = instructors.find(i => i.id === course.instructor_id);
+  const cleanDesc = (course.description || "").replace(/<[^>]*>/g, "").substring(0, 250);
+  const cleanSyllabus = (course.syllabus || "").replace(/<[^>]*>/g, "").substring(0, 400);
+  const cleanObjectives = (course.objectives || "").replace(/<[^>]*>/g, "").substring(0, 250);
+  const cleanSubtitle = (course.subtitle || "").replace(/<[^>]*>/g, "").substring(0, 150);
+  const rawPrice = course.price;
+  const priceNum = typeof rawPrice === "string"
+    ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0
+    : (typeof rawPrice === "number" ? rawPrice : 0);
 
-  let reply = decision.message || "";
-  const intent = decision.intent || decision.action || "GENERAL";
+  return {
+    title: course.title || "",
+    subtitle: cleanSubtitle,
+    description: cleanDesc,
+    syllabus: cleanSyllabus,
+    objectives: cleanObjectives,
+    price: priceNum,
+    instructor: instructor ? instructor.name : "",
+    link: course.link || "",
+  };
+}
 
-  // 5. Execute action
-  if (decision.action === "SEARCH" && Array.isArray(decision.search_terms) && decision.search_terms.length > 0) {
-    const termsToSearch = decision.search_terms.filter(t => t && t.length > 0);
+function prepareDiplomaForRAG(diploma) {
+  const cleanDesc = (diploma.description || "").replace(/<[^>]*>/g, "").substring(0, 300);
+  const rawPrice = diploma.price;
+  const priceNum = typeof rawPrice === "string"
+    ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0
+    : (typeof rawPrice === "number" ? rawPrice : 0);
+
+  return {
+    title: diploma.title || "",
+    description: cleanDesc,
+    price: priceNum,
+    link: diploma.link || "",
+    type: "diploma",
+  };
+}
+
+async function generateSmartRecommendation(message, courses, diplomas, sessionMem, analysis, instructors) {
+  const courseData = courses.slice(0, 6).map(c => prepareCourseForRAG(c, instructors));
+  const diplomaData = diplomas.slice(0, 3).map(d => prepareDiplomaForRAG(d));
+
+  const lang = analysis.language === "en" ? "English" : "عامية مصرية";
+  const levelInfo = analysis.user_level || sessionMem.userLevel || "غير محدد";
+  const interestsInfo = sessionMem.interests.length > 0 ? sessionMem.interests.join(", ") : "غير محدد";
+  const isFollowUp = analysis.is_follow_up;
+  const prevTopic = analysis.previous_topic_reference || sessionMem.topics.slice(-3).join(", ");
+
+  const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي خبير في منصة easyT.
+مهمتك: تقديم توصية شخصية ذكية بناءً على بيانات الكورسات الفعلية.
+
+═══ بيانات الكورسات المتاحة ═══
+${JSON.stringify([...diplomaData, ...courseData], null, 1)}
+
+═══ معلومات عن المستخدم ═══
+- مستواه: ${levelInfo}
+- اهتماماته: ${interestsInfo}
+- هل ده متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
+
+═══ مطلوب منك ═══
+1. اختار أنسب 2-4 كورسات/دبلومات للمستخدم بناءً على سؤاله وبياناتهم
+2. اشرح لكل كورس ليه هو مناسب بالتحديد (من محتوى الكورس الفعلي)
+3. لو فيه منهج أو أهداف، اذكر أهم النقاط
+4. لو المستخدم مبتدئ، رتبهم من الأسهل للأصعب واقترح ترتيب للتعلم
+5. لو فيه دبلومة مناسبة، أكد عليها لأنها مسار متكامل
+6. اقترح خطوة تالية أو مسار تعليمي لو مناسب
+
+═══ قواعد الرد ═══
+- اتكلم بـ ${lang} بشكل ودود وطبيعي
+- 4-8 جمل — مختصر لكن مفيد
+- إيموجي خفيف وطبيعي
+- ❌ ممنوع تذكر الأسعار (هتظهر في الكاردز تحت)
+- ❌ ممنوع تخترع معلومات مش موجودة في البيانات
+- ❌ ممنوع تعمل قوائم نقطية — اكتب بشكل طبيعي
+- ✅ اذكر أسماء الكورسات بالظبط زي ما هي في البيانات
+- ✅ لو فيه syllabus أو objectives، استخدمهم عشان تبين قيمة الكورس
+- ✅ لو المستخدم محتاج حاجة مش موجودة، قوله بصراحة واقترح الأقرب
+- لو ${isFollowUp ? "ده متابعة لموضوع سابق، اعترف بده وقدم حاجة مختلفة/أعمق" : "أول طلب، قدم أفضل اختيار"}`;
+
+  try {
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+      temperature: 0.7,
+      max_tokens: 700,
+    });
+
+    return resp.choices[0].message.content || "";
+  } catch (e) {
+    console.error("❌ RAG Recommender error:", e.message);
+    // Fallback: try with gpt-4o-mini
+    try {
+      const resp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+      return resp.choices[0].message.content || "";
+    } catch (e2) {
+      console.error("❌ RAG Fallback error:", e2.message);
+      return "دي أفضل الكورسات اللي لقيتها ليك 👇";
+    }
+  }
+}
+
+/* ═══════════════════════════════════
+   11-E: Conversation Summary Generator
+   ═══════════════════════════════════ */
+async function generateConversationSummary(chatHistory, currentSummary) {
+  if (!openai || chatHistory.length < 4) return currentSummary;
+
+  try {
+    const recentMsgs = chatHistory.slice(-6).map(m =>
+      `${m.role === "user" ? "المستخدم" : "زيكو"}: ${m.content.substring(0, 200)}`
+    ).join("\n");
+
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `لخّص المحادثة دي في 2-3 جمل قصيرة. ركّز على: ايه اهتمامات المستخدم، مستواه، ايه اللي دور عليه، وايه اللي اقترحته عليه.
+${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
+رد بالملخص فقط بدون أي مقدمة.`,
+        },
+        { role: "user", content: recentMsgs },
+      ],
+      temperature: 0,
+      max_tokens: 200,
+    });
+
+    return resp.choices[0].message.content || currentSummary;
+  } catch (e) {
+    console.error("Summary generation error:", e.message);
+    return currentSummary;
+  }
+}
+
+/* ═══════════════════════════════════
+   11-F: 🧠 Master Orchestrator
+   ═══════════════════════════════════ */
+async function smartChat(message, sessionId) {
+  const startTime = Date.now();
+  const sessionMem = getSessionMemory(sessionId);
+
+  // 1. Load all context in parallel
+  const [botInstructions, chatHistory, customResponses] = await Promise.all([
+    loadBotInstructions(),
+    loadRecentHistory(sessionId, 10),
+    loadCustomResponsesSummary(),
+  ]);
+
+  console.log(`📦 Context: instructions=${botInstructions?'yes':'no'}, history=${chatHistory.length}msgs, memory=${sessionMem.messageCount}msgs`);
+
+  // 2. PHASE 1: Analyze the message (gpt-4o-mini — fast)
+  const analysis = await analyzeMessage(message, chatHistory, sessionMem, botInstructions, customResponses);
+
+  console.log(`🧠 Phase1: action=${analysis.action} | terms=[${analysis.search_terms.join(",")}] | follow_up=${analysis.is_follow_up} | level=${analysis.user_level}`);
+
+  let reply = "";
+  let intent = analysis.intent;
+
+  // 3. Execute based on action
+  if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
+    /* ═══ SEARCH FLOW: Phase 1 → Search → Phase 2 (RAG) ═══ */
+    const termsToSearch = analysis.search_terms;
 
     let [courses, diplomas] = await Promise.all([
-      searchCourses(termsToSearch),
+      searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
     ]);
 
@@ -915,26 +1074,30 @@ async function smartChat(message, sessionId) {
       }
     }
 
-    // AI Rerank
-    if (courses.length > 0 || diplomas.length > 0) {
-      const origC = [...courses], origD = [...diplomas];
-      const reranked = await aiRerankCourses(message, courses, diplomas);
-      courses = reranked.courses.length > 0 || reranked.diplomas.length > 0 ? reranked.courses : origC.slice(0, 5);
-      diplomas = reranked.courses.length > 0 || reranked.diplomas.length > 0 ? reranked.diplomas : origD.slice(0, 3);
-    }
-
     // Format results
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
+
+      // PHASE 2: RAG Smart Recommendation (gpt-4o — smart)
+      const recommendation = await generateSmartRecommendation(
+        message, courses, diplomas, sessionMem, analysis, instructors
+      );
+
+      reply = recommendation;
       reply += "\n\n";
+
+      // Add diploma cards
       if (diplomas.length > 0) {
-        diplomas.forEach(d => { reply += formatDiplomaCard(d); });
+        diplomas.slice(0, 3).forEach(d => { reply += formatDiplomaCard(d); });
         reply += "\n";
       }
+
+      // Add course cards
       if (courses.length > 0) {
         courses.slice(0, 5).forEach(c => { reply += formatCourseCard(c, instructors); });
       }
 
+      // Category link
       const cat = detectRelevantCategory(termsToSearch);
       if (cat) {
         reply += `\n\n<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
@@ -943,37 +1106,61 @@ async function smartChat(message, sessionId) {
 
       reply += `\n\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
     } else {
-      reply += `\n\n🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.\n`;
-      reply += `تقدر تتصفح كل الدورات (+600 دورة) من هنا:\n`;
-      reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 جميع الدورات على المنصة ←</a>`;
+      reply = analysis.is_follow_up
+        ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅 بس تقدر تتصفح كل الدورات من هنا:`
+        : `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.\nتقدر تتصفح كل الدورات (+600 دورة) من هنا:`;
+      reply += `\n<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 جميع الدورات على المنصة ←</a>`;
     }
 
-    console.log(`🔍 Search results: ${courses.length} courses, ${diplomas.length} diplomas`);
-  }
+    console.log(`🔍 Search: ${courses.length} courses, ${diplomas.length} diplomas`);
 
-  if (decision.action === "SUBSCRIPTION") {
+  } else if (analysis.action === "SUBSCRIPTION") {
+    reply = analysis.response_message || "";
     if (!reply.includes("easyt.online/p/subscriptions")) {
       reply += `\n\n🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
     }
     if (!reply.includes("easyt.online/p/Payments")) {
       reply += `\n💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
     }
+
+  } else if (analysis.action === "CATEGORIES") {
+    reply = (analysis.response_message || "") + "\n\n" + formatCategoriesList();
+
+  } else if (analysis.action === "SUPPORT") {
+    reply = analysis.response_message || "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
+
+  } else {
+    // CHAT — general conversation
+    reply = analysis.response_message || "أقدر أساعدك في إيه؟ 😊";
   }
 
-  if (decision.action === "CATEGORIES") {
-    reply += "\n\n" + formatCategoriesList();
-  }
-
-  // 6. Clean up
+  // 4. Clean up markdown
   reply = markdownToHtml(reply);
 
-  console.log(`✅ Smart chat done | action=${decision.action} | ⏱️ ${Date.now()-startTime}ms`);
+  // 5. Update session memory
+  updateSessionMemory(sessionId, {
+    searchTerms: analysis.search_terms,
+    userLevel: analysis.user_level,
+    topics: analysis.topics,
+    interests: analysis.search_terms.length > 0 ? analysis.search_terms.slice(0, 3) : [],
+  });
+
+  // 6. Generate conversation summary every 4 messages
+  if (sessionMem.messageCount > 0 && sessionMem.messageCount % 4 === 0) {
+    generateConversationSummary(chatHistory, sessionMem.summary).then(summary => {
+      if (summary) updateSessionMemory(sessionId, { summary });
+      console.log(`📝 Summary updated for session ${sessionId.slice(0,8)}`);
+    }).catch(() => {});
+  }
+
+  const elapsed = Date.now() - startTime;
+  console.log(`✅ Done | action=${analysis.action} | phase2=${analysis.action === "SEARCH" ? "gpt-4o" : "skipped"} | ⏱️ ${elapsed}ms`);
 
   return { reply, intent };
 }
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 13: /chat Endpoint
+   SECTION 12: /chat Endpoint
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   try {
@@ -998,11 +1185,11 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply: fallback });
     }
 
-    // 🧠 ONE smart GPT call handles everything
+    // 🧠 Two-Phase RAG Intelligence
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
     // Log bot response
-    await logChat(sessionId, "bot", reply, intent, { version: "9.1" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.0" });
 
     return res.json({ reply });
 
@@ -1013,7 +1200,7 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 14: Admin Endpoints (ALL PRESERVED)
+   SECTION 13: Admin Endpoints (ALL PRESERVED)
    ══════════════════════════════════════════════════════════ */
 
 // ═══ Login ═══
@@ -1393,8 +1580,7 @@ app.post("/admin/test-search", async (req, res) => {
     const start=Date.now();
     const terms=query.split(/\s+/).filter(w=>w.length>1);
     const[courses,diplomas]=await Promise.all([searchCourses(terms),searchDiplomas(terms)]);
-    const reranked=await aiRerankCourses(query,courses,diplomas);
-    res.json({success:true,query,terms,raw:{courses:courses.length,diplomas:diplomas.length},reranked:{courses:reranked.courses.length,diplomas:reranked.diplomas.length},elapsed_ms:Date.now()-start});
+    res.json({success:true,query,terms,results:{courses:courses.length,diplomas:diplomas.length},elapsed_ms:Date.now()-start});
   } catch(e) { res.status(500).json({success:false,error:e.message}); }
 });
 
@@ -1416,11 +1602,12 @@ app.get("/admin/export-logs", async (req, res) => {
 app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html")); });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 15: Health, Debug, Root
+   SECTION 14: Health, Debug, Root
    ══════════════════════════════════════════════════════════ */
 app.get("/admin/debug", async (req, res) => {
   const diag = {
-    timestamp: new Date().toISOString(), version: "9.1",
+    timestamp: new Date().toISOString(), version: "10.0",
+    engine: "Two-Phase RAG Intelligence",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -1430,6 +1617,7 @@ app.get("/admin/debug", async (req, res) => {
     clients: { supabase: supabase?"✅":"❌", openai: openai?"✅":"❌" },
     supabase_connection: supabaseConnected?"✅":"❌",
     admin_sessions: adminTokens.size,
+    active_chat_sessions: sessionMemory.size,
     tables: {},
   };
   if (supabase) {
@@ -1445,39 +1633,52 @@ app.get("/health", async (req, res) => {
   let dbStatus="unknown";
   if(supabase){try{const{error}=await supabase.from("courses").select("id").limit(1);dbStatus=error?`error: ${error.message}`:"connected";}catch(e){dbStatus=`exception: ${e.message}`;}}
   else dbStatus="not initialized";
-  res.json({ status:dbStatus==="connected"?"ok":"degraded", version:"9.1", database:dbStatus, openai:openai?"ready":"not ready",
-    engine: "🧠 Full GPT Intelligence + Context Fix",
-    timestamp:new Date().toISOString() });
+  res.json({
+    status:dbStatus==="connected"?"ok":"degraded", version:"10.0", database:dbStatus, openai:openai?"ready":"not ready",
+    engine: "🧠 Two-Phase RAG Intelligence",
+    active_sessions: sessionMemory.size,
+    timestamp:new Date().toISOString(),
+  });
 });
 
 app.get("/", (req, res) => {
   res.json({
-    name:"زيكو — easyT Chatbot", version:"9.1", status:"running ✅",
-    engine: "🧠 Full GPT Intelligence + Context Fix",
+    name:"زيكو — easyT Chatbot", version:"10.0", status:"running ✅",
+    engine: "🧠 Two-Phase RAG Intelligence",
+    features: [
+      "Phase 1: Smart Analyzer (gpt-4o-mini)",
+      "Phase 2: RAG Recommender (gpt-4o)",
+      "Session Memory System",
+      "Auto Conversation Summary",
+      "Smart Follow-up Detection",
+    ],
     endpoints:{ chat:"POST /chat", admin:"GET /admin", health:"GET /health", debug:"GET /admin/debug" },
   });
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 16: Start Server
+   SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v9.1...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.0...\n");
   if(missingEnv.length>0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if(!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED! Check env vars.\n");
 
   app.listen(PORT, () => {
     console.log(`
-╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v9.1                     ║
-║  🧠 Engine: Full GPT Intelligence            ║
-║  🔧 Fix: Context + History + Follow-up       ║
-║  ✅ Server: port ${PORT}                        ║
-║  ✅ Dashboard: /admin                        ║
-║  🗄️  Supabase: ${supabaseConnected?"✅ Connected":"❌ NOT connected"}               ║
-║  🤖 OpenAI: ${openai?"✅ Ready     ":"❌ NOT ready  "}                  ║
-╚══════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════╗
+║  🤖 زيكو Chatbot — v10.0                          ║
+║  🧠 Engine: Two-Phase RAG Intelligence             ║
+║  📊 Phase 1: Analyzer (gpt-4o-mini)               ║
+║  🎯 Phase 2: RAG Recommender (gpt-4o)             ║
+║  💾 Session Memory: Active                         ║
+║  📝 Auto Summary: Every 4 messages                 ║
+║  ✅ Server: port ${PORT}                              ║
+║  ✅ Dashboard: /admin                              ║
+║  🗄️  Supabase: ${supabaseConnected?"✅ Connected":"❌ NOT connected"}                 ║
+║  🤖 OpenAI: ${openai?"✅ Ready     ":"❌ NOT ready  "}                    ║
+╚════════════════════════════════════════════════════╝
     `);
   });
 }
