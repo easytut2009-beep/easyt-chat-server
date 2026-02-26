@@ -2258,16 +2258,22 @@ app.get("/admin/stats", async (req, res) => {
         totalChats,
         todayChats,
         uniqueSessions,
+        activeSessions,
         intentCounts,
         totalCourses,
         totalDiplomas,
         totalCorrections,
         totalCustomResponses: totalCustom,
+        totalBotInstructions,
+        totalInstructors,
+        totalFaq,
+        totalSitePages,
         recentChats,
         noResultSearches,
         hourlyDistribution: hourlyDist,
       },
     });
+
   } catch (e) {
     console.error("❌ Admin stats FATAL error:", e.message);
     res.status(500).json({ success: false, error: e.message });
