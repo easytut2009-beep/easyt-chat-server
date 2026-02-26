@@ -965,6 +965,11 @@ function doLogout() {
   document.getElementById('passInput').value='';
 }
 
+/* ═══════════════════════════════════════════════
+   🐛 FIX: apiCall now throws on HTTP errors
+   كان بيتجاهل errors من السيرفر (400/500)
+   فالـ saveModal كان بيقول "تم" حتى لو الحفظ فشل
+   ═══════════════════════════════════════════════ */
 function apiCall(path, opts) {
   opts = opts||{};
   return fetch(API+path, {
@@ -972,8 +977,13 @@ function apiCall(path, opts) {
     headers: {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
     body: opts.body||undefined
   }).then(function(r) {
-    if (r.status===401) { doLogout(); throw new Error('Unauthorized'); }
-    return r.json();
+    if (r.status===401) { doLogout(); throw new Error('غير مصرح — سجل دخول تاني'); }
+    return r.json().then(function(data) {
+      if (!r.ok) {
+        throw new Error((data && data.error) ? data.error : 'خطأ من السيرفر (HTTP ' + r.status + ')');
+      }
+      return data;
+    });
   });
 }
 
@@ -1080,7 +1090,7 @@ async function loadStats() {
 }
 
 // ═══════════════════════════════════════
-// CONVERSATIONS LIST — 🔧 FIX: show server errors
+// CONVERSATIONS LIST
 // ═══════════════════════════════════════
 async function loadConversations(page) {
   page = page||1;
@@ -1091,13 +1101,6 @@ async function loadConversations(page) {
     var s = document.getElementById('convSearch').value;
     var d = await apiCall('/admin/conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
     console.log('💬 Conversations response:', d);
-
-    /* 🔧 FIX: show actual server error instead of "no data" */
-    if (d.success === false) {
-      el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ من السيرفر: ' + esc(d.error || 'غير معروف') + '</p>';
-      document.getElementById('convPagination').innerHTML='';
-      return;
-    }
 
     var conversations = d.conversations || d.items || d.data || [];
     if(!conversations.length) {
@@ -1165,11 +1168,6 @@ async function loadConvDetail(sid) {
   try {
     var d = await apiCall('/admin/conversations/' + encodeURIComponent(sid));
     console.log('💬 Conversation detail response:', d);
-
-    if (d.success === false) {
-      wrap.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(d.error || 'خطأ') + '</p></div>';
-      return;
-    }
 
     var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || d.items || [];
     if (!Array.isArray(messages)) messages = [];
@@ -1352,7 +1350,7 @@ function renderDebug(messages) {
 }
 
 // ═══════════════════════════════════════
-// CORRECTIONS — 🔧 FIX: show server errors
+// CORRECTIONS
 // ═══════════════════════════════════════
 function openCorrection(logId, sid, safeQ, btn) {
   var original = '';
@@ -1396,12 +1394,6 @@ async function loadCorrections() {
     var d = await apiCall('/admin/corrections');
     console.log('✅ Corrections response:', d);
     var el = document.getElementById('corrList');
-
-    /* 🔧 FIX: show actual server error */
-    if (d.success === false) {
-      el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(d.error || 'غير معروف') + '</p>';
-      return;
-    }
 
     var corrections = d.corrections || d.items || d.data || [];
     if(!corrections.length) {
@@ -1594,7 +1586,7 @@ async function toggleBotInstruction(id, val) {
     await apiCall('/admin/bot-instructions/' + id, { method: 'PUT', body: JSON.stringify({ is_active: val }) });
     toast(val ? '✅ تم التفعيل' : '⏸️ تم الإيقاف');
     loadBotInstructions();
-  } catch(e) { toast('خطأ', 'error'); }
+  } catch(e) { toast('خطأ: ' + e.message, 'error'); }
 }
 
 async function deleteBotInstruction(id) {
@@ -1604,7 +1596,7 @@ async function deleteBotInstruction(id) {
     await apiCall('/admin/bot-instructions/' + id, { method: 'DELETE' });
     toast('تم الحذف ✅');
     loadBotInstructions();
-  } catch(e) { toast('خطأ', 'error'); }
+  } catch(e) { toast('خطأ: ' + e.message, 'error'); }
 }
 
 // ═══════════════════════════════════════
@@ -1673,17 +1665,17 @@ function buildCRForm(item) {
 }
 
 async function toggleCustomResponse(id, val) {
-  try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅ تفعيل':'⏸️ إيقاف'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); }
+  try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅ تفعيل':'⏸️ إيقاف'); loadCustomResponses(); } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
 
 async function deleteCustomResponse(id) {
   var ok = await showConfirm('حذف؟');
   if(!ok) return;
-  try { await apiCall('/admin/custom-responses/'+id,{method:'DELETE'}); toast('تم ✅'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); }
+  try { await apiCall('/admin/custom-responses/'+id,{method:'DELETE'}); toast('تم ✅'); loadCustomResponses(); } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
 
 // ═══════════════════════════════════════
-// GENERIC CRUD — 🔧 FIX: show server errors + robust key fallback
+// GENERIC CRUD
 // ═══════════════════════════════════════
 async function loadCrud(entity) {
   var el = document.getElementById(entity+'-table');
@@ -1694,13 +1686,6 @@ async function loadCrud(entity) {
     var d = await apiCall('/admin/'+entity+'?limit=50'+(s?'&search='+encodeURIComponent(s):''));
     console.log('📦 CRUD ['+entity+'] response:', d);
 
-    /* 🔧 FIX: show actual server error */
-    if (d.success === false) {
-      el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(d.error || 'غير معروف') + '</p>';
-      return;
-    }
-
-    /* 🔧 FIX: comprehensive key fallback */
     var items = d.items || d.courses || d.diplomas || d.instructors || d.faqs || d.pages || d.corrections || d.data || d.entries || [];
     _crudCache[entity] = {};
     items.forEach(function(i){_crudCache[entity][i.id]=i;});
@@ -1730,7 +1715,7 @@ function openEditFromCache(e,id) {
 async function deleteCrud(entity,id) {
   var ok = await showConfirm('حذف؟');
   if(!ok) return;
-  try { await apiCall('/admin/'+entity+'/'+id,{method:'DELETE'}); toast('تم ✅'); if(entity==='corrections') loadCorrections(); else loadCrud(entity); } catch(e) { toast('خطأ','error'); }
+  try { await apiCall('/admin/'+entity+'/'+id,{method:'DELETE'}); toast('تم ✅'); if(entity==='corrections') loadCorrections(); else loadCrud(entity); } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
 
 // ═══════════════════════════════════════
