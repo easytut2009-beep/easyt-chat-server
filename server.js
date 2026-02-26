@@ -940,6 +940,9 @@ function isAudienceQuestion(msg) {
 }
 
 function isCommunityQuestion(msg) {
+  // لو فيه كلمة تعليمية → مش community question
+  if (isEducationalTerm(msg)) return false;
+
   const patterns = [
     /مجتمع/i, /مجتع/i, /جروب/i, /قروب/i, /community/i,
     /group/i, /تليجرام/i, /واتساب/i, /واتس/i, /ديسكورد/i, /discord/i,
@@ -1125,6 +1128,10 @@ async function searchCorrections(terms) {
 /* ══════════════════════════════════════════════════════════
    ═══ matchCustomResponse
    ══════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   ═══ matchCustomResponse — v8.2 FIX: Strict keyword matching
+   ═══ يفرّق بين كلمات عامة (كورس، المنصة) وكلمات متخصصة (شهادة، فيديو)
+   ══════════════════════════════════════════════════════════ */
 async function matchCustomResponse(message) {
   if (!supabase) return null;
   try {
@@ -1137,26 +1144,75 @@ async function matchCustomResponse(message) {
 
     const normMsg = normalizeArabic(message.toLowerCase());
 
+    const GENERIC_WORDS = new Set(
+      [
+        "كورس", "كورسات", "دوره", "دورات", "دورة", "المنصه", "المنصة",
+        "منصه", "منصة", "موقع", "الموقع", "فين", "ازاي", "ايه", "كام",
+        "كم", "بكم", "بكام", "عايز", "عاوز", "محتاج", "ممكن",
+        "بعد", "قبل", "لو", "خلصت", "خلاص", "مش", "هل",
+        "الكورس", "الدوره", "كده", "عندي", "مفيش", "ليه",
+        "مده", "مدة", "وقت", "اد", "قد", "كتير", "شويه",
+        "عندكم", "بتاعكم", "بتاعكو", "عنده", "عندها",
+        "اخر", "اول", "كويس", "حلو", "تمام", "صح"
+      ].map((w) => normalizeArabic(w))
+    );
+
     let bestMatch = null;
     let bestScore = 0;
+    let bestSpecificCount = 0;
+    let anyGenericOnlyMatch = false;  // ✅ FIX Bug 1: tracked outside loop
 
     for (const resp of responses) {
       const keywords = resp.keywords || [];
       if (keywords.length === 0) continue;
 
       let matchCount = 0;
+      let specificMatchCount = 0;
+
       for (const kw of keywords) {
-        const normKw = normalizeArabic(kw.toLowerCase());
+        const normKw = normalizeArabic(kw.toLowerCase().trim());
+        if (normKw.length <= 1) continue;
+
         if (normMsg.includes(normKw)) {
           matchCount++;
+          const isMultiWord = normKw.split(/\s+/).length >= 2;
+          const isSpecific = isMultiWord || !GENERIC_WORDS.has(normKw);
+          if (isSpecific) specificMatchCount++;
         }
       }
 
+      if (matchCount === 0) continue;
+
       const score = matchCount / keywords.length;
-      if (score > bestScore && matchCount >= 1) {
+
+      // ✅ FIX Bug 2: لازم على الأقل كلمة متخصصة واحدة
+      // الـ score لوحده مش كافي — لازم specific match
+      const qualifies = specificMatchCount >= 1;
+
+      if (!qualifies) {
+        anyGenericOnlyMatch = true;  // ✅ FIX Bug 1
+        console.log(
+          `⚠️ Custom response REJECTED (only generic matches): keywords=[${keywords.join(", ")}] matched=${matchCount}/${keywords.length} for "${message.substring(0, 50)}"`
+        );
+        continue;
+      }
+
+      if (
+        score > bestScore ||
+        (score === bestScore && specificMatchCount > bestSpecificCount)
+      ) {
         bestScore = score;
         bestMatch = resp;
+        bestSpecificCount = specificMatchCount;
       }
+    }
+
+    if (bestMatch) {
+      console.log(
+        `✅ Custom response MATCHED: score=${(bestScore * 100).toFixed(0)}%, specific=${bestSpecificCount}, keywords=[${(bestMatch.keywords || []).join(", ")}]`
+      );
+    } else if (anyGenericOnlyMatch) {  // ✅ FIX Bug 1
+      console.log(`❌ No custom response qualified for: "${message.substring(0, 50)}" (generic keywords only)`);
     }
 
     return bestMatch;
@@ -1996,33 +2052,70 @@ app.post("/chat", limiter, async (req, res) => {
     let reply = "";
 
 /* ═══ SUPPORT Intent ═══ */
+/* ═══ SUPPORT Intent — v8.2 FIX: Topic validation ═══ */
 if (intent === "SUPPORT") {
     const customResp = await matchCustomResponse(cleanMessage);
 
-    // 🆕 v8.1: لو السؤال عن الدفع، متطلعش رد المجتمع
     const isPaymentQ = support_type === "payment" || support_type === "subscription"
         || /دفع|الدفع|فيزا|فودافون|ماستر|كارت|redotpay|payment/i.test(cleanMessage);
 
-    const isCommunityResp = customResp && /مجتمع|community|تبادل.*خبرات/i.test(customResp.response);
+    // 🆕 v8.2: Topic cross-validation — تأكد إن الرد المخصص مطابق لموضوع السؤال
+    let useCustomResp = !!customResp;
 
-    if (customResp && !(isPaymentQ && isCommunityResp)) {
+    if (customResp) {
+        const respText = (customResp.response || "").toLowerCase();
+
+        // === اكتشف موضوع الرد المخصص ===
+        const isCommunityResp = /مجتمع|community|تبادل.*خبرات|جروب|group/i.test(respText);
+        const isCertificateResp = /شهاد[ةه]|certificate|شهادات|إتمام|اتمام|بتظهر بعد/i.test(respText);
+        const isPaymentResp = /دفع|payment|فيزا|فودافون|اشتراك|subscription/i.test(respText);
+
+        // === اكتشف موضوع السؤال ===
+        const isCertificateQ = support_type === "certificate"
+            || /شهاد[ةه]|شهادت|certificate|الشهاد/i.test(cleanMessage);
+        const isCommunityQ = support_type === "community"
+            || /مجتمع|جروب|قروب|community|group|تليجرام|واتساب|ديسكورد/i.test(cleanMessage);
+
+        // ❌ امنع رد الشهادة لو السؤال مش عن الشهادة
+        if (isCertificateResp && !isCertificateQ) {
+            useCustomResp = false;
+            console.log(`🚫 Blocked CERTIFICATE response for non-certificate question (support_type=${support_type})`);
+        }
+
+        // ❌ امنع رد المجتمع لو السؤال مش عن المجتمع
+        if (isCommunityResp && !isCommunityQ) {
+            useCustomResp = false;
+            console.log(`🚫 Blocked COMMUNITY response for non-community question`);
+        }
+
+        // ❌ امنع رد الشهادة/المجتمع لو السؤال عن الدفع
+        if (isPaymentQ && !isPaymentResp) {
+            useCustomResp = false;
+            console.log(`🚫 Blocked non-payment response for payment question`);
+        }
+    }
+
+    if (useCustomResp) {
         reply = customResp.response;
+        console.log(`✅ Using custom response`);
     } else if (isPaymentQ) {
-        // رد مباشر عن طرق الدفع بدون لخبطة
         reply = await buildSubscriptionResponse(cleanMessage);
+        console.log(`💰 Using subscription response`);
     } else {
         reply = await getGPTSupportResponse(cleanMessage, support_type);
+        console.log(`🤖 Using GPT support response (support_type=${support_type})`);
     }
 
     await logChat(sessionId, "bot", reply, "SUPPORT", {
         support_type,
-        custom_response: !!customResp && !(isPaymentQ && isCommunityResp),
-        blocked_community: isPaymentQ && isCommunityResp,
+        custom_response_used: useCustomResp,
+        custom_response_blocked: !!customResp && !useCustomResp,
     });
 
     console.log(`⏱️ ${Date.now() - startTime}ms`);
     return res.json({ reply });
 }
+
     /* ═══ GENERAL Intent ═══ */
     if (intent === "GENERAL") {
       const gptReply = await getGPTResponse(cleanMessage);
