@@ -1,88 +1,26 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.9-fix4 — 🎓 Beginner Detection + Category Fix
-   ✅ ALL v7.9.9-fix3 code preserved
-   🆕 FIX: "أساسيات البرمجة" category keywords expanded (برمجة, coding...)
-   🆕 FIX: detectBeginnerIntent() — detects "معرفش حاجة", "من الصفر" etc.
-   🆕 FIX: Beginner boost — adds اساسيات/مبتدئ terms to search
-   🆕 FIX: Beginners see courses FIRST, then diplomas
-   🐛 FIX: Environment variable validation on startup
-   🐛 FIX: Supabase connection test on startup
-   🐛 FIX: /admin/stats — each query isolated (one failure ≠ all fail)
-   🐛 FIX: /health — now tests Supabase connection
-   🆕 FIX: /admin/debug — comprehensive diagnostics endpoint
-   🐛 FIX: loadBotInstructions — was reading key,value → now label,instruction
-   🐛 FIX: searchCorrections — was reading wrong_text → now wrong_terms (array)
-   🆕 FIX: POST /admin/login endpoint added
-   🆕 FIX: adminAuth applied to write endpoints (POST/PUT/DELETE)
-   🆕 FIX: Admin dashboard login screen added
-   ─── v7.9.9 features ───
-   🆕 v7.9.9: CATEGORIES constant — 22 categories with URLs + keywords
-   🆕 v7.9.9: isCategoryQuestion() — detects "ايه التصنيفات"
-   🆕 v7.9.9: detectRelevantCategory() — maps search to category
-   🆕 v7.9.9: formatCategoriesList() — clickable HTML list
-   🆕 v7.9.9: Category link after search results
-   🆕 v7.9.9: Expanded isEducationalTerm() — ROAS, CPA, funnel, media buying...
-   ─── v7.9.8 features ───
-   🐛 v7.9.8: FIXED 175 OR filters → max 36 (Supabase fetch failed)
-   🐛 v7.9.8: FIXED diplomas.image column does not exist
-   🐛 v7.9.8: TRIMMED SEARCH_SYNONYMS — no tool-specific names
-   🐛 v7.9.8: expandSynonyms — max 3 per match + break after first
-   🐛 v7.9.8: splitIntoSearchableTerms — limit 12 (was 25)
-   🐛 v7.9.8: searchCourses — adaptive columns (3 if >8 terms)
-   🐛 v7.9.8: formatDiplomaCard — safe image fallback
-   ─── v7.9.7 features ───
-   ✅ v7.9.7: splitIntoSearchableTerms() — splits phrases into words
-   ✅ v7.9.7: Arabic prefix stripping (ال، بال، وال، لل، كال)
-   ✅ v7.9.7: Arabic educational term detection in isEducationalTerm()
-   ✅ v7.9.7: AI/design synonyms in SEARCH_SYNONYMS
-   ─── v7.9.6 features ───
-   ✅ v7.9.6: AI reranker safety net (double fallback)
-   ✅ v7.9.6: Less aggressive reranker prompt
-   ─── v7.9.5 features ───
-   ✅ v7.9.5: aiRerankCourses() — GPT filters results by full user intent
-   ✅ v7.9.5: searchCourses limit increased 20→30 for wider candidate pool
-   ✅ v7.9.5: FIXED price display $$9.99 → $9.99
-   ─── v7.9.4 features ───
-   ✅ v7.9.4: searchCourses searches page_content, syllabus, objectives
-   ✅ v7.9.4: Scoring weights: title(10)>subtitle(7)>page_content(5)>syllabus(4)>objectives(4)>description(3)>full_content(2)
-   ✅ v7.9.4: fuzzySearchFallback includes new columns
-   ─── v7.9.3 features ───
-   ✅ v7.9.3: FIXED course column names (slug→link, image_url→image)
-   ✅ v7.9.3: FIXED removed is_published filter
-   ✅ v7.9.3: FIXED removed seo_tags references
-   ✅ v7.9.3: FIXED formatCourseCard uses course.link + course.image
-   ✅ v7.9.3: FIXED formatDiplomaCard uses diploma.link
-   ─── v7.9.2 features ───
-   ✅ v7.9.2: FIXED Markdown links → HTML <a> tags
-   ✅ v7.9.2: FIXED GPT prompts to request HTML links
-   ✅ v7.9.2: markdownToHtml() safety net on ALL GPT replies
-   ✅ v7.9.2: isEducationalTerm() — detects unity/python/etc → forces SEARCH
-   ✅ v7.9.2: 120+ English educational terms recognized
-   ─── v7.9.1 features ───
-   ✅ v7.9.1: FIXED "null" string entity bug
-   ✅ v7.9.1: FIXED displayTerm showing "null" to users
-   ✅ v7.9.1: FIXED empty search_terms — rescue using message text
-   ✅ v7.9.1: Community questions handled properly
-   ─── Previous features ───
-   ✅ v7.9: bot_instructions table + Instructions injected into GPT
-   ✅ v7.9: FIXED chat log ordering
-   ✅ v7.9: Enhanced searchCorrections() with fuzzy + semantic
-   ✅ v7.8: SUPPORT intent + custom_responses table
-   ✅ v7.8: matchCustomResponse() + Admin CRUD
-   ✅ v7.7: Smart course suggestions for GENERAL questions
-   ✅ v7.6: Fuzzy Arabic search with Levenshtein distance
-   ✅ v7.5: Context-Aware Audience + Conversational Detection
-   ✅ v7.4: AI filter [] bug fix + stripAudienceModifiers
-   ✅ v7.3: detectAudienceExclusions() + Strict AI filter
-   ✅ v7.2: Exclude terms + Refinement + Diploma AI filter
-   ✅ v7.1: Bot learns from corrections
-   ✅ v7.0: Chat logging + Admin Dashboard + Corrections CRUD
-   ⚡ Supabase .or() filters + Promise.all() + Instructor cache
-   🔤 v6.4: Arabic normalization
-   📱 v6.5: Compact horizontal card layout
-   🆕 v7.9.9-fix2: Admin served from admin.html file
-   🆕 v7.9.9-fix3: Startup validation + debug endpoint + stats isolation
-   🆕 v7.9.9-fix4: Beginner detection + category keywords + display order
+   🤖 Ziko Chatbot v8.0 — 🔧 Bot Instructions Fix + Subscription Detection
+   ✅ ALL v7.9.9-fix4 code preserved
+   🆕 FIX: isSubscriptionQuestion() — detects pricing/subscription questions
+   🆕 FIX: Subscription questions handled BEFORE custom responses (no confusion)
+   🆕 FIX: loadBotInstructions — reads category field with fallback
+   🆕 FIX: GET /admin/bot-instructions — returns ALL (active + inactive)
+   🆕 FIX: POST /admin/bot-instructions — accepts category + priority
+   🆕 FIX: PUT /admin/bot-instructions/:id — accepts category + priority
+   🐛 FIX: GPT no longer confuses "اشتراك" with "مجتمع"
+   ─── Previous features (v7.9.9-fix4) ───
+   ✅ Beginner detection + category keywords + display order
+   ✅ Environment variable validation on startup
+   ✅ Supabase connection test on startup
+   ✅ /admin/stats — each query isolated
+   ✅ /health — tests Supabase connection
+   ✅ /admin/debug — comprehensive diagnostics
+   ✅ 22 categories with URLs + keywords
+   ✅ AI reranking + safety net
+   ✅ Custom responses + bot instructions
+   ✅ Arabic corrections + synonym expansion
+   ✅ Fuzzy Arabic search with Levenshtein
+   ✅ Chat logging + Admin Dashboard + Corrections CRUD
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -98,7 +36,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* ═══════════════════════════════════
-   ═══ 🆕 fix3: Environment Validation ═══
+   ═══ Environment Validation ═══
    ═══════════════════════════════════ */
 const REQUIRED_ENV = {
   SUPABASE_URL: process.env.SUPABASE_URL,
@@ -125,7 +63,7 @@ const supabase =
     : null;
 
 /* ═══════════════════════════════════
-   ═══ 🆕 fix3: Supabase Connection Test ═══
+   ═══ Supabase Connection Test ═══
    ═══════════════════════════════════ */
 let supabaseConnected = false;
 
@@ -434,7 +372,7 @@ const ARABIC_CORRECTIONS = {
 };
 
 /* ═══════════════════════════════════
-   ═══ Search Synonyms — v7.9.8: TRIMMED (no tool names)
+   ═══ Search Synonyms
    ═══════════════════════════════════ */
 const SEARCH_SYNONYMS = {
   "ديجيتال ماركيتنج": [
@@ -538,7 +476,6 @@ function applyArabicCorrections(text) {
   return corrected;
 }
 
-/* ═══ v7.9.8: expandSynonyms — max 3 per match + break after first ═══ */
 function expandSynonyms(terms) {
   const expanded = new Set(terms);
   for (const t of terms) {
@@ -619,45 +556,145 @@ function detectAudienceExclusions(message) {
   return exclusions;
 }
 
-/* ═══ 🆕 fix4: Detect Beginner Intent ═══ */
 function detectBeginnerIntent(message) {
   const beginnerPatterns = [
-    /معرفش حاجه/i,
-    /معرفش حاجة/i,
-    /معرفش حاجه عنه/i,
-    /معرفش حاجة عنه/i,
-    /معرفش عنه/i,
-    /معرفش عنها/i,
-    /مش فاهم/i,
-    /مبتدئ/i,
-    /مبتدأ/i,
-    /من الصفر/i,
-    /من صفر/i,
-    /ابد[اأ] منين/i,
-    /ابتدي منين/i,
-    /ابدأ ازاي/i,
-    /اتعلم ازاي/i,
-    /مش عارف ابدأ/i,
-    /ماعرف شي/i,
-    /ما اعرف/i,
-    /لسه بتعلم/i,
-    /اول مره/i,
-    /أول مرة/i,
-    /جديد على/i,
-    /جديد في/i,
-    /beginner/i,
-    /from scratch/i,
-    /from zero/i,
-    /لا اعرف/i,
-    /ماعندي خبر/i,
-    /بدون خبره/i,
-    /بدون خبرة/i,
-    /مش فاهم فيه/i,
-    /مش فاهم فيها/i,
-    /معرفش فيه/i,
-    /معرفش فيها/i,
+    /معرفش حاجه/i, /معرفش حاجة/i, /معرفش حاجه عنه/i,
+    /معرفش حاجة عنه/i, /معرفش عنه/i, /معرفش عنها/i,
+    /مش فاهم/i, /مبتدئ/i, /مبتدأ/i, /من الصفر/i, /من صفر/i,
+    /ابد[اأ] منين/i, /ابتدي منين/i, /ابدأ ازاي/i,
+    /اتعلم ازاي/i, /مش عارف ابدأ/i, /ماعرف شي/i,
+    /ما اعرف/i, /لسه بتعلم/i, /اول مره/i, /أول مرة/i,
+    /جديد على/i, /جديد في/i, /beginner/i, /from scratch/i,
+    /from zero/i, /لا اعرف/i, /ماعندي خبر/i,
+    /بدون خبره/i, /بدون خبرة/i, /مش فاهم فيه/i,
+    /مش فاهم فيها/i, /معرفش فيه/i, /معرفش فيها/i,
   ];
   return beginnerPatterns.some((p) => p.test(message));
+}
+
+/* ══════════════════════════════════════════════════════════
+   ═══ 🆕 v8.0: Subscription/Pricing Question Detection
+   ═══ يكتشف أسئلة الاشتراك والأسعار قبل ما GPT يخلط بينها وبين المجتمع
+   ══════════════════════════════════════════════════════════ */
+function isSubscriptionQuestion(msg) {
+  const lower = msg.toLowerCase();
+  const norm = normalizeArabic(lower);
+  const patterns = [
+    /بكم.*(اشتراك|الاشتراك|سبسكرب|subscribe)/i,
+    /بكام.*(اشتراك|الاشتراك)/i,
+    /سعر.*(اشتراك|الاشتراك|المنصة|المنصه)/i,
+    /كم.*(سعر|تكلفة|تكلفه|ثمن).*(اشتراك|الاشتراك|المنصة)/i,
+    /اشتراك.*(بكم|بكام|كم|سعر|تكلف|ثمن)/i,
+    /الاشتراك.*(الشامل|السنوي|الشهري|بكم|بكام|كم سعر)/i,
+    /(الشامل|السنوي|الشهري).*(بكم|بكام|كم|سعر|تكلف)/i,
+    /عايز.*(اشترك|الاشتراك|اعرف السعر)/i,
+    /عاوز.*(اشترك|الاشتراك|اعرف السعر)/i,
+    /ازاي.*(اشترك|ادفع|الاشتراك)/i,
+    /طريقة.*(الاشتراك|الدفع|ادفع)/i,
+    /اسعار.*(المنصة|المنصه|الكورسات|الدبلومات)/i,
+    /خطط.*(الاسعار|الاشتراك)/i,
+    /pricing/i,
+    /subscription.*(price|cost|how much)/i,
+    /how much.*(subscription|subscribe|cost)/i,
+    /كم.*(الاشتراك|اشتراك)/i,
+    /تكلفة.*(الاشتراك|اشتراك|المنصة)/i,
+    /ادفع ازاي/i,
+    /طرق الدفع/i,
+    /وسائل الدفع/i,
+    /فودافون كاش/i,
+    /فيزا.*(ادفع|دفع)/i,
+    /ماستركارد/i,
+    /بكم الكورسات/i,
+    /بكام الكورسات/i,
+    /بكم الدبلومات/i,
+    /بكام الدبلومات/i,
+    /بكم دخول المنصة/i,
+    /بكام دخول المنصة/i,
+  ];
+  return patterns.some((p) => p.test(msg));
+}
+
+/* ═══ 🆕 v8.0: Build subscription response (reads bot instructions for custom pricing) ═══ */
+async function buildSubscriptionResponse(message) {
+  /* Try loading admin instructions for custom pricing info */
+  const extraInstructions = await loadBotInstructions();
+
+  /* Check if admin has specific pricing instructions */
+  let customPriceInfo = null;
+  if (extraInstructions) {
+    const lines = extraInstructions.split("\n");
+    for (const line of lines) {
+      const normLine = normalizeArabic(line.toLowerCase());
+      if (
+        normLine.includes("سعر") ||
+        normLine.includes("اشتراك") ||
+        normLine.includes("عرض") ||
+        normLine.includes("دولار") ||
+        normLine.includes("$") ||
+        normLine.includes("pricing") ||
+        normLine.includes("price")
+      ) {
+        customPriceInfo = line.replace(/^-\s*[^:]+:\s*/, "").trim();
+        break;
+      }
+    }
+  }
+
+  /* If admin has custom pricing instruction, use GPT to generate a natural response */
+  if (customPriceInfo && openai) {
+    try {
+      const resp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن سعر الاشتراك.
+
+معلومات الأسعار من الأدمن:
+${customPriceInfo}
+
+معلومات إضافية:
+- المنصة فيها +600 دورة و8 دبلومات
+- طرق الدفع: فيزا، ماستركارد، فودافون كاش
+- بعد الاشتراك بتحصل على: كل الدورات + الدبلومات + شهادات إتمام + مجتمع المتعلمين
+
+قواعد:
+- رد بالعامية المصرية بشكل ودود
+- خلي الرد مختصر ومباشر
+- اكتب اللينكات بصيغة HTML: <a href="URL" target="_blank">نص</a>
+- ❌ ممنوع ماركداون [text](url)`,
+          },
+          { role: "user", content: message },
+        ],
+        temperature: 0.5,
+        max_tokens: 250,
+      });
+      let reply = resp.choices[0].message.content;
+      reply = markdownToHtml(reply);
+      return reply;
+    } catch (e) {
+      console.error("buildSubscriptionResponse GPT error:", e.message);
+    }
+  }
+
+  /* Default subscription response */
+  return `💰 <strong>أسعار الاشتراك في easyT:</strong>
+
+🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
+بدل 59$ — وفّر 10$! 💸
+
+✅ الاشتراك الشامل بيتيحلك:
+• كل الدورات (+600 دورة) في كل المجالات
+• كل الدبلومات (8 دبلومات متخصصة) 🎓
+• شهادات إتمام لكل كورس 📜
+• مجتمع المتعلمين لتبادل الخبرات 👥
+• تحديثات مستمرة ودورات جديدة
+
+💳 <strong>طرق الدفع:</strong> فيزا، ماستركارد، فودافون كاش
+
+🔗 <a href="https://easyt.online/enroll" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن واستمتع بكل المحتوى ←</a>
+
+💡 لو عندك أي سؤال تاني عن الاشتراك أو الدفع، أنا هنا أساعدك! 😊`;
 }
 
 function sanitizeValue(val) {
@@ -715,7 +752,7 @@ function markdownToHtml(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ isEducationalTerm — v7.9.9: Added marketing/business terms
+   ═══ isEducationalTerm
    ══════════════════════════════════════════════════════════ */
 function isEducationalTerm(msg) {
   const eduTerms = [
@@ -845,7 +882,6 @@ function isCommunityQuestion(msg) {
   return patterns.some((p) => p.test(msg));
 }
 
-/* ═══ v7.9.9: Category Question Detection ═══ */
 function isCategoryQuestion(msg) {
   const patterns = [
     /تصنيف/i, /تصنيفات/i, /اقسام/i, /أقسام/i,
@@ -860,7 +896,6 @@ function isCategoryQuestion(msg) {
   return patterns.some((p) => p.test(msg));
 }
 
-/* ═══ v7.9.9: Detect relevant category for search results ═══ */
 function detectRelevantCategory(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
 
@@ -899,7 +934,6 @@ function detectRelevantCategory(searchTerms) {
   return bestScore >= 2 ? bestCategory : null;
 }
 
-/* ═══ v7.9.9: Format all categories as HTML ═══ */
 function formatCategoriesList() {
   let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong>\n\n`;
 
@@ -915,7 +949,7 @@ function formatCategoriesList() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ v7.9.7→v7.9.8: splitIntoSearchableTerms
+   ═══ splitIntoSearchableTerms
    ══════════════════════════════════════════════════════════ */
 function splitIntoSearchableTerms(terms) {
   const result = new Set();
@@ -966,7 +1000,7 @@ function splitIntoSearchableTerms(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchCorrections — Fuzzy + Semantic
+   ═══ searchCorrections
    ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
   if (!supabase) return [];
@@ -1024,7 +1058,7 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ matchCustomResponse — keyword matching for SUPPORT
+   ═══ matchCustomResponse
    ══════════════════════════════════════════════════════════ */
 async function matchCustomResponse(message) {
   if (!supabase) return null;
@@ -1068,19 +1102,21 @@ async function matchCustomResponse(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ loadBotInstructions — from admin table
+   ═══ 🔧 v8.0: loadBotInstructions — reads category field with fallback
    ══════════════════════════════════════════════════════════ */
 async function loadBotInstructions() {
   if (!supabase) return "";
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
-      .select("label, instruction")
+      .select("label, category, instruction")
       .eq("is_active", true);
 
     if (error || !data || data.length === 0) return "";
 
-    return data.map((row) => `- ${row.label}: ${row.instruction}`).join("\n");
+    return data
+      .map((row) => `- ${row.label || row.category || "custom"}: ${row.instruction}`)
+      .join("\n");
   } catch (e) {
     console.error("loadBotInstructions error:", e.message);
     return "";
@@ -1088,7 +1124,7 @@ async function loadBotInstructions() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ classifyIntent — GPT Intent Detection
+   ═══ classifyIntent
    ══════════════════════════════════════════════════════════ */
 async function classifyIntent(message) {
   if (isCommunityQuestion(message)) {
@@ -1172,6 +1208,7 @@ async function classifyIntent(message) {
 
 🔴 مهم جداً: أي كلمة تعليمية حتى لو إنجليزية (مثل unity, python, react, node, photoshop) → صنّفها SEARCH
 🔴 مهم جداً: لو المستخدم بيسأل عن "مجتمع الكورس" أو "جروب" أو "community" → صنّفه SUPPORT مع support_type: "community"
+🔴 مهم جداً: لو المستخدم بيسأل عن سعر الاشتراك أو بكم الاشتراك → صنّفه SUPPORT مع support_type: "subscription"
 🔴 مهم جداً: لو entity فاضي أو مش معروف، اكتب string فاضي "" — ممنوع تماماً تكتب null أو "null"
 🔴 مهم جداً: search_terms لازم تكون array فيها كلمات بحث فردية — كل كلمة لوحدها مش عبارات طويلة
 🔴 مثال: "تصميم الصور بالذكاء الاصطناعي" → search_terms: ["تصميم", "صور", "ذكاء", "اصطناعي"]
@@ -1261,7 +1298,7 @@ async function classifyIntent(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchCourses — v7.9.8: adaptive columns
+   ═══ searchCourses
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
@@ -1501,7 +1538,7 @@ async function fuzzySearchFallback(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ searchDiplomas — v7.9.8: REMOVED image column
+   ═══ searchDiplomas
    ══════════════════════════════════════════════════════════ */
 async function searchDiplomas(searchTerms) {
   if (!supabase) return [];
@@ -1539,7 +1576,7 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ AI Reranking — v7.9.6: with safety net
+   ═══ AI Reranking
    ══════════════════════════════════════════════════════════ */
 async function aiRerankCourses(userMessage, courses, diplomas = []) {
   const totalResults = courses.length + diplomas.length;
@@ -1834,7 +1871,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.9-fix4
+   ═══ MAIN CHAT ENDPOINT — v8.0
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1856,6 +1893,18 @@ app.post("/chat", limiter, async (req, res) => {
     console.log(`\n💬 [${sessionId}] "${cleanMessage}"`);
 
     await logChat(sessionId, "user", cleanMessage, null);
+
+    /* ═══ 🆕 v8.0: Subscription/Pricing — handle BEFORE anything else ═══ */
+    if (isSubscriptionQuestion(cleanMessage)) {
+      console.log("💰 Subscription question detected — handling directly");
+      const subReply = await buildSubscriptionResponse(cleanMessage);
+      await logChat(sessionId, "bot", subReply, "SUPPORT", {
+        support_type: "subscription",
+        detected_by: "isSubscriptionQuestion",
+      });
+      console.log(`💰 Subscription response sent | ⏱️ ${Date.now() - startTime}ms`);
+      return res.json({ reply: subReply });
+    }
 
     if (isCategoryQuestion(cleanMessage)) {
       const catReply = formatCategoriesList();
@@ -1978,7 +2027,6 @@ app.post("/chat", limiter, async (req, res) => {
           ? entity.split(/\s+/).filter((w) => w.length > 1)
           : extractSearchTermsFromMessage(cleanMessage);
 
-    /* ═══ 🆕 fix4: Beginner boost — add basic terms when user is beginner ═══ */
     const isBeginner = detectBeginnerIntent(cleanMessage) || audience === "مبتدئ";
 
     if (isBeginner && termsToSearch.length <= 3) {
@@ -2067,7 +2115,6 @@ app.post("/chat", limiter, async (req, res) => {
 
       reply = ``;
 
-      /* ═══ 🆕 fix4: Beginners see courses FIRST, then diplomas ═══ */
       if (isBeginner) {
         if (courses.length > 0) {
           reply += `📚 <strong>كورسات مناسبة للمبتدئين:</strong>\n`;
@@ -2081,7 +2128,6 @@ app.post("/chat", limiter, async (req, res) => {
           reply += diplomas.slice(0, 2).map((d) => formatDiplomaCard(d)).join("");
         }
       } else {
-        /* Normal order: diplomas first */
         if (diplomas.length > 0) {
           reply += diplomas.map((d) => formatDiplomaCard(d)).join("");
           reply += "\n";
@@ -2157,11 +2203,7 @@ app.post("/admin/login", (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN STATS — 🆕 fix3: Each query isolated
-   ══════════════════════════════════════════════════════════ */
-
-/* ══════════════════════════════════════════════════════════
-   ═══ CONVERSATIONS (grouped by session) — for admin.html
+   ═══ CONVERSATIONS
    ══════════════════════════════════════════════════════════ */
 app.get("/admin/conversations", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
@@ -2284,10 +2326,7 @@ app.get("/admin/instructors", async (req, res) => {
 
     if (error) throw error;
 
-    res.json({
-      success: true,
-      instructors: data || []
-    });
+    res.json({ success: true, instructors: data || [] });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -2303,7 +2342,6 @@ app.get("/admin/faq", async (req, res) => {
       .order("created_at", { ascending: false });
 
     if (error) {
-      // Table might not exist
       console.log("FAQ table not found or error:", error.message);
       return res.json({ success: true, faqs: [] });
     }
@@ -2471,7 +2509,9 @@ app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
   }
 });
 
-
+/* ══════════════════════════════════════════════════════════
+   ═══ ADMIN STATS
+   ══════════════════════════════════════════════════════════ */
 app.get("/admin/stats", async (req, res) => {
   console.log("📊 Admin stats requested");
 
@@ -2484,8 +2524,6 @@ app.get("/admin/stats", async (req, res) => {
   }
 
   try {
-    /* 🆕 fix3: Each query in its own try-catch so one failure doesn't kill all stats */
-
     let totalChats = 0;
     try {
       const { count } = await supabase
@@ -2888,14 +2926,17 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
   }
 });
 
-/* ═══ Bot Instructions CRUD ═══ */
+/* ══════════════════════════════════════════════════════════
+   ═══ 🔧 v8.0: Bot Instructions CRUD — FIXED
+   ══════════════════════════════════════════════════════════ */
+
+/* 🔧 FIX: Returns ALL instructions (active + inactive) so admin sees everything */
 app.get("/admin/bot-instructions", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
       .select("*")
-      .eq("is_active", true)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -2905,10 +2946,11 @@ app.get("/admin/bot-instructions", async (req, res) => {
   }
 });
 
+/* 🔧 FIX: Accepts category + priority from admin dashboard */
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
-    const { instruction, label, is_active } = req.body;
+    const { instruction, label, category, priority, is_active } = req.body;
 
     if (!instruction) {
       return res
@@ -2920,7 +2962,9 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
       .from("bot_instructions")
       .insert({
         instruction,
-        label: label || "custom",
+        label: label || category || "custom",
+        category: category || label || "GENERAL",
+        priority: priority != null ? priority : 10,
         is_active: is_active !== false,
       })
       .select()
@@ -2933,15 +2977,21 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
   }
 });
 
+/* 🔧 FIX: Accepts category + priority from admin dashboard */
 app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
   try {
     const { id } = req.params;
-    const { instruction, label, is_active } = req.body;
+    const { instruction, label, category, priority, is_active } = req.body;
 
     const updateData = {};
     if (instruction !== undefined) updateData.instruction = instruction;
     if (label !== undefined) updateData.label = label;
+    if (category !== undefined) {
+      updateData.category = category;
+      if (label === undefined) updateData.label = category;
+    }
+    if (priority !== undefined) updateData.priority = priority;
     if (is_active !== undefined) updateData.is_active = is_active;
 
     const { data, error } = await supabase
@@ -3136,21 +3186,21 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD — served from admin.html file
+   ═══ ADMIN DASHBOARD
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ 🆕 fix3: DEBUG ENDPOINT — comprehensive diagnostics
+   ═══ DEBUG ENDPOINT
    ══════════════════════════════════════════════════════════ */
 app.get("/admin/debug", async (req, res) => {
   console.log("🔧 Debug endpoint requested");
 
   const diagnostics = {
     timestamp: new Date().toISOString(),
-    version: "7.9.9-fix4",
+    version: "8.0",
     environment: {
       NODE_ENV: process.env.NODE_ENV || "not set",
       PORT: PORT,
@@ -3196,7 +3246,7 @@ app.get("/admin/debug", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ HEALTH & ROOT ENDPOINTS — 🆕 fix3: tests Supabase
+   ═══ HEALTH & ROOT ENDPOINTS
    ══════════════════════════════════════════════════════════ */
 app.get("/health", async (req, res) => {
   let dbStatus = "unknown";
@@ -3214,45 +3264,22 @@ app.get("/health", async (req, res) => {
 
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "7.9.9-fix4",
+    version: "8.0",
     database: dbStatus,
     openai: openai ? "initialized" : "not initialized",
     features: [
-      "🆕 Beginner detection (detectBeginnerIntent)",
-      "🆕 Beginner boost search terms",
-      "🆕 Beginners see courses first, diplomas second",
-      "🆕 أساسيات البرمجة category keywords expanded",
-      "🆕 Environment validation on startup",
-      "🆕 Supabase connection test on startup",
-      "🆕 /admin/debug diagnostic endpoint",
-      "🆕 Stats queries isolated (one failure ≠ all fail)",
-      "🆕 Null-safe Supabase client checks",
-      "Admin served from admin.html file",
+      "🆕 v8.0: isSubscriptionQuestion() — detects pricing questions",
+      "🆕 v8.0: Subscription handled BEFORE custom responses",
+      "🆕 v8.0: Bot instructions save with category + priority",
+      "🆕 v8.0: GET bot-instructions returns ALL (active + inactive)",
+      "🆕 v8.0: loadBotInstructions reads category field",
+      "Beginner detection",
       "22 categories with URLs + keywords",
-      "isCategoryQuestion detection",
-      "detectRelevantCategory mapping",
-      "category link after search results",
-      "expanded marketing terms: ROAS, CPA, funnel...",
-      "max 12 searchable terms",
-      "adaptive columns",
-      "diplomas.image removed",
-      "synonym limit 3 per match",
-      "word splitting search",
-      "Arabic prefix stripping",
-      "Arabic edu term detection",
       "AI reranking + safety net",
-      "price fix",
-      "page_content search",
-      "syllabus search",
-      "objectives search",
-      "enhanced scoring",
-      "fuzzy fallback v2",
-      "HTML links only",
-      "markdown→html safety",
-      "custom responses",
-      "bot instructions",
-      "Arabic corrections",
-      "synonym expansion",
+      "Custom responses + bot instructions",
+      "Arabic corrections + synonym expansion",
+      "Fuzzy Arabic search with Levenshtein",
+      "Chat logging + Admin Dashboard",
     ],
     timestamp: new Date().toISOString(),
   });
@@ -3261,7 +3288,7 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.9-fix4",
+    version: "8.0",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -3278,10 +3305,10 @@ app.get("/", (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ START SERVER — 🆕 fix3: with startup checks
+   ═══ START SERVER
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v7.9.9-fix4...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v8.0...\n");
 
   if (missingEnv.length > 0) {
     console.error(`⚠️  Missing env vars: ${missingEnv.join(", ")}`);
@@ -3301,13 +3328,13 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.9-fix4              ║
+║  🤖 زيكو Chatbot — v8.0                     ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin (from admin.html)      ║
 ║  🔧 Debug: /admin/debug                      ║
 ║  💊 Health: /health                           ║
-║  📂 Categories + Marketing terms             ║
-║  🎓 Beginner detection enabled               ║
+║  💰 Subscription detection: ENABLED          ║
+║  🧠 Bot Instructions: category+priority FIX  ║
 ║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected" : "❌ NOT connected"}               ║
 ║  🤖 OpenAI: ${openai ? "✅ Ready     " : "❌ NOT ready  "}                  ║
 ║  ⏰ ${new Date().toISOString()}              ║
