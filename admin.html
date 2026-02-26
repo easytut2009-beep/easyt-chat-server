@@ -1215,7 +1215,7 @@ function renderConversation() {
   if(sb) sb.scrollTop = sb.scrollHeight;
 }
 
-function renderFlat(messages, sid) {
+ function renderFlat(messages, sid) {
   var h = '';
   var lastDate = '';
   var seq = 0;
@@ -1234,7 +1234,11 @@ function renderFlat(messages, sid) {
     h += isUser ? '👤 المستخدم' : '🤖 البوت';
     if (m.intent) h += ' <span class="flat-intent">' + esc(m.intent) + '</span>';
     h += '</div>';
-    h += '<div>' + esc(m.content || m.message || '').slice(0, 3000) + '</div>';
+
+    // ✅ FIX: Bot messages render as HTML, user messages are escaped
+    var msgText = (m.content || m.message || '').slice(0, 3000);
+    h += '<div>' + (isUser ? esc(msgText) : msgText) + '</div>';
+
     h += '<div class="flat-meta">';
     h += '<span class="flat-id">ID: ' + (m.id || '?') + '</span>';
     h += '<span class="flat-time">' + fmtTime(m.created_at) + '</span>';
@@ -1311,7 +1315,7 @@ function renderGrouped(messages, sid) {
       h += '<div class="qa-answer">';
       h += '<span class="qa-answer-label">🤖 ' + (g.botOnly ? 'رسالة تلقائية' : (ai === 0 ? 'رد البوت' : 'رد إضافي ' + (ai+1))) + '</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (ans.id||'?') + ' | ' + fmtTime(ans.created_at) + '</span>';
-      h += '<div class="qa-answer-text">' + esc(ans.content || ans.message || '').slice(0, 5000) + '</div>';
+h += '<div class="qa-answer-text">' + (ans.content || ans.message || '').slice(0, 5000) + '</div>';
       if (!g.botOnly) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent((g.question ? (g.question.content || g.question.message || '') : '').slice(0,500)))); } catch(e){}
