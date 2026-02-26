@@ -630,11 +630,9 @@ function isSubscriptionQuestion(msg) {
 
 /* ═══ 🆕 v8.0: Build subscription response (reads bot instructions for custom pricing) ═══ */
 async function buildSubscriptionResponse(message) {
-  /* Try loading admin instructions for custom pricing info */
   const extraInstructions = await loadBotInstructions();
 
-  /* Check if admin has specific pricing instructions */
-  let customPriceInfo = null;
+  let customPriceInfo = "";
   if (extraInstructions) {
     const lines = extraInstructions.split("\n");
     for (const line of lines) {
@@ -646,42 +644,52 @@ async function buildSubscriptionResponse(message) {
         normLine.includes("دولار") ||
         normLine.includes("$") ||
         normLine.includes("pricing") ||
-        normLine.includes("price")
+        normLine.includes("price") ||
+        normLine.includes("دفع") ||
+        normLine.includes("payment") ||
+        normLine.includes("فيزا") ||
+        normLine.includes("فودافون") ||
+        normLine.includes("redotpay")
       ) {
-        customPriceInfo = line.replace(/^-\s*[^:]+:\s*/, "").trim();
-        break;
+        customPriceInfo += line.replace(/^-\s*[^:]+:\s*/, "").trim() + "\n";
       }
     }
   }
 
-  /* If admin has custom pricing instruction, use GPT to generate a natural response */
-  if (customPriceInfo && openai) {
+  /* Always use GPT to give a natural response to the specific question */
+  if (openai) {
     try {
+      const systemContent = `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن الاشتراك أو الدفع.
+
+${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPriceInfo}\n` : ""}
+معلومات الأسعار:
+- الاشتراك السنوي الشامل: 49$ (عرض رمضان!) بدل 59$
+- المنصة فيها +600 دورة و8 دبلومات
+- بعد الاشتراك بتحصل على: كل الدورات + الدبلومات + شهادات إتمام + مجتمع المتعلمين
+
+طرق الدفع المتاحة حالياً:
+- فيزا (Visa)
+- ماستركارد (Mastercard)  
+- فودافون كاش (Vodafone Cash)
+
+قواعد مهمة:
+- رد بالعامية المصرية بشكل ودود ومختصر
+- لو سأل عن طريقة دفع معينة مش موجودة في القائمة، قوله بلطف إنها مش متاحة حالياً ووجهه للطرق المتاحة
+- لو سأل عن طريقة دفع موجودة، أكدله إنها متاحة
+- لو سأل سؤال عام عن الأسعار، اعرض الأسعار وطرق الدفع
+- اكتب اللينكات بصيغة HTML: <a href="URL" target="_blank">نص</a>
+- رابط الاشتراك: https://easyt.online/enroll
+- ❌ ممنوع ماركداون [text](url)
+- ❌ ممنوع تخترع طرق دفع مش موجودة`;
+
       const resp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          {
-            role: "system",
-            content: `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن سعر الاشتراك.
-
-معلومات الأسعار من الأدمن:
-${customPriceInfo}
-
-معلومات إضافية:
-- المنصة فيها +600 دورة و8 دبلومات
-- طرق الدفع: فيزا، ماستركارد، فودافون كاش
-- بعد الاشتراك بتحصل على: كل الدورات + الدبلومات + شهادات إتمام + مجتمع المتعلمين
-
-قواعد:
-- رد بالعامية المصرية بشكل ودود
-- خلي الرد مختصر ومباشر
-- اكتب اللينكات بصيغة HTML: <a href="URL" target="_blank">نص</a>
-- ❌ ممنوع ماركداون [text](url)`,
-          },
+          { role: "system", content: systemContent },
           { role: "user", content: message },
         ],
         temperature: 0.5,
-        max_tokens: 250,
+        max_tokens: 300,
       });
       let reply = resp.choices[0].message.content;
       reply = markdownToHtml(reply);
@@ -691,7 +699,7 @@ ${customPriceInfo}
     }
   }
 
-  /* Default subscription response */
+  /* Fallback if GPT fails */
   return `💰 <strong>أسعار الاشتراك في easyT:</strong>
 
 🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
@@ -710,6 +718,7 @@ ${customPriceInfo}
 
 💡 لو عندك أي سؤال تاني عن الاشتراك أو الدفع، أنا هنا أساعدك! 😊`;
 }
+
 
 function sanitizeValue(val) {
   if (val === null || val === undefined) return "";
