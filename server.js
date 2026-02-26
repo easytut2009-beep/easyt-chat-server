@@ -1344,8 +1344,27 @@ ${categoriesList}
   → audience_filter: "مبتدئ"
 
 ═══ قاعدة ذهبية ═══
+═══ قاعدة ذهبية ═══
 لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
-لو مش متأكد بين SEARCH و CHAT = اختار SEARCH (أفضل نبحث من إننا نرد رد عام فارغ)
+
+⚠️⚠️⚠️ قاعدة الرسالة الغامضة ⚠️⚠️⚠️
+لو المستخدم طلب حاجة عامة بدون ما يحدد الموضوع = CHAT + اسأله يوضح!
+أمثلة:
+- "عايز تمرين" ← CHAT: "تمرين في ايه بالظبط؟ قولي الموضوع وأنا هجيبلك أحسن الكورسات! 😊"
+- "عايز شرح" ← CHAT: "شرح لإيه؟ قولي المجال أو البرنامج وأنا هساعدك! 😊"
+- "فيه حاجة كويسة" ← CHAT: "كويسة في ايه؟ تحب تصميم؟ برمجة؟ تسويق؟ قولي وأنا أرشحلك! 😊"
+- "عايز اتعلم" ← CHAT: "تحب تتعلم ايه؟ عندنا +600 دورة في مجالات كتير! قولي اهتمامك 😊"
+- "ابغى دورة" ← CHAT: "دورة في ايه بالظبط؟ قولي المجال وأنا أرشحلك أحسن الكورسات! 😊"
+
+بس لو حدد الموضوع = SEARCH عادي:
+- "عايز تمرين فوتوشوب" ← SEARCH ✅
+- "عايز شرح بايثون" ← SEARCH ✅
+- "فيه كورس ريفيت" ← SEARCH ✅
+
+القاعدة: لازم يكون فيه **اسم موضوع/برنامج/مهارة محددة** عشان نعمل SEARCH.
+لو مفيش = CHAT واسأله يوضح بأسلوب ودود.
+
+لو مش متأكد بين SEARCH و CHAT = لو فيه موضوع محدد اختار SEARCH، لو مفيش اختار CHAT واسأل.
 
 لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (ودود وطبيعي بلهجة المستخدم)
 لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
@@ -1856,6 +1875,55 @@ async function smartChat(message, sessionId) {
       console.log(`🔄 Merged follow-up terms: ${merged.join(", ")}`);
     }
   } // ← ✅ CLOSED HERE — follow-up injection is DONE
+
+} // ← ✅ CLOSED HERE — follow-up injection is DONE
+
+  // 🔴 FIX: Prevent GPT false follow-ups
+  // GPT says follow-up but our local check disagrees → verify
+  if (
+    analysis.is_follow_up &&
+    !isContextFollowUp &&
+    sessionMem.lastSearchTopic &&
+    analysis.action === "SEARCH"
+  ) {
+    const msgNorm = normalizeArabic(dialectNormalized.toLowerCase());
+    const prevNorm = normalizeArabic(
+      sessionMem.lastSearchTopic.toLowerCase()
+    );
+
+    if (!msgNorm.includes(prevNorm)) {
+      console.log(
+        `🚫 False follow-up! "${dialectNormalized}" ≠ "${sessionMem.lastSearchTopic}"`
+      );
+      analysis.is_follow_up = false;
+
+      // Strip old topic's terms from search
+      const oldTermsSet = new Set(
+        (sessionMem.lastSearchTerms || []).map((t) =>
+          normalizeArabic(t.toLowerCase())
+        )
+      );
+      analysis.search_terms = analysis.search_terms.filter(
+        (t) => !oldTermsSet.has(normalizeArabic(t.toLowerCase()))
+      );
+
+      // If all terms were from old topic, extract fresh from message
+      if (analysis.search_terms.length === 0) {
+        analysis.search_terms = dialectNormalized
+          .split(/\s+/)
+          .filter(
+            (w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+          );
+      }
+      console.log(
+        `   Clean terms: [${analysis.search_terms.join(", ")}]`
+      );
+    }
+  }
+
+  // 3. Route based on action
+  let reply = "";
+
 
   // 3. Route based on action
   let reply = "";
