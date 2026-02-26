@@ -589,22 +589,22 @@ function formatCourseCard(course, instructors, index) {
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
   const rawPrice = course.price;
-  let priceNum = typeof rawPrice === "string" ? parseFloat(rawPrice.replace(/[^0-9.]/g,""))||0 : (typeof rawPrice === "number" ? rawPrice : 0);
-  const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
-  const imgUrl = course.image || "https://easyt.online/default-course.png";
-  const desc = course.description ? course.description.replace(/<[^>]*>/g,"").substring(0,120)+"..." : "";
+  let priceNum = typeof rawPrice === "string" 
+    ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0 
+    : (typeof rawPrice === "number" ? rawPrice : 0);
+  const priceText = priceNum === 0 ? "مجاناً 🎉" : `${priceNum}$`;
+  const desc = course.description 
+    ? course.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..." 
+    : "";
+  const num = index !== undefined ? `${index}. ` : "";
 
-  return `<div style="border:1px solid #eee;border-radius:12px;overflow:hidden;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
-<div style="display:flex;gap:10px;align-items:start">
-<div style="flex:1">
-<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">${index !== undefined ? index+". " : ""}${course.title}</div>
+  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
+<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
 <div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
 ${instructorName ? `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>` : ""}
-${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>` : ""}
-<a href="${courseUrl}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدورة والاشتراك ←</a>
-</div>
-<img src="${imgUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="course">
-</div></div>`;
+${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>` : ""}
+<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>
+</div>`;
 }
 
 function formatDiplomaCard(diploma) {
