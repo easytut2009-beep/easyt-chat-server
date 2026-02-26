@@ -610,9 +610,23 @@ function isSubscriptionQuestion(msg) {
     /بكام الدبلومات/i,
     /بكم دخول المنصة/i,
     /بكام دخول المنصة/i,
+
+    // 🆕 v8.1: أسئلة طرق الدفع المتوفرة
+    /متوفر.*(دفع|الدفع)/i,
+    /الدفع.*(متوفر|متاح|ينفع|ممكن)/i,
+    /متاح.*(دفع|الدفع)/i,
+    /ينفع.*(ادفع|دفع)/i,
+    /اقدر.*(ادفع|دفع)/i,
+    /هل.*(الدفع|دفع|ادفع)/i,
+    /redotpay/i,
+    /(فيزا|فودافون|ماستر|instapay|انستا|فوري|paypal|باي بال).*(متوفر|متاح|ينفع|شغال|بيشتغل)/i,
+    /(متوفر|متاح|ينفع|بتقبلوا).*(فيزا|فودافون|ماستر|instapay|فوري|paypal|كارت)/i,
+    /بتقبلوا.*(ايه|إيه)/i,
+    /ايه.*(طرق|وسائل).*(الدفع|دفع)/i,
   ];
   return patterns.some((p) => p.test(msg));
 }
+
 
 /* ═══ 🆕 v8.0: Build subscription response (reads bot instructions for custom pricing) ═══ */
 async function buildSubscriptionResponse(message) {
@@ -1930,24 +1944,34 @@ app.post("/chat", limiter, async (req, res) => {
 
     let reply = "";
 
-    /* ═══ SUPPORT Intent ═══ */
-    if (intent === "SUPPORT") {
-      const customResp = await matchCustomResponse(cleanMessage);
-      if (customResp) {
+/* ═══ SUPPORT Intent ═══ */
+if (intent === "SUPPORT") {
+    const customResp = await matchCustomResponse(cleanMessage);
+
+    // 🆕 v8.1: لو السؤال عن الدفع، متطلعش رد المجتمع
+    const isPaymentQ = support_type === "payment" || support_type === "subscription"
+        || /دفع|الدفع|فيزا|فودافون|ماستر|كارت|redotpay|payment/i.test(cleanMessage);
+
+    const isCommunityResp = customResp && /مجتمع|community|تبادل.*خبرات/i.test(customResp.response);
+
+    if (customResp && !(isPaymentQ && isCommunityResp)) {
         reply = customResp.response;
-      } else {
+    } else if (isPaymentQ) {
+        // رد مباشر عن طرق الدفع بدون لخبطة
+        reply = await buildSubscriptionResponse(cleanMessage);
+    } else {
         reply = await getGPTSupportResponse(cleanMessage, support_type);
-      }
-
-      await logChat(sessionId, "bot", reply, "SUPPORT", {
-        support_type,
-        custom_response: !!customResp,
-      });
-
-      console.log(`⏱️ ${Date.now() - startTime}ms`);
-      return res.json({ reply });
     }
 
+    await logChat(sessionId, "bot", reply, "SUPPORT", {
+        support_type,
+        custom_response: !!customResp && !(isPaymentQ && isCommunityResp),
+        blocked_community: isPaymentQ && isCommunityResp,
+    });
+
+    console.log(`⏱️ ${Date.now() - startTime}ms`);
+    return res.json({ reply });
+}
     /* ═══ GENERAL Intent ═══ */
     if (intent === "GENERAL") {
       const gptReply = await getGPTResponse(cleanMessage);
