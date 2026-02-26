@@ -748,6 +748,17 @@ return reply;
 💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>
 
 💡 لو عندك أي سؤال تاني، أنا هنا أساعدك! 😊`;
+    }
+  }
+
+  // fallback لو مفيش OpenAI
+  return `💰 <strong>أسعار الاشتراك في easyT:</strong>
+
+🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
+بدل 59$ — وفّر 10$! يعني 4$ بس في الشهر 💸
+
+🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>
+💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
 }
 
 
