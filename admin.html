@@ -1005,38 +1005,45 @@ function showTab(tab) {
 // ═══════════════════════════════════════
 async function loadStats() {
   try {
-    var d = await apiCall('/admin/stats');
+    var resp = await apiCall('/admin/stats');
+    // ✅ FIX: البيانات جوه resp.stats
+    var d = resp.stats || resp;
+    
     var g = document.getElementById('statsGrid');
     var items = [
-      ['💬',d.total_messages,'إجمالي الرسائل'],
-      ['👥',d.unique_sessions,'جلسات فريدة'],
-      ['📅',d.today_messages,'رسائل اليوم'],
-      ['🟢',d.active_sessions,'جلسات نشطة'],
-      ['🧠',d.corrections,'تصحيحات'],
-      ['📝',d.bot_instructions||0,'تعليمات البوت'],
-      ['🛠️',d.custom_responses||0,'ردود مخصصة'],
-      ['📚',d.courses,'كورسات'],
-      ['🎓',d.diplomas,'دبلومات'],
-      ['👤',d.instructors,'محاضرين'],
-      ['❓',d.faq_entries,'أسئلة شائعة'],
-      ['📄',d.site_pages,'صفحات']
+      ['💬', d.totalChats || d.total_messages || 0, 'إجمالي الرسائل'],
+      ['👥', d.uniqueSessions || d.unique_sessions || 0, 'جلسات فريدة'],
+      ['📅', d.todayChats || d.today_messages || 0, 'رسائل اليوم'],
+      ['🟢', d.activeSessions || d.active_sessions || 0, 'جلسات نشطة'],
+      ['🧠', d.totalCorrections || d.corrections || 0, 'تصحيحات'],
+      ['📝', d.totalBotInstructions || d.bot_instructions || 0, 'تعليمات البوت'],
+      ['🛠️', d.totalCustomResponses || d.custom_responses || 0, 'ردود مخصصة'],
+      ['📚', d.totalCourses || d.courses || 0, 'كورسات'],
+      ['🎓', d.totalDiplomas || d.diplomas || 0, 'دبلومات'],
+      ['👤', d.totalInstructors || d.instructors || 0, 'محاضرين'],
+      ['❓', d.totalFaq || d.faq_entries || 0, 'أسئلة شائعة'],
+      ['📄', d.totalSitePages || d.site_pages || 0, 'صفحات']
     ];
     g.innerHTML = items.map(function(a) {
       return '<div class="card stat-card"><div style="font-size:24px">'+a[0]+'</div><div class="stat-num">'+(a[1]!=null?a[1]:0)+'</div><div class="stat-label">'+a[2]+'</div></div>';
     }).join('');
 
+    // ✅ FIX: intentCounts بدل intent_distribution
+    var intentData = d.intentCounts || d.intent_distribution || {};
     var ic = document.getElementById('intentChart');
-    if(d.intent_distribution && Object.keys(d.intent_distribution).length) {
-      var entries = Object.entries(d.intent_distribution).sort(function(a,b){return b[1]-a[1];});
+    if(intentData && Object.keys(intentData).length) {
+      var entries = Object.entries(intentData).sort(function(a,b){return b[1]-a[1];});
       var max = Math.max.apply(null,entries.map(function(e){return e[1];}));
       ic.innerHTML = entries.map(function(e) {
         var p = Math.round(e[1]/max*100);
         return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="min-width:130px;font-size:12px;color:#475569">'+esc(e[0])+'</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:20px"><div style="width:'+p+'%;background:#3b82f6;border-radius:4px;height:100%;min-width:24px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">'+e[1]+'</span></div></div></div>';
       }).join('');
     } else { ic.innerHTML='<p style="color:#94a3b8">لا توجد بيانات</p>'; }
-  } catch(e) { toast('خطأ في تحميل الإحصائيات','error'); }
+  } catch(e) { 
+    console.error('Stats error:', e);
+    toast('خطأ في تحميل الإحصائيات','error'); 
+  }
 }
-
 // ═══════════════════════════════════════
 // CONVERSATIONS LIST
 // ═══════════════════════════════════════
