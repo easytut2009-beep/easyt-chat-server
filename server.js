@@ -2712,6 +2712,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html")); });
+app.get("/test", (req, res) => { res.sendFile(path.join(__dirname, "test.html")); });
 
 /* ══════════════════════════════════════════════════════════
    SECTION 14: Health, Debug, Root
