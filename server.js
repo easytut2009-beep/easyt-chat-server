@@ -659,28 +659,39 @@ async function buildSubscriptionResponse(message) {
   /* Always use GPT to give a natural response to the specific question */
   if (openai) {
     try {
-      const systemContent = `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن الاشتراك أو الدفع.
+  const systemContent = `أنت "زيكو" مساعد منصة easyT. المستخدم بيسأل عن الاشتراك أو الدفع.
 
 ${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPriceInfo}\n` : ""}
-معلومات الأسعار:
-- الاشتراك السنوي الشامل: 49$ (عرض رمضان!) بدل 59$
-- المنصة فيها +600 دورة و8 دبلومات
-- بعد الاشتراك بتحصل على: كل الدورات + الدبلومات + شهادات إتمام + مجتمع المتعلمين
 
-طرق الدفع المتاحة حالياً:
-- فيزا (Visa)
-- ماستركارد (Mastercard)  
-- فودافون كاش (Vodafone Cash)
+معلومات الاشتراك:
+- الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!) بدل 59$ — وفّر 10$
+- يعني 4$ بس في الشهر
+- المنصة فيها +600 دورة و+27 دبلومة و+750 ألف طالب
+- 15 دورة جديدة بتتضاف كل شهر
+- بعد الاشتراك بتحصل على: وصول كامل لكل الدورات + الدبلومات + شهادات إتمام PDF + مجتمع طلاب تفاعلي + مساعد ذكاء اصطناعي 24/7
+- الوصول فوري بعد الدفع
+- يتم تجديد الاشتراك تلقائياً بنفس السعر المخفض
+- ممكن إلغاء الاشتراك في أي وقت بدون أي التزام
+- عرض رمضان ينتهي بانتهاء الشهر الكريم
+
+طرق الدفع:
+الطرق الأساسية: بطاقات الائتمان (Credit Cards) – PayPal
+الطرق البديلة: إنستا باي (InstaPay) – فودافون كاش (01027007899) – تحويل بنكي (Alexandria Bank, Account: 202069901001) – Skrill (info@easyt.online)
+
+الروابط المهمة:
+- رابط صفحة الاشتراك: https://easyt.online/p/subscriptions
+- رابط صفحة طرق الدفع البديلة: https://easyt.online/p/Payments
 
 قواعد مهمة:
 - رد بالعامية المصرية بشكل ودود ومختصر
-- لو سأل عن طريقة دفع معينة مش موجودة في القائمة، قوله بلطف إنها مش متاحة حالياً ووجهه للطرق المتاحة
-- لو سأل عن طريقة دفع موجودة، أكدله إنها متاحة
-- لو سأل سؤال عام عن الأسعار، اعرض الأسعار وطرق الدفع
+- لو سأل عن الاشتراك أو الأسعار → حط رابط الاشتراك
+- لو سأل عن طرق الدفع → حط رابط طرق الدفع
+- لو سأل عن طريقة دفع معينة مش موجودة → قوله بلطف إنها مش متاحة ووجهه للطرق المتاحة مع رابط طرق الدفع
+- ممكن تحط الرابطين مع بعض لو مناسب
 - اكتب اللينكات بصيغة HTML: <a href="URL" target="_blank">نص</a>
-- رابط الاشتراك: https://easyt.online/enroll
 - ❌ ممنوع ماركداون [text](url)
 - ❌ ممنوع تخترع طرق دفع مش موجودة`;
+
 
       const resp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -691,32 +702,52 @@ ${customPriceInfo ? `معلومات إضافية من الأدمن:\n${customPri
         temperature: 0.5,
         max_tokens: 300,
       });
-      let reply = resp.choices[0].message.content;
-      reply = markdownToHtml(reply);
-      return reply;
-    } catch (e) {
-      console.error("buildSubscriptionResponse GPT error:", e.message);
-    }
-  }
+ let reply = resp.choices[0].message.content;
+reply = markdownToHtml(reply);
 
-  /* Fallback if GPT fails */
-  return `💰 <strong>أسعار الاشتراك في easyT:</strong>
+// Always append links if missing
+const subscriptionLink = `https://easyt.online/p/subscriptions`;
+const paymentLink = `https://easyt.online/p/Payments`;
+
+let links = "";
+
+if (!reply.includes(subscriptionLink)) {
+  links += `\n🎓 <a href="${subscriptionLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
+}
+
+if (!reply.includes(paymentLink)) {
+  links += `\n💳 <a href="${paymentLink}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
+}
+
+if (links) {
+  reply += "\n" + links;
+}
+
+return reply;
+
+} catch (e) {
+    console.error("Subscription response error:", e);
+    return `💰 <strong>أسعار الاشتراك في easyT:</strong>
 
 🎉 <strong>الاشتراك السنوي الشامل: 49$ فقط (عرض رمضان!)</strong>
-بدل 59$ — وفّر 10$! 💸
+بدل 59$ — وفّر 10$! يعني 4$ بس في الشهر 💸
 
 ✅ الاشتراك الشامل بيتيحلك:
-• كل الدورات (+600 دورة) في كل المجالات
-• كل الدبلومات (8 دبلومات متخصصة) 🎓
-• شهادات إتمام لكل كورس 📜
-• مجتمع المتعلمين لتبادل الخبرات 👥
-• تحديثات مستمرة ودورات جديدة
+• وصول كامل لكل الدورات (+600 دورة ومحتوى تعليمي)
+• كل الدبلومات (+27 دبلومة) 🎓
+• شهادات إتمام PDF لكل كورس 📜
+• مجتمع طلاب تفاعلي 👥
+• مساعد ذكاء اصطناعي 24/7 🤖
+• 15 دورة جديدة كل شهر
+• وصول فوري بعد الدفع
 
-💳 <strong>طرق الدفع:</strong> فيزا، ماستركارد، فودافون كاش
+💳 <strong>طرق الدفع الأساسية:</strong> بطاقات الائتمان – PayPal
+💰 <strong>طرق الدفع البديلة:</strong> إنستا باي – فودافون كاش – تحويل بنكي – Skrill
 
-🔗 <a href="https://easyt.online/enroll" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن واستمتع بكل المحتوى ←</a>
+🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>
+💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>
 
-💡 لو عندك أي سؤال تاني عن الاشتراك أو الدفع، أنا هنا أساعدك! 😊`;
+💡 لو عندك أي سؤال تاني، أنا هنا أساعدك! 😊`;
 }
 
 
