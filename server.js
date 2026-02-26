@@ -1,22 +1,13 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.1 — Two-Phase RAG Intelligence
+   🤖 Ziko Chatbot v10.2 — Two-Phase RAG + Smart Filtering
    
-   ✅ TWO-PHASE ARCHITECTURE: Analyze → Recommend
-   ✅ RAG: GPT sees actual course content before recommending
-   ✅ GPT FILTERS: Only shows truly relevant courses
-   ✅ RELEVANCE THRESHOLD: Pre-filters weak results
-   ✅ SESSION MEMORY: Remembers user interests & level
-   ✅ CONVERSATION SUMMARY: Auto-generated every 4 messages
-   ✅ ALL admin endpoints preserved
-   ✅ ALL database functionality preserved
-   ✅ Search engine preserved (courses + diplomas + fuzzy)
-   ✅ Chat logging preserved
-   
-   CHANGES from v10.0:
-   - Phase 2 returns JSON with relevant indices
-   - Only relevant cards are shown (GPT decides)
-   - Pre-filter weak search results before Phase 2
-   - Better relevance scoring
+   🔧 FIXES in v10.2:
+   ✅ FIX #1: \n → <br> everywhere (formatting fix)
+   ✅ FIX #2: Dialect normalization (Iraqi/Gulf/Levantine)
+   ✅ FIX #3: Quick Intent Check (payment/greeting safety net)
+   ✅ FIX #4: MUCH stricter Phase 2 filtering
+   ✅ FIX #5: Safety check — verify GPT's choices before showing
+   ✅ FIX #6: Better analyzer prompt with dialect examples
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -180,8 +171,9 @@ const CATEGORIES = {
   "البرامج الهندسية": {
     url: "https://easyt.online/courses/category/f3870633-bfcb-47a0-9c54-c2e71224571a",
     keywords: [
-      "هندسية","اوتوكاد","ريفت","autocad","revit","3ds max","solidworks",
+      "هندسية","اوتوكاد","ريفت","ريفيت","revit","autocad","3ds max","solidworks",
       "ماتلاب","matlab","blender","lumion","sketchup","etabs","archicad","vray",
+      "سباكه","سباكة","plumbing","ميكانيكا","كهرباء","mep","تكييف",
     ],
   },
   "تطوير وبرمجة المواقع والتطبيقات": {
@@ -285,7 +277,7 @@ const CATEGORIES = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 6: Arabic Engine
+   SECTION 6: Arabic Engine + 🆕 Dialect Support
    ══════════════════════════════════════════════════════════ */
 function normalizeArabic(text) {
   if (!text) return "";
@@ -324,6 +316,74 @@ function similarityRatio(a, b) {
   return Math.round(((max - levenshtein(na, nb)) / max) * 100);
 }
 
+/* ═══════════════════════════════════
+   🆕 FIX #2: Dialect Normalization
+   Maps Iraqi/Gulf/Levantine/Moroccan → Egyptian
+   ═══════════════════════════════════ */
+const DIALECT_MAP = {
+  // Iraqi
+  "شلون": "ازاي",
+  "شگد": "كام",
+  "شكد": "كام",
+  "اريد": "عايز",
+  "أريد": "عايز",
+  "هواية": "كتير",
+  "شكو": "فيه ايه",
+  "ماكو": "مفيش",
+  "اكو": "فيه",
+  "چا": "جا",
+  "شسوي": "اعمل ايه",
+  "شقصد": "تقصد ايه",
+  // Gulf
+  "ابغى": "عايز",
+  "أبغى": "عايز",
+  "ابي": "عايز",
+  "أبي": "عايز",
+  "وش": "ايه",
+  "ايش": "ايه",
+  "حق": "بتاع",
+  "زين": "كويس",
+  "مررره": "اوي",
+  "مرره": "اوي",
+  "حيل": "اوي",
+  "يالله": "يلا",
+  // Levantine
+  "بدي": "عايز",
+  "شو": "ايه",
+  "هلق": "دلوقتي",
+  "هلأ": "دلوقتي",
+  "كتير": "كتير",
+  "هيك": "كده",
+  "منيح": "كويس",
+  "كيفك": "عامل ايه",
+  "شلونك": "عامل ايه",
+  // Moroccan/Tunisian
+  "بغيت": "عايز",
+  "علاش": "ليه",
+  "واش": "هل",
+  "فلوس": "فلوس",
+  // Common across dialects
+  "كيف": "ازاي",
+  "حاب": "عايز",
+  "حابب": "عايز",
+  "اشتي": "عايز",
+  "ودي": "عايز",
+};
+
+function normalizeDialect(text) {
+  if (!text) return text;
+  let result = text;
+  // Sort by length descending to match longer phrases first
+  const sorted = Object.entries(DIALECT_MAP).sort(
+    (a, b) => b[0].length - a[0].length
+  );
+  for (const [dialect, standard] of sorted) {
+    const regex = new RegExp(`\\b${dialect}\\b`, "gi");
+    result = result.replace(regex, standard);
+  }
+  return result;
+}
+
 const ARABIC_CORRECTIONS = {
   ماركوتنج: "ماركيتنج",
   ماركتنج: "ماركيتنج",
@@ -352,6 +412,10 @@ const ARABIC_CORRECTIONS = {
   بزنيس: "بيزنس",
   بيزنيس: "بيزنس",
   "اس اي او": "سيو",
+  ريفت: "ريفيت",
+  ريفيط: "ريفيت",
+  الريفت: "ريفيت",
+  الريفيت: "ريفيت",
   دبلومه: "دبلومه",
   دبلومة: "دبلومه",
   دبلوما: "دبلومه",
@@ -369,6 +433,7 @@ const SEARCH_SYNONYMS = {
   سيو: ["تحسين محركات البحث", "seo"],
   فوتوشوب: ["photoshop", "تعديل صور"],
   بايثون: ["python", "بايثن"],
+  ريفيت: ["revit", "ريفت", "برامج هندسية"],
   "سوشيال ميديا": ["social media", "منصات التواصل"],
   بيزنس: ["business", "ادارة اعمال"],
   اكسل: ["excel", "اكسيل"],
@@ -384,6 +449,8 @@ const ARABIC_STOP_WORDS = new Set([
   "عندكم","فيه","بس","خلاص","ده","دي","كده","ازاي","ليه","فين",
   "the","a","an","is","are","in","on","at","to","for","of","and","or","i","want","need","about",
   "كورس","كورسات","دورة","دورات","تعلم","اتعلم","ابغى","اريد",
+  // 🆕 dialect stop words
+  "شلون","كيف","بدي","حاب","شو","وش","ابي",
 ]);
 
 function applyArabicCorrections(text) {
@@ -449,6 +516,22 @@ function splitIntoSearchableTerms(terms) {
   return [...result].filter((t) => t.length > 1).slice(0, 12);
 }
 
+/* ═══════════════════════════════════
+   🆕 FIX #1: HTML Formatter
+   Converts \n → <br> and cleans output
+   ═══════════════════════════════════ */
+function finalizeReply(html) {
+  if (!html) return "";
+  // Convert \n to <br> for proper HTML rendering
+  html = html.replace(/\n/g, "<br>");
+  // Clean up excessive <br> tags (more than 3 consecutive)
+  html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
+  // Clean up <br> right before/after div tags
+  html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
+  html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
+  return html;
+}
+
 function markdownToHtml(text) {
   if (!text) return "";
   text = text.replace(
@@ -462,6 +545,54 @@ function markdownToHtml(text) {
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return text;
+}
+
+/* ══════════════════════════════════════════════════════════
+   🆕 FIX #3: Quick Intent Check
+   Safety net — catches obvious intents BEFORE GPT
+   ══════════════════════════════════════════════════════════ */
+function quickIntentCheck(message) {
+  const lower = (message || "").toLowerCase();
+  const norm = normalizeArabic(lower);
+
+  // 💰 Payment / Subscription keywords — VERY high confidence
+  const paymentPatterns = [
+    /ادفع/, /دفع/, /اشتراك/, /اشترك/, /سعر/, /اسعار/, /تكلف/, /كام.*سعر/,
+    /سعر.*كام/, /فلوس/, /ثمن/, /pay/, /price/, /subscri/, /كم.*سعر/,
+    /طريق.*دفع/, /طرق.*دفع/, /visa/, /فيزا/, /ماستر/, /master/,
+    /فودافون.*كاش/, /انستا.*باي/, /instapay/, /تحويل/, /باي.*بال/, /paypal/,
+  ];
+  for (const p of paymentPatterns) {
+    if (p.test(norm) || p.test(lower)) {
+      return { intent: "SUBSCRIPTION", confidence: 0.95 };
+    }
+  }
+
+  // 👋 Greeting
+  const greetingPatterns = [
+    /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم)/,
+  ];
+  for (const p of greetingPatterns) {
+    if (p.test(norm) || p.test(lower)) {
+      // Only if message is SHORT (pure greeting)
+      if (lower.split(/\s+/).length <= 4) {
+        return { intent: "GREETING", confidence: 0.9 };
+      }
+    }
+  }
+
+  // 📂 Categories
+  const catPatterns = [
+    /عندكم.*ايه/, /عندكم.*شو/, /عندكم.*وش/, /ايه.*المجالات/,
+    /شو.*المجالات/, /التصنيفات/, /المجالات.*المتاح/, /فيه.*ايه.*كورس/,
+  ];
+  for (const p of catPatterns) {
+    if (p.test(norm) || p.test(lower)) {
+      return { intent: "CATEGORIES", confidence: 0.85 };
+    }
+  }
+
+  return null; // No quick match — let GPT handle it
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -513,13 +644,14 @@ function detectRelevantCategory(searchTerms) {
   return bestScore >= 2 ? bestCat : null;
 }
 
+/* 🆕 FIX #1: Categories list now uses <br> instead of \n */
 function formatCategoriesList() {
-  let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong>\n\n`;
+  let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong><br><br>`;
   Object.keys(CATEGORIES).forEach((name, i) => {
-    html += `${i + 1}. <a href="${CATEGORIES[name].url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${name}</a>\n`;
+    html += `${i + 1}. <a href="${CATEGORIES[name].url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${name}</a><br>`;
   });
-  html += `\n✨ اختار تصنيف وأنا هجيبلك الكورسات المتاحة فيه!`;
-  html += `\n\n💡 أو تصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات (+600 دورة)</a>`;
+  html += `<br>✨ اختار تصنيف وأنا هجيبلك الكورسات المتاحة فيه!`;
+  html += `<br><br>💡 أو تصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات (+600 دورة)</a>`;
   return html;
 }
 
@@ -843,9 +975,9 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.1                    ██
-   ██   Two-Phase RAG Intelligence Engine                  ██
-   ██   + GPT-Filtered Results                             ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.2                    ██
+   ██   Two-Phase RAG + Smart Filtering                    ██
+   ██   + Dialect Support + Quick Intent                   ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
@@ -895,7 +1027,6 @@ function updateSessionMemory(sessionId, updates) {
   }
 }
 
-// Cleanup stale sessions every 10 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [sid, mem] of sessionMemory) {
@@ -991,7 +1122,7 @@ async function loadCustomResponsesSummary() {
 
 /* ═══════════════════════════════════
    11-C: Phase 1 — Smart Analyzer
-   (gpt-4o-mini — fast & cheap)
+   🆕 FIX #6: Better dialect-aware prompt
    ═══════════════════════════════════ */
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
@@ -1011,7 +1142,15 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
 `
       : "";
 
-  return `أنت محلل ذكي لمنصة easyT التعليمية. مهمتك: فهم رسالة المستخدم بدقة وتحديد ماذا يريد.
+  return `أنت محلل ذكي لمنصة easyT التعليمية. مهمتك: فهم رسالة المستخدم بدقة.
+
+⚠️ مهم جداً: المستخدمين بيتكلموا بلهجات مختلفة (مصري/عراقي/خليجي/شامي/مغربي). لازم تفهم كل اللهجات!
+
+═══ قاموس اللهجات ═══
+عراقي: شلون=ازاي | اريد=عايز | شگد=كام | ماكو=مفيش | اكو=فيه
+خليجي: ابغى/ابي=عايز | وش/ايش=ايه | كيف=ازاي | زين=كويس
+شامي: بدي=عايز | شو=ايه | هلق=دلوقتي | كتير=كتير
+مغربي: بغيت=عايز | واش=هل | علاش=ليه
 
 ${botInstructions ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n` : ""}
 ${memoryContext}
@@ -1021,34 +1160,49 @@ ${customResponses ? `═══ ردود مرجعية ═══\n${customResponse
 ${categoriesList}
 
 ═══ مهمتك ═══
-حلل رسالة المستخدم وارجع JSON:
+حلل رسالة المستخدم وارجع JSON فقط:
 {
   "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "CHAT" | "SUPPORT",
   "search_terms": ["كلمة1", "كلمة2"],
-  "response_message": "ردك المبدئي (للأكشنز غير SEARCH فقط)",
-  "intent": "SEARCH|GREETING|SUBSCRIPTION|SUPPORT|GENERAL|CATEGORIES|COMPARE|COURSE_DETAILS",
+  "response_message": "ردك (للأكشنز غير SEARCH فقط)",
+  "intent": "وصف النية",
   "user_level": "مبتدئ" | "متوسط" | "متقدم" | null,
-  "topics": ["موضوع1", "موضوع2"],
+  "topics": ["موضوع1"],
   "is_follow_up": true/false,
   "previous_topic_reference": "الموضوع السابق إن وجد",
-  "audience_filter": "مبتدئ" | "متقدم" | null,
+  "audience_filter": null,
   "language": "ar" | "en"
 }
 
-═══ قواعد التحليل ═══
-🔍 SEARCH — لما يدور على كورس/دبلومة/موضوع تعليمي/يطلب بديل/مستوى مختلف:
-- search_terms: كلمات مفردة بالعربي + الإنجليزي (5-8 كلمات)
-- لو متابعة لموضوع سابق: ادمج كلمات الموضوع السابق مع الطلب الجديد
-- مثال: "عاوز أصعب" + سياق سابق "برمجة" → ["برمجة","advanced","متقدم","احتراف","programming","مشاريع"]
-- مثال: "عايز فوتوشوب" → ["فوتوشوب","photoshop"]
-- مثال: "الكورس ده فيه ايه" → SEARCH + اسم الكورس من السياق
+═══ 🔴 قواعد التصنيف الأساسية ═══
 
-💰 SUBSCRIPTION — أسعار/اشتراك/دفع
-📂 CATEGORIES — "عندكم ايه"/مجالات متاحة  
+💰 SUBSCRIPTION — أي سؤال عن الدفع/الأسعار/الاشتراك بأي لهجة:
+  - "شلون ادفع" ← SUBSCRIPTION ✅
+  - "كيف ادفع" ← SUBSCRIPTION ✅
+  - "ازاي ادفع" ← SUBSCRIPTION ✅
+  - "ابغى اشترك" ← SUBSCRIPTION ✅
+  - "بدي ادفع" ← SUBSCRIPTION ✅
+  - "كام سعر الاشتراك" ← SUBSCRIPTION ✅
+  - "طرق الدفع" ← SUBSCRIPTION ✅
+  - أي كلمة فيها: دفع/ادفع/سعر/اسعار/اشتراك/فلوس/تكلفة/pay/price ← SUBSCRIPTION ✅
+
+🔍 SEARCH — لما يدور على كورس/دبلومة/مهارة:
+  - search_terms: كلمات بالعربي + الإنجليزي (3-6 كلمات مفيدة فقط)
+  - ❌ لا تضع كلمات عامة مثل "كورس" أو "تعلم" — ضع اسم الموضوع فقط
+  - "عايز فوتوشوب" → ["فوتوشوب","photoshop"]
+  - "ابي ريفيت" → ["ريفيت","revit","برامج هندسية"]
+  - "شلون اتعلم بايثون" → ["بايثون","python"]
+  - لو متابعة لموضوع سابق: ادمج السياق
+
+📂 CATEGORIES — لما يسأل عن المجالات المتاحة
 🛠️ SUPPORT — مشاكل تقنية/شكاوي
-💬 CHAT — ترحيب/أسئلة عامة/محادثة
+💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
 
-لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (عامية مصرية ودودة)
+═══ قاعدة ذهبية ═══
+لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
+لو مش متأكد بين SEARCH و CHAT = اختار SEARCH (أفضل نبحث من إننا نرد رد عام فارغ)
+
+لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (ودود وطبيعي بلهجة المستخدم)
 لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
 
 ═══ معلومات المنصة ═══
@@ -1059,9 +1213,11 @@ ${categoriesList}
 - رابط طرق الدفع: https://easyt.online/p/Payments
 - طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
 
-═══ قواعد مهمة ═══
+═══ للردود ═══
 - اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
+- استخدم <br> بدل \\n لأسطر جديدة
 - لو المستخدم بالإنجليزي رد بالإنجليزي
+- لو عراقي رد عراقي، لو خليجي رد خليجي (أو على الأقل فصحى بسيطة)
 - ❌ ممنوع تخترع كورسات
 - لو في الردود المرجعية فيه رد مناسب، استخدمه`;
 }
@@ -1089,7 +1245,6 @@ async function analyzeMessage(
     filteredHistory.pop();
   }
 
-  // Keep only last 6 messages for analyzer (efficiency)
   filteredHistory = filteredHistory.slice(-6);
 
   const messages = [
@@ -1103,8 +1258,8 @@ async function analyzeMessage(
       model: "gpt-4o-mini",
       messages,
       response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_tokens: 500,
+      temperature: 0.2,
+      max_tokens: 600,
     });
 
     const raw = resp.choices[0].message.content;
@@ -1164,8 +1319,7 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
-   (gpt-4o — smart & personalized)
-   NOW RETURNS JSON WITH RELEVANT INDICES
+   🆕 FIX #4: MUCH stricter filtering
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1218,7 +1372,6 @@ function prepareDiplomaForRAG(diploma) {
     description: cleanDesc,
     price: priceNum,
     link: diploma.link || "",
-    type: "diploma",
   };
 }
 
@@ -1243,7 +1396,7 @@ async function generateSmartRecommendation(
 
   const allItems = [...diplomaData, ...courseData];
 
-  const lang = analysis.language === "en" ? "English" : "عامية مصرية";
+  const lang = analysis.language === "en" ? "English" : "ودود وطبيعي";
   const levelInfo =
     analysis.user_level || sessionMem.userLevel || "غير محدد";
   const interestsInfo =
@@ -1255,54 +1408,63 @@ async function generateSmartRecommendation(
     analysis.previous_topic_reference ||
     sessionMem.topics.slice(-3).join(", ");
 
-  const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي خبير في منصة easyT.
-مهمتك: تقييم الكورسات المتاحة واختيار المناسب فعلاً لسؤال المستخدم.
+  /* 🆕 FIX #4: Completely rewritten Phase 2 prompt — MUCH stricter */
+  const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي في منصة easyT.
+
+⚠️⚠️⚠️ أهم قاعدة: لا تُظهر أي كورس إلا إذا كان مرتبط **مباشرة** بطلب المستخدم ⚠️⚠️⚠️
 
 ═══ الكورسات والدبلومات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
 
-═══ معلومات عن المستخدم ═══
+═══ معلومات المستخدم ═══
 - مستواه: ${levelInfo}
 - اهتماماته: ${interestsInfo}
-- هل ده متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
+- متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
 
-═══ ⚠️ مهمتك الأساسية ═══
-1. قيّم كل كورس/دبلومة: هل هو **فعلاً مرتبط** بسؤال المستخدم؟
-2. اختار بس الكورسات المرتبطة **فعلياً** — لو كورس مش له علاقة مباشرة ❌ متختاروش
-3. ارجع JSON بالشكل ده:
-
+═══ مطلوب منك ═══
+ارجع JSON بهذا الشكل بالظبط:
 {
-  "message": "ردك الشخصي للمستخدم (4-8 جمل بـ ${lang})",
-  "relevant_course_indices": [0, 2],
-  "relevant_diploma_indices": [0],
+  "message": "ردك للمستخدم (${lang})",
+  "relevant_course_indices": [],
+  "relevant_diploma_indices": [],
   "has_exact_match": true/false,
-  "suggestion": "اقتراح لو مفيش نتيجة مناسبة"
+  "suggestion": ""
 }
 
-═══ قواعد اختيار الكورسات ═══
-🟢 مرتبط فعلاً = الكورس بيتعلم **نفس** الأداة/المهارة اللي المستخدم طلبها
-🔴 مش مرتبط = الكورس في نفس المجال العام بس مش نفس الموضوع
-   - مثال: المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌ مش مرتبط
-   - مثال: المستخدم طلب "فوتوشوب" → كورس "جرافيك للأطفال" = ❌ مش مرتبط (إلا لو المستخدم طفل)
-   - مثال: المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅ مرتبط (لأن الفوتوشوب جزء من الجرافيك)
-   - مثال: المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌ مش مرتبط
-   - مثال: المستخدم طلب "تسويق" → كورس "فوتوشوب" = ❌ مش مرتبط
+═══ 🔴🔴🔴 قواعد الفلترة الصارمة 🔴🔴🔴 ═══
 
-🟡 has_exact_match:
-   - true = فيه كورس بيعلم بالظبط اللي المستخدم طلبه
-   - false = مفيش كورس مباشر، لكن فيه حاجات قريبة ممكن تفيده
+1. ✅ مرتبط = الكورس بيعلّم **نفس** الأداة/المهارة/البرنامج اللي المستخدم طلبه
+2. ❌ مش مرتبط = الكورس في مجال مختلف حتى لو في نفس التصنيف العام
+
+أمثلة على كورسات مش مرتبطة (❌ ممنوع تعرضها):
+- المستخدم طلب "ريفيت/سباكة" → كورس "Angular JS" = ❌❌❌ (ده برمجة مش هندسة!)
+- المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌ (ده مواقع مش تصميم)
+- المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌ (لغة مختلفة!)
+- المستخدم طلب "اكسل" → كورس "بوربوينت" = ❌ (برنامج مختلف!)
+- المستخدم طلب "ريفيت" → كورس "اوتوكاد" = ⚠️ (قريب بس مش نفسه — اعرضه بس وضح الفرق)
+
+أمثلة على كورسات مرتبطة (✅):
+- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب للمبتدئين" = ✅
+- المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅ (لأن فوتوشوب جزء من الجرافيك)
+- المستخدم طلب "ريفيت" → كورس "ريفيت MEP" = ✅
+
+3. لو مفيش ولا كورس مرتبط فعلاً:
+   - relevant_course_indices = [] (فاضية!)
+   - relevant_diploma_indices = [] (فاضية!)
+   - has_exact_match = false
+   - message = اعتذار واضح + اقتراح يتصفح التصنيف المناسب
+   - ❌❌❌ ممنوع تحط أي index لكورس مش مرتبط عشان "تملى" النتايج
+
+4. لو فيه كورس واحد بس مرتبط: اعرض كورس واحد بس! مش لازم تملى قائمة
 
 ═══ قواعد الرد ═══
-- لو has_exact_match = false: ابدأ بـ "مفيش كورس مخصص لـ [الموضوع] حالياً، بس..."
-- لو has_exact_match = true: رد بحماس وقدم التوصية
-- اذكر أسماء الكورسات بالظبط زي ما هي في البيانات
-- لو فيه syllabus/objectives استخدمهم عشان تبين قيمة الكورس
-- ❌ ممنوع تذكر الأسعار (هتظهر في الكاردز تحت)
-- ❌ ممنوع تخترع معلومات مش موجودة في البيانات
-- ❌ ممنوع تعمل قوائم نقطية — اكتب بشكل طبيعي ودود
-- ✅ لو المستخدم محتاج حاجة مش موجودة، قوله بصراحة واقترح الأقرب
-- لو ${isFollowUp ? "ده متابعة لموضوع سابق، اعترف بده وقدم حاجة مختلفة/أعمق" : "أول طلب، قدم أفضل اختيار"}
-- لو relevant_course_indices و relevant_diploma_indices فاضيين = مفيش حاجة مناسبة خالص`;
+- لو has_exact_match = true: رد بحماس واشرح ليه الكورس مناسب
+- لو has_exact_match = false: ابدأ بـ "للأسف مفيش كورس مخصص لـ [الموضوع] حالياً..."
+- اذكر اسم الكورس بالظبط زي ما في البيانات
+- ❌ ممنوع تذكر أسعار
+- ❌ ممنوع تخترع معلومات
+- ❌ ممنوع قوائم نقطية — اكتب بشكل طبيعي
+- ❌❌❌ ممنوع تعرض كورس في مجال مختلف تماماً`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -1312,7 +1474,7 @@ ${JSON.stringify(allItems, null, 1)}
         { role: "user", content: message },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.5,
+      temperature: 0.3,
       max_tokens: 800,
     });
 
@@ -1327,16 +1489,16 @@ ${JSON.stringify(allItems, null, 1)}
 
     if (!result) {
       return {
-        message: "دي أفضل الكورسات اللي لقيتها ليك 👇",
-        relevantCourseIndices: courses.map((_, i) => i).slice(0, 4),
-        relevantDiplomaIndices: diplomas.map((_, i) => i).slice(0, 2),
-        hasExactMatch: true,
+        message: "خلني أبحثلك عن أفضل النتايج 👇",
+        relevantCourseIndices: [],
+        relevantDiplomaIndices: [],
+        hasExactMatch: false,
         suggestion: "",
       };
     }
 
     return {
-      message: result.message || "دي أفضل النتائج 👇",
+      message: result.message || "",
       relevantCourseIndices: Array.isArray(result.relevant_course_indices)
         ? result.relevant_course_indices
         : [],
@@ -1357,7 +1519,7 @@ ${JSON.stringify(allItems, null, 1)}
           { role: "user", content: message },
         ],
         response_format: { type: "json_object" },
-        temperature: 0.5,
+        temperature: 0.3,
         max_tokens: 600,
       });
       const raw = resp.choices[0].message.content;
@@ -1370,7 +1532,7 @@ ${JSON.stringify(allItems, null, 1)}
       }
       if (!result) throw new Error("Parse failed");
       return {
-        message: result.message || "دي أفضل النتائج 👇",
+        message: result.message || "",
         relevantCourseIndices: Array.isArray(result.relevant_course_indices)
           ? result.relevant_course_indices
           : [],
@@ -1383,14 +1545,58 @@ ${JSON.stringify(allItems, null, 1)}
     } catch (e2) {
       console.error("❌ RAG Fallback error:", e2.message);
       return {
-        message: "دي أفضل الكورسات اللي لقيتها ليك 👇",
-        relevantCourseIndices: courses.map((_, i) => i).slice(0, 3),
-        relevantDiplomaIndices: diplomas.map((_, i) => i).slice(0, 2),
-        hasExactMatch: true,
+        message: "خلني أبحثلك... 👇",
+        relevantCourseIndices: [],
+        relevantDiplomaIndices: [],
+        hasExactMatch: false,
         suggestion: "",
       };
     }
   }
+}
+
+/* ═══════════════════════════════════
+   🆕 FIX #5: Safety Check
+   Verify GPT's choices actually make sense
+   ═══════════════════════════════════ */
+function verifyCourseRelevance(course, searchTerms) {
+  if (!searchTerms || searchTerms.length === 0) return true;
+
+  const courseText = normalizeArabic(
+    [
+      course.title || "",
+      course.subtitle || "",
+      course.description || "",
+      course.syllabus || "",
+      course.objectives || "",
+    ]
+      .join(" ")
+      .toLowerCase()
+  );
+
+  let matchCount = 0;
+  const coreTerms = searchTerms.filter(
+    (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+  );
+
+  for (const term of coreTerms) {
+    const normTerm = normalizeArabic(term.toLowerCase());
+    if (normTerm.length <= 2) continue;
+    if (courseText.includes(normTerm)) {
+      matchCount++;
+    }
+    // Also check fuzzy match on title
+    const titleNorm = normalizeArabic((course.title || "").toLowerCase());
+    for (const word of titleNorm.split(/\s+/)) {
+      if (similarityRatio(normTerm, word) >= 75) {
+        matchCount++;
+        break;
+      }
+    }
+  }
+
+  // At least 1 core term should match somewhere in the course
+  return matchCount >= 1;
 }
 
 /* ═══════════════════════════════════
@@ -1413,9 +1619,9 @@ async function generateConversationSummary(chatHistory, currentSummary) {
       messages: [
         {
           role: "system",
-          content: `لخّص المحادثة دي في 2-3 جمل قصيرة. ركّز على: ايه اهتمامات المستخدم، مستواه، ايه اللي دور عليه، وايه اللي اقترحته عليه.
+          content: `لخّص المحادثة دي في 2-3 جمل قصيرة. ركّز على: ايه اهتمامات المستخدم، مستواه، ايه اللي دور عليه.
 ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
-رد بالملخص فقط بدون أي مقدمة.`,
+رد بالملخص فقط.`,
         },
         { role: "user", content: recentMsgs },
       ],
@@ -1425,17 +1631,22 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 
     return resp.choices[0].message.content || currentSummary;
   } catch (e) {
-    console.error("Summary generation error:", e.message);
     return currentSummary;
   }
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator
+   11-F: 🧠 Master Orchestrator v10.2
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
+
+  /* 🆕 Step 0: Normalize dialect BEFORE anything else */
+  const normalizedMessage = normalizeDialect(message);
+  console.log(
+    `🌍 Dialect: "${message}" → "${normalizedMessage}"`
+  );
 
   // 1. Load all context in parallel
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
@@ -1448,17 +1659,42 @@ async function smartChat(message, sessionId) {
     `📦 Context: instructions=${botInstructions ? "yes" : "no"}, history=${chatHistory.length}msgs, memory=${sessionMem.messageCount}msgs`
   );
 
-  // 2. PHASE 1: Analyze the message (gpt-4o-mini — fast)
+  /* 🆕 Step 1.5: Quick Intent Check (safety net) */
+  const quickCheck = quickIntentCheck(normalizedMessage);
+  if (quickCheck) {
+    console.log(
+      `⚡ Quick intent: ${quickCheck.intent} (confidence: ${quickCheck.confidence})`
+    );
+  }
+
+  // 2. PHASE 1: Analyze the message (gpt-4o-mini)
   const analysis = await analyzeMessage(
-    message,
+    normalizedMessage,
     chatHistory,
     sessionMem,
     botInstructions,
     customResponses
   );
 
+  /* 🆕 Override GPT if quick check disagrees on high-confidence intents */
+  if (quickCheck && quickCheck.confidence >= 0.9) {
+    if (
+      quickCheck.intent === "SUBSCRIPTION" &&
+      analysis.action !== "SUBSCRIPTION"
+    ) {
+      console.log(
+        `🔄 Override: GPT said ${analysis.action}, Quick said SUBSCRIPTION → Overriding!`
+      );
+      analysis.action = "SUBSCRIPTION";
+      analysis.intent = "SUBSCRIPTION";
+      analysis.search_terms = [];
+      // Generate a proper subscription response
+      analysis.response_message = "";
+    }
+  }
+
   console.log(
-    `🧠 Phase1: action=${analysis.action} | terms=[${analysis.search_terms.join(",")}] | follow_up=${analysis.is_follow_up} | level=${analysis.user_level}`
+    `🧠 Phase1: action=${analysis.action} | terms=[${analysis.search_terms.join(",")}] | follow_up=${analysis.is_follow_up}`
   );
 
   let reply = "";
@@ -1466,7 +1702,7 @@ async function smartChat(message, sessionId) {
 
   // 3. Execute based on action
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-    /* ═══ SEARCH FLOW: Phase 1 → Search → Pre-Filter → Phase 2 (RAG) ═══ */
+    /* ═══ SEARCH FLOW ═══ */
     const termsToSearch = analysis.search_terms;
 
     let [courses, diplomas] = await Promise.all([
@@ -1499,28 +1735,27 @@ async function smartChat(message, sessionId) {
       }
     }
 
-    // ✅ NEW: Pre-filter weak results BEFORE sending to Phase 2
+    // Pre-filter weak results BEFORE Phase 2
     if (courses.length > 3) {
       const maxScore = Math.max(...courses.map((c) => c.relevanceScore || 0));
-      const threshold = Math.max(maxScore * 0.25, 3);
+      const threshold = Math.max(maxScore * 0.3, 5);
       const preFiltered = courses.filter(
         (c) => (c.relevanceScore || 0) >= threshold
       );
       if (preFiltered.length >= 1) {
         console.log(
-          `🧹 Pre-filter: ${courses.length} → ${preFiltered.length} courses (threshold=${threshold}, max=${maxScore})`
+          `🧹 Pre-filter: ${courses.length} → ${preFiltered.length} courses (threshold=${threshold})`
         );
         courses = preFiltered;
       }
     }
 
-    // Format results
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      // PHASE 2: RAG Smart Recommendation + Filtering (gpt-4o)
+      // PHASE 2: RAG + Filtering (gpt-4o)
       const recommendation = await generateSmartRecommendation(
-        message,
+        message, // Original message, not normalized
         courses,
         diplomas,
         sessionMem,
@@ -1528,93 +1763,127 @@ async function smartChat(message, sessionId) {
         instructors
       );
 
-      reply = recommendation.message;
-      reply += "\n\n";
-
-      // ✅ Only show cards GPT marked as RELEVANT
-      const relevantDiplomas = recommendation.relevantDiplomaIndices
-        .filter((i) => i >= 0 && i < diplomas.length)
-        .map((i) => diplomas[i]);
-
-      const relevantCourses = recommendation.relevantCourseIndices
+      // 🆕 FIX #5: Safety check — verify GPT's choices
+      let relevantCourses = recommendation.relevantCourseIndices
         .filter((i) => i >= 0 && i < courses.length)
         .map((i) => courses[i]);
 
+      let relevantDiplomas = recommendation.relevantDiplomaIndices
+        .filter((i) => i >= 0 && i < diplomas.length)
+        .map((i) => diplomas[i]);
+
+      // Double-check: verify each course GPT chose actually contains search terms
+      const verifiedCourses = relevantCourses.filter((c) =>
+        verifyCourseRelevance(c, termsToSearch)
+      );
+      const removedCount = relevantCourses.length - verifiedCourses.length;
+      if (removedCount > 0) {
+        console.log(
+          `🛡️ Safety check removed ${removedCount} irrelevant courses that GPT incorrectly approved`
+        );
+      }
+      relevantCourses = verifiedCourses;
+
       console.log(
-        `🎯 GPT filtered: ${relevantDiplomas.length}/${diplomas.length} diplomas, ${relevantCourses.length}/${courses.length} courses | exact_match=${recommendation.hasExactMatch}`
+        `🎯 Final: ${relevantDiplomas.length} diplomas, ${relevantCourses.length} courses | exact=${recommendation.hasExactMatch}`
       );
 
-      // Add diploma cards (only relevant ones)
+      reply = recommendation.message || "";
+      reply += "<br><br>";
+
+      // Add diploma cards
       if (relevantDiplomas.length > 0) {
         relevantDiplomas.slice(0, 3).forEach((d) => {
           reply += formatDiplomaCard(d);
         });
-        reply += "\n";
       }
 
-      // Add course cards (only relevant ones)
+      // Add course cards
       if (relevantCourses.length > 0) {
         relevantCourses.slice(0, 5).forEach((c, i) => {
           reply += formatCourseCard(c, instructors, i + 1);
         });
       }
 
-      // If GPT found NO relevant results at all
+      // If NO relevant results at all
       if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
         const cat = detectRelevantCategory(termsToSearch);
         if (cat) {
-          reply += `\n<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
+          reply += `<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
 📂 تصفح كل كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a> — ممكن تلاقي اللي يناسبك!
 </div>`;
         }
-        reply += `\n<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
+        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       } else {
-        // Category link for relevant results
         const cat = detectRelevantCategory(termsToSearch);
         if (cat) {
-          reply += `\n\n<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
+          reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
 <a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
         }
 
-        reply += `\n\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+        reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
     } else {
-      reply = analysis.is_follow_up
-        ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅 بس تقدر تتصفح كل الدورات من هنا:`
-        : `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.\nتقدر تتصفح كل الدورات (+600 دورة) من هنا:`;
-      reply += `\n<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 جميع الدورات على المنصة ←</a>`;
-
+      // No results at all from search
       const cat = detectRelevantCategory(termsToSearch);
+      reply = analysis.is_follow_up
+        ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅`
+        : `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.`;
+
       if (cat) {
-        reply += `\n<a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📂 أو تصفح تصنيف ${cat.name} ←</a>`;
+        reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a> — ممكن تلاقي حاجة تفيدك!`;
       }
+      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
     }
 
     console.log(
       `🔍 Search: ${courses.length} courses, ${diplomas.length} diplomas`
     );
   } else if (analysis.action === "SUBSCRIPTION") {
+    /* ═══ SUBSCRIPTION FLOW ═══ */
     reply = analysis.response_message || "";
-    if (!reply.includes("easyt.online/p/subscriptions")) {
-      reply += `\n\n🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
+
+    // 🆕 If analyzer returned empty response (e.g. from quick override), generate one
+    if (!reply || reply.trim().length < 20) {
+      reply = `أهلاً بيك! 🎉<br><br>`;
+      reply += `<strong>طرق الدفع المتاحة:</strong><br><br>`;
+      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      reply += `3. 📱 <strong>InstaPay</strong><br>`;
+      reply += `4. 📱 <strong>فودافون كاش</strong> (رقم: 01027007899)<br>`;
+      reply += `5. 🏦 <strong>تحويل بنكي</strong> (Alexandria Bank - 202069901001)<br>`;
+      reply += `6. 💰 <strong>Skrill</strong> (info@easyt.online)<br><br>`;
+      reply += `💰 <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$) — بيشمل كل الدورات والدبلومات!<br><br>`;
+      reply += `🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a><br>`;
+      reply += `💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">صفحة طرق الدفع ←</a>`;
+    } else {
+      // Make sure links are present
+      if (!reply.includes("easyt.online/p/subscriptions")) {
+        reply += `<br><br>🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
+      }
+      if (!reply.includes("easyt.online/p/Payments")) {
+        reply += `<br>💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
+      }
     }
-    if (!reply.includes("easyt.online/p/Payments")) {
-      reply += `\n💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">طرق الدفع البديلة ←</a>`;
-    }
+    intent = "SUBSCRIPTION";
   } else if (analysis.action === "CATEGORIES") {
     reply =
-      (analysis.response_message || "") + "\n\n" + formatCategoriesList();
+      (analysis.response_message ? analysis.response_message + "<br><br>" : "") +
+      formatCategoriesList();
   } else if (analysis.action === "SUPPORT") {
     reply =
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
   } else {
-    // CHAT — general conversation
-    reply = analysis.response_message || "أقدر أساعدك في إيه؟ 😊";
+    // CHAT
+    reply = analysis.response_message || "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
   }
 
-  // 4. Clean up markdown
+  // 4. Clean up: markdown → HTML
   reply = markdownToHtml(reply);
+
+  // 🆕 FIX #1: Final formatting — convert any remaining \n to <br>
+  reply = finalizeReply(reply);
 
   // 5. Update session memory
   updateSessionMemory(sessionId, {
@@ -1632,16 +1901,13 @@ async function smartChat(message, sessionId) {
     generateConversationSummary(chatHistory, sessionMem.summary)
       .then((summary) => {
         if (summary) updateSessionMemory(sessionId, { summary });
-        console.log(
-          `📝 Summary updated for session ${sessionId.slice(0, 8)}`
-        );
       })
       .catch(() => {});
   }
 
   const elapsed = Date.now() - startTime;
   console.log(
-    `✅ Done | action=${analysis.action} | phase2=${analysis.action === "SEARCH" ? "gpt-4o" : "skipped"} | ⏱️ ${elapsed}ms`
+    `✅ Done | action=${analysis.action} | ⏱️ ${elapsed}ms`
   );
 
   return { reply, intent };
@@ -1667,10 +1933,8 @@ app.post("/chat", limiter, async (req, res) => {
 
     console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
 
-    // Log user message
     await logChat(sessionId, "user", cleanMessage, null);
 
-    // Check if OpenAI is available
     if (!openai) {
       const fallback =
         "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏 جرب تاني بعد شوية.";
@@ -1678,11 +1942,9 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply: fallback });
     }
 
-    // 🧠 Two-Phase RAG Intelligence
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    // Log bot response
-    await logChat(sessionId, "bot", reply, intent, { version: "10.1" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.2" });
 
     return res.json({ reply });
   } catch (error) {
@@ -1697,7 +1959,6 @@ app.post("/chat", limiter, async (req, res) => {
    SECTION 13: Admin Endpoints (ALL PRESERVED)
    ══════════════════════════════════════════════════════════ */
 
-// ═══ Login ═══
 app.post("/admin/login", (req, res) => {
   const { password } = req.body;
   if (!password)
@@ -1710,1000 +1971,417 @@ app.post("/admin/login", (req, res) => {
   return res.status(401).json({ success: false, error: "كلمة السر غلط" });
 });
 
-// ═══ Stats ═══
 app.get("/admin/stats", async (req, res) => {
   if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "Database not connected" });
+    return res.status(500).json({ success: false, error: "Database not connected" });
   try {
-    let totalChats = 0,
-      todayChats = 0,
-      uniqueSessions = 0,
-      intentCounts = {},
-      totalCourses = 0,
-      totalDiplomas = 0,
-      totalCorrections = 0,
-      totalCustom = 0;
+    let totalChats = 0, todayChats = 0, uniqueSessions = 0, intentCounts = {},
+      totalCourses = 0, totalDiplomas = 0, totalCorrections = 0, totalCustom = 0;
 
     try {
-      const { count } = await supabase
-        .from("chat_logs")
-        .select("*", { count: "exact", head: true });
+      const { count } = await supabase.from("chat_logs").select("*", { count: "exact", head: true });
       totalChats = count || 0;
     } catch (e) {}
     try {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { count } = await supabase
-        .from("chat_logs")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", todayStart.toISOString())
-        .eq("role", "user");
+      const { count } = await supabase.from("chat_logs").select("*", { count: "exact", head: true })
+        .gte("created_at", todayStart.toISOString()).eq("role", "user");
       todayChats = count || 0;
     } catch (e) {}
     try {
-      const { data } = await supabase
-        .from("chat_logs")
-        .select("session_id")
-        .eq("role", "user");
-      uniqueSessions = data
-        ? new Set(data.map((s) => s.session_id)).size
-        : 0;
+      const { data } = await supabase.from("chat_logs").select("session_id").eq("role", "user");
+      uniqueSessions = data ? new Set(data.map((s) => s.session_id)).size : 0;
     } catch (e) {}
     try {
-      const { data } = await supabase
-        .from("chat_logs")
-        .select("intent")
-        .eq("role", "bot")
-        .not("intent", "is", null);
-      if (data)
-        data.forEach((r) => {
-          const i = r.intent || "UNKNOWN";
-          intentCounts[i] = (intentCounts[i] || 0) + 1;
-        });
+      const { data } = await supabase.from("chat_logs").select("intent").eq("role", "bot").not("intent", "is", null);
+      if (data) data.forEach((r) => { const i = r.intent || "UNKNOWN"; intentCounts[i] = (intentCounts[i] || 0) + 1; });
     } catch (e) {}
-    try {
-      const { count } = await supabase
-        .from("courses")
-        .select("*", { count: "exact", head: true });
-      totalCourses = count || 0;
-    } catch (e) {}
-    try {
-      const { count } = await supabase
-        .from("diplomas")
-        .select("*", { count: "exact", head: true });
-      totalDiplomas = count || 0;
-    } catch (e) {}
-    try {
-      const { count } = await supabase
-        .from("corrections")
-        .select("*", { count: "exact", head: true });
-      totalCorrections = count || 0;
-    } catch (e) {}
-    try {
-      const { count } = await supabase
-        .from("custom_responses")
-        .select("*", { count: "exact", head: true });
-      totalCustom = count || 0;
-    } catch (e) {}
+    try { const { count } = await supabase.from("courses").select("*", { count: "exact", head: true }); totalCourses = count || 0; } catch (e) {}
+    try { const { count } = await supabase.from("diplomas").select("*", { count: "exact", head: true }); totalDiplomas = count || 0; } catch (e) {}
+    try { const { count } = await supabase.from("corrections").select("*", { count: "exact", head: true }); totalCorrections = count || 0; } catch (e) {}
+    try { const { count } = await supabase.from("custom_responses").select("*", { count: "exact", head: true }); totalCustom = count || 0; } catch (e) {}
 
-    let recentChats = [],
-      noResultSearches = [],
-      hourlyDist = new Array(24).fill(0);
+    let recentChats = [], noResultSearches = [], hourlyDist = new Array(24).fill(0);
     try {
-      const { data } = await supabase
-        .from("chat_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
+      const { data } = await supabase.from("chat_logs").select("*").order("created_at", { ascending: false }).limit(20);
       recentChats = data || [];
     } catch (e) {}
     try {
-      const { data } = await supabase
-        .from("chat_logs")
-        .select("message,created_at,metadata")
-        .eq("role", "bot")
-        .eq("intent", "SEARCH")
-        .order("created_at", { ascending: false })
-        .limit(100);
-      noResultSearches = (data || [])
-        .filter((r) => {
-          try {
-            const m =
-              typeof r.metadata === "string"
-                ? JSON.parse(r.metadata)
-                : r.metadata;
-            return m && m.results_count === 0;
-          } catch {
-            return false;
-          }
-        })
-        .slice(0, 20);
+      const { data } = await supabase.from("chat_logs").select("message,created_at,metadata")
+        .eq("role", "bot").eq("intent", "SEARCH").order("created_at", { ascending: false }).limit(100);
+      noResultSearches = (data || []).filter((r) => {
+        try { const m = typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata; return m && m.results_count === 0; } catch { return false; }
+      }).slice(0, 20);
     } catch (e) {}
     try {
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from("chat_logs")
-        .select("created_at")
-        .eq("role", "user")
-        .gte("created_at", last24h);
-      if (data)
-        data.forEach((r) => {
-          const h = new Date(r.created_at).getHours();
-          hourlyDist[h]++;
-        });
+      const { data } = await supabase.from("chat_logs").select("created_at").eq("role", "user").gte("created_at", last24h);
+      if (data) data.forEach((r) => { const h = new Date(r.created_at).getHours(); hourlyDist[h]++; });
     } catch (e) {}
 
     res.json({
       success: true,
       stats: {
-        totalChats,
-        todayChats,
-        uniqueSessions,
-        intentCounts,
-        totalCourses,
-        totalDiplomas,
-        totalCorrections,
+        totalChats, todayChats, uniqueSessions, intentCounts,
+        totalCourses, totalDiplomas, totalCorrections,
         totalCustomResponses: totalCustom,
-        recentChats,
-        noResultSearches,
-        hourlyDistribution: hourlyDist,
+        recentChats, noResultSearches, hourlyDistribution: hourlyDist,
       },
     });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ═══ Conversations ═══
 app.get("/admin/conversations", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const page = parseInt(req.query.page) || 1,
-      limit = parseInt(req.query.limit) || 50,
-      search = req.query.search || "";
-    let query = supabase
-      .from("chat_logs")
-      .select("session_id, message, intent, created_at, role")
-      .order("created_at", { ascending: false });
+    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 50, search = req.query.search || "";
+    let query = supabase.from("chat_logs").select("session_id, message, intent, created_at, role").order("created_at", { ascending: false });
     if (search) query = query.ilike("message", `%${search}%`);
     const { data, error } = await query;
     if (error) throw error;
-
     const sessions = {};
     (data || []).forEach((row) => {
-      if (!sessions[row.session_id])
-        sessions[row.session_id] = {
-          session_id: row.session_id,
-          last_message: row.message,
-          last_intent: row.intent,
-          last_time: row.created_at,
-          message_count: 0,
-        };
+      if (!sessions[row.session_id]) sessions[row.session_id] = { session_id: row.session_id, last_message: row.message, last_intent: row.intent, last_time: row.created_at, message_count: 0 };
       sessions[row.session_id].message_count++;
     });
-    const sorted = Object.values(sessions).sort(
-      (a, b) => new Date(b.last_time) - new Date(a.last_time)
-    );
+    const sorted = Object.values(sessions).sort((a, b) => new Date(b.last_time) - new Date(a.last_time));
     const offset = (page - 1) * limit;
-    res.json({
-      success: true,
-      conversations: sorted.slice(offset, offset + limit),
-      total: sorted.length,
-      page,
-      pagination: { has_more: offset + limit < sorted.length },
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, conversations: sorted.slice(offset, offset + limit), total: sorted.length, page, pagination: { has_more: offset + limit < sorted.length } });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.get("/admin/conversations/:sessionId", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { data, error } = await supabase
-      .from("chat_logs")
-      .select("*")
-      .eq("session_id", req.params.sessionId)
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabase.from("chat_logs").select("*").eq("session_id", req.params.sessionId).order("created_at", { ascending: true });
     if (error) throw error;
-    const messages = (data || []).map((m) => ({ ...m, content: m.message }));
-    res.json({ success: true, messages });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, messages: (data || []).map((m) => ({ ...m, content: m.message })) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Corrections CRUD ═══
 app.get("/admin/corrections", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { data, error } = await supabase
-      .from("corrections")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, corrections: data || [] });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/corrections", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const insertData = {};
-    if (req.body.wrong_terms)
-      insertData.wrong_terms = Array.isArray(req.body.wrong_terms)
-        ? req.body.wrong_terms
-        : req.body.wrong_terms.split(",").map((t) => t.trim());
-    else if (req.body.original_question)
-      insertData.wrong_terms = [req.body.original_question];
-    if (req.body.search_terms)
-      insertData.search_terms = Array.isArray(req.body.search_terms)
-        ? req.body.search_terms
-        : req.body.search_terms.split(",").map((t) => t.trim());
-    else if (req.body.corrected_answer)
-      insertData.search_terms = [req.body.corrected_answer];
+    if (req.body.wrong_terms) insertData.wrong_terms = Array.isArray(req.body.wrong_terms) ? req.body.wrong_terms : req.body.wrong_terms.split(",").map((t) => t.trim());
+    else if (req.body.original_question) insertData.wrong_terms = [req.body.original_question];
+    if (req.body.search_terms) insertData.search_terms = Array.isArray(req.body.search_terms) ? req.body.search_terms : req.body.search_terms.split(",").map((t) => t.trim());
+    else if (req.body.corrected_answer) insertData.search_terms = [req.body.corrected_answer];
     insertData.correct_course_ids = req.body.correct_course_ids || [];
-    if (req.body.original_question)
-      insertData.original_question = req.body.original_question;
-    if (req.body.corrected_answer)
-      insertData.corrected_answer = req.body.corrected_answer;
+    if (req.body.original_question) insertData.original_question = req.body.original_question;
+    if (req.body.corrected_answer) insertData.corrected_answer = req.body.corrected_answer;
     if (req.body.note) insertData.note = req.body.note;
     if (req.body.chat_log_id) insertData.chat_log_id = req.body.chat_log_id;
     if (req.body.session_id) insertData.session_id = req.body.session_id;
-    if (req.body.original_answer)
-      insertData.original_answer = req.body.original_answer;
-
-    const { data, error } = await supabase
-      .from("corrections")
-      .insert(insertData)
-      .select()
-      .single();
+    if (req.body.original_answer) insertData.original_answer = req.body.original_answer;
+    const { data, error } = await supabase.from("corrections").insert(insertData).select().single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { error } = await supabase
-      .from("corrections")
-      .delete()
-      .eq("id", req.params.id);
+    const { error } = await supabase.from("corrections").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Bot Instructions CRUD ═══
 app.get("/admin/bot-instructions", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { data, error } = await supabase
-      .from("bot_instructions")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("bot_instructions").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, instructions: data || [] });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { instruction, label, category, priority, is_active } = req.body;
-    if (!instruction)
-      return res
-        .status(400)
-        .json({ success: false, error: "instruction required" });
-    const { data, error } = await supabase
-      .from("bot_instructions")
-      .insert({
-        instruction,
-        label: label || category || "custom",
-        category: category || label || "GENERAL",
-        priority: priority != null ? priority : 10,
-        is_active: is_active !== false,
-      })
-      .select()
-      .single();
+    if (!instruction) return res.status(400).json({ success: false, error: "instruction required" });
+    const { data, error } = await supabase.from("bot_instructions").insert({
+      instruction, label: label || category || "custom", category: category || label || "GENERAL",
+      priority: priority != null ? priority : 10, is_active: is_active !== false,
+    }).select().single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const u = {};
-    if (req.body.instruction !== undefined)
-      u.instruction = req.body.instruction;
+    if (req.body.instruction !== undefined) u.instruction = req.body.instruction;
     if (req.body.label !== undefined) u.label = req.body.label;
-    if (req.body.category !== undefined) {
-      u.category = req.body.category;
-      if (!u.label) u.label = req.body.category;
-    }
+    if (req.body.category !== undefined) { u.category = req.body.category; if (!u.label) u.label = req.body.category; }
     if (req.body.priority !== undefined) u.priority = req.body.priority;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
-    const { data, error } = await supabase
-      .from("bot_instructions")
-      .update(u)
-      .eq("id", req.params.id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from("bot_instructions").update(u).eq("id", req.params.id).select().single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { error } = await supabase
-      .from("bot_instructions")
-      .delete()
-      .eq("id", req.params.id);
+    const { error } = await supabase.from("bot_instructions").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Custom Responses CRUD ═══
 app.get("/admin/custom-responses", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { data, error } = await supabase
-      .from("custom_responses")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("custom_responses").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, responses: data || [] });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { keywords, response, match_type, is_active } = req.body;
-    if (!keywords || !response)
-      return res
-        .status(400)
-        .json({ success: false, error: "keywords and response required" });
-    const { data, error } = await supabase
-      .from("custom_responses")
-      .insert({
-        keywords: Array.isArray(keywords)
-          ? keywords
-          : keywords.split(",").map((k) => k.trim()),
-        response,
-        match_type: match_type || "any",
-        is_active: is_active !== false,
-      })
-      .select()
-      .single();
+    if (!keywords || !response) return res.status(400).json({ success: false, error: "keywords and response required" });
+    const { data, error } = await supabase.from("custom_responses").insert({
+      keywords: Array.isArray(keywords) ? keywords : keywords.split(",").map((k) => k.trim()),
+      response, match_type: match_type || "any", is_active: is_active !== false,
+    }).select().single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const u = {};
-    if (req.body.keywords !== undefined)
-      u.keywords = Array.isArray(req.body.keywords)
-        ? req.body.keywords
-        : req.body.keywords.split(",").map((k) => k.trim());
+    if (req.body.keywords !== undefined) u.keywords = Array.isArray(req.body.keywords) ? req.body.keywords : req.body.keywords.split(",").map((k) => k.trim());
     if (req.body.response !== undefined) u.response = req.body.response;
     if (req.body.match_type !== undefined) u.match_type = req.body.match_type;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
-    const { data, error } = await supabase
-      .from("custom_responses")
-      .update(u)
-      .eq("id", req.params.id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from("custom_responses").update(u).eq("id", req.params.id).select().single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { error } = await supabase
-      .from("custom_responses")
-      .delete()
-      .eq("id", req.params.id);
+    const { error } = await supabase.from("custom_responses").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Courses CRUD ═══
 app.get("/admin/courses", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const page = parseInt(req.query.page) || 1,
-      limit = parseInt(req.query.limit) || 30,
-      offset = (page - 1) * limit,
-      search = req.query.search || "";
-    let query = supabase
-      .from("courses")
-      .select("id, title, price, instructor_id, image", { count: "exact" })
-      .order("title", { ascending: true })
-      .range(offset, offset + limit - 1);
-    if (search)
-      query = query.or(
-        `title.ilike.%${search}%,description.ilike.%${search}%`
-      );
+    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 30, offset = (page - 1) * limit, search = req.query.search || "";
+    let query = supabase.from("courses").select("id, title, price, instructor_id, image", { count: "exact" }).order("title", { ascending: true }).range(offset, offset + limit - 1);
+    if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
     const { data, count, error } = await query;
     if (error) throw error;
     const instructors = await getInstructors();
-    const enriched = (data || []).map((c) => {
-      const inst = instructors.find((i) => i.id === c.instructor_id);
-      return { ...c, instructor_name: inst ? inst.name : "" };
-    });
-    res.json({
-      success: true,
-      courses: enriched,
-      total: count || 0,
-      page,
-      limit,
-      totalPages: Math.ceil((count || 0) / limit),
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    const enriched = (data || []).map((c) => { const inst = instructors.find((i) => i.id === c.instructor_id); return { ...c, instructor_name: inst ? inst.name : "" }; });
+    res.json({ success: true, courses: enriched, total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/courses", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("courses")
-      .insert(req.body)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("courses").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/courses/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("courses")
-      .update(req.body)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("courses").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/courses/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { error } = await supabase
-      .from("courses")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { error } = await supabase.from("courses").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Diplomas CRUD ═══
 app.get("/admin/diplomas", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const page = parseInt(req.query.page) || 1,
-      limit = parseInt(req.query.limit) || 30,
-      offset = (page - 1) * limit,
-      search = req.query.search || "";
-    let query = supabase
-      .from("diplomas")
-      .select("id, title, link, description, price", { count: "exact" })
-      .order("title", { ascending: true })
-      .range(offset, offset + limit - 1);
-    if (search)
-      query = query.or(
-        `title.ilike.%${search}%,description.ilike.%${search}%`
-      );
+    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 30, offset = (page - 1) * limit, search = req.query.search || "";
+    let query = supabase.from("diplomas").select("id, title, link, description, price", { count: "exact" }).order("title", { ascending: true }).range(offset, offset + limit - 1);
+    if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
     const { data, count, error } = await query;
     if (error) throw error;
-    res.json({
-      success: true,
-      diplomas: data || [],
-      total: count || 0,
-      page,
-      limit,
-      totalPages: Math.ceil((count || 0) / limit),
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, diplomas: data || [], total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/diplomas", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("diplomas")
-      .insert(req.body)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("diplomas").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/diplomas/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("diplomas")
-      .update(req.body)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("diplomas").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/diplomas/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { error } = await supabase
-      .from("diplomas")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { error } = await supabase.from("diplomas").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Instructors CRUD ═══
 app.get("/admin/instructors", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("instructors")
-      .select("*")
-      .order("name", { ascending: true });
-    if (error) throw error;
-    res.json({ success: true, instructors: data || [] });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("instructors").select("*").order("name", { ascending: true }); if (error) throw error; res.json({ success: true, instructors: data || [] }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/admin/instructors", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("instructors")
-      .insert(req.body)
-      .select()
-      .single();
-    if (error) throw error;
-    instructorCache = { data: null, ts: 0 };
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("instructors").insert(req.body).select().single(); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/instructors/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("instructors")
-      .update(req.body)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-    if (error) throw error;
-    instructorCache = { data: null, ts: 0 };
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("instructors").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { error } = await supabase
-      .from("instructors")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    instructorCache = { data: null, ts: 0 };
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { error } = await supabase.from("instructors").delete().eq("id", req.params.id); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ FAQ CRUD ═══
 app.get("/admin/faq", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("faq")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) return res.json({ success: true, faqs: [] });
-    res.json({ success: true, faqs: data || [] });
-  } catch (e) {
-    res.json({ success: true, faqs: [] });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("faq").select("*").order("created_at", { ascending: false }); if (error) return res.json({ success: true, faqs: [] }); res.json({ success: true, faqs: data || [] }); }
+  catch (e) { res.json({ success: true, faqs: [] }); }
 });
 
 app.post("/admin/faq", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("faq")
-      .insert(req.body)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("faq").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/faq/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("faq")
-      .update(req.body)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("faq").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/faq/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { error } = await supabase
-      .from("faq")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { error } = await supabase.from("faq").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Site Pages CRUD ═══
 app.get("/admin/site-pages", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("site_pages")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) return res.json({ success: true, pages: [] });
-    res.json({ success: true, pages: data || [] });
-  } catch (e) {
-    res.json({ success: true, pages: [] });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("site_pages").select("*").order("created_at", { ascending: false }); if (error) return res.json({ success: true, pages: [] }); res.json({ success: true, pages: data || [] }); }
+  catch (e) { res.json({ success: true, pages: [] }); }
 });
 
 app.post("/admin/site-pages", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("site_pages")
-      .insert(req.body)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("site_pages").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.put("/admin/site-pages/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { data, error } = await supabase
-      .from("site_pages")
-      .update(req.body)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { data, error } = await supabase.from("site_pages").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete("/admin/site-pages/:id", adminAuth, async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
-  try {
-    const { error } = await supabase
-      .from("site_pages")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try { const { error } = await supabase.from("site_pages").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
+  catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ═══ Admin Logs ═══
 app.get("/admin/logs", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const page = parseInt(req.query.page) || 1,
-      limit = parseInt(req.query.limit) || 50,
-      offset = (page - 1) * limit;
-    let query = supabase
-      .from("chat_logs")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-    if (req.query.search)
-      query = query.ilike("message", `%${req.query.search}%`);
+    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 50, offset = (page - 1) * limit;
+    let query = supabase.from("chat_logs").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    if (req.query.search) query = query.ilike("message", `%${req.query.search}%`);
     if (req.query.intent) query = query.eq("intent", req.query.intent);
     const { data, count, error } = await query;
     if (error) throw error;
-    res.json({
-      success: true,
-      logs: data || [],
-      total: count || 0,
-      page,
-      limit,
-      totalPages: Math.ceil((count || 0) / limit),
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, logs: data || [], total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.get("/admin/sessions/:sessionId", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { data, error } = await supabase
-      .from("chat_logs")
-      .select("*")
-      .eq("session_id", req.params.sessionId)
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabase.from("chat_logs").select("*").eq("session_id", req.params.sessionId).order("created_at", { ascending: true });
     if (error) throw error;
-    res.json({
-      success: true,
-      session_id: req.params.sessionId,
-      messages: data || [],
-      message_count: (data || []).length,
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, session_id: req.params.sessionId, messages: data || [], message_count: (data || []).length });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ═══ Test Search ═══
 app.post("/admin/test-search", async (req, res) => {
   try {
     const { query } = req.body;
-    if (!query)
-      return res
-        .status(400)
-        .json({ success: false, error: "query required" });
+    if (!query) return res.status(400).json({ success: false, error: "query required" });
     const start = Date.now();
     const terms = query.split(/\s+/).filter((w) => w.length > 1);
-    const [courses, diplomas] = await Promise.all([
-      searchCourses(terms),
-      searchDiplomas(terms),
-    ]);
-    res.json({
-      success: true,
-      query,
-      terms,
-      results: { courses: courses.length, diplomas: diplomas.length },
-      elapsed_ms: Date.now() - start,
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    const [courses, diplomas] = await Promise.all([searchCourses(terms), searchDiplomas(terms)]);
+    res.json({ success: true, query, terms, results: { courses: courses.length, diplomas: diplomas.length }, elapsed_ms: Date.now() - start });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ═══ Export Logs ═══
 app.get("/admin/export-logs", async (req, res) => {
-  if (!supabase)
-    return res
-      .status(500)
-      .json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const days = parseInt(req.query.days) || 7;
-    const since = new Date(
-      Date.now() - days * 24 * 60 * 60 * 1000
-    ).toISOString();
-    const { data, error } = await supabase
-      .from("chat_logs")
-      .select("*")
-      .gte("created_at", since)
-      .order("created_at", { ascending: true });
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase.from("chat_logs").select("*").gte("created_at", since).order("created_at", { ascending: true });
     if (error) throw error;
     res.setHeader("Content-Type", "application/json");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=chat_logs_${days}days.json`
-    );
-    res.json({
-      exported_at: new Date().toISOString(),
-      days,
-      total: (data || []).length,
-      logs: data || [],
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.setHeader("Content-Disposition", `attachment; filename=chat_logs_${days}days.json`);
+    res.json({ exported_at: new Date().toISOString(), days, total: (data || []).length, logs: data || [] });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ═══ Admin Dashboard HTML ═══
-app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "admin.html"));
-});
+app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html")); });
 
 /* ══════════════════════════════════════════════════════════
    SECTION 14: Health, Debug, Root
@@ -2711,47 +2389,25 @@ app.get("/admin", (req, res) => {
 app.get("/admin/debug", async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.1",
-    engine: "Two-Phase RAG Intelligence + GPT Filtering",
+    version: "10.2",
+    engine: "Two-Phase RAG + Dialect Support + Smart Filtering",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
-      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY
-        ? "✅ SET"
-        : "❌ NOT SET",
+      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
       OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "✅ SET" : "❌ NOT SET",
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? "✅ Custom" : "⚠️ Default",
     },
-    clients: {
-      supabase: supabase ? "✅" : "❌",
-      openai: openai ? "✅" : "❌",
-    },
+    clients: { supabase: supabase ? "✅" : "❌", openai: openai ? "✅" : "❌" },
     supabase_connection: supabaseConnected ? "✅" : "❌",
     admin_sessions: adminTokens.size,
     active_chat_sessions: sessionMemory.size,
+    dialect_support: Object.keys(DIALECT_MAP).length + " words",
     tables: {},
   };
   if (supabase) {
-    for (const table of [
-      "courses",
-      "diplomas",
-      "chat_logs",
-      "corrections",
-      "custom_responses",
-      "bot_instructions",
-      "instructors",
-      "faq",
-      "site_pages",
-    ]) {
-      try {
-        const { count, error } = await supabase
-          .from(table)
-          .select("*", { count: "exact", head: true });
-        diag.tables[table] = error
-          ? `❌ ${error.message}`
-          : `✅ ${count} rows`;
-      } catch (e) {
-        diag.tables[table] = `❌ ${e.message}`;
-      }
+    for (const table of ["courses","diplomas","chat_logs","corrections","custom_responses","bot_instructions","instructors","faq","site_pages"]) {
+      try { const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }); diag.tables[table] = error ? `❌ ${error.message}` : `✅ ${count} rows`; }
+      catch (e) { diag.tables[table] = `❌ ${e.message}`; }
     }
   }
   res.json(diag);
@@ -2760,22 +2416,15 @@ app.get("/admin/debug", async (req, res) => {
 app.get("/health", async (req, res) => {
   let dbStatus = "unknown";
   if (supabase) {
-    try {
-      const { error } = await supabase
-        .from("courses")
-        .select("id")
-        .limit(1);
-      dbStatus = error ? `error: ${error.message}` : "connected";
-    } catch (e) {
-      dbStatus = `exception: ${e.message}`;
-    }
+    try { const { error } = await supabase.from("courses").select("id").limit(1); dbStatus = error ? `error: ${error.message}` : "connected"; }
+    catch (e) { dbStatus = `exception: ${e.message}`; }
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.1",
+    version: "10.2",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + GPT Filtering",
+    engine: "🧠 Two-Phase RAG + Dialect + Smart Filter",
     active_sessions: sessionMemory.size,
     timestamp: new Date().toISOString(),
   });
@@ -2784,23 +2433,19 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.1",
+    version: "10.2",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + GPT Filtering",
+    engine: "🧠 Two-Phase RAG + Dialect + Smart Filter",
     features: [
-      "Phase 1: Smart Analyzer (gpt-4o-mini)",
-      "Phase 2: RAG Recommender + Filter (gpt-4o)",
-      "GPT decides which courses are truly relevant",
-      "Pre-filter weak search results",
-      "Session Memory System",
-      "Auto Conversation Summary",
+      "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
+      "Phase 2: RAG Recommender + Strict Filter (gpt-4o)",
+      "Quick Intent Check (safety net for payment/greeting)",
+      "Dialect normalization (Iraqi/Gulf/Levantine/Moroccan)",
+      "Safety check: verifies GPT's course choices",
+      "\\n → <br> formatting fix",
+      "Session Memory + Auto Summary",
     ],
-    endpoints: {
-      chat: "POST /chat",
-      admin: "GET /admin",
-      health: "GET /health",
-      debug: "GET /admin/debug",
-    },
+    endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health", debug: "GET /admin/debug" },
   });
 });
 
@@ -2808,28 +2453,24 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.1...\n");
-  if (missingEnv.length > 0)
-    console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
+  console.log("\n🚀 Starting Ziko Chatbot v10.2...\n");
+  if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
-  if (!supabaseConnected)
-    console.error("⚠️  SUPABASE NOT CONNECTED! Check env vars.\n");
+  if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
   app.listen(PORT, () => {
     console.log(`
-╔════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.1                          ║
-║  🧠 Engine: Two-Phase RAG + GPT Filtering          ║
-║  📊 Phase 1: Analyzer (gpt-4o-mini)               ║
-║  🎯 Phase 2: RAG Recommender + Filter (gpt-4o)    ║
-║  🔍 GPT decides which cards to show               ║
-║  💾 Session Memory: Active                         ║
-║  📝 Auto Summary: Every 4 messages                 ║
-║  ✅ Server: port ${PORT}                              ║
-║  ✅ Dashboard: /admin                              ║
-║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected" : "❌ NOT connected"}                 ║
-║  🤖 OpenAI: ${openai ? "✅ Ready     " : "❌ NOT ready  "}                    ║
-╚════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════╗
+║  🤖 زيكو Chatbot — v10.2                              ║
+║  🧠 Engine: Two-Phase RAG + Smart Filtering            ║
+║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
+║  ⚡ Quick Intent: Payment/Greeting safety net           ║
+║  🛡️ Safety Check: Verifies GPT course choices          ║
+║  📝 Formatting: \\n → <br> fix applied                  ║
+║  ✅ Server: port ${PORT}                                  ║
+║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected     " : "❌ NOT connected"}                    ║
+║  🤖 OpenAI: ${openai ? "✅ Ready        " : "❌ NOT ready     "}                       ║
+╚════════════════════════════════════════════════════════╝
     `);
   });
 }
