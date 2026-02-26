@@ -1835,6 +1835,13 @@ async function smartChat(message, sessionId) {
     botInstructions,
     customResponses
   );
+// 🔴 FIX: Force action if quickCheck detected it with high confidence
+  if (quickCheck && quickCheck.confidence >= 0.9) {
+    if (analysis.action !== quickCheck.intent) {
+      console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
+      analysis.action = quickCheck.intent;
+    }
+  }
 
 /* 🆕 Inject follow-up info into analysis if detected by our own logic */
   if (isContextFollowUp && !analysis.is_follow_up) {
