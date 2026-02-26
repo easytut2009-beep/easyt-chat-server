@@ -859,6 +859,56 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
+   🆕 Priority Title Search — catches exact title matches
+   that the main search might miss
+   ══════════════════════════════════════════════════════════ */
+async function priorityTitleSearch(searchTerms) {
+  if (!supabase || !searchTerms || searchTerms.length === 0) return [];
+  try {
+    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
+    const meaningful = corrected.filter(
+      (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+    );
+    if (meaningful.length === 0) return [];
+
+    const titleFilters = meaningful
+      .flatMap((t) => [
+        `title.ilike.%${t}%`,
+        `subtitle.ilike.%${t}%`,
+      ])
+      .join(",");
+
+    const { data, error } = await supabase
+      .from("courses")
+      .select(
+        "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
+      )
+      .or(titleFilters)
+      .limit(10);
+
+    if (error || !data) return [];
+
+    // Score them — title matches get VERY high scores
+    return data.map((c) => {
+      let score = 0;
+      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+      const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
+
+      for (const term of meaningful) {
+        const nt = normalizeArabic(term.toLowerCase());
+        if (nt.length <= 2) continue;
+        if (titleNorm.includes(nt)) score += 500; // HUGE title bonus
+        if (subtitleNorm.includes(nt)) score += 100;
+      }
+      return { ...c, relevanceScore: score };
+    }).filter((c) => c.relevanceScore > 0);
+  } catch (e) {
+    console.error("priorityTitleSearch error:", e.message);
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
    SECTION 9: Card Formatting
    🆕 FIX #9: Image support + no blank space
    ══════════════════════════════════════════════════════════ */
@@ -879,19 +929,8 @@ function formatCourseCard(course, instructors, index) {
     : "";
   const num = index !== undefined ? `${index}. ` : "";
 
-  // 🆕 FIX #9: Image with onerror fallback — only show if valid
-  let imageHtml = "";
-  if (
-    course.image &&
-    course.image.trim() !== "" &&
-    course.image !== "null" &&
-    course.image !== "undefined"
-  ) {
-    imageHtml = `<img src="${course.image}" alt="${course.title}" style="width:100%;border-radius:8px;margin-bottom:8px;display:block;max-height:160px;object-fit:cover" onerror="this.style.display='none'">`;
-  }
-
-  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px;overflow:hidden">
-${imageHtml}<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
+  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
+<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
 <div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
 ${instructorName ? `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>` : ""}
 ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>` : ""}
@@ -1762,54 +1801,57 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-  /* 🆕 Inject follow-up info into analysis if detected by our own logic */
+/* 🆕 Inject follow-up info into analysis if detected by our own logic */
   if (isContextFollowUp && !analysis.is_follow_up) {
     analysis.is_follow_up = true;
     analysis.previous_topic_reference = previousTopic;
     // Merge previous search terms into current search
-    if (analysis.action === "SEARCH" && sessionMem.lastSearchTerms.length > 0) {
+    if (sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
       const merged = [
-        ...new Set([...sessionMem.lastSearchTerms, ...analysis.search_terms]),
+        ...new Set([...analysis.search_terms, ...sessionMem.lastSearchTerms]),
       ];
-      console.log(
-        `🔄 Merged search terms: [${analysis.search_terms}] + [${sessionMem.lastSearchTerms}] → [${merged}]`
-      );
       analysis.search_terms = merged;
+      console.log(`🔄 Merged follow-up terms: ${merged.join(", ")}`);
     }
-  }
+  } // ← ✅ CLOSED HERE — follow-up injection is DONE
 
-  /* Override GPT if quick check disagrees on high-confidence intents */
-  if (quickCheck && quickCheck.confidence >= 0.9) {
-    if (
-      quickCheck.intent === "SUBSCRIPTION" &&
-      analysis.action !== "SUBSCRIPTION"
-    ) {
-      console.log(
-        `🔄 Override: GPT said ${analysis.action}, Quick said SUBSCRIPTION → Overriding!`
-      );
-      analysis.action = "SUBSCRIPTION";
-      analysis.intent = "SUBSCRIPTION";
-      analysis.search_terms = [];
-      analysis.response_message = "";
-    }
-  }
-
-  console.log(
-    `🧠 Phase1: action=${analysis.action} | terms=[${analysis.search_terms.join(",")}] | follow_up=${analysis.is_follow_up}`
-  );
-
+  // 3. Route based on action
   let reply = "";
-  let intent = analysis.intent;
+  let intent = analysis.intent || analysis.action;
 
-  // 3. Execute based on action
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-    /* ═══ SEARCH FLOW ═══ */
+    /* ═══ SEARCH FLOW — v10.3.1 with Priority Title Search ═══ */
     const termsToSearch = analysis.search_terms;
 
+    // 🆕 Step A: Priority title search (separate, focused query)
+    const priorityCourses = await priorityTitleSearch(termsToSearch);
+    console.log(`🏆 Priority title search: ${priorityCourses.length} results`);
+    priorityCourses.slice(0, 3).forEach((c) => {
+      console.log(`   🏆 [score=${c.relevanceScore}] ${c.title}`);
+    });
+
+    // Step B: Regular broad search
     let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
     ]);
+
+    // Step C: Merge priority results INTO regular results (no duplicates)
+    const seenIds = new Set(courses.map((c) => c.id));
+    for (const pc of priorityCourses) {
+      if (!seenIds.has(pc.id)) {
+        courses.unshift(pc);
+        seenIds.add(pc.id);
+      } else {
+        const existing = courses.find((c) => c.id === pc.id);
+        if (existing && pc.relevanceScore > (existing.relevanceScore || 0)) {
+          existing.relevanceScore = pc.relevanceScore;
+        }
+      }
+    }
+
+    // Re-sort by score after merge
+    courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
     // Try corrections if no results
     if (courses.length === 0) {
@@ -1836,11 +1878,15 @@ async function smartChat(message, sessionId) {
       }
     }
 
-    // 🆕 FIX #11: Pre-filter weak results BEFORE Phase 2 (stricter threshold)
+    // Pre-filter weak results BEFORE Phase 2
     if (courses.length > 3) {
-      const maxScore = Math.max(...courses.map((c) => c.relevanceScore || 0));
-      // If top result has score > 100 (title match), filter aggressively
-      const threshold = maxScore > 100 ? maxScore * 0.15 : Math.max(maxScore * 0.3, 5);
+      const maxScore = Math.max(
+        ...courses.map((c) => c.relevanceScore || 0)
+      );
+      const threshold =
+        maxScore > 100
+          ? maxScore * 0.1
+          : Math.max(maxScore * 0.3, 5);
       const preFiltered = courses.filter(
         (c) => (c.relevanceScore || 0) >= threshold
       );
@@ -1855,41 +1901,101 @@ async function smartChat(message, sessionId) {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      // PHASE 2: RAG + Filtering (gpt-4o)
-      const recommendation = await generateSmartRecommendation(
-        message, // Original message
-        courses,
-        diplomas,
-        sessionMem,
-        analysis,
-        instructors
-      );
+      // 🆕 Step D: Identify MUST-SHOW courses
+      const mustShowCourses = courses.filter((c) => {
+        const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+        return termsToSearch.some((t) => {
+          const termNorm = normalizeArabic(t.toLowerCase());
+          return termNorm.length > 3 && titleNorm.includes(termNorm);
+        });
+      });
 
-      // Safety check — verify GPT's choices
-      let relevantCourses = recommendation.relevantCourseIndices
-        .filter((i) => i >= 0 && i < courses.length)
-        .map((i) => courses[i]);
+      console.log(`📌 Must-show courses: ${mustShowCourses.length}`);
+      mustShowCourses.forEach((c) => console.log(`   📌 ${c.title}`));
 
-      let relevantDiplomas = recommendation.relevantDiplomaIndices
-        .filter((i) => i >= 0 && i < diplomas.length)
-        .map((i) => diplomas[i]);
+      let relevantCourses = [];
+      let relevantDiplomas = [];
+      let recommendationMessage = "";
 
-      const verifiedCourses = relevantCourses.filter((c) =>
-        verifyCourseRelevance(c, termsToSearch)
-      );
-      const removedCount = relevantCourses.length - verifiedCourses.length;
-      if (removedCount > 0) {
-        console.log(
-          `🛡️ Safety check removed ${removedCount} irrelevant courses`
+      if (mustShowCourses.length > 0) {
+        const recommendation = await generateSmartRecommendation(
+          message,
+          courses,
+          diplomas,
+          sessionMem,
+          analysis,
+          instructors
+        );
+
+        recommendationMessage = recommendation.message || "";
+
+        let gptCourses = recommendation.relevantCourseIndices
+          .filter((i) => i >= 0 && i < courses.length)
+          .map((i) => courses[i]);
+
+        relevantDiplomas = recommendation.relevantDiplomaIndices
+          .filter((i) => i >= 0 && i < diplomas.length)
+          .map((i) => diplomas[i]);
+
+        gptCourses = gptCourses.filter((c) =>
+          verifyCourseRelevance(c, termsToSearch)
+        );
+
+        // FORCE include must-show courses
+        relevantCourses = [...gptCourses];
+        for (const mc of mustShowCourses) {
+          if (!relevantCourses.find((rc) => rc.id === mc.id)) {
+            relevantCourses.unshift(mc);
+            console.log(
+              `🔥 Force-included: "${mc.title}" (GPT missed it!)`
+            );
+          }
+        }
+
+        // Override GPT's "no match" if we have must-shows
+        if (!recommendation.hasExactMatch && mustShowCourses.length > 0) {
+          console.log(
+            `🔄 Overriding GPT's "no match" — we have title matches!`
+          );
+          recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
+          if (mustShowCourses.length > 1) {
+            recommendationMessage += ` وكمان فيه ${mustShowCourses.length - 1} كورسات تانية ممكن تفيدك 👇`;
+          }
+        }
+      } else {
+        const recommendation = await generateSmartRecommendation(
+          message,
+          courses,
+          diplomas,
+          sessionMem,
+          analysis,
+          instructors
+        );
+
+        recommendationMessage = recommendation.message || "";
+
+        relevantCourses = recommendation.relevantCourseIndices
+          .filter((i) => i >= 0 && i < courses.length)
+          .map((i) => courses[i]);
+
+        relevantDiplomas = recommendation.relevantDiplomaIndices
+          .filter((i) => i >= 0 && i < diplomas.length)
+          .map((i) => diplomas[i]);
+
+        relevantCourses = relevantCourses.filter((c) =>
+          verifyCourseRelevance(c, termsToSearch)
         );
       }
-      relevantCourses = verifiedCourses;
 
-      console.log(
-        `🎯 Final: ${relevantDiplomas.length} diplomas, ${relevantCourses.length} courses | exact=${recommendation.hasExactMatch}`
+      relevantCourses.sort(
+        (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
 
-      reply = recommendation.message || "";
+      console.log(
+        `🎯 Final: ${relevantDiplomas.length} diplomas, ${relevantCourses.length} courses`
+      );
+
+      reply = recommendationMessage;
       reply += "<br><br>";
 
       if (relevantDiplomas.length > 0) {
@@ -1922,7 +2028,7 @@ async function smartChat(message, sessionId) {
         reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
 
-      // 🆕 FIX #8: Save search topic for follow-up context
+      // Save search topic
       const mainTopic = extractMainTopic(termsToSearch);
       const detectedCat = detectRelevantCategory(termsToSearch);
       updateSessionMemory(sessionId, {
@@ -1944,7 +2050,6 @@ async function smartChat(message, sessionId) {
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
 
-      // Still save topic even if no results
       const mainTopic = extractMainTopic(termsToSearch);
       updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
@@ -1955,8 +2060,9 @@ async function smartChat(message, sessionId) {
     }
 
     console.log(
-      `🔍 Search: ${courses.length} courses, ${diplomas.length} diplomas`
+      `🔍 Search complete: ${courses.length} courses, ${diplomas.length} diplomas`
     );
+
   } else if (analysis.action === "SUBSCRIPTION") {
     /* ═══ SUBSCRIPTION FLOW ═══ */
     reply = analysis.response_message || "";
@@ -1982,17 +2088,23 @@ async function smartChat(message, sessionId) {
       }
     }
     intent = "SUBSCRIPTION";
+
   } else if (analysis.action === "CATEGORIES") {
     reply =
-      (analysis.response_message ? analysis.response_message + "<br><br>" : "") +
-      formatCategoriesList();
+      (analysis.response_message
+        ? analysis.response_message + "<br><br>"
+        : "") + formatCategoriesList();
+
   } else if (analysis.action === "SUPPORT") {
     reply =
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
+
   } else {
     // CHAT
-    reply = analysis.response_message || "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
+    reply =
+      analysis.response_message ||
+      "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
   }
 
   // 4. Clean up
@@ -2022,9 +2134,7 @@ async function smartChat(message, sessionId) {
   }
 
   const elapsed = Date.now() - startTime;
-  console.log(
-    `✅ Done | action=${analysis.action} | ⏱️ ${elapsed}ms`
-  );
+  console.log(`✅ Done | action=${analysis.action} | ⏱️ ${elapsed}ms`);
 
   return { reply, intent };
 }
