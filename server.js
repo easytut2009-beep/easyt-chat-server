@@ -71,12 +71,14 @@
    ⚡ Supabase .or() filters + Promise.all() + Instructor cache
    🔤 v6.4: Arabic normalization
    📱 v6.5: Compact horizontal card layout
+   🆕 v7.9.9-fix2: Admin served from admin.html file
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
+const path = require("path");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
@@ -873,8 +875,6 @@ async function searchCorrections(terms) {
   try {
     if (!terms || terms.length === 0) return [];
 
-    /* 🐛 FIX: was selecting wrong_text which doesn't exist —
-       now selecting wrong_terms (array) to match CRUD schema */
     const { data: corrections, error } = await supabase
       .from("corrections")
       .select("wrong_terms, correct_course_ids, search_terms");
@@ -885,7 +885,6 @@ async function searchCorrections(terms) {
 
     const matches = [];
     for (const row of corrections) {
-      /* 🐛 FIX: wrong_terms is an array — join it into a string for comparison */
       const wrongTermsArray = row.wrong_terms || [];
       const wrongNorm = normalizeArabic(
         (Array.isArray(wrongTermsArray) ? wrongTermsArray.join(" ") : String(wrongTermsArray)).toLowerCase()
@@ -975,8 +974,6 @@ async function matchCustomResponse(message) {
    ══════════════════════════════════════════════════════════ */
 async function loadBotInstructions() {
   try {
-    /* 🐛 FIX: was selecting key,value which don't exist —
-       now selecting label,instruction to match CRUD schema */
     const { data, error } = await supabase
       .from("bot_instructions")
       .select("label, instruction")
@@ -984,7 +981,6 @@ async function loadBotInstructions() {
 
     if (error || !data || data.length === 0) return "";
 
-    /* 🐛 FIX: was using row.key and row.value — now using row.label and row.instruction */
     return data.map((row) => `- ${row.label}: ${row.instruction}`).join("\n");
   } catch (e) {
     console.error("loadBotInstructions error:", e.message);
@@ -1509,7 +1505,7 @@ async function aiRerankCourses(userMessage, courses, diplomas = []) {
 
     if (selectedCourses.length === 0 && selectedDiplomas.length === 0) {
       console.log(
-        "🤖 AI Rerank: returned empty → falling back to original top 5"
+        "🤖 Double safety: AI rerank returned empty → using original top 5"
       );
       return {
         courses: courses.slice(0, 5),
@@ -2220,7 +2216,6 @@ app.get("/admin/custom-responses", async (req, res) => {
   }
 });
 
-/* v7.9.9-fix: adminAuth applied to write endpoints */
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
   try {
     const { keywords, response, match_type, is_active } = req.body;
@@ -2601,413 +2596,11 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.9-fix (with login screen)
+   ═══ ADMIN DASHBOARD — served from admin.html file
+   ═══ 🆕 v7.9.9-fix2: Replaced inline HTML with external file
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.9-fix</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
-.header{background:linear-gradient(135deg,#1a1a2e,#16213e);padding:20px;text-align:center;border-bottom:2px solid #e63946}
-.header h1{color:#e63946;font-size:24px;margin-bottom:5px}
-.header p{color:#888;font-size:13px}
-.container{max-width:1200px;margin:0 auto;padding:20px}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:25px}
-.stat-card{background:#1a1a2e;border-radius:12px;padding:20px;text-align:center;border:1px solid #2a2a4a;transition:transform .2s}
-.stat-card:hover{transform:translateY(-3px);border-color:#e63946}
-.stat-card .number{font-size:32px;font-weight:bold;color:#e63946;margin-bottom:5px}
-.stat-card .label{font-size:13px;color:#888}
-.section{background:#1a1a2e;border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #2a2a4a}
-.section h2{color:#e63946;margin-bottom:15px;font-size:18px;display:flex;align-items:center;gap:8px}
-.tabs{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
-.tab{padding:8px 16px;border-radius:8px;border:1px solid #2a2a4a;background:transparent;color:#888;cursor:pointer;font-size:13px;transition:all .2s}
-.tab:hover,.tab.active{background:#e63946;color:#fff;border-color:#e63946}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{background:#16213e;padding:10px;text-align:right;color:#e63946;border-bottom:2px solid #2a2a4a}
-td{padding:8px 10px;border-bottom:1px solid #1a1a3e;vertical-align:top;max-width:300px;word-break:break-word}
-tr:hover{background:#16213e}
-.badge{padding:3px 8px;border-radius:12px;font-size:11px;font-weight:bold}
-.badge-search{background:#1a3a2e;color:#4ecdc4}
-.badge-general{background:#2a2a1e;color:#ffd93d}
-.badge-support{background:#3a1a1e;color:#ff6b6b}
-.badge-compare{background:#1a1a3e;color:#a29bfe}
-.badge-categories{background:#1a2a3e;color:#74b9ff}
-.badge-user{background:#1a2a3e;color:#74b9ff}
-.badge-bot{background:#2a1a2e;color:#fd79a8}
-input[type="text"],input[type="password"],textarea,select{width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:13px;margin-bottom:10px}
-textarea{min-height:80px;resize:vertical}
-button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:bold;transition:all .2s}
-.btn-primary{background:#e63946;color:#fff}
-.btn-primary:hover{background:#c0392b}
-.btn-danger{background:#e74c3c;color:#fff}
-.btn-danger:hover{background:#c0392b}
-.btn-sm{padding:4px 10px;font-size:11px}
-.search-box{display:flex;gap:10px;margin-bottom:15px}
-.search-box input{flex:1}
-.test-result{background:#0f0f1a;border-radius:8px;padding:15px;margin-top:10px;font-size:12px;line-height:1.8;white-space:pre-wrap;max-height:400px;overflow-y:auto;border:1px solid #2a2a4a}
-.no-results-item{background:#2a1a1e;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:12px;display:flex;justify-content:space-between}
-.loading{text-align:center;padding:40px;color:#888}
-.intent-chart{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.intent-bar{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:bold}
-.hourly-chart{display:flex;align-items:end;gap:2px;height:100px;margin-top:10px}
-.hour-bar{flex:1;background:#e63946;border-radius:3px 3px 0 0;min-width:8px;transition:height .3s;position:relative}
-.hour-bar:hover::after{content:attr(data-count);position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:10px;color:#fff;background:#333;padding:2px 5px;border-radius:4px}
-.login-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,15,26,0.97);display:flex;align-items:center;justify-content:center;z-index:9999}
-.login-box{background:#1a1a2e;padding:40px;border-radius:16px;border:2px solid #e63946;text-align:center;width:350px;max-width:90%}
-.login-box h2{color:#e63946;margin-bottom:20px;font-size:22px}
-.login-box .error{color:#ff6b6b;font-size:12px;margin-bottom:10px;display:none}
-@media(max-width:768px){.stats-grid{grid-template-columns:repeat(2,1fr)}.tabs{gap:5px}.container{padding:10px}}
-</style>
-</head>
-<body>
-
-<!-- v7.9.9-fix: Login Screen -->
-<div class="login-overlay" id="loginOverlay">
-<div class="login-box">
-<h2>🔐 تسجيل دخول الأدمن</h2>
-<p style="color:#888;margin-bottom:20px;font-size:13px">زيكو Dashboard — v7.9.9-fix</p>
-<input type="password" id="loginPassword" placeholder="كلمة السر..." onkeypress="if(event.key==='Enter')doLogin()">
-<div class="error" id="loginError">كلمة السر غلط!</div>
-<button class="btn-primary" style="width:100%;padding:12px;font-size:15px" onclick="doLogin()">🔓 دخول</button>
-</div>
-</div>
-
-<div class="header">
-<h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.9-fix | 📂 Categories + Marketing terms + 🐛 Bug fixes</p>
-</div>
-<div class="container" id="mainContent" style="display:none">
-
-<div class="stats-grid" id="statsGrid">
-<div class="stat-card"><div class="number" id="totalChats">-</div><div class="label">إجمالي المحادثات</div></div>
-<div class="stat-card"><div class="number" id="todayChats">-</div><div class="label">محادثات اليوم</div></div>
-<div class="stat-card"><div class="number" id="uniqueSessions">-</div><div class="label">جلسات فريدة</div></div>
-<div class="stat-card"><div class="number" id="totalCourses">-</div><div class="label">الدورات</div></div>
-<div class="stat-card"><div class="number" id="totalDiplomas">-</div><div class="label">الدبلومات</div></div>
-<div class="stat-card"><div class="number" id="totalCorrections">-</div><div class="label">التصحيحات</div></div>
-</div>
-
-<div class="tabs">
-<button class="tab active" onclick="showTab('overview')">📊 نظرة عامة</button>
-<button class="tab" onclick="showTab('logs')">💬 المحادثات</button>
-<button class="tab" onclick="showTab('search-test')">🔍 اختبار البحث</button>
-<button class="tab" onclick="showTab('custom-responses')">💡 ردود مخصصة</button>
-<button class="tab" onclick="showTab('corrections')">✏️ تصحيحات</button>
-<button class="tab" onclick="showTab('instructions')">📝 تعليمات البوت</button>
-</div>
-
-<div id="tab-overview">
-<div class="section">
-<h2>📈 توزيع الأهداف (Intents)</h2>
-<div id="intentChart" class="intent-chart"></div>
-</div>
-<div class="section">
-<h2>⏰ نشاط آخر 24 ساعة</h2>
-<div id="hourlyChart" class="hourly-chart"></div>
-</div>
-<div class="section">
-<h2>🔍 عمليات بحث بدون نتائج</h2>
-<div id="noResults"></div>
-</div>
-</div>
-
-<div id="tab-logs" style="display:none">
-<div class="section">
-<h2>💬 سجل المحادثات</h2>
-<div class="search-box">
-<input type="text" id="logSearch" placeholder="بحث في المحادثات...">
-<select id="logIntentFilter" style="width:150px">
-<option value="">كل الأنواع</option>
-<option value="SEARCH">SEARCH</option>
-<option value="GENERAL">GENERAL</option>
-<option value="SUPPORT">SUPPORT</option>
-<option value="COMPARE">COMPARE</option>
-<option value="CATEGORIES">CATEGORIES</option>
-</select>
-<button class="btn-primary" onclick="loadLogs()">بحث</button>
-</div>
-<div id="logsTable"></div>
-<div id="logsPagination" style="margin-top:10px;text-align:center"></div>
-</div>
-</div>
-
-<div id="tab-search-test" style="display:none">
-<div class="section">
-<h2>🔍 اختبار البحث (v7.9.9-fix — categories + marketing terms + bug fixes)</h2>
-<div class="search-box">
-<input type="text" id="testQuery" placeholder="جرب أي استعلام بحث مثل: كورس ROAS أو اعلانات فيسبوك">
-<button class="btn-primary" onclick="testSearch()">🔍 اختبار</button>
-</div>
-<div id="testResult" class="test-result" style="display:none"></div>
-</div>
-</div>
-
-<div id="tab-custom-responses" style="display:none">
-<div class="section">
-<h2>💡 الردود المخصصة</h2>
-<div style="margin-bottom:15px;padding:15px;background:#0f0f1a;border-radius:8px">
-<h3 style="color:#4ecdc4;margin-bottom:10px;font-size:14px">➕ إضافة رد جديد</h3>
-<input type="text" id="crKeywords" placeholder="الكلمات المفتاحية (مفصولة بفاصلة)">
-<textarea id="crResponse" placeholder="الرد (يدعم HTML)"></textarea>
-<select id="crMatchType"><option value="any">أي كلمة (any)</option><option value="all">كل الكلمات (all)</option><option value="exact">مطابقة تامة (exact)</option></select>
-<button class="btn-primary" onclick="addCustomResponse()">➕ إضافة</button>
-</div>
-<div id="customResponsesList"></div>
-</div>
-</div>
-
-<div id="tab-corrections" style="display:none">
-<div class="section">
-<h2>✏️ التصحيحات</h2>
-<div style="margin-bottom:15px;padding:15px;background:#0f0f1a;border-radius:8px">
-<h3 style="color:#4ecdc4;margin-bottom:10px;font-size:14px">➕ إضافة تصحيح</h3>
-<input type="text" id="corrWrong" placeholder="المصطلحات الخاطئة (مفصولة بفاصلة)">
-<input type="text" id="corrCorrect" placeholder="مصطلحات البحث الصحيحة (مفصولة بفاصلة)">
-<input type="text" id="corrCourseIds" placeholder="معرفات الكورسات (اختياري، مفصولة بفاصلة)">
-<button class="btn-primary" onclick="addCorrection()">➕ إضافة</button>
-</div>
-<div id="correctionsList"></div>
-</div>
-</div>
-
-<div id="tab-instructions" style="display:none">
-<div class="section">
-<h2>📝 تعليمات البوت</h2>
-<div style="margin-bottom:15px;padding:15px;background:#0f0f1a;border-radius:8px">
-<h3 style="color:#4ecdc4;margin-bottom:10px;font-size:14px">➕ إضافة تعليمة</h3>
-<input type="text" id="instrLabel" placeholder="التسمية (مثلاً: رمضان)">
-<textarea id="instrText" placeholder="نص التعليمة..."></textarea>
-<button class="btn-primary" onclick="addInstruction()">➕ إضافة</button>
-</div>
-<div id="instructionsList"></div>
-</div>
-</div>
-
-</div>
-
-<script>
-const API=window.location.origin;
-let currentLogPage=1;
-let adminToken='';
-
-/* ═══ v7.9.9-fix: Login ═══ */
-async function doLogin(){
-const pw=document.getElementById('loginPassword').value;
-if(!pw)return;
-try{
-const r=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
-const d=await r.json();
-if(d.success&&d.token){
-adminToken=d.token;
-document.getElementById('loginOverlay').style.display='none';
-document.getElementById('mainContent').style.display='block';
-loadStats();
-}else{
-document.getElementById('loginError').style.display='block';
-}
-}catch(e){
-document.getElementById('loginError').style.display='block';
-document.getElementById('loginError').textContent='خطأ في الاتصال';
-}
-}
-
-function authHeaders(){
-return {'Content-Type':'application/json','Authorization':'Bearer '+adminToken};
-}
-
-function showTab(name){
-document.querySelectorAll('[id^="tab-"]').forEach(t=>t.style.display='none');
-document.getElementById('tab-'+name).style.display='block';
-document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-event.target.classList.add('active');
-if(name==='logs')loadLogs();
-if(name==='custom-responses')loadCustomResponses();
-if(name==='corrections')loadCorrections();
-if(name==='instructions')loadInstructions();
-}
-
-async function loadStats(){
-try{
-const r=await fetch(API+'/admin/stats');
-const d=await r.json();
-if(!d.success)return;
-const s=d.stats;
-document.getElementById('totalChats').textContent=s.totalChats.toLocaleString();
-document.getElementById('todayChats').textContent=s.todayChats.toLocaleString();
-document.getElementById('uniqueSessions').textContent=s.uniqueSessions.toLocaleString();
-document.getElementById('totalCourses').textContent=s.totalCourses.toLocaleString();
-document.getElementById('totalDiplomas').textContent=s.totalDiplomas.toLocaleString();
-document.getElementById('totalCorrections').textContent=s.totalCorrections.toLocaleString();
-const ic=s.intentCounts||{};
-const colors={SEARCH:'#4ecdc4',GENERAL:'#ffd93d',SUPPORT:'#ff6b6b',COMPARE:'#a29bfe',CATEGORIES:'#74b9ff'};
-let ih='';
-for(const[k,v]of Object.entries(ic)){
-ih+='<div class="intent-bar" style="background:'+(colors[k]||'#888')+'">'+k+': '+v+'</div>';
-}
-document.getElementById('intentChart').innerHTML=ih||'<span style="color:#666">لا توجد بيانات</span>';
-const hd=s.hourlyDistribution||[];
-const mx=Math.max(...hd,1);
-let hh='';
-for(let i=0;i<24;i++){
-const pct=(hd[i]/mx)*100;
-hh+='<div class="hour-bar" style="height:'+Math.max(pct,2)+'%" data-count="'+i+':00 → '+hd[i]+'" title="'+i+':00 → '+hd[i]+'"></div>';
-}
-document.getElementById('hourlyChart').innerHTML=hh;
-const nr=s.noResultSearches||[];
-let nrh='';
-if(nr.length===0)nrh='<span style="color:#666">لا توجد عمليات بحث فاشلة ✅</span>';
-else nr.forEach(r=>{
-try{const m=typeof r.metadata==='string'?JSON.parse(r.metadata):r.metadata;
-nrh+='<div class="no-results-item"><span>🔍 '+(m.entity||m.search_terms||'—')+'</span><span style="color:#666">'+new Date(r.created_at).toLocaleString('ar-EG')+'</span></div>';}catch(e){}
-});
-document.getElementById('noResults').innerHTML=nrh;
-}catch(e){console.error(e)}
-}
-
-async function loadLogs(){
-const search=document.getElementById('logSearch').value;
-const intent=document.getElementById('logIntentFilter').value;
-try{
-const r=await fetch(API+'/admin/logs?page='+currentLogPage+'&limit=50&search='+encodeURIComponent(search)+'&intent='+intent);
-const d=await r.json();
-if(!d.success)return;
-let h='<table><tr><th>الوقت</th><th>الدور</th><th>الرسالة</th><th>Intent</th><th>الجلسة</th></tr>';
-(d.logs||[]).forEach(l=>{
-const time=new Date(l.created_at).toLocaleString('ar-EG');
-const roleBadge=l.role==='user'?'<span class="badge badge-user">مستخدم</span>':'<span class="badge badge-bot">بوت</span>';
-const intentBadge=l.intent?'<span class="badge badge-'+l.intent.toLowerCase()+'">'+l.intent+'</span>':'—';
-const msg=(l.message||'').replace(/<[^>]*>/g,'').substring(0,150);
-h+='<tr><td style="white-space:nowrap;font-size:11px">'+time+'</td><td>'+roleBadge+'</td><td>'+msg+'</td><td>'+intentBadge+'</td><td style="font-size:10px;color:#666">'+((l.session_id||'').substring(0,12))+'</td></tr>';
-});
-h+='</table>';
-document.getElementById('logsTable').innerHTML=h;
-document.getElementById('logsPagination').innerHTML='صفحة '+d.page+' من '+d.totalPages+' ('+d.total+' رسالة) '+(d.page>1?'<button class="btn-sm btn-primary" onclick="currentLogPage--;loadLogs()">← السابق</button> ':'')+
-(d.page<d.totalPages?'<button class="btn-sm btn-primary" onclick="currentLogPage++;loadLogs()">التالي →</button>':'');
-}catch(e){console.error(e)}
-}
-
-async function testSearch(){
-const q=document.getElementById('testQuery').value;
-if(!q)return;
-const el=document.getElementById('testResult');
-el.style.display='block';
-el.textContent='⏳ جاري الاختبار (v7.9.9-fix)...';
-try{
-const r=await fetch(API+'/admin/test-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
-const d=await r.json();
-el.textContent=JSON.stringify(d,null,2);
-}catch(e){el.textContent='خطأ: '+e.message}
-}
-
-async function loadCustomResponses(){
-try{
-const r=await fetch(API+'/admin/custom-responses');
-const d=await r.json();
-let h='<table><tr><th>الكلمات</th><th>الرد</th><th>النوع</th><th>إجراء</th></tr>';
-(d.responses||[]).forEach(cr=>{
-h+='<tr><td>'+(cr.keywords||[]).join(', ')+'</td><td style="max-width:300px">'+((cr.response||'').substring(0,100))+'</td><td>'+cr.match_type+'</td>';
-h+='<td><button class="btn-sm btn-danger" onclick="deleteCustomResponse(\''+cr.id+'\')">حذف</button></td></tr>';
-});
-h+='</table>';
-document.getElementById('customResponsesList').innerHTML=h;
-}catch(e){console.error(e)}
-}
-
-async function addCustomResponse(){
-const keywords=document.getElementById('crKeywords').value;
-const response=document.getElementById('crResponse').value;
-const matchType=document.getElementById('crMatchType').value;
-if(!keywords||!response)return;
-try{
-await fetch(API+'/admin/custom-responses',{method:'POST',headers:authHeaders(),body:JSON.stringify({keywords,response,match_type:matchType})});
-document.getElementById('crKeywords').value='';
-document.getElementById('crResponse').value='';
-loadCustomResponses();
-}catch(e){console.error(e)}
-}
-
-async function deleteCustomResponse(id){
-if(!confirm('حذف هذا الرد؟'))return;
-try{await fetch(API+'/admin/custom-responses/'+id,{method:'DELETE',headers:authHeaders()});loadCustomResponses();}catch(e){console.error(e)}
-}
-
-async function loadCorrections(){
-try{
-const r=await fetch(API+'/admin/corrections');
-const d=await r.json();
-let h='<table><tr><th>مصطلحات خاطئة</th><th>مصطلحات صحيحة</th><th>كورسات</th><th>إجراء</th></tr>';
-(d.corrections||[]).forEach(c=>{
-h+='<tr><td>'+(c.wrong_terms||[]).join(', ')+'</td><td>'+(c.search_terms||[]).join(', ')+'</td>';
-h+='<td>'+(c.correct_course_ids||[]).join(', ')+'</td>';
-h+='<td><button class="btn-sm btn-danger" onclick="deleteCorrection(\''+c.id+'\')">حذف</button></td></tr>';
-});
-h+='</table>';
-document.getElementById('correctionsList').innerHTML=h;
-}catch(e){console.error(e)}
-}
-
-async function addCorrection(){
-const wrong=document.getElementById('corrWrong').value;
-const correct=document.getElementById('corrCorrect').value;
-const courseIds=document.getElementById('corrCourseIds').value;
-if(!wrong||!correct)return;
-try{
-const ids=courseIds?courseIds.split(',').map(i=>parseInt(i.trim())).filter(i=>!isNaN(i)):[];
-await fetch(API+'/admin/corrections',{method:'POST',headers:authHeaders(),body:JSON.stringify({wrong_terms:wrong,search_terms:correct,correct_course_ids:ids})});
-document.getElementById('corrWrong').value='';
-document.getElementById('corrCorrect').value='';
-document.getElementById('corrCourseIds').value='';
-loadCorrections();
-}catch(e){console.error(e)}
-}
-
-async function deleteCorrection(id){
-if(!confirm('حذف هذا التصحيح؟'))return;
-try{await fetch(API+'/admin/corrections/'+id,{method:'DELETE',headers:authHeaders()});loadCorrections();}catch(e){console.error(e)}
-}
-
-async function loadInstructions(){
-try{
-const r=await fetch(API+'/admin/bot-instructions');
-const d=await r.json();
-let h='<table><tr><th>التسمية</th><th>التعليمة</th><th>الحالة</th><th>إجراء</th></tr>';
-(d.instructions||[]).forEach(i=>{
-h+='<tr><td>'+(i.label||'')+'</td><td style="max-width:400px">'+(i.instruction||'').substring(0,150)+'</td>';
-h+='<td>'+(i.is_active?'✅ مفعّل':'❌ معطّل')+'</td>';
-h+='<td><button class="btn-sm btn-danger" onclick="deleteInstruction(\''+i.id+'\')">حذف</button></td></tr>';
-});
-h+='</table>';
-document.getElementById('instructionsList').innerHTML=h;
-}catch(e){console.error(e)}
-}
-
-async function addInstruction(){
-const label=document.getElementById('instrLabel').value;
-const instruction=document.getElementById('instrText').value;
-if(!instruction)return;
-try{
-await fetch(API+'/admin/bot-instructions',{method:'POST',headers:authHeaders(),body:JSON.stringify({label:label||'custom',instruction})});
-document.getElementById('instrLabel').value='';
-document.getElementById('instrText').value='';
-loadInstructions();
-}catch(e){console.error(e)}
-}
-
-async function deleteInstruction(id){
-if(!confirm('حذف هذه التعليمة؟'))return;
-try{await fetch(API+'/admin/bot-instructions/'+id,{method:'DELETE',headers:authHeaders()});loadInstructions();}catch(e){console.error(e)}
-}
-
-/* Auto-refresh stats every 60s once logged in */
-setInterval(()=>{if(adminToken)loadStats();},60000);
-</script>
-</body>
-</html>`);
+  res.sendFile(path.join(__dirname, "admin.html"));
 });
 
 /* ══════════════════════════════════════════════════════════
@@ -3016,13 +2609,13 @@ setInterval(()=>{if(adminToken)loadStats();},60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.9-fix",
+    version: "7.9.9-fix2",
     features: [
+      "🆕 Admin served from admin.html file",
       "🐛 FIX: loadBotInstructions reads label,instruction (was key,value)",
       "🐛 FIX: searchCorrections reads wrong_terms array (was wrong_text)",
       "🆕 FIX: POST /admin/login endpoint",
       "🆕 FIX: adminAuth on write endpoints",
-      "🆕 FIX: Dashboard login screen",
       "22 categories with URLs + keywords",
       "isCategoryQuestion detection",
       "detectRelevantCategory mapping",
@@ -3056,7 +2649,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.9-fix",
+    version: "7.9.9-fix2",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -3077,13 +2670,11 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.9-fix               ║
+║  🤖 زيكو Chatbot — v7.9.9-fix2              ║
 ║  ✅ Server running on port ${PORT}              ║
-║  📊 Dashboard: /admin                        ║
+║  📊 Dashboard: /admin (from admin.html)      ║
 ║  📂 Categories + Marketing terms             ║
-║  🐛 Fixed: loadBotInstructions columns       ║
-║  🐛 Fixed: searchCorrections wrong_terms     ║
-║  🆕 Added: /admin/login + adminAuth          ║
+║  🆕 Admin served from external file          ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
