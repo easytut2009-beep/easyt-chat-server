@@ -1,13 +1,20 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.2 — Two-Phase RAG + Smart Filtering
+   🤖 Ziko Chatbot v10.3 — Two-Phase RAG + Context Memory
    
-   🔧 FIXES in v10.2:
-   ✅ FIX #1: \n → <br> everywhere (formatting fix)
-   ✅ FIX #2: Dialect normalization (Iraqi/Gulf/Levantine)
-   ✅ FIX #3: Quick Intent Check (payment/greeting safety net)
-   ✅ FIX #4: MUCH stricter Phase 2 filtering
-   ✅ FIX #5: Safety check — verify GPT's choices before showing
+   🔧 FIXES from v10.2:
+   ✅ FIX #1: \n → <br> everywhere
+   ✅ FIX #2: Dialect normalization
+   ✅ FIX #3: Quick Intent Check
+   ✅ FIX #4: Stricter Phase 2 filtering
+   ✅ FIX #5: Safety check — verify GPT's choices
    ✅ FIX #6: Better analyzer prompt with dialect examples
+   
+   🆕 NEW in v10.3:
+   ✅ FIX #7: Search scoring — title weight 50x (was 10x)
+   ✅ FIX #8: Follow-up context — remembers last topic
+   ✅ FIX #9: Card images — shows if available, hides if broken
+   ✅ FIX #10: Phase 2 sees relevance scores
+   ✅ FIX #11: Pre-sorts results by score before GPT
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -277,7 +284,7 @@ const CATEGORIES = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 6: Arabic Engine + 🆕 Dialect Support
+   SECTION 6: Arabic Engine + Dialect Support
    ══════════════════════════════════════════════════════════ */
 function normalizeArabic(text) {
   if (!text) return "";
@@ -317,63 +324,27 @@ function similarityRatio(a, b) {
 }
 
 /* ═══════════════════════════════════
-   🆕 FIX #2: Dialect Normalization
-   Maps Iraqi/Gulf/Levantine/Moroccan → Egyptian
+   Dialect Normalization
    ═══════════════════════════════════ */
 const DIALECT_MAP = {
-  // Iraqi
-  "شلون": "ازاي",
-  "شگد": "كام",
-  "شكد": "كام",
-  "اريد": "عايز",
-  "أريد": "عايز",
-  "هواية": "كتير",
-  "شكو": "فيه ايه",
-  "ماكو": "مفيش",
-  "اكو": "فيه",
-  "چا": "جا",
-  "شسوي": "اعمل ايه",
-  "شقصد": "تقصد ايه",
-  // Gulf
-  "ابغى": "عايز",
-  "أبغى": "عايز",
-  "ابي": "عايز",
-  "أبي": "عايز",
-  "وش": "ايه",
-  "ايش": "ايه",
-  "حق": "بتاع",
-  "زين": "كويس",
-  "مررره": "اوي",
-  "مرره": "اوي",
-  "حيل": "اوي",
-  "يالله": "يلا",
-  // Levantine
-  "بدي": "عايز",
-  "شو": "ايه",
-  "هلق": "دلوقتي",
-  "هلأ": "دلوقتي",
-  "كتير": "كتير",
-  "هيك": "كده",
-  "منيح": "كويس",
-  "كيفك": "عامل ايه",
-  "شلونك": "عامل ايه",
-  // Moroccan/Tunisian
-  "بغيت": "عايز",
-  "علاش": "ليه",
-  "واش": "هل",
-  "فلوس": "فلوس",
-  // Common across dialects
-  "كيف": "ازاي",
-  "حاب": "عايز",
-  "حابب": "عايز",
-  "اشتي": "عايز",
-  "ودي": "عايز",
+  "شلون": "ازاي", "شگد": "كام", "شكد": "كام",
+  "اريد": "عايز", "أريد": "عايز", "هواية": "كتير",
+  "شكو": "فيه ايه", "ماكو": "مفيش", "اكو": "فيه",
+  "چا": "جا", "شسوي": "اعمل ايه", "شقصد": "تقصد ايه",
+  "ابغى": "عايز", "أبغى": "عايز", "ابي": "عايز", "أبي": "عايز",
+  "وش": "ايه", "ايش": "ايه", "حق": "بتاع", "زين": "كويس",
+  "مررره": "اوي", "مرره": "اوي", "حيل": "اوي", "يالله": "يلا",
+  "بدي": "عايز", "شو": "ايه", "هلق": "دلوقتي", "هلأ": "دلوقتي",
+  "كتير": "كتير", "هيك": "كده", "منيح": "كويس",
+  "كيفك": "عامل ايه", "شلونك": "عامل ايه",
+  "بغيت": "عايز", "علاش": "ليه", "واش": "هل", "فلوس": "فلوس",
+  "كيف": "ازاي", "حاب": "عايز", "حابب": "عايز",
+  "اشتي": "عايز", "ودي": "عايز",
 };
 
 function normalizeDialect(text) {
   if (!text) return text;
   let result = text;
-  // Sort by length descending to match longer phrases first
   const sorted = Object.entries(DIALECT_MAP).sort(
     (a, b) => b[0].length - a[0].length
   );
@@ -385,45 +356,20 @@ function normalizeDialect(text) {
 }
 
 const ARABIC_CORRECTIONS = {
-  ماركوتنج: "ماركيتنج",
-  ماركتنج: "ماركيتنج",
-  ماركتينج: "ماركيتنج",
-  مركتنج: "ماركيتنج",
-  دجيتال: "ديجيتال",
-  ديجتال: "ديجيتال",
-  دجتال: "ديجيتال",
-  بروجرامنج: "برمجه",
-  بروغرامنج: "برمجه",
-  بيثون: "بايثون",
-  بايتون: "بايثون",
-  بايسون: "بايثون",
-  جافاسكربت: "جافاسكريبت",
-  جافسكربت: "جافاسكريبت",
-  جرافك: "جرافيك",
-  قرافيك: "جرافيك",
-  غرافيك: "جرافيك",
-  جرفيك: "جرافيك",
-  فتوشوب: "فوتوشوب",
-  فوتشوب: "فوتوشوب",
-  فوطوشوب: "فوتوشوب",
-  اليستريتور: "اليستريتر",
-  السترتور: "اليستريتر",
-  بزنس: "بيزنس",
-  بزنيس: "بيزنس",
-  بيزنيس: "بيزنس",
+  ماركوتنج: "ماركيتنج", ماركتنج: "ماركيتنج", ماركتينج: "ماركيتنج",
+  مركتنج: "ماركيتنج", دجيتال: "ديجيتال", ديجتال: "ديجيتال",
+  دجتال: "ديجيتال", بروجرامنج: "برمجه", بروغرامنج: "برمجه",
+  بيثون: "بايثون", بايتون: "بايثون", بايسون: "بايثون",
+  جافاسكربت: "جافاسكريبت", جافسكربت: "جافاسكريبت",
+  جرافك: "جرافيك", قرافيك: "جرافيك", غرافيك: "جرافيك", جرفيك: "جرافيك",
+  فتوشوب: "فوتوشوب", فوتشوب: "فوتوشوب", فوطوشوب: "فوتوشوب",
+  اليستريتور: "اليستريتر", السترتور: "اليستريتر",
+  بزنس: "بيزنس", بزنيس: "بيزنس", بيزنيس: "بيزنس",
   "اس اي او": "سيو",
-  ريفت: "ريفيت",
-  ريفيط: "ريفيت",
-  الريفت: "ريفيت",
-  الريفيت: "ريفيت",
-  دبلومه: "دبلومه",
-  دبلومة: "دبلومه",
-  دبلوما: "دبلومه",
-  اونلين: "اونلاين",
-  "اون لاين": "اونلاين",
-  وردبرس: "ووردبريس",
-  وردبريس: "ووردبريس",
-  "وورد بريس": "ووردبريس",
+  ريفت: "ريفيت", ريفيط: "ريفيت", الريفت: "ريفيت", الريفيت: "ريفيت",
+  دبلومه: "دبلومه", دبلومة: "دبلومه", دبلوما: "دبلومه",
+  اونلين: "اونلاين", "اون لاين": "اونلاين",
+  وردبرس: "ووردبريس", وردبريس: "ووردبريس", "وورد بريس": "ووردبريس",
 };
 
 const SEARCH_SYNONYMS = {
@@ -449,7 +395,6 @@ const ARABIC_STOP_WORDS = new Set([
   "عندكم","فيه","بس","خلاص","ده","دي","كده","ازاي","ليه","فين",
   "the","a","an","is","are","in","on","at","to","for","of","and","or","i","want","need","about",
   "كورس","كورسات","دورة","دورات","تعلم","اتعلم","ابغى","اريد",
-  // 🆕 dialect stop words
   "شلون","كيف","بدي","حاب","شو","وش","ابي",
 ]);
 
@@ -517,16 +462,12 @@ function splitIntoSearchableTerms(terms) {
 }
 
 /* ═══════════════════════════════════
-   🆕 FIX #1: HTML Formatter
-   Converts \n → <br> and cleans output
+   HTML Formatter
    ═══════════════════════════════════ */
 function finalizeReply(html) {
   if (!html) return "";
-  // Convert \n to <br> for proper HTML rendering
   html = html.replace(/\n/g, "<br>");
-  // Clean up excessive <br> tags (more than 3 consecutive)
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
-  // Clean up <br> right before/after div tags
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
   html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
   return html;
@@ -548,14 +489,12 @@ function markdownToHtml(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 FIX #3: Quick Intent Check
-   Safety net — catches obvious intents BEFORE GPT
+   Quick Intent Check (safety net)
    ══════════════════════════════════════════════════════════ */
 function quickIntentCheck(message) {
   const lower = (message || "").toLowerCase();
   const norm = normalizeArabic(lower);
 
-  // 💰 Payment / Subscription keywords — VERY high confidence
   const paymentPatterns = [
     /ادفع/, /دفع/, /اشتراك/, /اشترك/, /سعر/, /اسعار/, /تكلف/, /كام.*سعر/,
     /سعر.*كام/, /فلوس/, /ثمن/, /pay/, /price/, /subscri/, /كم.*سعر/,
@@ -568,20 +507,17 @@ function quickIntentCheck(message) {
     }
   }
 
-  // 👋 Greeting
   const greetingPatterns = [
     /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم)/,
   ];
   for (const p of greetingPatterns) {
     if (p.test(norm) || p.test(lower)) {
-      // Only if message is SHORT (pure greeting)
       if (lower.split(/\s+/).length <= 4) {
         return { intent: "GREETING", confidence: 0.9 };
       }
     }
   }
 
-  // 📂 Categories
   const catPatterns = [
     /عندكم.*ايه/, /عندكم.*شو/, /عندكم.*وش/, /ايه.*المجالات/,
     /شو.*المجالات/, /التصنيفات/, /المجالات.*المتاح/, /فيه.*ايه.*كورس/,
@@ -592,7 +528,7 @@ function quickIntentCheck(message) {
     }
   }
 
-  return null; // No quick match — let GPT handle it
+  return null;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -644,7 +580,6 @@ function detectRelevantCategory(searchTerms) {
   return bestScore >= 2 ? bestCat : null;
 }
 
-/* 🆕 FIX #1: Categories list now uses <br> instead of \n */
 function formatCategoriesList() {
   let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong><br><br>`;
   Object.keys(CATEGORIES).forEach((name, i) => {
@@ -657,6 +592,7 @@ function formatCategoriesList() {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
+   🆕 FIX #7: Title weight 50x (was 10x), exact match +200
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
@@ -730,49 +666,69 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       if (af.length > 0) filtered = af;
     }
 
+    // 🆕 FIX #7: MUCH higher title weight + exact match bonus
     const scored = filtered.map((c) => {
       let score = 0;
-      const fields = {
-        title: {
-          text: normalizeArabic((c.title || "").toLowerCase()),
-          weight: 10,
-        },
-        subtitle: {
-          text: normalizeArabic((c.subtitle || "").toLowerCase()),
-          weight: 7,
-        },
-        page_content: {
-          text: normalizeArabic((c.page_content || "").toLowerCase()),
-          weight: 5,
-        },
-        syllabus: {
-          text: normalizeArabic((c.syllabus || "").toLowerCase()),
-          weight: 4,
-        },
-        objectives: {
-          text: normalizeArabic((c.objectives || "").toLowerCase()),
-          weight: 4,
-        },
-        description: {
-          text: normalizeArabic((c.description || "").toLowerCase()),
-          weight: 3,
-        },
-        full_content: {
-          text: normalizeArabic((c.full_content || "").toLowerCase()),
-          weight: 2,
-        },
-      };
+      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+      const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
+      const pageNorm = normalizeArabic((c.page_content || "").toLowerCase());
+      const syllabusNorm = normalizeArabic((c.syllabus || "").toLowerCase());
+      const objectivesNorm = normalizeArabic((c.objectives || "").toLowerCase());
+      const descNorm = normalizeArabic((c.description || "").toLowerCase());
+      const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
+
+      // 🆕 Exact full-query match in title = HUGE bonus
+      const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
+      if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) {
+        score += 200;
+      }
+      // Title starts with query = extra bonus
+      if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) {
+        score += 50;
+      }
+
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-        for (const f of Object.values(fields)) {
-          if (f.text.includes(nt)) score += f.weight;
-        }
+
+        // 🆕 Title match = 50 points (was 10)
+        if (titleNorm.includes(nt)) score += 50;
+
+        // Subtitle match = 15 points (was 7)
+        if (subtitleNorm.includes(nt)) score += 15;
+
+        // Page content = 5
+        if (pageNorm.includes(nt)) score += 5;
+
+        // Syllabus = 4
+        if (syllabusNorm.includes(nt)) score += 4;
+
+        // Objectives = 4
+        if (objectivesNorm.includes(nt)) score += 4;
+
+        // 🆕 Description = 1 point only (was 3) — prevents description-only matches from ranking high
+        if (descNorm.includes(nt)) score += 1;
+
+        // Full content = 1
+        if (fullNorm.includes(nt)) score += 1;
       }
+
+      // 🆕 Bonus: multiple terms matching in title
+      const titleHits = allTerms.filter((t) =>
+        titleNorm.includes(normalizeArabic(t.toLowerCase()))
+      ).length;
+      if (titleHits >= 2) score += 40;
+
       return { ...c, relevanceScore: score };
     });
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    // 🆕 Log top results for debugging
+    scored.slice(0, 5).forEach((c, i) => {
+      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}`);
+    });
+
     return scored.slice(0, 10);
   } catch (e) {
     console.error("searchCourses error:", e.message);
@@ -904,6 +860,7 @@ async function searchCorrections(terms) {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 9: Card Formatting
+   🆕 FIX #9: Image support + no blank space
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -922,8 +879,19 @@ function formatCourseCard(course, instructors, index) {
     : "";
   const num = index !== undefined ? `${index}. ` : "";
 
-  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">
-<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
+  // 🆕 FIX #9: Image with onerror fallback — only show if valid
+  let imageHtml = "";
+  if (
+    course.image &&
+    course.image.trim() !== "" &&
+    course.image !== "null" &&
+    course.image !== "undefined"
+  ) {
+    imageHtml = `<img src="${course.image}" alt="${course.title}" style="width:100%;border-radius:8px;margin-bottom:8px;display:block;max-height:160px;object-fit:cover" onerror="this.style.display='none'">`;
+  }
+
+  return `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px;overflow:hidden">
+${imageHtml}<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>
 <div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>
 ${instructorName ? `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>` : ""}
 ${desc ? `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>` : ""}
@@ -975,15 +943,15 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.2                    ██
-   ██   Two-Phase RAG + Smart Filtering                    ██
-   ██   + Dialect Support + Quick Intent                   ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.3                    ██
+   ██   Two-Phase RAG + Context Memory + Smart Filtering   ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════
    11-A: Session Memory System
+   🆕 FIX #8: Added lastSearchTopic for follow-up context
    ═══════════════════════════════════ */
 const sessionMemory = new Map();
 const SESSION_MEMORY_TTL = 30 * 60 * 1000;
@@ -994,6 +962,8 @@ function getSessionMemory(sessionId) {
       summary: "",
       topics: [],
       lastSearchTerms: [],
+      lastSearchTopic: null,   // 🆕 "فوتوشوب", "ريفيت", etc.
+      lastSearchCategory: null, // 🆕 "الجرافيكس والتصميم", etc.
       userLevel: null,
       interests: [],
       messageCount: 0,
@@ -1018,12 +988,17 @@ function updateSessionMemory(sessionId, updates) {
     mem.topics = [...new Set([...mem.topics, ...updates.topics])].slice(-15);
   }
   if (updates.interests && updates.interests.length > 0) {
-    mem.interests = [...new Set([...mem.interests, ...updates.interests])].slice(
-      -10
-    );
+    mem.interests = [...new Set([...mem.interests, ...updates.interests])].slice(-10);
   }
   if (updates.summary) {
     mem.summary = updates.summary;
+  }
+  // 🆕 FIX #8
+  if (updates.lastSearchTopic) {
+    mem.lastSearchTopic = updates.lastSearchTopic;
+  }
+  if (updates.lastSearchCategory) {
+    mem.lastSearchCategory = updates.lastSearchCategory;
   }
 }
 
@@ -1033,6 +1008,94 @@ setInterval(() => {
     if (now - mem.lastActivity > SESSION_MEMORY_TTL) sessionMemory.delete(sid);
   }
 }, 10 * 60 * 1000);
+
+/* ═══════════════════════════════════
+   🆕 FIX #8: Follow-up Context Detection
+   ═══════════════════════════════════ */
+function extractMainTopic(searchTerms) {
+  if (!searchTerms || searchTerms.length === 0) return null;
+  // Filter out stop words and return the most specific term
+  const meaningful = searchTerms.filter(
+    (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+  );
+  return meaningful.length > 0 ? meaningful[0] : searchTerms[0];
+}
+
+function isFollowUpMessage(message) {
+  const norm = normalizeArabic((message || "").toLowerCase());
+  const followUpPatterns = [
+    "فيه حاجة", "في حاجة", "فى حاجة",
+    "عندكم حاجة", "عندكوا حاجة",
+    "للمبتدئين", "للمبتدأين", "مبتدئ", "للمبتدين",
+    "للمتقدمين", "متقدم", "محترف", "للمحترفين",
+    "ارخص", "اغلى", "اقل سعر", "اعلى",
+    "كام سعره", "سعرها كام", "بكام",
+    "غيره", "غيرها", "حاجة تانية", "حاجه تانيه",
+    "بديل", "كمان", "تاني", "زيه",
+    "اسهل", "اصعب", "ابسط",
+    "اقصر", "اطول",
+    "فيه كورس", "في كورسات",
+    "ايوه", "اه عايز", "طيب وايه",
+    "وايه كمان", "وايه تاني",
+  ];
+  return followUpPatterns.some((p) => norm.includes(normalizeArabic(p)));
+}
+
+function hasNewExplicitTopic(message) {
+  const norm = normalizeArabic((message || "").toLowerCase());
+  const explicitTopics = [
+    "فوتوشوب", "photoshop", "بايثون", "python",
+    "جافا", "java", "برمجة", "programming",
+    "جرافيك", "graphic", "ريفيت", "revit",
+    "اوتوكاد", "autocad", "اكسل", "excel",
+    "وورد", "word", "ذكاء اصطناعي", "ai",
+    "سباكة", "mep", "هندسة", "engineering",
+    "ووردبريس", "wordpress", "افتر افكت", "after effects",
+    "بريمير", "premiere", "اليستريتور", "illustrator",
+    "ثري دي ماكس", "3ds max", "بلندر", "blender",
+    "سوليد ووركس", "solidworks", "لومين", "lumion",
+    "سكتش اب", "sketchup", "انديزاين", "indesign",
+    "بور بوينت", "powerpoint", "محاسبة", "accounting",
+    "تسويق", "marketing", "سيو", "seo",
+    "يوتيوب", "youtube", "موشن جرافيك", "motion",
+    "انجليزي", "english", "فرنسي", "french",
+    "حماية", "اختراق", "hacking", "cyber",
+    "تصوير", "مونتاج", "فيديو",
+    "كانفا", "canva", "فيجما", "figma",
+    "react", "angular", "flutter", "node",
+    "لارافيل", "laravel", "django",
+  ];
+  for (const topic of explicitTopics) {
+    if (norm.includes(normalizeArabic(topic))) {
+      return topic;
+    }
+  }
+  return null;
+}
+
+function enrichMessageWithContext(message, sessionMem) {
+  // If message has a clear NEW topic, don't inject old context
+  const newTopic = hasNewExplicitTopic(message);
+  if (newTopic) {
+    console.log(`🔵 New topic detected: "${newTopic}" — no context injection`);
+    return { enriched: message, isFollowUp: false, detectedTopic: newTopic };
+  }
+
+  // If message looks like a follow-up AND we have a previous topic
+  if (isFollowUpMessage(message) && sessionMem.lastSearchTopic) {
+    const enriched = `${sessionMem.lastSearchTopic} ${message}`;
+    console.log(
+      `🔄 Follow-up detected! "${message}" → "${enriched}" (previous topic: ${sessionMem.lastSearchTopic})`
+    );
+    return {
+      enriched,
+      isFollowUp: true,
+      previousTopic: sessionMem.lastSearchTopic,
+    };
+  }
+
+  return { enriched: message, isFollowUp: false };
+}
 
 /* ═══════════════════════════════════
    11-B: Context Loaders
@@ -1122,7 +1185,6 @@ async function loadCustomResponsesSummary() {
 
 /* ═══════════════════════════════════
    11-C: Phase 1 — Smart Analyzer
-   🆕 FIX #6: Better dialect-aware prompt
    ═══════════════════════════════════ */
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
@@ -1134,6 +1196,7 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
       ? `
 ═══ ذاكرة الجلسة ═══
 - المواضيع السابقة: ${sessionMem.topics.join(", ") || "لا يوجد"}
+- آخر موضوع بحث: ${sessionMem.lastSearchTopic || "لا يوجد"}
 - آخر كلمات بحث: ${sessionMem.lastSearchTerms.join(", ") || "لا يوجد"}
 - مستوى المستخدم: ${sessionMem.userLevel || "غير محدد"}
 - اهتماماته: ${sessionMem.interests.join(", ") || "غير محدد"}
@@ -1192,11 +1255,19 @@ ${categoriesList}
   - "عايز فوتوشوب" → ["فوتوشوب","photoshop"]
   - "ابي ريفيت" → ["ريفيت","revit","برامج هندسية"]
   - "شلون اتعلم بايثون" → ["بايثون","python"]
-  - لو متابعة لموضوع سابق: ادمج السياق
+  - لو متابعة لموضوع سابق: ادمج السياق مع الموضوع السابق
 
 📂 CATEGORIES — لما يسأل عن المجالات المتاحة
 🛠️ SUPPORT — مشاكل تقنية/شكاوي
 💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
+
+═══ 🆕 قاعدة المتابعة (Follow-up) ═══
+لو المستخدم قال "فيه حاجة للمبتدئين" أو "عندكم حاجة أسهل" بدون ذكر موضوع جديد:
+- is_follow_up = true
+- search_terms = الموضوع السابق + الطلب الجديد
+- مثال: لو سأل قبل كده عن "فوتوشوب" ودلوقتي قال "فيه حاجة للمبتدئين":
+  → search_terms: ["فوتوشوب","photoshop","مبتدئين"]
+  → audience_filter: "مبتدئ"
 
 ═══ قاعدة ذهبية ═══
 لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
@@ -1319,7 +1390,7 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
-   🆕 FIX #4: MUCH stricter filtering
+   🆕 FIX #10: Receives relevance scores
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1352,6 +1423,7 @@ function prepareCourseForRAG(course, instructors) {
     price: priceNum,
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
+    relevanceScore: course.relevanceScore || 0, // 🆕 FIX #10
   };
 }
 
@@ -1406,20 +1478,26 @@ async function generateSmartRecommendation(
   const isFollowUp = analysis.is_follow_up;
   const prevTopic =
     analysis.previous_topic_reference ||
+    sessionMem.lastSearchTopic ||
     sessionMem.topics.slice(-3).join(", ");
 
-  /* 🆕 FIX #4: Completely rewritten Phase 2 prompt — MUCH stricter */
   const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي في منصة easyT.
 
 ⚠️⚠️⚠️ أهم قاعدة: لا تُظهر أي كورس إلا إذا كان مرتبط **مباشرة** بطلب المستخدم ⚠️⚠️⚠️
 
-═══ الكورسات والدبلومات المتاحة ═══
+═══ الكورسات والدبلومات المتاحة (مرتبة بالـ relevanceScore) ═══
 ${JSON.stringify(allItems, null, 1)}
 
 ═══ معلومات المستخدم ═══
 - مستواه: ${levelInfo}
 - اهتماماته: ${interestsInfo}
 - متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
+
+═══ 🆕 ملاحظة عن الـ relevanceScore ═══
+- الكورسات مرتبة بنقاط المطابقة (relevanceScore)
+- كورس بنقاط عالية (100+) = عنوانه يحتوي على كلمة البحث → الأكثر ملاءمة
+- كورس بنقاط منخفضة (<10) = المطابقة في الوصف فقط → غالباً مش مناسب
+- ⚠️ فضّل الكورسات ذات النقاط العالية!
 
 ═══ مطلوب منك ═══
 ارجع JSON بهذا الشكل بالظبط:
@@ -1437,25 +1515,27 @@ ${JSON.stringify(allItems, null, 1)}
 2. ❌ مش مرتبط = الكورس في مجال مختلف حتى لو في نفس التصنيف العام
 
 أمثلة على كورسات مش مرتبطة (❌ ممنوع تعرضها):
-- المستخدم طلب "ريفيت/سباكة" → كورس "Angular JS" = ❌❌❌ (ده برمجة مش هندسة!)
-- المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌ (ده مواقع مش تصميم)
-- المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌ (لغة مختلفة!)
-- المستخدم طلب "اكسل" → كورس "بوربوينت" = ❌ (برنامج مختلف!)
-- المستخدم طلب "ريفيت" → كورس "اوتوكاد" = ⚠️ (قريب بس مش نفسه — اعرضه بس وضح الفرق)
+- المستخدم طلب "ريفيت/سباكة" → كورس "Angular JS" = ❌❌❌
+- المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌
+- المستخدم طلب "فوتوشوب" → كورس "تصميم أغلفة الكتب" = ⚠️ (ممكن بس الأولوية لكورس "فوتوشوب" نفسه)
+- المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌
+- المستخدم طلب "اكسل" → كورس "بوربوينت" = ❌
 
 أمثلة على كورسات مرتبطة (✅):
-- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب للمبتدئين" = ✅
-- المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅ (لأن فوتوشوب جزء من الجرافيك)
-- المستخدم طلب "ريفيت" → كورس "ريفيت MEP" = ✅
+- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب Adobe Photoshop" = ✅✅✅ (أعلى أولوية!)
+- المستخدم طلب "فوتوشوب" → كورس "قوة الذكاء الاصطناعي داخل فوتوشوب" = ✅✅
+- المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅
+- المستخدم طلب "ريفيت" → كورس "ريفيت AutoDesk Revit" = ✅✅✅
 
-3. لو مفيش ولا كورس مرتبط فعلاً:
+3. 🆕 قاعدة العنوان: لو فيه كورس **عنوانه** فيه اسم البرنامج/المهارة المطلوبة → ده الأولوية الأولى!
+   - "فوتوشوب Adobe Photoshop" أهم من "تصميم أغلفة الكتب" (حتى لو الأغلفة بتستخدم فوتوشوب)
+
+4. لو مفيش ولا كورس مرتبط فعلاً:
    - relevant_course_indices = [] (فاضية!)
-   - relevant_diploma_indices = [] (فاضية!)
    - has_exact_match = false
-   - message = اعتذار واضح + اقتراح يتصفح التصنيف المناسب
-   - ❌❌❌ ممنوع تحط أي index لكورس مش مرتبط عشان "تملى" النتايج
+   - ❌❌❌ ممنوع تحط أي index لكورس مش مرتبط
 
-4. لو فيه كورس واحد بس مرتبط: اعرض كورس واحد بس! مش لازم تملى قائمة
+5. لو فيه كورس واحد بس مرتبط: اعرض كورس واحد بس!
 
 ═══ قواعد الرد ═══
 - لو has_exact_match = true: رد بحماس واشرح ليه الكورس مناسب
@@ -1510,7 +1590,6 @@ ${JSON.stringify(allItems, null, 1)}
     };
   } catch (e) {
     console.error("❌ RAG Recommender error:", e.message);
-    // Fallback with gpt-4o-mini
     try {
       const resp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -1556,8 +1635,7 @@ ${JSON.stringify(allItems, null, 1)}
 }
 
 /* ═══════════════════════════════════
-   🆕 FIX #5: Safety Check
-   Verify GPT's choices actually make sense
+   Safety Check — verify GPT's choices
    ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
@@ -1585,7 +1663,6 @@ function verifyCourseRelevance(course, searchTerms) {
     if (courseText.includes(normTerm)) {
       matchCount++;
     }
-    // Also check fuzzy match on title
     const titleNorm = normalizeArabic((course.title || "").toLowerCase());
     for (const word of titleNorm.split(/\s+/)) {
       if (similarityRatio(normTerm, word) >= 75) {
@@ -1595,7 +1672,6 @@ function verifyCourseRelevance(course, searchTerms) {
     }
   }
 
-  // At least 1 core term should match somewhere in the course
   return matchCount >= 1;
 }
 
@@ -1636,17 +1712,27 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.2
+   11-F: 🧠 Master Orchestrator v10.3
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
 
-  /* 🆕 Step 0: Normalize dialect BEFORE anything else */
-  const normalizedMessage = normalizeDialect(message);
-  console.log(
-    `🌍 Dialect: "${message}" → "${normalizedMessage}"`
-  );
+  /* Step 0: Normalize dialect BEFORE anything else */
+  const dialectNormalized = normalizeDialect(message);
+  console.log(`🌍 Dialect: "${message}" → "${dialectNormalized}"`);
+
+  /* 🆕 Step 0.5: Enrich with follow-up context */
+  const contextResult = enrichMessageWithContext(dialectNormalized, sessionMem);
+  const enrichedMessage = contextResult.enriched;
+  const isContextFollowUp = contextResult.isFollowUp;
+  const previousTopic = contextResult.previousTopic || null;
+
+  if (isContextFollowUp) {
+    console.log(
+      `🔄 Context enriched: "${dialectNormalized}" → "${enrichedMessage}"`
+    );
+  }
 
   // 1. Load all context in parallel
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
@@ -1659,24 +1745,40 @@ async function smartChat(message, sessionId) {
     `📦 Context: instructions=${botInstructions ? "yes" : "no"}, history=${chatHistory.length}msgs, memory=${sessionMem.messageCount}msgs`
   );
 
-  /* 🆕 Step 1.5: Quick Intent Check (safety net) */
-  const quickCheck = quickIntentCheck(normalizedMessage);
+  /* Quick Intent Check (safety net) */
+  const quickCheck = quickIntentCheck(enrichedMessage);
   if (quickCheck) {
     console.log(
       `⚡ Quick intent: ${quickCheck.intent} (confidence: ${quickCheck.confidence})`
     );
   }
 
-  // 2. PHASE 1: Analyze the message (gpt-4o-mini)
+  // 2. PHASE 1: Analyze the (enriched) message
   const analysis = await analyzeMessage(
-    normalizedMessage,
+    enrichedMessage,
     chatHistory,
     sessionMem,
     botInstructions,
     customResponses
   );
 
-  /* 🆕 Override GPT if quick check disagrees on high-confidence intents */
+  /* 🆕 Inject follow-up info into analysis if detected by our own logic */
+  if (isContextFollowUp && !analysis.is_follow_up) {
+    analysis.is_follow_up = true;
+    analysis.previous_topic_reference = previousTopic;
+    // Merge previous search terms into current search
+    if (analysis.action === "SEARCH" && sessionMem.lastSearchTerms.length > 0) {
+      const merged = [
+        ...new Set([...sessionMem.lastSearchTerms, ...analysis.search_terms]),
+      ];
+      console.log(
+        `🔄 Merged search terms: [${analysis.search_terms}] + [${sessionMem.lastSearchTerms}] → [${merged}]`
+      );
+      analysis.search_terms = merged;
+    }
+  }
+
+  /* Override GPT if quick check disagrees on high-confidence intents */
   if (quickCheck && quickCheck.confidence >= 0.9) {
     if (
       quickCheck.intent === "SUBSCRIPTION" &&
@@ -1688,7 +1790,6 @@ async function smartChat(message, sessionId) {
       analysis.action = "SUBSCRIPTION";
       analysis.intent = "SUBSCRIPTION";
       analysis.search_terms = [];
-      // Generate a proper subscription response
       analysis.response_message = "";
     }
   }
@@ -1735,16 +1836,17 @@ async function smartChat(message, sessionId) {
       }
     }
 
-    // Pre-filter weak results BEFORE Phase 2
+    // 🆕 FIX #11: Pre-filter weak results BEFORE Phase 2 (stricter threshold)
     if (courses.length > 3) {
       const maxScore = Math.max(...courses.map((c) => c.relevanceScore || 0));
-      const threshold = Math.max(maxScore * 0.3, 5);
+      // If top result has score > 100 (title match), filter aggressively
+      const threshold = maxScore > 100 ? maxScore * 0.15 : Math.max(maxScore * 0.3, 5);
       const preFiltered = courses.filter(
         (c) => (c.relevanceScore || 0) >= threshold
       );
       if (preFiltered.length >= 1) {
         console.log(
-          `🧹 Pre-filter: ${courses.length} → ${preFiltered.length} courses (threshold=${threshold})`
+          `🧹 Pre-filter: ${courses.length} → ${preFiltered.length} courses (threshold=${Math.round(threshold)}, max=${maxScore})`
         );
         courses = preFiltered;
       }
@@ -1755,7 +1857,7 @@ async function smartChat(message, sessionId) {
 
       // PHASE 2: RAG + Filtering (gpt-4o)
       const recommendation = await generateSmartRecommendation(
-        message, // Original message, not normalized
+        message, // Original message
         courses,
         diplomas,
         sessionMem,
@@ -1763,7 +1865,7 @@ async function smartChat(message, sessionId) {
         instructors
       );
 
-      // 🆕 FIX #5: Safety check — verify GPT's choices
+      // Safety check — verify GPT's choices
       let relevantCourses = recommendation.relevantCourseIndices
         .filter((i) => i >= 0 && i < courses.length)
         .map((i) => courses[i]);
@@ -1772,14 +1874,13 @@ async function smartChat(message, sessionId) {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
-      // Double-check: verify each course GPT chose actually contains search terms
       const verifiedCourses = relevantCourses.filter((c) =>
         verifyCourseRelevance(c, termsToSearch)
       );
       const removedCount = relevantCourses.length - verifiedCourses.length;
       if (removedCount > 0) {
         console.log(
-          `🛡️ Safety check removed ${removedCount} irrelevant courses that GPT incorrectly approved`
+          `🛡️ Safety check removed ${removedCount} irrelevant courses`
         );
       }
       relevantCourses = verifiedCourses;
@@ -1791,21 +1892,18 @@ async function smartChat(message, sessionId) {
       reply = recommendation.message || "";
       reply += "<br><br>";
 
-      // Add diploma cards
       if (relevantDiplomas.length > 0) {
         relevantDiplomas.slice(0, 3).forEach((d) => {
           reply += formatDiplomaCard(d);
         });
       }
 
-      // Add course cards
       if (relevantCourses.length > 0) {
         relevantCourses.slice(0, 5).forEach((c, i) => {
           reply += formatCourseCard(c, instructors, i + 1);
         });
       }
 
-      // If NO relevant results at all
       if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
         const cat = detectRelevantCategory(termsToSearch);
         if (cat) {
@@ -1823,8 +1921,19 @@ async function smartChat(message, sessionId) {
 
         reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
+
+      // 🆕 FIX #8: Save search topic for follow-up context
+      const mainTopic = extractMainTopic(termsToSearch);
+      const detectedCat = detectRelevantCategory(termsToSearch);
+      updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: contextResult.detectedTopic || mainTopic,
+        lastSearchCategory: detectedCat ? detectedCat.name : null,
+        userLevel: analysis.user_level,
+        topics: analysis.topics,
+        interests: termsToSearch.slice(0, 3),
+      });
     } else {
-      // No results at all from search
       const cat = detectRelevantCategory(termsToSearch);
       reply = analysis.is_follow_up
         ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅`
@@ -1834,6 +1943,15 @@ async function smartChat(message, sessionId) {
         reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a> — ممكن تلاقي حاجة تفيدك!`;
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
+
+      // Still save topic even if no results
+      const mainTopic = extractMainTopic(termsToSearch);
+      updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: mainTopic,
+        userLevel: analysis.user_level,
+        topics: analysis.topics,
+      });
     }
 
     console.log(
@@ -1843,7 +1961,6 @@ async function smartChat(message, sessionId) {
     /* ═══ SUBSCRIPTION FLOW ═══ */
     reply = analysis.response_message || "";
 
-    // 🆕 If analyzer returned empty response (e.g. from quick override), generate one
     if (!reply || reply.trim().length < 20) {
       reply = `أهلاً بيك! 🎉<br><br>`;
       reply += `<strong>طرق الدفع المتاحة:</strong><br><br>`;
@@ -1857,7 +1974,6 @@ async function smartChat(message, sessionId) {
       reply += `🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a><br>`;
       reply += `💳 <a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">صفحة طرق الدفع ←</a>`;
     } else {
-      // Make sure links are present
       if (!reply.includes("easyt.online/p/subscriptions")) {
         reply += `<br><br>🎓 <a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">اشترك الآن ←</a>`;
       }
@@ -1879,22 +1995,22 @@ async function smartChat(message, sessionId) {
     reply = analysis.response_message || "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
   }
 
-  // 4. Clean up: markdown → HTML
+  // 4. Clean up
   reply = markdownToHtml(reply);
-
-  // 🆕 FIX #1: Final formatting — convert any remaining \n to <br>
   reply = finalizeReply(reply);
 
-  // 5. Update session memory
-  updateSessionMemory(sessionId, {
-    searchTerms: analysis.search_terms,
-    userLevel: analysis.user_level,
-    topics: analysis.topics,
-    interests:
-      analysis.search_terms.length > 0
-        ? analysis.search_terms.slice(0, 3)
-        : [],
-  });
+  // 5. Update session memory (for non-SEARCH actions)
+  if (analysis.action !== "SEARCH") {
+    updateSessionMemory(sessionId, {
+      searchTerms: analysis.search_terms,
+      userLevel: analysis.user_level,
+      topics: analysis.topics,
+      interests:
+        analysis.search_terms.length > 0
+          ? analysis.search_terms.slice(0, 3)
+          : [],
+    });
+  }
 
   // 6. Generate conversation summary every 4 messages
   if (sessionMem.messageCount > 0 && sessionMem.messageCount % 4 === 0) {
@@ -1944,7 +2060,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.2" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.3" });
 
     return res.json({ reply });
   } catch (error) {
@@ -2389,8 +2505,8 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
 app.get("/admin/debug", async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.2",
-    engine: "Two-Phase RAG + Dialect Support + Smart Filtering",
+    version: "10.3",
+    engine: "Two-Phase RAG + Context Memory + Smart Filtering",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -2421,10 +2537,10 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.2",
+    version: "10.3",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Dialect + Smart Filter",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter",
     active_sessions: sessionMemory.size,
     timestamp: new Date().toISOString(),
   });
@@ -2433,12 +2549,17 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.2",
+    version: "10.3",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Dialect + Smart Filter",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (gpt-4o)",
+      "🆕 Title-priority scoring (50x weight, +200 exact match)",
+      "🆕 Follow-up context memory (remembers last topic)",
+      "🆕 Card images with onerror fallback",
+      "🆕 Phase 2 sees relevance scores",
+      "🆕 Stricter pre-filtering before GPT",
       "Quick Intent Check (safety net for payment/greeting)",
       "Dialect normalization (Iraqi/Gulf/Levantine/Moroccan)",
       "Safety check: verifies GPT's course choices",
@@ -2453,7 +2574,7 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.2...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.3...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
@@ -2461,12 +2582,14 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.2                              ║
-║  🧠 Engine: Two-Phase RAG + Smart Filtering            ║
+║  🤖 زيكو Chatbot — v10.3                              ║
+║  🧠 Engine: Two-Phase RAG + Context Memory             ║
+║  🔍 Search: Title 50x priority + exact match +200      ║
+║  🔄 Follow-up: Remembers last topic for context        ║
+║  🖼️  Cards: Image support with onerror fallback        ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
 ║  ⚡ Quick Intent: Payment/Greeting safety net           ║
-║  🛡️ Safety Check: Verifies GPT course choices          ║
-║  📝 Formatting: \\n → <br> fix applied                  ║
+║  🛡️  Safety Check: Verifies GPT course choices         ║
 ║  ✅ Server: port ${PORT}                                  ║
 ║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected     " : "❌ NOT connected"}                    ║
 ║  🤖 OpenAI: ${openai ? "✅ Ready        " : "❌ NOT ready     "}                       ║
