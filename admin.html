@@ -1379,14 +1379,16 @@ async function loadCorrections() {
   try {
     var d = await apiCall('/admin/corrections');
     var el = document.getElementById('corrList');
-    if(!d.corrections||!d.corrections.length) {
+    var corrections = d.corrections || d.items || [];
+    if(!corrections.length) {
       el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات</p>';
       return;
     }
-    var html = '<table><thead><tr><th>ID</th><th>السؤال</th><th>الإجابة الصحيحة</th><th>الحالة</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
-    d.corrections.forEach(function(c) {
-      var sc = c.status==='pending'?'badge-yellow':c.status==='approved'?'badge-green':'badge-blue';
-      html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.original_question||'—').slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.corrected_answer||'').slice(0,80))+'</td><td><span class="badge '+sc+'">'+esc(c.status)+'</span></td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\','+c.id+')">حذف</button></td></tr>';
+    var html = '<table><thead><tr><th>ID</th><th>الكلمات الخطأ</th><th>كلمات البحث الصحيحة</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
+    corrections.forEach(function(c) {
+      var wrongTerms = Array.isArray(c.wrong_terms) ? c.wrong_terms.join(', ') : (c.wrong_terms || c.original_question || '—');
+      var searchTerms = Array.isArray(c.search_terms) ? c.search_terms.join(', ') : (c.search_terms || c.corrected_answer || '');
+      html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(wrongTerms).slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(searchTerms).slice(0,80))+'</td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\',\''+c.id+'\')">حذف</button></td></tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -1414,7 +1416,7 @@ async function loadBotInstructions() {
     var se = document.getElementById('botInstructionsSearch');
     var s = se ? se.value : '';
     var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
-    var items = d.items || [];
+var items = d.instructions || d.items || [];
     _botInstructionsCache = items.slice();
 
     if (!items.length) {
@@ -1593,7 +1595,7 @@ async function loadCustomResponses() {
     var se = document.getElementById('customresponsesSearch');
     var s = se?se.value:'';
     var d = await apiCall('/admin/custom-responses?limit=100'+(s?'&search='+encodeURIComponent(s):''));
-    var items = d.items||[];
+var items = d.responses || d.items || [];
     _customResponsesCache = items.slice();
     if (!items.length) {
       el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد ردود مخصصة</p>';
@@ -1662,7 +1664,7 @@ async function loadCrud(entity) {
     var se = document.getElementById(entity+'Search');
     var s = se?se.value:'';
     var d = await apiCall('/admin/'+entity+'?limit=50'+(s?'&search='+encodeURIComponent(s):''));
-    var items = d.items||[];
+var items = d.items || d.courses || d.diplomas || d.instructors || d.faqs || d.pages || d.corrections || d.data || [];
     var el = document.getElementById(entity+'-table');
     _crudCache[entity] = {};
     items.forEach(function(i){_crudCache[entity][i.id]=i;});
