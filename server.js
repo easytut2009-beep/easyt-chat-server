@@ -2084,6 +2084,319 @@ app.post("/admin/login", (req, res) => {
 /* ══════════════════════════════════════════════════════════
    ═══ ADMIN STATS — 🆕 fix3: Each query isolated
    ══════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════
+   ═══ CONVERSATIONS (grouped by session) — for admin.html
+   ══════════════════════════════════════════════════════════ */
+app.get("/admin/conversations", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("chat_logs")
+      .select("session_id, message, intent, created_at, role")
+      .order("created_at", { ascending: false });
+
+    if (search) {
+      query = query.ilike("message", `%${search}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const sessions = {};
+    (data || []).forEach(row => {
+      if (!sessions[row.session_id]) {
+        sessions[row.session_id] = {
+          session_id: row.session_id,
+          last_message: row.message,
+          last_intent: row.intent,
+          last_time: row.created_at,
+          message_count: 0
+        };
+      }
+      sessions[row.session_id].message_count++;
+    });
+
+    const sorted = Object.values(sessions).sort((a, b) =>
+      new Date(b.last_time) - new Date(a.last_time)
+    );
+
+    const offset = (page - 1) * limit;
+    const paged = sorted.slice(offset, offset + limit);
+
+    res.json({
+      success: true,
+      conversations: paged,
+      total: sorted.length,
+      page,
+      pagination: { has_more: offset + limit < sorted.length }
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get("/admin/conversations/:sessionId", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { sessionId } = req.params;
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+
+    const messages = (data || []).map(m => ({
+      ...m,
+      content: m.message
+    }));
+
+    res.json({ success: true, messages });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ Diplomas Browse (Admin) ═══ */
+app.get("/admin/diplomas", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("diplomas")
+      .select("id, title, link, description, price", { count: "exact" })
+      .order("title", { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      diplomas: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit)
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ Instructors Browse (Admin) ═══ */
+app.get("/admin/instructors", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase
+      .from("instructors")
+      .select("*")
+      .order("name", { ascending: true });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      instructors: data || []
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ FAQ (Admin) ═══ */
+app.get("/admin/faq", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      // Table might not exist
+      console.log("FAQ table not found or error:", error.message);
+      return res.json({ success: true, faqs: [] });
+    }
+
+    res.json({ success: true, faqs: data || [] });
+  } catch (e) {
+    res.json({ success: true, faqs: [] });
+  }
+});
+
+app.post("/admin/faq", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("faq").insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.put("/admin/faq/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("faq").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/faq/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { error } = await supabase.from("faq").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ Site Pages (Admin) ═══ */
+app.get("/admin/site-pages", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase
+      .from("site_pages")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.log("site_pages table not found or error:", error.message);
+      return res.json({ success: true, pages: [] });
+    }
+
+    res.json({ success: true, pages: data || [] });
+  } catch (e) {
+    res.json({ success: true, pages: [] });
+  }
+});
+
+app.post("/admin/site-pages", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("site_pages").insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.put("/admin/site-pages/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("site_pages").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/site-pages/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { error } = await supabase.from("site_pages").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ Diplomas CRUD ═══ */
+app.post("/admin/diplomas", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("diplomas").insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.put("/admin/diplomas/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("diplomas").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/diplomas/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { error } = await supabase.from("diplomas").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ═══ Instructors CRUD ═══ */
+app.post("/admin/instructors", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("instructors").insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+    instructorCache = { data: null, ts: 0 };
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.put("/admin/instructors/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { data, error } = await supabase.from("instructors").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, data });
+    instructorCache = { data: null, ts: 0 };
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "Database not connected" });
+  try {
+    const { error } = await supabase.from("instructors").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+    instructorCache = { data: null, ts: 0 };
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 app.get("/admin/stats", async (req, res) => {
   console.log("📊 Admin stats requested");
 
