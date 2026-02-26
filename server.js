@@ -1,6 +1,13 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.8 — 🐛 Fix query explosion + diplomas.image
-   ✅ ALL v7.9.7 code preserved
+   🤖 Ziko Chatbot v7.9.9 — 📂 Categories + Marketing terms
+   ✅ ALL v7.9.8 code preserved
+   🆕 v7.9.9: CATEGORIES constant — 22 categories with URLs + keywords
+   🆕 v7.9.9: isCategoryQuestion() — detects "ايه التصنيفات"
+   🆕 v7.9.9: detectRelevantCategory() — maps search to category
+   🆕 v7.9.9: formatCategoriesList() — clickable HTML list
+   🆕 v7.9.9: Category link after search results
+   🆕 v7.9.9: Expanded isEducationalTerm() — ROAS, CPA, funnel, media buying...
+   ─── v7.9.8 features ───
    🐛 v7.9.8: FIXED 175 OR filters → max 36 (Supabase fetch failed)
    🐛 v7.9.8: FIXED diplomas.image column does not exist
    🐛 v7.9.8: TRIMMED SEARCH_SYNONYMS — no tool-specific names
@@ -140,6 +147,100 @@ const limiter = rateLimit({
    ═══════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/diplomas";
+
+/* ═══════════════════════════════════
+   ═══ Categories Map (v7.9.9) ═══
+   ═══════════════════════════════════ */
+const CATEGORIES = {
+  "الجرافيكس والتصميم": {
+    url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2",
+    keywords: ["جرافيك", "تصميم", "فوتوشوب", "اليستريتر", "كانفا", "فيجما", "photoshop", "illustrator", "canva", "figma", "indesign", "graphic", "design", "شعار", "logo", "انفوجرافيك", "infographic", "ui", "ux", "xd", "picsart", "كرتون"],
+  },
+  "الحماية والاختراق": {
+    url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001",
+    keywords: ["حماية", "اختراق", "هاكينج", "سيبراني", "cyber", "hacking", "security", "كالي", "wireshark", "penetration", "kali", "burp", "dark web", "ethical", "تشفير", "forensic", "واى فاى", "wifi"],
+  },
+  "تعليم اللغات": {
+    url: "https://easyt.online/courses/category/08769726-0fae-4442-9519-3b178e2ec04a",
+    keywords: ["لغة", "لغات", "انجليزي", "فرنسي", "الماني", "صيني", "english", "french", "german", "chinese", "language", "توفل", "ايلتس", "toefl", "ielts", "نطق", "محادثة"],
+  },
+  "الديجيتال ماركيتنج": {
+    url: "https://easyt.online/courses/category/19606855-bae8-4588-98a6-b52819ff48d9",
+    keywords: ["ديجيتال", "ماركيتنج", "تسويق رقمي", "تسويق الكتروني", "اعلانات", "سيو", "seo", "marketing", "فيسبوك", "جوجل", "تيكتوك", "اعلان", "ads", "كوبي رايتنج", "copywriting", "ايميل", "email", "سوشيال", "محتوى", "content", "roas", "فانل", "funnel", "performance", "analytics", "tag manager", "شات بوت", "manychat", "واتساب", "لينكد ان", "linkedin", "بنتريست", "pinterest", "تليجرام", "cpa", "cpc", "ctr", "roi", "ميديا باينج", "media buying", "اسكريبت"],
+  },
+  "البرامج الهندسية": {
+    url: "https://easyt.online/courses/category/f3870633-bfcb-47a0-9c54-c2e71224571a",
+    keywords: ["هندسية", "هندسي", "اوتوكاد", "ريفت", "autocad", "revit", "3ds max", "ثري دي ماكس", "سوليد ووركس", "solidworks", "ماتلاب", "matlab", "بلندر", "blender", "لوميون", "lumion", "سكتش اب", "sketchup", "ايتابس", "etabs", "ساب", "sap", "ارشيكاد", "archicad", "maya", "مايا", "فيراى", "vray", "معماري", "سلامة", "صحة مهنية", "civil 3d", "arcgis"],
+  },
+  "تطوير وبرمجة المواقع والتطبيقات": {
+    url: "https://easyt.online/courses/category/124745a9-cc19-4524-886d-46b8d96a71eb",
+    keywords: ["برمجة مواقع", "تطوير مواقع", "تطوير تطبيقات", "html", "css", "javascript", "react", "angular", "flutter", "dart", "php", "laravel", "node", "nodejs", "django", "swift", "kotlin", "android", "bootstrap", "jquery", "mysql", "asp.net", "ruby", "react native", "firebase", "go", "golang", "rust"],
+  },
+  "الربح من الانترنت": {
+    url: "https://easyt.online/courses/category/7e3693f7-036e-4f16-a1ad-ef30a3678a43",
+    keywords: ["ربح", "فريلانس", "عمل حر", "دروبشيبنج", "dropshipping", "امازون", "شوبيفاي", "shopify", "تجارة الكترونية", "freelance", "يوتيوب", "بودكاست", "افليت", "affiliate", "fiverr", "فايفر", "ريسكين", "متجر", "دروب سيرفسينج", "طباعة", "ووكوميرس", "opencart", "بوابات دفع", "دومينات", "ميكرونيش", "salla", "سلة", "teachable"],
+  },
+  "تعليم أساسيات الكمبيوتر": {
+    url: "https://easyt.online/courses/category/0a28e8e3-c783-4e65-af69-7736cb4b1140",
+    keywords: ["ويندوز", "وورد", "اكسل", "بوربوينت", "اكسيس", "windows", "word", "excel", "powerpoint", "access", "كمبيوتر", "مايكروسوفت", "microsoft", "اوفيس", "office"],
+  },
+  "الإدارة العامة وإدارة الأعمال": {
+    url: "https://easyt.online/courses/category/2f7d934f-28a0-45c5-8212-7d27151585fc",
+    keywords: ["ادارة", "اعمال", "بيزنس", "مشروع", "ريادة", "management", "business", "hr", "توظيف", "قيادة", "جودة", "iso", "مشروعات", "agile", "scrum", "استراتيجية", "سكرتارية", "تصدير", "لوجيستيات", "سلاسل امداد", "kpi", "تدريب مدربين", "tot"],
+  },
+  "تربية وتعليم الأطفال": {
+    url: "https://easyt.online/courses/category/a02f9974-a95f-410f-a338-a1cd83ab658a",
+    keywords: ["اطفال", "تربية", "سكراتش", "scratch", "kids", "children", "طفل", "سلوك"],
+  },
+  "الاقتصاد والمحاسبة والاحصاء": {
+    url: "https://easyt.online/courses/category/19b919fe-ee58-4971-b525-ff1693b309b2",
+    keywords: ["اقتصاد", "محاسبة", "احصاء", "accounting", "economics", "statistics", "ضرائب", "ميزانية"],
+  },
+  "المهارات الشخصية وتطوير الذات": {
+    url: "https://easyt.online/courses/category/6d089e8e-8cdf-4fa8-8244-5c128bd16805",
+    keywords: ["مهارات", "تطوير ذات", "شخصية", "soft skills", "تواصل", "عرض", "ثقة", "تحفيز"],
+  },
+  "علم النفس": {
+    url: "https://easyt.online/courses/category/8ed523c6-b088-4e63-807e-8fe325c1dd88",
+    keywords: ["نفس", "psychology", "سيكولوجي", "نفسي", "علم نفس"],
+  },
+  "الذكاء الاصطناعى وتطبيقاته": {
+    url: "https://easyt.online/courses/category/98dc1962-99df-45fe-8ea6-c334260f279a",
+    keywords: ["ذكاء اصطناعي", "ai", "artificial intelligence", "chatgpt", "midjourney", "stable diffusion", "comfyui"],
+  },
+  "الفن والهوايات": {
+    url: "https://easyt.online/courses/category/d00d3c49-7ef3-4041-8e71-4c6b6ce5026d",
+    keywords: ["فن", "هوايات", "رسم", "خط", "art", "hobby", "موسيقى"],
+  },
+  "الروبوت والالكترونيات والشبكات": {
+    url: "https://easyt.online/courses/category/9a58b6bd-bf96-4a95-b87d-77b2a742c1b4",
+    keywords: ["روبوت", "الكترونيات", "شبكات", "اردوينو", "arduino", "network", "robot", "raspberry"],
+  },
+  "أساسيات البرمجة وقواعد البيانات": {
+    url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
+    keywords: ["اساسيات برمجة", "قواعد بيانات", "database", "sql", "بايثون اساسيات", "جافا", "c++", "سي بلس", "خوارزميات"],
+  },
+  "برمجة الذكاء الاصطناعي": {
+    url: "https://easyt.online/courses/category/90b79ad7-0d90-4b7c-ba87-6c222ac6f22f",
+    keywords: ["برمجة ذكاء", "machine learning", "deep learning", "تعلم آلي", "تعلم عميق", "neural", "tensorflow", "pytorch"],
+  },
+  "تصميم المواقع والتطبيقات": {
+    url: "https://easyt.online/courses/category/28a781a3-88fb-4460-bc68-7ea69aa2168d",
+    keywords: ["تصميم مواقع", "تصميم تطبيقات", "web design", "app design", "واجهة مستخدم"],
+  },
+  "الاستثمار والأسواق المالية": {
+    url: "https://easyt.online/courses/category/957e7f0d-ac31-49e6-939e-ead6134ccc3a",
+    keywords: ["استثمار", "اسواق مالية", "فوركس", "forex", "تداول", "trading", "بورصة", "اسهم", "crypto", "كريبتو", "عملات رقمية"],
+  },
+  "التسويق والمبيعات": {
+    url: "https://easyt.online/courses/category/f3ee963c-5e2d-44c3-b77e-1b118a438ee5",
+    keywords: ["مبيعات", "sales", "بيع", "تفاوض", "عملاء", "crm"],
+  },
+  "التصوير والمونتاج والأنيميشن": {
+    url: "https://easyt.online/courses/category/119ae93c-aade-459c-93df-6c6fb8c2e095",
+    keywords: ["تصوير", "مونتاج", "انيميشن", "فيديو", "premiere", "بريميير", "افتر افكتس", "after effects", "موشن", "motion", "animation"],
+  },
+};
 
 /* ══════════════════════════════════════════════════════════
    ═══ Arabic Normalization + Fuzzy Search
@@ -503,7 +604,7 @@ function markdownToHtml(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ isEducationalTerm — v7.9.7: Added Arabic patterns
+   ═══ isEducationalTerm — v7.9.9: Added marketing/business terms
    ══════════════════════════════════════════════════════════ */
 function isEducationalTerm(msg) {
   const eduTerms = [
@@ -542,6 +643,20 @@ function isEducationalTerm(msg) {
     "tiktok", "instagram", "facebook ads", "google ads",
     "copywriting", "content writing", "freelancing",
     "amazon fba", "dropshipping", "ecommerce", "e-commerce",
+    // v7.9.9: Marketing & Business terms
+    "roas", "roi", "cpa", "cpc", "ctr", "cpm",
+    "funnel", "funnels", "sales funnel",
+    "performance marketing", "media buying",
+    "google analytics", "tag manager", "google tag manager",
+    "retargeting", "remarketing", "lookalike", "pixel",
+    "conversion", "landing page", "lead generation",
+    "manychat", "chatbot", "chat bot",
+    "email marketing", "sms marketing",
+    "influencer marketing",
+    "affiliate marketing",
+    "growth hacking",
+    "ab testing", "a/b testing",
+    "zoho", "hubspot",
   ];
 
   const lower = msg.toLowerCase().trim();
@@ -566,6 +681,17 @@ function isEducationalTerm(msg) {
     { pattern: /علم\s*(بيانات|داتا)/i, term: "علم بيانات" },
     { pattern: /فوتوشوب|اليستريتر|بريميير|افتر افكتس/i, term: "تصميم" },
     { pattern: /بايثون|جافاسكريبت|بي اتش بي/i, term: "برمجة" },
+    // v7.9.9: Marketing & Business patterns
+    { pattern: /roas|roi|cpa|cpc|ctr|cpm/i, term: "ديجيتال ماركيتنج" },
+    { pattern: /(ميديا|media)\s*(باينج|buying)/i, term: "ميديا باينج" },
+    { pattern: /(سيلز|sales)?\s*(فانل|funnel)/i, term: "سيلز فانل" },
+    { pattern: /(اعلانات|اعلان)\s*(فيسبوك|انستجرام|جوجل|تيكتوك|سناب)/i, term: "اعلانات" },
+    { pattern: /كوبي\s*رايت/i, term: "كوبي رايتنج" },
+    { pattern: /شات\s*بوت/i, term: "شات بوت" },
+    { pattern: /تاج\s*مانجر/i, term: "تاج مانجر" },
+    { pattern: /جوجل\s*اناليتكس/i, term: "جوجل اناليتكس" },
+    { pattern: /ايميل\s*ماركيتنج/i, term: "ايميل ماركيتنج" },
+    { pattern: /لينكد\s*ان/i, term: "لينكد ان" },
   ];
 
   for (const { pattern, term } of arabicEduPatterns) {
@@ -608,6 +734,75 @@ function isCommunityQuestion(msg) {
     /group/i, /تليجرام/i, /واتساب/i, /واتس/i, /ديسكورد/i, /discord/i,
   ];
   return patterns.some((p) => p.test(msg));
+}
+
+/* ═══ v7.9.9: Category Question Detection ═══ */
+function isCategoryQuestion(msg) {
+  const patterns = [
+    /تصنيف/i, /تصنيفات/i, /اقسام/i, /أقسام/i,
+    /categories/i, /مجالات/i, /المجالات/i,
+    /ايه الاقسام/i, /ايه التصنيفات/i, /ايه المجالات/i,
+    /عندكم ايه/i, /بتقدموا ايه/i, /المتاح/i,
+    /فيه ايه/i, /عندكم كورسات في ايه/i,
+    /ايه الكورسات اللي عندكم/i, /ايه الدورات/i,
+    /فيها ايه المنصة/i, /المنصة فيها ايه/i,
+    /انواع الكورسات/i, /اقسام الكورسات/i,
+  ];
+  return patterns.some((p) => p.test(msg));
+}
+
+/* ═══ v7.9.9: Detect relevant category for search results ═══ */
+function detectRelevantCategory(searchTerms) {
+  if (!searchTerms || searchTerms.length === 0) return null;
+
+  const normTerms = searchTerms.map((t) => normalizeArabic(t.toLowerCase()));
+
+  let bestCategory = null;
+  let bestScore = 0;
+
+  for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+    let score = 0;
+    const normCatName = normalizeArabic(catName.toLowerCase());
+
+    for (const term of normTerms) {
+      if (term.length <= 1) continue;
+
+      if (normCatName.includes(term) || term.includes(normCatName)) {
+        score += 5;
+      }
+
+      for (const kw of catInfo.keywords) {
+        const normKw = normalizeArabic(kw.toLowerCase());
+        if (term === normKw) {
+          score += 4;
+        } else if (term.includes(normKw) || normKw.includes(term)) {
+          score += 2;
+        }
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCategory = { name: catName, url: catInfo.url };
+    }
+  }
+
+  return bestScore >= 2 ? bestCategory : null;
+}
+
+/* ═══ v7.9.9: Format all categories as HTML ═══ */
+function formatCategoriesList() {
+  let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong>\n\n`;
+
+  const categoryNames = Object.keys(CATEGORIES);
+  categoryNames.forEach((catName, i) => {
+    const catInfo = CATEGORIES[catName];
+    html += `${i + 1}. <a href="${catInfo.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${catName}</a>\n`;
+  });
+
+  html += `\n✨ اختار تصنيف وقولي اسمه وهجيبلك الكورسات المتاحة فيه!`;
+  html += `\n\n💡 أو تقدر تتصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات (+600 دورة)</a>`;
+  return html;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -653,7 +848,6 @@ function splitIntoSearchableTerms(terms) {
       }
     }
 
-    // v7.9.8: stop early if we have enough terms
     if (result.size >= 15) break;
   }
 
@@ -957,7 +1151,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     console.log("🔍 Search terms after split+expansion:", allTerms);
 
-    // v7.9.8: adaptive columns — fewer when many terms to prevent URL overflow
     const columnsToSearch =
       allTerms.length > 8
         ? ["title", "subtitle", "description"]
@@ -1201,7 +1394,6 @@ async function searchDiplomas(searchTerms) {
       `🔍 Diploma search: ${allTerms.length} terms × 2 columns = ${allTerms.length * 2} OR filters`
     );
 
-    // v7.9.8: REMOVED 'image' — column does not exist in diplomas table
     const { data, error } = await supabase
       .from("diplomas")
       .select("id, title, link, description, price")
@@ -1369,8 +1561,6 @@ function formatDiplomaCard(diploma, index) {
   }
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `$${priceNum}`;
 
-  // v7.9.8: safe fallback — diplomas table may not have image column
-
   const desc = diploma.description
     ? diploma.description.replace(/<[^>]*>/g, "").substring(0, 120) + "..."
     : "";
@@ -1515,7 +1705,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.8
+   ═══ MAIN CHAT ENDPOINT — v7.9.9
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1537,6 +1727,14 @@ app.post("/chat", limiter, async (req, res) => {
     console.log(`\n💬 [${sessionId}] "${cleanMessage}"`);
 
     await logChat(sessionId, "user", cleanMessage, null);
+
+    // v7.9.9: Handle category questions FIRST
+    if (isCategoryQuestion(cleanMessage)) {
+      const catReply = formatCategoriesList();
+      await logChat(sessionId, "bot", catReply, "CATEGORIES");
+      console.log(`📂 Categories question detected | ⏱️ ${Date.now() - startTime}ms`);
+      return res.json({ reply: catReply });
+    }
 
     const intentResult = await classifyIntent(cleanMessage);
     const {
@@ -1731,7 +1929,7 @@ app.post("/chat", limiter, async (req, res) => {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-reply = ``;
+      reply = ``;
       if (diplomas.length > 0) {
         reply += diplomas.map((d) => formatDiplomaCard(d)).join("");
         reply += "\n";
@@ -1750,6 +1948,14 @@ reply = ``;
 
       if (is_audience_question) {
         reply += `\n\n💡 لو عايز تعرف مستوى كورس معين، ادخل صفحة الكورس هتلاقي التفاصيل كاملة`;
+      }
+
+      // v7.9.9: Add category link
+      const detectedCat = detectRelevantCategory(termsToSearch);
+      if (detectedCat) {
+        reply += `\n\n<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
+<a href="${detectedCat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 تعرف على جميع كورسات ${detectedCat.name} ←</a>
+</div>`;
       }
 
       reply += `\n\n💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
@@ -2242,7 +2448,7 @@ app.get("/admin/courses", async (req, res) => {
   }
 });
 
-/* ═══ Search Test Endpoint — v7.9.8 ═══ */
+/* ═══ Search Test Endpoint — v7.9.9 ═══ */
 app.post("/admin/test-search", async (req, res) => {
   try {
     const { query } = req.body;
@@ -2281,12 +2487,16 @@ app.post("/admin/test-search", async (req, res) => {
 
     const splitTerms = splitIntoSearchableTerms(terms);
 
+    // v7.9.9: include detected category
+    const detectedCategory = detectRelevantCategory(terms);
+
     res.json({
       success: true,
       query,
       intent: intentResult,
       extracted_terms: terms,
       split_searchable_terms: splitTerms,
+      detected_category: detectedCategory,
       raw_results: {
         courses: courses.map((c) => ({
           id: c.id,
@@ -2356,7 +2566,7 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ═══ ADMIN DASHBOARD (HTML) — v7.9.8
+   ═══ ADMIN DASHBOARD (HTML) — v7.9.9
    ══════════════════════════════════════════════════════════ */
 app.get("/admin", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -2364,7 +2574,7 @@ app.get("/admin", (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🤖 زيكو Dashboard — v7.9.8</title>
+<title>🤖 زيكو Dashboard — v7.9.9</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
@@ -2391,6 +2601,7 @@ tr:hover{background:#16213e}
 .badge-general{background:#2a2a1e;color:#ffd93d}
 .badge-support{background:#3a1a1e;color:#ff6b6b}
 .badge-compare{background:#1a1a3e;color:#a29bfe}
+.badge-categories{background:#1a2a3e;color:#74b9ff}
 .badge-user{background:#1a2a3e;color:#74b9ff}
 .badge-bot{background:#2a1a2e;color:#fd79a8}
 input[type="text"],textarea,select{width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:13px;margin-bottom:10px}
@@ -2417,7 +2628,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <body>
 <div class="header">
 <h1>🤖 زيكو — لوحة التحكم</h1>
-<p>easyT Chatbot Dashboard — v7.9.8 | 🐛 Fixed query explosion + diplomas.image</p>
+<p>easyT Chatbot Dashboard — v7.9.9 | 📂 Categories + Marketing terms</p>
 </div>
 <div class="container">
 
@@ -2465,6 +2676,7 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 <option value="GENERAL">GENERAL</option>
 <option value="SUPPORT">SUPPORT</option>
 <option value="COMPARE">COMPARE</option>
+<option value="CATEGORIES">CATEGORIES</option>
 </select>
 <button class="btn-primary" onclick="loadLogs()">بحث</button>
 </div>
@@ -2475,9 +2687,9 @@ button{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:1
 
 <div id="tab-search-test" style="display:none">
 <div class="section">
-<h2>🔍 اختبار البحث (v7.9.8 — max 12 terms, adaptive columns)</h2>
+<h2>🔍 اختبار البحث (v7.9.9 — categories + marketing terms)</h2>
 <div class="search-box">
-<input type="text" id="testQuery" placeholder="جرب أي استعلام بحث مثل: تصميم الصور بالذكاء الاصطناعي">
+<input type="text" id="testQuery" placeholder="جرب أي استعلام بحث مثل: كورس ROAS أو اعلانات فيسبوك">
 <button class="btn-primary" onclick="testSearch()">🔍 اختبار</button>
 </div>
 <div id="testResult" class="test-result" style="display:none"></div>
@@ -2555,7 +2767,7 @@ document.getElementById('totalCourses').textContent=s.totalCourses.toLocaleStrin
 document.getElementById('totalDiplomas').textContent=s.totalDiplomas.toLocaleString();
 document.getElementById('totalCorrections').textContent=s.totalCorrections.toLocaleString();
 const ic=s.intentCounts||{};
-const colors={SEARCH:'#4ecdc4',GENERAL:'#ffd93d',SUPPORT:'#ff6b6b',COMPARE:'#a29bfe'};
+const colors={SEARCH:'#4ecdc4',GENERAL:'#ffd93d',SUPPORT:'#ff6b6b',COMPARE:'#a29bfe',CATEGORIES:'#74b9ff'};
 let ih='';
 for(const[k,v]of Object.entries(ic)){
 ih+='<div class="intent-bar" style="background:'+(colors[k]||'#888')+'">'+k+': '+v+'</div>';
@@ -2607,7 +2819,7 @@ const q=document.getElementById('testQuery').value;
 if(!q)return;
 const el=document.getElementById('testResult');
 el.style.display='block';
-el.textContent='⏳ جاري الاختبار (v7.9.8)...';
+el.textContent='⏳ جاري الاختبار (v7.9.9)...';
 try{
 const r=await fetch(API+'/admin/test-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
 const d=await r.json();
@@ -2727,12 +2939,17 @@ setInterval(loadStats,60000);
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    version: "7.9.8",
+    version: "7.9.9",
     features: [
-      "max 12 searchable terms (FIX)",
-      "adaptive columns (FIX)",
-      "diplomas.image removed (FIX)",
-      "synonym limit 3 per match (FIX)",
+      "22 categories with URLs + keywords (NEW)",
+      "isCategoryQuestion detection (NEW)",
+      "detectRelevantCategory mapping (NEW)",
+      "category link after search results (NEW)",
+      "expanded marketing terms: ROAS, CPA, funnel... (NEW)",
+      "max 12 searchable terms",
+      "adaptive columns",
+      "diplomas.image removed",
+      "synonym limit 3 per match",
       "word splitting search",
       "Arabic prefix stripping",
       "Arabic edu term detection",
@@ -2757,7 +2974,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.8",
+    version: "7.9.9",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -2777,10 +2994,10 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.8                   ║
+║  🤖 زيكو Chatbot — v7.9.9                   ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin                        ║
-║  🐛 Fixed: query explosion + diplomas.image  ║
+║  📂 Categories + Marketing terms             ║
 ║  ⏰ ${new Date().toISOString()}              ║
 ╚══════════════════════════════════════════════╝
   `);
