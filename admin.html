@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v12.1</title>
+<title>easyT Admin Dashboard v12</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body {
@@ -131,9 +131,6 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* ═══════════════════════════════════════
-   CHAT STYLES
-   ═══════════════════════════════════════ */
 .chat-wrap {
   border-radius: 12px;
   overflow: hidden;
@@ -187,7 +184,6 @@ input:focus, textarea:focus, select:focus {
   color: #075e54;
 }
 
-/* ═══ FLAT VIEW ═══ */
 .flat-date {
   text-align: center;
   margin: 12px 0;
@@ -207,8 +203,13 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 4px;
 }
 
-.flat-msg.user-msg { justify-content: flex-end; }
-.flat-msg.bot-msg { justify-content: flex-start; }
+.flat-msg.user-msg {
+  justify-content: flex-end;
+}
+
+.flat-msg.bot-msg {
+  justify-content: flex-start;
+}
 
 .flat-bubble {
   max-width: 75%;
@@ -241,8 +242,16 @@ input:focus, textarea:focus, select:focus {
   justify-content: flex-end;
 }
 
-.flat-time { font-size: 10px; color: #8696a0; }
-.flat-id { font-size: 9px; color: #b0bec5; font-family: monospace; }
+.flat-time {
+  font-size: 10px;
+  color: #8696a0;
+}
+
+.flat-id {
+  font-size: 9px;
+  color: #b0bec5;
+  font-family: monospace;
+}
 
 .flat-role {
   font-size: 10px;
@@ -289,62 +298,16 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
 }
 
-.flat-msg.user-msg .flat-seq { background: #075e54; color: #fff; }
-.flat-msg.bot-msg .flat-seq { background: #1a73e8; color: #fff; }
-
-/* ═══════════════════════════════════════
-   🆕 BOT HTML CONTENT RENDERING
-   ═══════════════════════════════════════ */
-.bot-html-content {
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: #1e293b;
+.flat-msg.user-msg .flat-seq {
+  background: #075e54;
+  color: #fff;
 }
 
-.bot-html-content a {
-  color: #1a73e8;
-  text-decoration: underline;
-  word-break: break-all;
+.flat-msg.bot-msg .flat-seq {
+  background: #1a73e8;
+  color: #fff;
 }
 
-.bot-html-content a:hover {
-  color: #1557b0;
-}
-
-.bot-html-content img {
-  max-width: 70px;
-  max-height: 70px;
-  border-radius: 8px;
-  object-fit: cover;
-  display: block;
-  margin: 4px 0;
-}
-
-.bot-html-content b,
-.bot-html-content strong {
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.bot-html-content br {
-  line-height: 1.2;
-}
-
-.bot-html-content div {
-  margin-bottom: 4px;
-}
-
-/* Course card rendered inside chat */
-.bot-html-content > div[style*="display:flex"],
-.bot-html-content > div[style*="display: flex"] {
-  background: #fafafa;
-  border-radius: 10px !important;
-  padding: 10px !important;
-  margin-bottom: 8px !important;
-  border: 1px solid #eee !important;
-}
-
-/* ═══ GROUPED VIEW ═══ */
 .qa-card {
   background: #fff;
   border-radius: 14px;
@@ -445,21 +408,6 @@ input:focus, textarea:focus, select:focus {
   border-radius: 8px;
   border: 1px solid #bbf7d0;
   margin-top: 6px;
-  overflow: hidden;
-}
-
-/* Bot HTML inside qa-answer-text */
-.qa-answer-text a {
-  color: #1a73e8;
-  text-decoration: underline;
-  word-break: break-all;
-}
-
-.qa-answer-text img {
-  max-width: 70px;
-  max-height: 70px;
-  border-radius: 8px;
-  object-fit: cover;
 }
 
 .qa-no-reply {
@@ -486,6 +434,14 @@ input:focus, textarea:focus, select:focus {
 
 .qa-correct-btn:hover { background: #fde68a; }
 
+.qa-answer-meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .qa-date {
   text-align: center;
   margin: 16px 0;
@@ -509,8 +465,6 @@ input:focus, textarea:focus, select:focus {
   border-top: 1px solid #e5e7eb;
 }
 
-/* ═══════════════════════════════════════ */
-
 .badge {
   display: inline-block;
   padding: 2px 8px;
@@ -525,6 +479,7 @@ input:focus, textarea:focus, select:focus {
 .badge-red { background: #fee2e2; color: #991b1b; }
 .badge-purple { background: #f3e8ff; color: #7c3aed; }
 .badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-indigo { background: #e0e7ff; color: #4338ca; }
 
 .login-box { max-width: 360px; margin: 120px auto; text-align: center; }
 
@@ -719,33 +674,6 @@ input:focus, textarea:focus, select:focus {
 .debug-row { font-family: monospace; font-size: 11px; }
 .debug-row:nth-child(odd) { background: #f9fafb; }
 
-/* ═══ Raw/Rendered toggle ═══ */
-.content-toggle {
-  display: inline-flex;
-  gap: 2px;
-  background: #f1f5f9;
-  border-radius: 6px;
-  padding: 2px;
-  margin-top: 6px;
-}
-
-.content-toggle-btn {
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: none;
-  font-size: 9px;
-  cursor: pointer;
-  color: #64748b;
-  background: transparent;
-  font-weight: 600;
-}
-
-.content-toggle-btn.active {
-  background: #fff;
-  color: #1e293b;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
 @media (max-width: 768px) {
   .sidebar { width: 100%; height: auto; position: relative; }
   .main { margin-right: 0; }
@@ -773,7 +701,7 @@ input:focus, textarea:focus, select:focus {
   <div class="sidebar">
     <div style="padding:16px 20px;border-bottom:1px solid #334155">
       <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.1 — HTML Render Fix</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12 — Bot Instructions</div>
     </div>
     <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
     <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
@@ -819,19 +747,20 @@ input:focus, textarea:focus, select:focus {
     <!-- Corrections -->
     <div id="tab-corrections" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">✅ التصحيحات</h2>
-      <div class="learning-badge" style="margin-bottom:12px">🧠 البوت بيقرأ التصحيحات دي قبل ما يرد</div>
+      <div class="learning-badge" style="margin-bottom:12px">🧠 البوت بيقرأ التصحيحات دي قبل ما يرد — أولوية قصوى!</div>
       <button class="btn btn-success btn-sm" onclick="openAddCorrectionModal()" style="margin-bottom:12px">+ إضافة تصحيح</button>
       <div class="card" id="corrList"></div>
     </div>
 
-    <!-- Bot Instructions -->
+    <!-- 🆕 Bot Instructions -->
     <div id="tab-botinstructions" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">🧠 تعليمات البوت</h2>
       <div class="prompt-badge" style="margin-bottom:12px">
-        📝 اكتب هنا التعليمات بالعربي — البوت هيتبعها في كل ردوده
+        📝 اكتب هنا التعليمات بالعربي العادي — البوت هيتبعها بالحرف في كل ردوده.<br>
+        <b>مثال:</b> "لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان" أو "ما تقولش للعميل يروح موقع تاني"
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="botInstructionsSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadBotInstructions()" style="max-width:400px;margin:0">
+        <input type="text" id="botInstructionsSearch" placeholder="🔍 بحث في التعليمات..." onkeydown="if(event.key==='Enter')loadBotInstructions()" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadBotInstructions()">بحث</button>
         <button class="btn btn-success btn-sm" onclick="openAddBotInstructionModal()">+ تعليمة جديدة</button>
       </div>
@@ -841,7 +770,7 @@ input:focus, textarea:focus, select:focus {
     <!-- Custom Responses -->
     <div id="tab-customresponses" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة</h2>
-      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT</div>
+      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT — ردود ثابتة بكلمات مفتاحية</div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <input type="text" id="customresponsesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
@@ -950,55 +879,6 @@ var _convSessionId = '';
 function esc(t) {
   if (t == null) return '';
   return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-/**
- * 🆕 sanitizeHtml — شايل الـ tags الخطرة بس وسايب الباقي يترندر
- * بيشيل: script, iframe, object, embed, form, event handlers, javascript: URLs
- * بيسيب: a, img, div, span, b, strong, br, etc.
- */
-function sanitizeHtml(html) {
-  if (!html) return '';
-  var clean = String(html);
-  // Remove dangerous tags completely
-  clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  clean = clean.replace(/<\/script>/gi, '');
-  clean = clean.replace(/<iframe\b[\s\S]*?(?:<\/iframe>|$)/gi, '');
-  clean = clean.replace(/<object\b[\s\S]*?(?:<\/object>|$)/gi, '');
-  clean = clean.replace(/<embed\b[^>]*\/?>/gi, '');
-  clean = clean.replace(/<form\b[\s\S]*?(?:<\/form>|$)/gi, '');
-  clean = clean.replace(/<style\b[\s\S]*?(?:<\/style>|$)/gi, '');
-  clean = clean.replace(/<link\b[^>]*\/?>/gi, '');
-  clean = clean.replace(/<meta\b[^>]*\/?>/gi, '');
-  // Remove ALL event handlers (onclick, onerror, onload, etc.)
-  clean = clean.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  // Remove javascript: URLs
-  clean = clean.replace(/(href|src|action)\s*=\s*"javascript:[^"]*"/gi, '$1="#"');
-  clean = clean.replace(/(href|src|action)\s*=\s*'javascript:[^']*'/gi, "$1='#'");
-  // Add target=_blank and rel=noopener to all links for safety
-  clean = clean.replace(/<a\s/gi, '<a rel="noopener noreferrer" ');
-  return clean;
-}
-
-/**
- * 🆕 renderContent — بترندر المحتوى حسب نوعه
- * المستخدم → escape (أمان)
- * البوت → sanitize + render HTML (عشان الكروت والصور تظهر)
- */
-function renderContent(text, isBot) {
-  if (!text) return '';
-  text = String(text);
-  if (!isBot) {
-    // User messages: always escape
-    return esc(text);
-  }
-  // Bot messages: check if it contains HTML
-  if (/<[a-z][\s\S]*>/i.test(text)) {
-    // Contains HTML → sanitize and render
-    return '<div class="bot-html-content">' + sanitizeHtml(text) + '</div>';
-  }
-  // Plain text bot message → escape
-  return esc(text);
 }
 
 function stripHtml(t) {
@@ -1202,7 +1082,7 @@ function closeConvDetail() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 💬 CHAT — SORTING + RENDERING
+// 💬 CHAT — FIXED SORTING + FLAT/GROUPED VIEWS
 // ═══════════════════════════════════════════════════════════
 function sortMessages(messages) {
   return messages.slice().sort(function(a, b) {
@@ -1238,10 +1118,6 @@ async function loadConvDetail(sid) {
       return;
     }
     _convSortedMessages = sortMessages(messages);
-    console.log('═══ Sorted Messages ═══');
-    _convSortedMessages.forEach(function(m, i) {
-      console.log('#' + i, 'id:' + m.id, 'role:' + m.role, 'time:' + m.created_at, 'hasHTML:' + (/<[a-z]/i.test(m.content||'')));
-    });
     renderConversation();
   } catch(e) {
     console.error(e);
@@ -1272,18 +1148,15 @@ function renderConversation() {
   else h += renderDebug(messages);
   h += '</div>';
   h += '<div class="chat-foot">';
-  if (_convViewMode === 'flat') h += '🟢 أخضر = المستخدم | ⬜ أبيض = البوت (HTML بيترندر تلقائي) | الترتيب حسب الوقت';
-  else if (_convViewMode === 'grouped') h += '🔵 سؤال المستخدم | 🟢 رد البوت (بالكروت والصور) | 📦 كل كارت = سؤال + رد';
-  else h += '🔧 Debug view — البيانات الخام مرتبة (escaped بالكامل)';
+  if (_convViewMode === 'flat') h += '🟢 أخضر = المستخدم | ⬜ أبيض = البوت | الترتيب حسب الوقت الفعلي';
+  else if (_convViewMode === 'grouped') h += '🔵 سؤال المستخدم | 🟢 رد البوت | 📦 كل كارت = سؤال + رد';
+  else h += '🔧 Debug view — البيانات الخام مرتبة';
   h += '</div></div>';
   wrap.innerHTML = h;
   var sb = document.getElementById('chatBodyScroll');
   if(sb) sb.scrollTop = sb.scrollHeight;
 }
 
-// ═══════════════════════════════════════
-// 📋 FLAT VIEW — 🆕 بيرندر HTML ردود البوت
-// ═══════════════════════════════════════
 function renderFlat(messages, sid) {
   var h = '';
   var lastDate = '';
@@ -1298,20 +1171,16 @@ function renderFlat(messages, sid) {
     }
     h += '<div class="flat-msg ' + (isUser ? 'user-msg' : 'bot-msg') + '">';
     h += '<div class="flat-bubble">';
-    // Role label
     h += '<div class="flat-role">';
     h += '<span class="flat-seq">' + seq + '</span> ';
     h += isUser ? '👤 المستخدم' : '🤖 البوت';
     if (m.intent) h += ' <span class="flat-intent">' + esc(m.intent) + '</span>';
     h += '</div>';
-    // 🆕 Content — bot messages render HTML, user messages escaped
-    h += '<div class="flat-content">' + renderContent(m.content || '', !isUser) + '</div>';
-    // Meta
+    h += '<div>' + esc(m.content || '').slice(0, 3000) + '</div>';
     h += '<div class="flat-meta">';
     h += '<span class="flat-id">ID: ' + (m.id || '?') + '</span>';
     h += '<span class="flat-time">' + fmtTime(m.created_at) + '</span>';
     h += '</div>';
-    // Correction button for bot
     if (!isUser) {
       var prevUser = findPrevUserMsg(messages, seq - 1);
       var safeQ = '';
@@ -1330,9 +1199,6 @@ function findPrevUserMsg(messages, beforeIdx) {
   return null;
 }
 
-// ═══════════════════════════════════════
-// 📦 GROUPED VIEW — 🆕 بيرندر HTML ردود البوت
-// ═══════════════════════════════════════
 function renderGrouped(messages, sid) {
   var h = '';
   var groups = [];
@@ -1376,20 +1242,18 @@ function renderGrouped(messages, sid) {
     else if (g.question && g.question.intent) h += '<span class="qa-tag">' + esc(g.question.intent) + '</span>';
     h += '<span class="qa-time">🕐 ' + fmtTime(firstMsg ? firstMsg.created_at : '') + '</span>';
     h += '</div>';
-    // Question — always escaped (user input)
     if (g.question) {
       h += '<div class="qa-question">';
       h += '<span class="qa-question-label">👤 سؤال المستخدم</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (g.question.id||'?') + ' | ' + fmtTime(g.question.created_at) + '</span>';
-      h += '<div class="qa-question-text">' + esc(g.question.content || '') + '</div>';
+      h += '<div class="qa-question-text">' + esc(g.question.content || '').slice(0, 1500) + '</div>';
       h += '</div>';
     }
-    // 🆕 Answers — render HTML for bot messages
     g.answers.forEach(function(ans, ai) {
       h += '<div class="qa-answer">';
       h += '<span class="qa-answer-label">🤖 ' + (g.botOnly ? 'رسالة تلقائية' : (ai === 0 ? 'رد البوت' : 'رد إضافي ' + (ai+1))) + '</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (ans.id||'?') + ' | ' + fmtTime(ans.created_at) + '</span>';
-      h += '<div class="qa-answer-text">' + renderContent(ans.content || '', true) + '</div>';
+      h += '<div class="qa-answer-text">' + esc(ans.content || '').slice(0, 5000) + '</div>';
       if (!g.botOnly) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent((g.question ? g.question.content : '').slice(0,500)))); } catch(e){}
@@ -1403,31 +1267,26 @@ function renderGrouped(messages, sid) {
   return h;
 }
 
-// ═══════════════════════════════════════
-// 🔧 DEBUG VIEW — always escaped (raw data)
-// ═══════════════════════════════════════
 function renderDebug(messages) {
   var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto">';
-  h += '<h4 style="margin:0 0 8px;font-size:13px;color:#64748b">🔧 ترتيب الرسائل الفعلي — كل حاجة escaped</h4>';
+  h += '<h4 style="margin:0 0 8px;font-size:13px;color:#64748b">🔧 ترتيب الرسائل الفعلي (مرتب حسب created_at → id)</h4>';
   h += '<table style="font-size:11px"><thead><tr>';
-  h += '<th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>HTML?</th><th>created_at</th><th>Content (أول 100 حرف)</th>';
+  h += '<th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>created_at</th><th>Content (أول 80 حرف)</th>';
   h += '</tr></thead><tbody>';
   messages.forEach(function(m, i) {
     var rowColor = m.role === 'user' ? '#dcf8c6' : '#fff';
-    var hasHtml = /<[a-z]/i.test(m.content || '');
     h += '<tr class="debug-row" style="background:' + rowColor + '">';
     h += '<td><b>' + (i + 1) + '</b></td>';
     h += '<td>' + (m.id || '?') + '</td>';
-    h += '<td>' + (m.role === 'user' ? '👤' : '🤖') + '</td>';
+    h += '<td>' + (m.role === 'user' ? '👤 user' : '🤖 bot') + '</td>';
     h += '<td>' + esc(m.intent || '-') + '</td>';
-    h += '<td>' + (hasHtml ? '<span class="badge badge-purple">HTML</span>' : 'text') + '</td>';
     h += '<td style="font-family:monospace;font-size:10px;white-space:nowrap">' + esc(m.created_at || '-') + '</td>';
-    h += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content || '').slice(0, 100)) + '</td>';
+    h += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content || '').slice(0, 80)) + '</td>';
     h += '</tr>';
   });
   h += '</tbody></table>';
-  h += '<div style="margin-top:8px;padding:8px;background:#dbeafe;border-radius:6px;font-size:11px;color:#1d4ed8">';
-  h += '💡 <b>HTML?</b> = الرسالة فيها HTML tags (كروت كورسات/صور). في المسطح والمجمّع بتترندر — هنا بتتعرض خام.';
+  h += '<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">';
+  h += '💡 <b>لو الترتيب غلط هنا</b> يبقى المشكلة من الباك اند. لو صح هنا بس غلط في المجمّع، يبقى مشكلة الـ grouping.';
   h += '</div></div>';
   return h;
 }
@@ -1439,8 +1298,8 @@ function openCorrection(logId, sid, safeQ, btn) {
   var original = '';
   var bubble = btn.closest('.flat-bubble') || btn.closest('.qa-answer');
   if (bubble) {
-    var c = bubble.querySelector('.qa-answer-text') || bubble.querySelector('.flat-content') || bubble;
-    original = c.innerText || c.textContent || '';
+    var c = bubble.querySelector('.qa-answer-text') || bubble;
+    original = c.textContent || '';
   }
   var uq = '';
   try { uq = decodeURIComponent(escape(atob(safeQ))); } catch(e) {}
@@ -1451,7 +1310,7 @@ function openCorrection(logId, sid, safeQ, btn) {
     '<label style="font-size:12px;font-weight:600">سؤال المستخدم:</label>'+
     '<input type="text" id="corrQuestion" value="'+esc(uq)+'" style="margin-top:4px;margin-bottom:8px;background:#e0f2fe">'+
     '<label style="font-size:12px;font-weight:600;color:#64748b">الإجابة الحالية:</label>'+
-    '<div style="background:#fee2e2;padding:8px;border-radius:6px;font-size:12px;margin-bottom:12px;max-height:100px;overflow-y:auto;border:1px solid #fca5a5">'+esc(original.slice(0,500))+'</div>'+
+    '<div style="background:#fee2e2;padding:8px;border-radius:6px;font-size:12px;margin-bottom:12px;max-height:100px;overflow-y:auto;border:1px solid #fca5a5">'+esc(original.slice(0,300))+'</div>'+
     '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة الصحيحة:</label>'+
     '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac"></textarea>'+
     '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة:</label>'+
@@ -1491,17 +1350,17 @@ async function loadCorrections() {
 }
 
 // ═══════════════════════════════════════
-// 🧠 BOT INSTRUCTIONS
+// 🧠 BOT INSTRUCTIONS — 🆕 v12
 // ═══════════════════════════════════════
 var BOT_INSTRUCTION_CATEGORIES = [
-  { value: 'GENERAL', label: '🌐 عام', desc: 'تعليمات عامة' },
-  { value: 'STYLE', label: '🎨 أسلوب', desc: 'طريقة الرد' },
-  { value: 'RULES', label: '⛔ قواعد', desc: 'ممنوعات' },
-  { value: 'COURSE_SEARCH', label: '📚 كورسات', desc: 'عرض الكورسات' },
-  { value: 'SUPPORT', label: '🛠️ دعم', desc: 'مشاكل تقنية' },
-  { value: 'PAYMENT', label: '💳 دفع', desc: 'الاشتراك' },
-  { value: 'ACCESS', label: '🔐 وصول', desc: 'تسجيل دخول' },
-  { value: 'GREETING', label: '👋 ترحيب', desc: 'رسالة أولى' },
+  { value: 'GENERAL', label: '🌐 عام', desc: 'تعليمات تنطبق على كل الردود' },
+  { value: 'STYLE', label: '🎨 أسلوب الكلام', desc: 'طريقة الرد واللهجة' },
+  { value: 'RULES', label: '⛔ قواعد وممنوعات', desc: 'حاجات البوت مش هيعملها' },
+  { value: 'COURSE_SEARCH', label: '📚 البحث عن كورسات', desc: 'تعليمات خاصة بعرض الكورسات' },
+  { value: 'SUPPORT', label: '🛠️ الدعم الفني', desc: 'تعليمات للمشاكل التقنية' },
+  { value: 'PAYMENT', label: '💳 الدفع', desc: 'تعليمات خاصة بالدفع والاشتراك' },
+  { value: 'ACCESS', label: '🔐 الوصول', desc: 'تعليمات مشاكل تسجيل الدخول' },
+  { value: 'GREETING', label: '👋 الترحيب', desc: 'تعليمات الرسالة الأولى' },
 ];
 
 async function loadBotInstructions() {
@@ -1513,51 +1372,83 @@ async function loadBotInstructions() {
     var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
     var items = d.items || [];
     _botInstructionsCache = items.slice();
+
     if (!items.length) {
-      el.innerHTML = '<div class="card" style="text-align:center;padding:30px"><div style="font-size:48px;margin-bottom:12px">📝</div><p style="color:#94a3b8;margin-bottom:12px">مفيش تعليمات لسه</p><button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف أول تعليمة</button></div>';
+      el.innerHTML = '<div class="card" style="text-align:center;padding:30px">' +
+        '<div style="font-size:48px;margin-bottom:12px">📝</div>' +
+        '<p style="color:#94a3b8;margin-bottom:12px">مفيش تعليمات لسه — البوت بيستخدم الإعدادات الافتراضية</p>' +
+        '<button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف أول تعليمة</button>' +
+        '</div>';
       return;
     }
+
+    // Group by category
     var grouped = {};
     items.forEach(function(item) {
       var cat = item.category || 'GENERAL';
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(item);
     });
+
     var html = '';
+
+    // Summary bar
     var activeCount = items.filter(function(i) { return i.is_active !== false; }).length;
     html += '<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:12px">';
     html += '<span style="font-size:13px"><b>' + items.length + '</b> تعليمة</span>';
     html += '<span style="font-size:13px;color:#16a34a"><b>' + activeCount + '</b> مفعّلة ✅</span>';
     html += '<span style="font-size:13px;color:#dc2626"><b>' + (items.length - activeCount) + '</b> موقفة ❌</span>';
+    html += '<span style="font-size:11px;color:#94a3b8;margin-right:auto">البوت بيقرأ كل التعليمات المفعّلة قبل كل رد</span>';
     html += '</div>';
+
+    // Render each category group
     for (var catKey in grouped) {
       var catItems = grouped[catKey];
       var catInfo = BOT_INSTRUCTION_CATEGORIES.find(function(c) { return c.value === catKey; });
       var catLabel = catInfo ? catInfo.label : catKey;
+      var catDesc = catInfo ? catInfo.desc : '';
+
       html += '<div class="card" style="margin-bottom:12px">';
       html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0">';
       html += '<span class="category-tag cat-' + catKey + '">' + catLabel + '</span>';
+      html += '<span style="font-size:11px;color:#94a3b8">' + catDesc + '</span>';
       html += '<span style="font-size:12px;color:#64748b;margin-right:auto">' + catItems.length + ' تعليمة</span>';
       html += '</div>';
+
       html += '<div style="display:grid;gap:10px">';
-      catItems.forEach(function(item) {
+      catItems.forEach(function(item, idx) {
         var ia = item.is_active !== false;
         var globalIdx = _botInstructionsCache.indexOf(item);
         html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '">';
+
+        // Header
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-        html += '<span style="font-size:11px;color:#94a3b8">#' + item.id + ' | أولوية: ' + (item.priority || 0) + '</span>';
+        html += '<div style="display:flex;align-items:center;gap:8px">';
+        html += '<span style="font-size:11px;color:#94a3b8">#' + item.id + '</span>';
+        html += '<div class="priority-bar">';
+        html += '<span>أولوية: ' + (item.priority || 0) + '</span>';
+        html += renderPriorityDots(item.priority);
+        html += '</div>';
+        html += '</div>';
         html += '<span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + ';font-weight:700">' + (ia ? '✅ مفعّل' : '❌ موقف') + '</span>';
         html += '</div>';
+
+        // Instruction text
         html += '<div class="instruction-text">' + esc(item.instruction || '') + '</div>';
+
+        // Footer
         html += '<div style="display:flex;gap:6px;margin-top:8px;align-items:center">';
-        html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + globalIdx + ')">✏️</button>';
-        html += '<button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️' : '▶️') + '</button>';
+        html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + globalIdx + ')">✏️ تعديل</button>';
+        html += '<button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️ إيقاف' : '▶️ تفعيل') + '</button>';
         html += '<button class="btn btn-danger btn-sm" onclick="deleteBotInstruction(\'' + item.id + '\')">🗑️</button>';
         html += '<span style="font-size:10px;color:#94a3b8;margin-right:auto">' + fmtFull(item.created_at) + '</span>';
-        html += '</div></div>';
+        html += '</div>';
+
+        html += '</div>';
       });
       html += '</div></div>';
     }
+
     el.innerHTML = html;
   } catch(e) {
     el.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p></div>';
@@ -1566,7 +1457,7 @@ async function loadBotInstructions() {
 
 function openAddBotInstructionModal() {
   modalState = { type: 'bot_instruction_add' };
-  document.getElementById('modalTitle').textContent = '➕ تعليمة جديدة';
+  document.getElementById('modalTitle').textContent = '➕ تعليمة جديدة للبوت';
   document.getElementById('modalBody').innerHTML = buildBIForm(null);
   document.getElementById('modal').classList.add('show');
 }
@@ -1575,7 +1466,7 @@ function openEditBotInstruction(idx) {
   var item = _botInstructionsCache[idx];
   if (!item) return;
   modalState = { type: 'bot_instruction_edit', id: item.id };
-  document.getElementById('modalTitle').textContent = '✏️ تعديل التعليمة';
+  document.getElementById('modalTitle').textContent = '✏️ تعديل التعليمة #' + item.id;
   document.getElementById('modalBody').innerHTML = buildBIForm(item);
   document.getElementById('modal').classList.add('show');
 }
@@ -1585,25 +1476,67 @@ function buildBIForm(item) {
   var cat = item ? (item.category || 'GENERAL') : 'GENERAL';
   var p = item ? (item.priority != null ? item.priority : 10) : 10;
   var a = item ? (item.is_active !== false) : true;
-  var h = '<label style="font-size:12px;font-weight:600">التعليمة:</label>';
-  h += '<textarea id="bi_instruction" rows="5" style="margin-top:4px;margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="مثلاً: لما حد يسأل عن سعر الاشتراك قوله 49$...">' + inst + '</textarea>';
-  h += '<div style="display:flex;gap:12px;margin-bottom:12px"><div style="flex:1"><label style="font-size:12px;font-weight:600">التصنيف:</label><select id="bi_category" style="margin-top:4px">';
+
+  var h = '';
+  h += '<div class="prompt-badge" style="margin-bottom:12px">📝 اكتب التعليمة بالعربي العادي — البوت هيفهمها ويتبعها</div>';
+
+  h += '<label style="font-size:12px;font-weight:600">التعليمة:</label>';
+  h += '<textarea id="bi_instruction" rows="6" style="margin-top:4px;margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="مثلاً: لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان...">' + inst + '</textarea>';
+
+  h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+
+  h += '<div style="flex:1;min-width:180px">';
+  h += '<label style="font-size:12px;font-weight:600">التصنيف:</label>';
+  h += '<select id="bi_category" style="margin-top:4px">';
   BOT_INSTRUCTION_CATEGORIES.forEach(function(c) {
-    h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + '</option>';
+    h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + ' — ' + c.desc + '</option>';
   });
-  h += '</select></div><div style="flex:0 0 100px"><label style="font-size:12px;font-weight:600">الأولوية:</label><input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px"></div></div>';
-  h += '<div style="display:flex;align-items:center;gap:8px"><label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label><span style="font-size:13px">مفعّل</span></div>';
+  h += '</select>';
+  h += '</div>';
+
+  h += '<div style="flex:0 0 120px">';
+  h += '<label style="font-size:12px;font-weight:600">الأولوية:</label>';
+  h += '<input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px">';
+  h += '<div style="font-size:10px;color:#94a3b8;margin-top:2px">0 = أقل | 100 = أعلى</div>';
+  h += '</div>';
+
+  h += '</div>';
+
+  h += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#f8fafc;border-radius:8px">';
+  h += '<label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+  h += '<span style="font-size:13px">مفعّل — البوت هيقرأ التعليمة دي</span>';
+  h += '</div>';
+
+  // Examples
+  h += '<div style="margin-top:12px;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">';
+  h += '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">💡 أمثلة لتعليمات:</div>';
+  h += '<div style="font-size:11px;color:#78350f;line-height:2">';
+  h += '▸ "لما حد يسأل عن سعر الاشتراك قوله إن العرض الحالي 49$ بدل 59$"<br>';
+  h += '▸ "ما تقترحش أي منصة تانية غير إيزي تي"<br>';
+  h += '▸ "لو حد قالك مشكلة في الفيديو، قوله يجرب Chrome ويمسح الكاش"<br>';
+  h += '▸ "كلم العميل بعامية مصرية واستخدم إيموجي خفيف"<br>';
+  h += '▸ "لو حد سأل عن كورس مش موجود، اقترح عليه أقرب كورس متاح"<br>';
+  h += '</div></div>';
+
   return h;
 }
 
 async function toggleBotInstruction(id, val) {
-  try { await apiCall('/admin/bot-instructions/' + id, { method: 'PUT', body: JSON.stringify({ is_active: val }) }); toast(val ? '✅ تفعيل' : '⏸️ إيقاف'); loadBotInstructions(); } catch(e) { toast('خطأ', 'error'); }
+  try {
+    await apiCall('/admin/bot-instructions/' + id, { method: 'PUT', body: JSON.stringify({ is_active: val }) });
+    toast(val ? '✅ تم التفعيل' : '⏸️ تم الإيقاف');
+    loadBotInstructions();
+  } catch(e) { toast('خطأ', 'error'); }
 }
 
 async function deleteBotInstruction(id) {
   var ok = await showConfirm('حذف التعليمة؟');
   if (!ok) return;
-  try { await apiCall('/admin/bot-instructions/' + id, { method: 'DELETE' }); toast('تم ✅'); loadBotInstructions(); } catch(e) { toast('خطأ', 'error'); }
+  try {
+    await apiCall('/admin/bot-instructions/' + id, { method: 'DELETE' });
+    toast('تم الحذف ✅');
+    loadBotInstructions();
+  } catch(e) { toast('خطأ', 'error'); }
 }
 
 // ═══════════════════════════════════════
@@ -1668,7 +1601,7 @@ function buildCRForm(item) {
 }
 
 async function toggleCustomResponse(id, val) {
-  try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅':'⏸️'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); }
+  try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅ تفعيل':'⏸️ إيقاف'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); }
 }
 
 async function deleteCustomResponse(id) {
@@ -1757,6 +1690,7 @@ function openEditModal(entity, item) {
 
 async function saveModal() {
   try {
+    // Correction
     if(modalState.type==='correction'||modalState.type==='correction_manual') {
       var b = {
         chat_log_id: modalState.logId||null,
@@ -1768,10 +1702,12 @@ async function saveModal() {
       };
       if(!b.corrected_answer) { toast('اكتب الإجابة!','error'); return; }
       await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
-      closeModal(); toast('تم ✅');
+      closeModal(); toast('تم التصحيح ✅');
       if(currentTab==='corrections') loadCorrections();
       return;
     }
+
+    // Custom Response
     if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
       var cr = {
         title: document.getElementById('cr_title').value,
@@ -1782,11 +1718,16 @@ async function saveModal() {
         is_active: document.getElementById('cr_active').checked
       };
       if(!cr.title||!cr.keywords||!cr.response) { toast('املأ الحقول!','error'); return; }
-      if(modalState.type==='custom_response_add') await apiCall('/admin/custom-responses',{method:'POST',body:JSON.stringify(cr)});
-      else await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
+      if(modalState.type==='custom_response_add') {
+        await apiCall('/admin/custom-responses',{method:'POST',body:JSON.stringify(cr)});
+      } else {
+        await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
+      }
       closeModal(); toast('تم ✅'); loadCustomResponses();
       return;
     }
+
+    // 🆕 Bot Instruction
     if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
       var bi = {
         instruction: document.getElementById('bi_instruction').value,
@@ -1794,17 +1735,25 @@ async function saveModal() {
         priority: parseInt(document.getElementById('bi_priority').value)||0,
         is_active: document.getElementById('bi_active').checked
       };
-      if(!bi.instruction||bi.instruction.trim().length<5) { toast('اكتب تعليمة واضحة!','error'); return; }
-      if(modalState.type==='bot_instruction_add') await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
-      else await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
-      closeModal(); toast('تم ✅'); loadBotInstructions();
+      if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة واضحة (5 حروف على الأقل)!','error'); return; }
+      if(modalState.type==='bot_instruction_add') {
+        await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
+      } else {
+        await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
+      }
+      closeModal(); toast('تم حفظ التعليمة ✅'); loadBotInstructions();
       return;
     }
+
+    // Generic CRUD
     var fields = getFields(modalState.entity);
     var body = {};
     fields.forEach(function(f){ var v=document.getElementById('modal_'+f.key); if(v) body[f.key]=v.value; });
-    if(modalState.type==='add') await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
-    else await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
+    if(modalState.type==='add') {
+      await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
+    } else {
+      await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
+    }
     closeModal(); loadCrud(modalState.entity); toast('تم ✅');
   } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
