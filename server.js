@@ -1,7 +1,9 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v9.0 — Full GPT Intelligence
+   🤖 Ziko Chatbot v9.1 — Full GPT Intelligence + Context Fix
    
-   ✅ REMOVED all keyword-matching functions
+   ✅ FIXED: loadRecentHistory cleans HTML from bot messages
+   ✅ FIXED: smartChat removes duplicate current user message
+   ✅ FIXED: buildMasterPrompt includes follow-up/context rules
    ✅ ONE smart GPT call understands everything
    ✅ Reads bot_instructions + custom_responses + chat history
    ✅ ALL admin endpoints preserved
@@ -640,7 +642,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 12: 🧠 THE NEW BRAIN — Smart GPT System   ██
+   ██   SECTION 12: 🧠 THE BRAIN — Smart GPT System v9.1  ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
@@ -663,22 +665,44 @@ async function loadBotInstructions() {
   } catch (e) { console.error("loadBotInstructions error:", e.message); return ""; }
 }
 
-/* ═══ Load Recent Chat History (for context) ═══ */
-async function loadRecentHistory(sessionId, limit = 6) {
+/* ═══ 🔧 FIX #1: Load Recent Chat History — cleans HTML from bot messages ═══ */
+async function loadRecentHistory(sessionId, limit = 8) {
   if (!supabase || !sessionId) return [];
   try {
     const { data } = await supabase
       .from("chat_logs")
-      .select("role, message")
+      .select("role, message, intent")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false })
       .limit(limit);
     if (!data || data.length === 0) return [];
-    return data.reverse().map(m => ({
-      role: m.role === "user" ? "user" : "assistant",
-      content: (m.message || "").substring(0, 500),
-    }));
-  } catch (e) { return []; }
+
+    return data.reverse().map(m => {
+      let content = m.message || "";
+
+      // For bot messages: strip HTML cards and tags so GPT sees clean text
+      if (m.role !== "user") {
+        // Remove full HTML card divs (course/diploma cards)
+        content = content.replace(/<div style="border[^>]*>[\s\S]*?<\/div>/gi, "");
+        // Remove any remaining HTML tags
+        content = content.replace(/<[^>]*>/g, " ");
+        // Collapse whitespace
+        content = content.replace(/\s+/g, " ").trim();
+        // If nothing meaningful remains, summarize from intent
+        if (content.length < 10 && m.intent) {
+          content = `[رديت على المستخدم بنتائج بحث - intent: ${m.intent}]`;
+        }
+      }
+
+      return {
+        role: m.role === "user" ? "user" : "assistant",
+        content: content.substring(0, 600),
+      };
+    });
+  } catch (e) {
+    console.error("loadRecentHistory error:", e.message);
+    return [];
+  }
 }
 
 /* ═══ Load Custom Responses Summary (for GPT context) ═══ */
@@ -700,7 +724,7 @@ async function loadCustomResponsesSummary() {
   } catch (e) { return ""; }
 }
 
-/* ═══ Build Master System Prompt ═══ */
+/* ═══ 🔧 FIX #3: Build Master System Prompt — includes follow-up/context rules ═══ */
 function buildMasterPrompt(botInstructions, customResponses) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name, info], i) => `${i+1}. ${name}: ${info.url}`)
@@ -722,6 +746,17 @@ ${botInstructions}
 - إيموجي خفيف وطبيعي
 - مستشار تعليمي حقيقي مش بياع
 - لو حد كلمك بالإنجليزي رد بالإنجليزي
+
+═══ 🔴 قواعد المتابعة والسياق (مهم جداً!) ═══
+- لو المستخدم قال حاجة زي "عاوز مستوى أعلى" أو "فيه حاجة أصعب" أو "عايز متقدم" أو "حاجة تانية" أو "كمان" أو "غير كده":
+  → ارجع لآخر موضوع اتكلمتوا فيه في المحادثة
+  → أضف كلمات بحث تعكس الطلب الجديد (متقدم/مبتدئ/مختلف)
+  → مثال: لو كان بيسأل عن "برمجة" وقال "عاوز مستوى أعلى" → search_terms: ["برمجة", "متقدم", "advanced", "احتراف", "programming"]
+  → مثال: لو كان بيسأل عن "تصميم" وقال "حاجة تانية" → search_terms: ["تصميم", "design", "جرافيك"]
+- ❌ ممنوع تقول "أقدر أساعدك في إيه" لو المستخدم بيكمل نفس الموضوع!
+- ❌ ممنوع تتجاهل السياق — لازم تقرأ المحادثة السابقة
+- ✅ لو مش فاهم يقصد إيه بالظبط، اسأل سؤال محدد: "تقصد كورسات [الموضوع] مستوى متقدم؟"
+- ✅ لو المستخدم رفض اقتراح أو طلب بديل، جيبله نتائج مختلفة بكلمات بحث مختلفة
 
 ═══ معلومات المنصة ═══
 - منصة easyT: +600 دورة، +27 دبلومة، +750,000 طالب
@@ -757,10 +792,11 @@ ${customResponses}
 
 ═══ قواعد الـ action ═══
 
-🔍 SEARCH — لما المستخدم يدور على كورس/دبلومة/موضوع تعليمي:
+🔍 SEARCH — لما المستخدم يدور على كورس/دبلومة/موضوع تعليمي أو يطلب بديل/مستوى مختلف:
 - حط search_terms فيها كلمات بحث مفردة (عربي + إنجليزي)
 - مثال: "عايز اتعلم فوتوشوب" → search_terms: ["فوتوشوب", "photoshop", "تصميم"]
 - مثال: "كورسات برمجة للمبتدئين" → search_terms: ["برمجة", "programming", "اساسيات", "مبتدئ"]
+- مثال متابعة: "عاوز مستوى أعلى" (وكان بيتكلم عن برمجة) → search_terms: ["برمجة", "متقدم", "advanced", "احتراف", "مشاريع"]
 - message = رد ودود يقول إنك بتجيبله النتائج
 
 💰 SUBSCRIPTION — لما يسأل عن أسعار/اشتراك/دفع:
@@ -788,14 +824,14 @@ ${customResponses}
 - لو في الردود المرجعية فيه رد مناسب، استخدمه (أو استلهم منه)`;
 }
 
-/* ═══ 🧠 The Main Brain Function ═══ */
+/* ═══ 🧠 The Main Brain Function — 🔧 FIX #2: removes duplicate user message ═══ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
 
   // 1. Load all context in parallel
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
     loadBotInstructions(),
-    loadRecentHistory(sessionId, 6),
+    loadRecentHistory(sessionId, 8),
     loadCustomResponsesSummary(),
   ]);
 
@@ -804,10 +840,19 @@ async function smartChat(message, sessionId) {
   // 2. Build the master prompt
   const systemPrompt = buildMasterPrompt(botInstructions, customResponses);
 
-  // 3. Build conversation messages
+  // 3. Build conversation messages — remove duplicate current user message
+  let filteredHistory = [...chatHistory];
+  if (
+    filteredHistory.length > 0 &&
+    filteredHistory[filteredHistory.length - 1].role === "user" &&
+    filteredHistory[filteredHistory.length - 1].content.trim() === message.trim()
+  ) {
+    filteredHistory.pop();
+  }
+
   const gptMessages = [
     { role: "system", content: systemPrompt },
-    ...chatHistory,
+    ...filteredHistory,
     { role: "user", content: message },
   ];
 
@@ -957,7 +1002,7 @@ app.post("/chat", limiter, async (req, res) => {
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
     // Log bot response
-    await logChat(sessionId, "bot", reply, intent, { version: "9.0" });
+    await logChat(sessionId, "bot", reply, intent, { version: "9.1" });
 
     return res.json({ reply });
 
@@ -1375,7 +1420,7 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
    ══════════════════════════════════════════════════════════ */
 app.get("/admin/debug", async (req, res) => {
   const diag = {
-    timestamp: new Date().toISOString(), version: "9.0",
+    timestamp: new Date().toISOString(), version: "9.1",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -1400,15 +1445,15 @@ app.get("/health", async (req, res) => {
   let dbStatus="unknown";
   if(supabase){try{const{error}=await supabase.from("courses").select("id").limit(1);dbStatus=error?`error: ${error.message}`:"connected";}catch(e){dbStatus=`exception: ${e.message}`;}}
   else dbStatus="not initialized";
-  res.json({ status:dbStatus==="connected"?"ok":"degraded", version:"9.0", database:dbStatus, openai:openai?"ready":"not ready",
-    engine: "🧠 Full GPT Intelligence — NO keywords",
+  res.json({ status:dbStatus==="connected"?"ok":"degraded", version:"9.1", database:dbStatus, openai:openai?"ready":"not ready",
+    engine: "🧠 Full GPT Intelligence + Context Fix",
     timestamp:new Date().toISOString() });
 });
 
 app.get("/", (req, res) => {
   res.json({
-    name:"زيكو — easyT Chatbot", version:"9.0", status:"running ✅",
-    engine: "🧠 Full GPT Intelligence",
+    name:"زيكو — easyT Chatbot", version:"9.1", status:"running ✅",
+    engine: "🧠 Full GPT Intelligence + Context Fix",
     endpoints:{ chat:"POST /chat", admin:"GET /admin", health:"GET /health", debug:"GET /admin/debug" },
   });
 });
@@ -1417,7 +1462,7 @@ app.get("/", (req, res) => {
    SECTION 16: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v9.0...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v9.1...\n");
   if(missingEnv.length>0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if(!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED! Check env vars.\n");
@@ -1425,9 +1470,9 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v9.0                     ║
+║  🤖 زيكو Chatbot — v9.1                     ║
 ║  🧠 Engine: Full GPT Intelligence            ║
-║  ❌ Keywords: REMOVED                        ║
+║  🔧 Fix: Context + History + Follow-up       ║
 ║  ✅ Server: port ${PORT}                        ║
 ║  ✅ Dashboard: /admin                        ║
 ║  🗄️  Supabase: ${supabaseConnected?"✅ Connected":"❌ NOT connected"}               ║
