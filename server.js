@@ -1,6 +1,10 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v7.9.9-fix3 — 📂 Categories + Marketing terms
-   ✅ ALL v7.9.9-fix2 code preserved
+   🤖 Ziko Chatbot v7.9.9-fix4 — 🎓 Beginner Detection + Category Fix
+   ✅ ALL v7.9.9-fix3 code preserved
+   🆕 FIX: "أساسيات البرمجة" category keywords expanded (برمجة, coding...)
+   🆕 FIX: detectBeginnerIntent() — detects "معرفش حاجة", "من الصفر" etc.
+   🆕 FIX: Beginner boost — adds اساسيات/مبتدئ terms to search
+   🆕 FIX: Beginners see courses FIRST, then diplomas
    🐛 FIX: Environment variable validation on startup
    🐛 FIX: Supabase connection test on startup
    🐛 FIX: /admin/stats — each query isolated (one failure ≠ all fail)
@@ -78,6 +82,7 @@
    📱 v6.5: Compact horizontal card layout
    🆕 v7.9.9-fix2: Admin served from admin.html file
    🆕 v7.9.9-fix3: Startup validation + debug endpoint + stats isolation
+   🆕 v7.9.9-fix4: Beginner detection + category keywords + display order
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -277,7 +282,7 @@ const CATEGORIES = {
   },
   "أساسيات البرمجة وقواعد البيانات": {
     url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
-    keywords: ["اساسيات برمجة", "قواعد بيانات", "database", "sql", "بايثون اساسيات", "جافا", "c++", "سي بلس", "خوارزميات"],
+    keywords: ["اساسيات برمجة", "قواعد بيانات", "database", "sql", "بايثون اساسيات", "جافا", "c++", "سي بلس", "خوارزميات", "برمجة", "برمجه", "programming", "كودنج", "coding", "ابدا برمجة", "تعلم برمجة", "اساسيات"],
   },
   "برمجة الذكاء الاصطناعي": {
     url: "https://easyt.online/courses/category/90b79ad7-0d90-4b7c-ba87-6c222ac6f22f",
@@ -612,6 +617,47 @@ function detectAudienceExclusions(message) {
     }
   }
   return exclusions;
+}
+
+/* ═══ 🆕 fix4: Detect Beginner Intent ═══ */
+function detectBeginnerIntent(message) {
+  const beginnerPatterns = [
+    /معرفش حاجه/i,
+    /معرفش حاجة/i,
+    /معرفش حاجه عنه/i,
+    /معرفش حاجة عنه/i,
+    /معرفش عنه/i,
+    /معرفش عنها/i,
+    /مش فاهم/i,
+    /مبتدئ/i,
+    /مبتدأ/i,
+    /من الصفر/i,
+    /من صفر/i,
+    /ابد[اأ] منين/i,
+    /ابتدي منين/i,
+    /ابدأ ازاي/i,
+    /اتعلم ازاي/i,
+    /مش عارف ابدأ/i,
+    /ماعرف شي/i,
+    /ما اعرف/i,
+    /لسه بتعلم/i,
+    /اول مره/i,
+    /أول مرة/i,
+    /جديد على/i,
+    /جديد في/i,
+    /beginner/i,
+    /from scratch/i,
+    /from zero/i,
+    /لا اعرف/i,
+    /ماعندي خبر/i,
+    /بدون خبره/i,
+    /بدون خبرة/i,
+    /مش فاهم فيه/i,
+    /مش فاهم فيها/i,
+    /معرفش فيه/i,
+    /معرفش فيها/i,
+  ];
+  return beginnerPatterns.some((p) => p.test(message));
 }
 
 function sanitizeValue(val) {
@@ -1788,7 +1834,7 @@ async function getSmartSuggestions(message) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ═══ MAIN CHAT ENDPOINT — v7.9.9
+   ═══ MAIN CHAT ENDPOINT — v7.9.9-fix4
    ══════════════════════════════════════════════════════════ */
 app.post("/chat", limiter, async (req, res) => {
   const startTime = Date.now();
@@ -1932,6 +1978,17 @@ app.post("/chat", limiter, async (req, res) => {
           ? entity.split(/\s+/).filter((w) => w.length > 1)
           : extractSearchTermsFromMessage(cleanMessage);
 
+    /* ═══ 🆕 fix4: Beginner boost — add basic terms when user is beginner ═══ */
+    const isBeginner = detectBeginnerIntent(cleanMessage) || audience === "مبتدئ";
+
+    if (isBeginner && termsToSearch.length <= 3) {
+      const beginnerBoostTerms = ["اساسيات", "مبتدئ", "بداية", "مقدمة", "ابدأ"];
+      beginnerBoostTerms.forEach((t) => {
+        if (!termsToSearch.includes(t)) termsToSearch.push(t);
+      });
+      console.log("🎓 Beginner detected — boosted terms:", termsToSearch);
+    }
+
     const displayTerm =
       entity && entity.length > 0
         ? entity
@@ -1940,7 +1997,7 @@ app.post("/chat", limiter, async (req, res) => {
           : cleanMessage;
 
     console.log(
-      `🔍 Searching: [${termsToSearch}] | Display: "${displayTerm}"`
+      `🔍 Searching: [${termsToSearch}] | Display: "${displayTerm}" | Beginner: ${isBeginner}`
     );
 
     const corrections = await searchCorrections(termsToSearch);
@@ -2009,16 +2066,33 @@ app.post("/chat", limiter, async (req, res) => {
       const instructors = await getInstructors();
 
       reply = ``;
-      if (diplomas.length > 0) {
-        reply += diplomas.map((d) => formatDiplomaCard(d)).join("");
-        reply += "\n";
-      }
 
-      if (courses.length > 0) {
-        reply += courses
-          .slice(0, 5)
-          .map((c) => formatCourseCard(c, instructors))
-          .join("");
+      /* ═══ 🆕 fix4: Beginners see courses FIRST, then diplomas ═══ */
+      if (isBeginner) {
+        if (courses.length > 0) {
+          reply += `📚 <strong>كورسات مناسبة للمبتدئين:</strong>\n`;
+          reply += courses
+            .slice(0, 5)
+            .map((c) => formatCourseCard(c, instructors))
+            .join("");
+        }
+        if (diplomas.length > 0) {
+          reply += `\n🎓 <strong>ولو حابب مسار متكامل:</strong>\n`;
+          reply += diplomas.slice(0, 2).map((d) => formatDiplomaCard(d)).join("");
+        }
+      } else {
+        /* Normal order: diplomas first */
+        if (diplomas.length > 0) {
+          reply += diplomas.map((d) => formatDiplomaCard(d)).join("");
+          reply += "\n";
+        }
+
+        if (courses.length > 0) {
+          reply += courses
+            .slice(0, 5)
+            .map((c) => formatCourseCard(c, instructors))
+            .join("");
+        }
       }
 
       if (audience) {
@@ -2050,10 +2124,11 @@ app.post("/chat", limiter, async (req, res) => {
       results_count: courses.length + (diplomas?.length || 0),
       had_corrections: corrections.length > 0,
       audience: audience,
+      is_beginner: isBeginner,
     });
 
     console.log(
-      `✅ Found ${courses.length} courses, ${diplomas?.length || 0} diplomas | ⏱️ ${Date.now() - startTime}ms`
+      `✅ Found ${courses.length} courses, ${diplomas?.length || 0} diplomas | Beginner: ${isBeginner} | ⏱️ ${Date.now() - startTime}ms`
     );
 
     return res.json({ reply });
@@ -3075,7 +3150,7 @@ app.get("/admin/debug", async (req, res) => {
 
   const diagnostics = {
     timestamp: new Date().toISOString(),
-    version: "7.9.9-fix3",
+    version: "7.9.9-fix4",
     environment: {
       NODE_ENV: process.env.NODE_ENV || "not set",
       PORT: PORT,
@@ -3139,10 +3214,14 @@ app.get("/health", async (req, res) => {
 
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "7.9.9-fix3",
+    version: "7.9.9-fix4",
     database: dbStatus,
     openai: openai ? "initialized" : "not initialized",
     features: [
+      "🆕 Beginner detection (detectBeginnerIntent)",
+      "🆕 Beginner boost search terms",
+      "🆕 Beginners see courses first, diplomas second",
+      "🆕 أساسيات البرمجة category keywords expanded",
       "🆕 Environment validation on startup",
       "🆕 Supabase connection test on startup",
       "🆕 /admin/debug diagnostic endpoint",
@@ -3182,7 +3261,7 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "7.9.9-fix3",
+    version: "7.9.9-fix4",
     status: "running ✅",
     endpoints: {
       chat: "POST /chat",
@@ -3202,7 +3281,7 @@ app.get("/", (req, res) => {
    ═══ START SERVER — 🆕 fix3: with startup checks
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v7.9.9-fix3...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v7.9.9-fix4...\n");
 
   if (missingEnv.length > 0) {
     console.error(`⚠️  Missing env vars: ${missingEnv.join(", ")}`);
@@ -3222,12 +3301,13 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v7.9.9-fix3              ║
+║  🤖 زيكو Chatbot — v7.9.9-fix4              ║
 ║  ✅ Server running on port ${PORT}              ║
 ║  📊 Dashboard: /admin (from admin.html)      ║
 ║  🔧 Debug: /admin/debug                      ║
 ║  💊 Health: /health                           ║
 ║  📂 Categories + Marketing terms             ║
+║  🎓 Beginner detection enabled               ║
 ║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected" : "❌ NOT connected"}               ║
 ║  🤖 OpenAI: ${openai ? "✅ Ready     " : "❌ NOT ready  "}                  ║
 ║  ⏰ ${new Date().toISOString()}              ║
