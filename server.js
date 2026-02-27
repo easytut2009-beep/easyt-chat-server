@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.3 — Two-Phase RAG + Context Memory
+   🤖 Ziko Chatbot v10.4 — Two-Phase RAG + Context Memory
    
    🔧 FIXES from v10.2:
    ✅ FIX #1: \n → <br> everywhere
@@ -15,6 +15,14 @@
    ✅ FIX #9: Card images — shows if available, hides if broken
    ✅ FIX #10: Phase 2 sees relevance scores
    ✅ FIX #11: Pre-sorts results by score before GPT
+
+   🆕 NEW in v10.4:
+   ✅ FIX #12: Removed duplicate "قاعدة ذهبية" in analyzer prompt
+   ✅ FIX #13: Removed orphan "قاعدة الرسالة الغامضة" header
+   ✅ FIX #14: Search cache — avoids repeated DB queries (5 min TTL)
+   ✅ FIX #15: Smarter verifyCourseRelevance — multi-term awareness
+   ✅ FIX #16: Dynamic Phase 2 model — gpt-4o-mini when must-show exists
+   ✅ FIX #17: Trimmed analyzer prompt — fewer redundant examples
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -591,11 +599,49 @@ function formatCategoriesList() {
 }
 
 /* ══════════════════════════════════════════════════════════
+   🆕 FIX #14: Search Cache — avoids repeated DB queries
+   ══════════════════════════════════════════════════════════ */
+const searchCache = new Map();
+const SEARCH_CACHE_TTL = 5 * 60 * 1000;
+
+function getCachedSearch(key) {
+  const cached = searchCache.get(key);
+  if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
+    console.log(`📦 Cache hit: "${key.substring(0, 60)}..."`);
+    return cached.data;
+  }
+  if (cached) searchCache.delete(key);
+  return null;
+}
+
+function setCachedSearch(key, data) {
+  searchCache.set(key, { data, ts: Date.now() });
+  if (searchCache.size > 200) {
+    const oldest = [...searchCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+    if (oldest) searchCache.delete(oldest[0]);
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of searchCache) {
+    if (now - entry.ts > SEARCH_CACHE_TTL) searchCache.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+/* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
-   🆕 FIX #7: Title weight 50x (was 10x), exact match +200
+   FIX #7: Title weight 50x (was 10x), exact match +200
+   FIX #14: Search cache integrated
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
+
+  // 🆕 FIX #14: Check cache first
+  const cacheKey = "sc:" + searchTerms.slice().sort().join("|") + "|ex:" + excludeTerms.slice().sort().join("|") + "|a:" + (audience || "");
+  const cached = getCachedSearch(cacheKey);
+  if (cached) return cached;
+
   try {
     const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const expanded = expandSynonyms(corrected);
@@ -666,7 +712,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       if (af.length > 0) filtered = af;
     }
 
-    // 🆕 FIX #7: MUCH higher title weight + exact match bonus
     const scored = filtered.map((c) => {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
@@ -677,12 +722,10 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const descNorm = normalizeArabic((c.description || "").toLowerCase());
       const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
 
-      // 🆕 Exact full-query match in title = HUGE bonus
       const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) {
         score += 200;
       }
-      // Title starts with query = extra bonus
       if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) {
         score += 50;
       }
@@ -691,29 +734,15 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
 
-        // 🆕 Title match = 50 points (was 10)
         if (titleNorm.includes(nt)) score += 50;
-
-        // Subtitle match = 15 points (was 7)
         if (subtitleNorm.includes(nt)) score += 15;
-
-        // Page content = 5
         if (pageNorm.includes(nt)) score += 5;
-
-        // Syllabus = 4
         if (syllabusNorm.includes(nt)) score += 4;
-
-        // Objectives = 4
         if (objectivesNorm.includes(nt)) score += 4;
-
-        // 🆕 Description = 1 point only (was 3) — prevents description-only matches from ranking high
         if (descNorm.includes(nt)) score += 1;
-
-        // Full content = 1
         if (fullNorm.includes(nt)) score += 1;
       }
 
-      // 🆕 Bonus: multiple terms matching in title
       const titleHits = allTerms.filter((t) =>
         titleNorm.includes(normalizeArabic(t.toLowerCase()))
       ).length;
@@ -724,12 +753,16 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    // 🆕 Log top results for debugging
     scored.slice(0, 5).forEach((c, i) => {
       console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}`);
     });
 
-    return scored.slice(0, 10);
+    const result = scored.slice(0, 10);
+
+    // 🆕 FIX #14: Store in cache
+    setCachedSearch(cacheKey, result);
+
+    return result;
   } catch (e) {
     console.error("searchCourses error:", e.message);
     return [];
@@ -801,6 +834,12 @@ async function fuzzySearchFallback(terms) {
 
 async function searchDiplomas(searchTerms) {
   if (!supabase) return [];
+
+  // 🆕 FIX #14: Check cache
+  const cacheKey = "sd:" + searchTerms.slice().sort().join("|");
+  const cached = getCachedSearch(cacheKey);
+  if (cached) return cached;
+
   try {
     const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const expanded = expandSynonyms(corrected);
@@ -816,7 +855,10 @@ async function searchDiplomas(searchTerms) {
       .or(orFilters)
       .limit(5);
     if (error) return [];
-    return data || [];
+
+    const result = data || [];
+    setCachedSearch(cacheKey, result);
+    return result;
   } catch (e) {
     return [];
   }
@@ -859,11 +901,17 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 Priority Title Search — catches exact title matches
+   Priority Title Search — catches exact title matches
    that the main search might miss
    ══════════════════════════════════════════════════════════ */
 async function priorityTitleSearch(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
+
+  // 🆕 FIX #14: Check cache
+  const cacheKey = "pt:" + searchTerms.slice().sort().join("|");
+  const cached = getCachedSearch(cacheKey);
+  if (cached) return cached;
+
   try {
     const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const meaningful = corrected.filter(
@@ -888,8 +936,7 @@ async function priorityTitleSearch(searchTerms) {
 
     if (error || !data) return [];
 
-    // Score them — title matches get VERY high scores
-    return data.map((c) => {
+    const result = data.map((c) => {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
@@ -897,11 +944,14 @@ async function priorityTitleSearch(searchTerms) {
       for (const term of meaningful) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 2) continue;
-        if (titleNorm.includes(nt)) score += 500; // HUGE title bonus
+        if (titleNorm.includes(nt)) score += 500;
         if (subtitleNorm.includes(nt)) score += 100;
       }
       return { ...c, relevanceScore: score };
     }).filter((c) => c.relevanceScore > 0);
+
+    setCachedSearch(cacheKey, result);
+    return result;
   } catch (e) {
     console.error("priorityTitleSearch error:", e.message);
     return [];
@@ -910,7 +960,7 @@ async function priorityTitleSearch(searchTerms) {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 9: Card Formatting
-   🆕 FIX #9: Image support + no blank space
+   FIX #9: Image support + no blank space
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -925,7 +975,6 @@ function formatCourseCard(course, instructors, index) {
       : 0;
   const priceText = priceNum === 0 ? "مجاناً 🎉" : `${priceNum}$`;
 
-  /* ✅ FIX: Clean description properly — remove HTML, entities, newlines, collapse spaces */
   let desc = "";
   if (course.description) {
     desc = course.description
@@ -942,7 +991,6 @@ function formatCourseCard(course, instructors, index) {
 
   const num = index !== undefined ? `${index}. ` : "";
 
-  /* ✅ FIX: Build card with concatenation (no template newlines → no phantom <br>) */
   let card = `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">`;
   card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>`;
   card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
@@ -1017,7 +1065,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.3                    ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.4                    ██
    ██   Two-Phase RAG + Context Memory + Smart Filtering   ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
@@ -1025,7 +1073,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 
 /* ═══════════════════════════════════
    11-A: Session Memory System
-   🆕 FIX #8: Added lastSearchTopic for follow-up context
+   FIX #8: Added lastSearchTopic for follow-up context
    ═══════════════════════════════════ */
 const sessionMemory = new Map();
 const SESSION_MEMORY_TTL = 30 * 60 * 1000;
@@ -1036,8 +1084,8 @@ function getSessionMemory(sessionId) {
       summary: "",
       topics: [],
       lastSearchTerms: [],
-      lastSearchTopic: null,   // 🆕 "فوتوشوب", "ريفيت", etc.
-      lastSearchCategory: null, // 🆕 "الجرافيكس والتصميم", etc.
+      lastSearchTopic: null,
+      lastSearchCategory: null,
       userLevel: null,
       interests: [],
       messageCount: 0,
@@ -1067,7 +1115,6 @@ function updateSessionMemory(sessionId, updates) {
   if (updates.summary) {
     mem.summary = updates.summary;
   }
-  // 🆕 FIX #8
   if (updates.lastSearchTopic) {
     mem.lastSearchTopic = updates.lastSearchTopic;
   }
@@ -1084,11 +1131,10 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 /* ═══════════════════════════════════
-   🆕 FIX #8: Follow-up Context Detection
+   FIX #8: Follow-up Context Detection
    ═══════════════════════════════════ */
 function extractMainTopic(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
-  // Filter out stop words and return the most specific term
   const meaningful = searchTerms.filter(
     (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
   );
@@ -1148,14 +1194,12 @@ function hasNewExplicitTopic(message) {
 }
 
 function enrichMessageWithContext(message, sessionMem) {
-  // If message has a clear NEW topic, don't inject old context
   const newTopic = hasNewExplicitTopic(message);
   if (newTopic) {
     console.log(`🔵 New topic detected: "${newTopic}" — no context injection`);
     return { enriched: message, isFollowUp: false, detectedTopic: newTopic };
   }
 
-  // If message looks like a follow-up AND we have a previous topic
   if (isFollowUpMessage(message) && sessionMem.lastSearchTopic) {
     const enriched = `${sessionMem.lastSearchTopic} ${message}`;
     console.log(
@@ -1259,6 +1303,9 @@ async function loadCustomResponsesSummary() {
 
 /* ═══════════════════════════════════
    11-C: Phase 1 — Smart Analyzer
+   🔴 FIX #12: Removed duplicate "قاعدة ذهبية"
+   🔴 FIX #13: Removed orphan "قاعدة الرسالة الغامضة" header
+   🟡 FIX #17: Trimmed SUBSCRIPTION examples
    ═══════════════════════════════════ */
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
@@ -1314,14 +1361,9 @@ ${categoriesList}
 ═══ 🔴 قواعد التصنيف الأساسية ═══
 
 💰 SUBSCRIPTION — أي سؤال عن الدفع/الأسعار/الاشتراك بأي لهجة:
-  - "شلون ادفع" ← SUBSCRIPTION ✅
-  - "كيف ادفع" ← SUBSCRIPTION ✅
-  - "ازاي ادفع" ← SUBSCRIPTION ✅
-  - "ابغى اشترك" ← SUBSCRIPTION ✅
-  - "بدي ادفع" ← SUBSCRIPTION ✅
-  - "كام سعر الاشتراك" ← SUBSCRIPTION ✅
-  - "طرق الدفع" ← SUBSCRIPTION ✅
-  - أي كلمة فيها: دفع/ادفع/سعر/اسعار/اشتراك/فلوس/تكلفة/pay/price ← SUBSCRIPTION ✅
+  - "ازاي ادفع" / "شلون ادفع" / "كيف ادفع" ← SUBSCRIPTION ✅
+  - "كام سعر الاشتراك" / "طرق الدفع" ← SUBSCRIPTION ✅
+  - أي كلمة فيها: دفع/سعر/اشتراك/فلوس/تكلفة/pay/price ← SUBSCRIPTION ✅
 
 🔍 SEARCH — لما يدور على كورس/دبلومة/مهارة:
   - search_terms: كلمات بالعربي + الإنجليزي (3-6 كلمات مفيدة فقط)
@@ -1335,7 +1377,7 @@ ${categoriesList}
 🛠️ SUPPORT — مشاكل تقنية/شكاوي
 💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
 
-═══ 🆕 قاعدة المتابعة (Follow-up) ═══
+═══ قاعدة المتابعة (Follow-up) ═══
 لو المستخدم قال "فيه حاجة للمبتدئين" أو "عندكم حاجة أسهل" بدون ذكر موضوع جديد:
 - is_follow_up = true
 - search_terms = الموضوع السابق + الطلب الجديد
@@ -1344,27 +1386,33 @@ ${categoriesList}
   → audience_filter: "مبتدئ"
 
 ═══ قاعدة ذهبية ═══
-═══ قاعدة ذهبية ═══
 لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
 
-⚠️⚠️⚠️ قاعدة الرسالة الغامضة ⚠️⚠️⚠️
-لو المستخدم طلب حاجة عامة بدون ما يحدد الموضوع = CHAT + اسأله يوضح!
-أمثلة:
-- "عايز تمرين" ← CHAT: "تمرين في ايه بالظبط؟ قولي الموضوع وأنا هجيبلك أحسن الكورسات! 😊"
-- "عايز شرح" ← CHAT: "شرح لإيه؟ قولي المجال أو البرنامج وأنا هساعدك! 😊"
-- "فيه حاجة كويسة" ← CHAT: "كويسة في ايه؟ تحب تصميم؟ برمجة؟ تسويق؟ قولي وأنا أرشحلك! 😊"
-- "عايز اتعلم" ← CHAT: "تحب تتعلم ايه؟ عندنا +600 دورة في مجالات كتير! قولي اهتمامك 😊"
-- "ابغى دورة" ← CHAT: "دورة في ايه بالظبط؟ قولي المجال وأنا أرشحلك أحسن الكورسات! 😊"
+═══ ⚠️ متى CHAT ومتى SEARCH؟ ═══
 
-بس لو حدد الموضوع = SEARCH عادي:
-- "عايز تمرين فوتوشوب" ← SEARCH ✅
-- "عايز شرح بايثون" ← SEARCH ✅
-- "فيه كورس ريفيت" ← SEARCH ✅
+🔍 SEARCH = لما الرسالة فيها أي موضوع/مجال/أداة/لغة/مهارة — حتى لو عام:
+- "عايز اتعلم انجليزي" ← SEARCH ✅ (انجليزي = موضوع واضح)
+- "ابي اتعلم تصميم" ← SEARCH ✅ (تصميم = مجال واضح)
+- "كورسات هندسية" ← SEARCH ✅ (هندسة = مجال واضح)
+- "ماركتنج" ← SEARCH ✅ (ماركتنج = مجال واضح)
+- "برمجة" ← SEARCH ✅
+- "اكسل" ← SEARCH ✅
+- "حماية" ← SEARCH ✅
+- "ابغى ريفيت" ← SEARCH ✅
+- "بدي فوتوشوب" ← SEARCH ✅
+- "ذكاء اصطناعي" ← SEARCH ✅
 
-القاعدة: لازم يكون فيه **اسم موضوع/برنامج/مهارة محددة** عشان نعمل SEARCH.
-لو مفيش = CHAT واسأله يوضح بأسلوب ودود.
+💬 CHAT = فقط لما الرسالة مفيهاش أي موضوع خالص:
+- "عايز اتعلم" ← CHAT (اتعلم ايه؟ مفيش موضوع)
+- "عايز دورة" ← CHAT (دورة في ايه؟ مفيش موضوع)
+- "عايز شرح" ← CHAT (شرح لإيه؟ مفيش موضوع)
+- "فيه حاجة كويسة" ← CHAT (كويسة في ايه؟ مفيش موضوع)
+- "عايز تمرين" ← CHAT (تمرين في ايه؟ مفيش موضوع)
 
-لو مش متأكد بين SEARCH و CHAT = لو فيه موضوع محدد اختار SEARCH، لو مفيش اختار CHAT واسأل.
+═══ القاعدة الواضحة ═══
+لو تقدر تتخيل نتائج بحث للكلمة دي = SEARCH ✅
+لو مينفعش تبحث من غير ما تعرف الموضوع = CHAT 💬
+لو شكيت = SEARCH (الأفضل نبحث ونعرض نتائج من إننا نسأل سؤال زيادة)
 
 لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (ودود وطبيعي بلهجة المستخدم)
 لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
@@ -1483,7 +1531,8 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
-   🆕 FIX #10: Receives relevance scores
+   FIX #10: Receives relevance scores
+   🆕 FIX #16: Accepts model parameter for dynamic selection
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1516,7 +1565,7 @@ function prepareCourseForRAG(course, instructors) {
     price: priceNum,
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
-    relevanceScore: course.relevanceScore || 0, // 🆕 FIX #10
+    relevanceScore: course.relevanceScore || 0,
   };
 }
 
@@ -1546,7 +1595,8 @@ async function generateSmartRecommendation(
   diplomas,
   sessionMem,
   analysis,
-  instructors
+  instructors,
+  model = "gpt-4o" // 🆕 FIX #16: dynamic model parameter
 ) {
   const courseData = courses.slice(0, 8).map((c, i) => ({
     index: i,
@@ -1586,7 +1636,7 @@ ${JSON.stringify(allItems, null, 1)}
 - اهتماماته: ${interestsInfo}
 - متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
 
-═══ 🆕 ملاحظة عن الـ relevanceScore ═══
+═══ ملاحظة عن الـ relevanceScore ═══
 - الكورسات مرتبة بنقاط المطابقة (relevanceScore)
 - كورس بنقاط عالية (100+) = عنوانه يحتوي على كلمة البحث → الأكثر ملاءمة
 - كورس بنقاط منخفضة (<10) = المطابقة في الوصف فقط → غالباً مش مناسب
@@ -1610,18 +1660,16 @@ ${JSON.stringify(allItems, null, 1)}
 أمثلة على كورسات مش مرتبطة (❌ ممنوع تعرضها):
 - المستخدم طلب "ريفيت/سباكة" → كورس "Angular JS" = ❌❌❌
 - المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌
-- المستخدم طلب "فوتوشوب" → كورس "تصميم أغلفة الكتب" = ⚠️ (ممكن بس الأولوية لكورس "فوتوشوب" نفسه)
 - المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌
 - المستخدم طلب "اكسل" → كورس "بوربوينت" = ❌
 
 أمثلة على كورسات مرتبطة (✅):
-- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب Adobe Photoshop" = ✅✅✅ (أعلى أولوية!)
+- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب Adobe Photoshop" = ✅✅✅
 - المستخدم طلب "فوتوشوب" → كورس "قوة الذكاء الاصطناعي داخل فوتوشوب" = ✅✅
 - المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅
 - المستخدم طلب "ريفيت" → كورس "ريفيت AutoDesk Revit" = ✅✅✅
 
-3. 🆕 قاعدة العنوان: لو فيه كورس **عنوانه** فيه اسم البرنامج/المهارة المطلوبة → ده الأولوية الأولى!
-   - "فوتوشوب Adobe Photoshop" أهم من "تصميم أغلفة الكتب" (حتى لو الأغلفة بتستخدم فوتوشوب)
+3. قاعدة العنوان: لو فيه كورس **عنوانه** فيه اسم البرنامج/المهارة المطلوبة → ده الأولوية الأولى!
 
 4. لو مفيش ولا كورس مرتبط فعلاً:
    - relevant_course_indices = [] (فاضية!)
@@ -1641,7 +1689,7 @@ ${JSON.stringify(allItems, null, 1)}
 
   try {
     const resp = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model, // 🆕 FIX #16: dynamic model
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
@@ -1682,10 +1730,12 @@ ${JSON.stringify(allItems, null, 1)}
       suggestion: result.suggestion || "",
     };
   } catch (e) {
-    console.error("❌ RAG Recommender error:", e.message);
+    console.error(`❌ RAG Recommender error (${model}):`, e.message);
+    // Fallback to gpt-4o-mini if primary failed
+    const fallbackModel = model === "gpt-4o" ? "gpt-4o-mini" : "gpt-4o-mini";
     try {
       const resp = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: fallbackModel,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: message },
@@ -1729,6 +1779,7 @@ ${JSON.stringify(allItems, null, 1)}
 
 /* ═══════════════════════════════════
    Safety Check — verify GPT's choices
+   🆕 FIX #15: Smarter — requires 2 matches for 3+ core terms
    ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
@@ -1753,9 +1804,12 @@ function verifyCourseRelevance(course, searchTerms) {
   for (const term of coreTerms) {
     const normTerm = normalizeArabic(term.toLowerCase());
     if (normTerm.length <= 2) continue;
+
     if (courseText.includes(normTerm)) {
       matchCount++;
+      continue; // 🆕 FIX #15: avoid double-counting from fuzzy below
     }
+
     const titleNorm = normalizeArabic((course.title || "").toLowerCase());
     for (const word of titleNorm.split(/\s+/)) {
       if (similarityRatio(normTerm, word) >= 75) {
@@ -1765,7 +1819,9 @@ function verifyCourseRelevance(course, searchTerms) {
     }
   }
 
-  return matchCount >= 1;
+  // 🆕 FIX #15: require more matches when there are more core terms
+  const requiredMatches = coreTerms.length >= 3 ? 2 : 1;
+  return matchCount >= requiredMatches;
 }
 
 /* ═══════════════════════════════════
@@ -1805,7 +1861,7 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.3
+   11-F: 🧠 Master Orchestrator v10.4
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
@@ -1815,7 +1871,7 @@ async function smartChat(message, sessionId) {
   const dialectNormalized = normalizeDialect(message);
   console.log(`🌍 Dialect: "${message}" → "${dialectNormalized}"`);
 
-  /* 🆕 Step 0.5: Enrich with follow-up context */
+  /* Step 0.5: Enrich with follow-up context */
   const contextResult = enrichMessageWithContext(dialectNormalized, sessionMem);
   const enrichedMessage = contextResult.enriched;
   const isContextFollowUp = contextResult.isFollowUp;
@@ -1854,7 +1910,8 @@ async function smartChat(message, sessionId) {
     botInstructions,
     customResponses
   );
-// 🔴 FIX: Force action if quickCheck detected it with high confidence
+
+  // 🔴 FIX: Force action if quickCheck detected it with high confidence
   if (quickCheck && quickCheck.confidence >= 0.9) {
     if (analysis.action !== quickCheck.intent) {
       console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
@@ -1862,11 +1919,10 @@ async function smartChat(message, sessionId) {
     }
   }
 
-/* 🆕 Inject follow-up info into analysis if detected by our own logic */
+  /* Inject follow-up info into analysis if detected by our own logic */
   if (isContextFollowUp && !analysis.is_follow_up) {
     analysis.is_follow_up = true;
     analysis.previous_topic_reference = previousTopic;
-    // Merge previous search terms into current search
     if (sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
       const merged = [
         ...new Set([...analysis.search_terms, ...sessionMem.lastSearchTerms]),
@@ -1874,7 +1930,7 @@ async function smartChat(message, sessionId) {
       analysis.search_terms = merged;
       console.log(`🔄 Merged follow-up terms: ${merged.join(", ")}`);
     }
-  } // ← closes: if (isContextFollowUp && !analysis.is_follow_up)
+  }
 
   // 🔴 FIX: Prevent GPT false follow-ups
   if (
@@ -1914,18 +1970,17 @@ async function smartChat(message, sessionId) {
         `   Clean terms: [${analysis.search_terms.join(", ")}]`
       );
     }
-  } // ← closes: if (analysis.is_follow_up && !isContextFollowUp ...)
-
+  }
 
   // 3. Route based on action
   let reply = "";
   let intent = analysis.intent || analysis.action;
 
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-    /* ═══ SEARCH FLOW — v10.3.1 with Priority Title Search ═══ */
+    /* ═══ SEARCH FLOW — v10.4 with Priority Title Search + Cache ═══ */
     const termsToSearch = analysis.search_terms;
 
-    // 🆕 Step A: Priority title search (separate, focused query)
+    // Step A: Priority title search (separate, focused query)
     const priorityCourses = await priorityTitleSearch(termsToSearch);
     console.log(`🏆 Priority title search: ${priorityCourses.length} results`);
     priorityCourses.slice(0, 3).forEach((c) => {
@@ -2003,7 +2058,7 @@ async function smartChat(message, sessionId) {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      // 🆕 Step D: Identify MUST-SHOW courses
+      // Step D: Identify MUST-SHOW courses
       const mustShowCourses = courses.filter((c) => {
         const titleNorm = normalizeArabic((c.title || "").toLowerCase());
         return termsToSearch.some((t) => {
@@ -2014,6 +2069,10 @@ async function smartChat(message, sessionId) {
 
       console.log(`📌 Must-show courses: ${mustShowCourses.length}`);
       mustShowCourses.forEach((c) => console.log(`   📌 ${c.title}`));
+
+      // 🆕 FIX #16: Choose Phase 2 model dynamically
+      const phase2Model = mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
+      console.log(`🤖 Phase 2 model: ${phase2Model} (must-show=${mustShowCourses.length})`);
 
       let relevantCourses = [];
       let relevantDiplomas = [];
@@ -2026,7 +2085,8 @@ async function smartChat(message, sessionId) {
           diplomas,
           sessionMem,
           analysis,
-          instructors
+          instructors,
+          phase2Model // 🆕 FIX #16
         );
 
         recommendationMessage = recommendation.message || "";
@@ -2071,7 +2131,8 @@ async function smartChat(message, sessionId) {
           diplomas,
           sessionMem,
           analysis,
-          instructors
+          instructors,
+          phase2Model // 🆕 FIX #16
         );
 
         recommendationMessage = recommendation.message || "";
@@ -2165,11 +2226,10 @@ async function smartChat(message, sessionId) {
       `🔍 Search complete: ${courses.length} courses, ${diplomas.length} diplomas`
     );
 
-} else if (analysis.action === "SUBSCRIPTION") {
+  } else if (analysis.action === "SUBSCRIPTION") {
     /* ═══ SUBSCRIPTION FLOW — Always structured ═══ */
     const gptMsg = (analysis.response_message || "").trim();
 
-    /* Use GPT's greeting if short, otherwise default */
     let intro = "أهلاً بيك! 🎉";
     if (gptMsg.length > 5 && gptMsg.length <= 120) {
       intro = gptMsg.replace(/\n/g, "<br>");
@@ -2274,7 +2334,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.3" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.4" });
 
     return res.json({ reply });
   } catch (error) {
@@ -2720,8 +2780,8 @@ app.get("/test", (req, res) => { res.sendFile(path.join(__dirname, "test.html"))
 app.get("/admin/debug", async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.3",
-    engine: "Two-Phase RAG + Context Memory + Smart Filtering",
+    version: "10.4",
+    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -2732,6 +2792,7 @@ app.get("/admin/debug", async (req, res) => {
     supabase_connection: supabaseConnected ? "✅" : "❌",
     admin_sessions: adminTokens.size,
     active_chat_sessions: sessionMemory.size,
+    search_cache_entries: searchCache.size,
     dialect_support: Object.keys(DIALECT_MAP).length + " words",
     tables: {},
   };
@@ -2752,11 +2813,12 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.3",
+    version: "10.4",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache",
     active_sessions: sessionMemory.size,
+    search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
   });
 });
@@ -2764,22 +2826,26 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.3",
+    version: "10.4",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
-      "Phase 2: RAG Recommender + Strict Filter (gpt-4o)",
-      "🆕 Title-priority scoring (50x weight, +200 exact match)",
-      "🆕 Follow-up context memory (remembers last topic)",
-      "🆕 Card images with onerror fallback",
-      "🆕 Phase 2 sees relevance scores",
-      "🆕 Stricter pre-filtering before GPT",
+      "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
+      "Title-priority scoring (50x weight, +200 exact match)",
+      "Follow-up context memory (remembers last topic)",
+      "Card images with onerror fallback",
+      "Phase 2 sees relevance scores",
+      "Stricter pre-filtering before GPT",
       "Quick Intent Check (safety net for payment/greeting)",
       "Dialect normalization (Iraqi/Gulf/Levantine/Moroccan)",
       "Safety check: verifies GPT's course choices",
       "\\n → <br> formatting fix",
       "Session Memory + Auto Summary",
+      "🆕 Search cache (5 min TTL) — reduces DB queries",
+      "🆕 Dynamic Phase 2 model — saves cost with must-show courses",
+      "🆕 Smarter verifyCourseRelevance — multi-term awareness",
+      "🆕 Fixed duplicate prompt rules",
     ],
     endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health", debug: "GET /admin/debug" },
   });
@@ -2789,7 +2855,7 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.3...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.4...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
@@ -2797,14 +2863,15 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.3                              ║
-║  🧠 Engine: Two-Phase RAG + Context Memory             ║
+║  🤖 زيكو Chatbot — v10.4                              ║
+║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
 ║  🔍 Search: Title 50x priority + exact match +200      ║
 ║  🔄 Follow-up: Remembers last topic for context        ║
-║  🖼️  Cards: Image support with onerror fallback        ║
+║  📦 Cache: 5min TTL search cache                       ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
 ║  ⚡ Quick Intent: Payment/Greeting safety net           ║
 ║  🛡️  Safety Check: Verifies GPT course choices         ║
+║  🤖 Phase 2: Dynamic model (gpt-4o / gpt-4o-mini)     ║
 ║  ✅ Server: port ${PORT}                                  ║
 ║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected     " : "❌ NOT connected"}                    ║
 ║  🤖 OpenAI: ${openai ? "✅ Ready        " : "❌ NOT ready     "}                       ║
