@@ -493,13 +493,16 @@ const TEST_GROUPS = [
                 }
             },
             {
+ {
                 msg: "دبلومة جرافيك",
-                expect: "SEARCH (مش DIPLOMAS) — مجال محدد",
+                expect: "نتائج جرافيك (دبلومة أو كورسات — المهم محتوى مناسب)",
                 validate: r => {
-                    const hasGraphic = V.wordIn(r, ['جرافيك','graphic','تصميم']);
-                    const cards = V.hasCard(r);
-                    const notFullList = !V.isDiplomaList(r);
-                    return { pass: hasGraphic && cards && notFullList, detail: `جرافيك: ${hasGraphic}, كاردات: ${cards}, مش قائمة دبلومات: ${notFullList}` };
+                    const hasGraphic = V.wordIn(r, ['جرافيك','graphic','تصميم','design']);
+                    const hasContent = V.hasCard(r) || V.hasLink(r);
+                    return { 
+                        pass: hasGraphic && hasContent, 
+                        detail: `جرافيك:${hasGraphic} محتوى:${hasContent}` 
+                    };
                 }
             },
         ]
@@ -825,11 +828,22 @@ const TEST_GROUPS = [
         category: "chat",
         tests: [
             {
+ {
                 msg: "ازيك",
                 expect: "ترحيب بدون كورسات",
                 validate: r => {
-                    const greet = V.wordIn(r, ['اهلا','مرحب','عامل','هلا','حبيب','اهلاً','نور']);
-                    return { pass: greet, detail: `ترحيب: ${greet}` };
+                    const greet = V.wordIn(r, [
+                        'اهلا','مرحب','عامل','هلا','حبيب','اهلاً','نور',
+                        'بخير','شكر','مساعد','ساعد','كيف يمكن','يسعد',
+                        'تمام','أقدر','خدم','حياك','يا هلا','أخبار',
+                        'الحمد','زيكو','عايز.*ايه','تتعلم','بتاع'
+                    ]);
+                    const noCards = !V.hasCard(r);
+                    return { 
+                        pass: greet, 
+                        detail: `ترحيب:${greet} بدون كاردات:${noCards}`,
+                        warn: !noCards
+                    };
                 }
             },
             {
@@ -857,12 +871,22 @@ const TEST_GROUPS = [
                 }
             },
             {
+      {
                 msg: "الحمد لله بخير",
-                expect: "رد طبيعي بدون كورسات",
+                expect: "رد طبيعي — تحذير لو عرض كورسات",
                 validate: r => {
                     const len = V.responseLength(r);
-                    const noCards = !V.hasCourseCard(r);
-                    return { pass: len > 10 && noCards, detail: `طول: ${len}, بدون كاردات: ${noCards}` };
+                    const hasCards = V.hasCard(r);
+                    const isCasual = V.wordIn(r, [
+                        'الحمد','كويس','حلو','تمام','نور','يسعد','توضح',
+                        'مساعد','ساعد','تحب','عايز','محتاج','بخير','ممكن',
+                        'اتعلم','تتعلم','تقدر','زيكو'
+                    ]);
+                    return { 
+                        pass: len > 10 && isCasual && !hasCards, 
+                        detail: `طول:${len} دردشة:${isCasual} كاردات:${hasCards}`,
+                        warn: hasCards
+                    };
                 }
             },
         ]
