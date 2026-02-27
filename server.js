@@ -1277,6 +1277,90 @@ function enrichMessageWithContext(message, sessionMem) {
   return { enriched: message, isFollowUp: false };
 }
 
+
+
+/* ═══════════════════════════════════
+   🆕 FIX #18: Ensure search_terms for educational topics
+   Uses FUZZY matching — no need for manual keyword lists!
+   "مونتير" → matches "مونتاج" (67% similarity)
+   "فوتشوب" → matches "فوتوشوب" (83% similarity)
+   ═══════════════════════════════════ */
+function ensureSearchTermsForEducationalTopics(message, analysis) {
+  // Only intervene if CHAT with no search_terms
+  if (analysis.action !== "CHAT") return analysis;
+  if (analysis.search_terms && analysis.search_terms.length > 0) return analysis;
+
+  const corrected = applyArabicCorrections(message.toLowerCase());
+  const norm = normalizeArabic(corrected);
+
+  // Extract meaningful words from the message
+  const messageWords = corrected.split(/\s+/)
+    .filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w))
+    .map(w => ({ original: w, norm: normalizeArabic(w) }));
+
+  if (messageWords.length === 0) return analysis;
+
+  const foundTerms = new Set();
+
+  for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+    for (const kw of catInfo.keywords) {
+      const normKw = normalizeArabic(kw.toLowerCase());
+      if (normKw.length <= 2) continue;
+
+      // 1️⃣ Exact substring match
+      if (norm.includes(normKw) || corrected.includes(kw.toLowerCase())) {
+        foundTerms.add(kw);
+        continue;
+      }
+
+      // 2️⃣ Fuzzy match — the SMART part!
+      for (const mw of messageWords) {
+        if (mw.norm.length <= 2) continue;
+        const sim = similarityRatio(mw.norm, normKw);
+        if (sim >= 63) {
+          foundTerms.add(kw);
+          // Also add the user's original word (for search variety)
+          foundTerms.add(mw.original);
+          console.log(`🧠 FIX #18 fuzzy: "${mw.original}" ≈ "${kw}" (${sim}%)`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 3️⃣ Also check against SEARCH_SYNONYMS keys & values
+  for (const mw of messageWords) {
+    if (mw.norm.length <= 2) continue;
+    for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
+      const normC = normalizeArabic(canonical.toLowerCase());
+      if (similarityRatio(mw.norm, normC) >= 63) {
+        foundTerms.add(canonical);
+        synonyms.slice(0, 2).forEach(s => foundTerms.add(s));
+        console.log(`🧠 FIX #18 synonym: "${mw.original}" ≈ "${canonical}"`);
+        break;
+      }
+      for (const syn of synonyms) {
+        const normS = normalizeArabic(syn.toLowerCase());
+        if (normS.length > 2 && similarityRatio(mw.norm, normS) >= 63) {
+          foundTerms.add(canonical);
+          foundTerms.add(syn);
+          console.log(`🧠 FIX #18 synonym: "${mw.original}" ≈ "${syn}"`);
+          break;
+        }
+      }
+    }
+  }
+
+  if (foundTerms.size > 0) {
+    const unique = [...foundTerms].slice(0, 6);
+    analysis.search_terms = unique;
+    console.log(`🧠 FIX #18: Smart-injected search_terms: [${unique.join(", ")}]`);
+  }
+
+  return analysis;
+}
+
+
 /* ═══════════════════════════════════
    11-B: Context Loaders
    ═══════════════════════════════════ */
@@ -1462,6 +1546,9 @@ ${categoriesList}
   - مثال: "سمات المدير الناجح" → action: "CHAT", search_terms: ["قيادة","ادارة","management","leadership"]
   - مثال: "الفرق بين UI و UX" → action: "CHAT", search_terms: ["ui","ux","تصميم واجهات"]
   - مثال: "ازاي اكون مبرمج" → action: "CHAT", search_terms: ["برمجة","programming","اساسيات برمجة"]
+  - مثال: "يعني ايه مونتير" → action: "CHAT", search_terms: ["مونتير","مونتاج","montage","video editing"]
+  - مثال: "ايه هو الجرافيك ديزاين" → action: "CHAT", search_terms: ["جرافيك","graphic","تصميم"]
+  - ⚠️ أي سؤال "يعني ايه X" أو "ما معنى X" أو "ايه هو X" → دايماً حط search_terms بالكلمة + مرادفاتها
   - مثال: "الحمد لله بخير" → action: "CHAT", search_terms: [] (مفيش موضوع تعليمي)
 
 ═══ قاعدة المتابعة (Follow-up) ═══
@@ -2080,6 +2167,10 @@ async function smartChat(message, sessionId) {
       );
     }
   }
+
+
+// 🆕 FIX #18: Ensure educational topics get search_terms even in CHAT
+  ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
 
   // 3. Route based on action
   let reply = "";
