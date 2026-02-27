@@ -891,6 +891,39 @@ async function searchDiplomas(searchTerms) {
   if (cached) return cached;
 
   try {
+    // 1) Try semantic search first
+    if (openai) {
+      try {
+        const queryText = searchTerms.join(" ");
+        const embResponse = await openai.embeddings.create({
+          model: "text-embedding-ada-002",
+          input: queryText,
+        });
+        const queryEmbedding = embResponse.data[0].embedding;
+
+        const { data: semanticResults, error: semErr } = await supabase.rpc(
+          "match_diplomas",
+          {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.75,
+            match_count: 5,
+          }
+        );
+
+        if (!semErr && semanticResults && semanticResults.length > 0) {
+          console.log(`🧠 Semantic diploma search: ${semanticResults.length} results`);
+          semanticResults.forEach((d, i) => {
+            console.log(`   ${i + 1}. [sim=${(d.similarity * 100).toFixed(1)}%] ${d.title}`);
+          });
+          setCachedSearch(cacheKey, semanticResults);
+          return semanticResults;
+        }
+      } catch (embErr) {
+        console.error("Semantic diploma search error:", embErr.message);
+      }
+    }
+
+    // 2) Fallback to ilike search
     const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const expanded = expandSynonyms(corrected);
     const allTerms = splitIntoSearchableTerms(expanded);
