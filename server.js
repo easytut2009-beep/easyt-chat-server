@@ -2356,11 +2356,8 @@ intent = "SUBSCRIPTION";
       const allDiplomas = await loadAllDiplomas();
       reply = formatDiplomasList(allDiplomas);
       intent = "DIPLOMAS";
-    } else {
-      reply =
-        (analysis.response_message
-          ? analysis.response_message + "<br><br>"
-          : "") + formatCategoriesList();
+} else {
+      reply = formatCategoriesList();
     }
 
 
