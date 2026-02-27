@@ -3212,8 +3212,10 @@ async function startServer() {
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
 
+
 /* ═══════════════════════════════════════════════════════════════
-   🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini)
+   🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.5
+   ✅ Persistent Counter Support (status endpoint)
    ═══════════════════════════════════════════════════════════════ */
 
 const guideConversations = {};
@@ -3221,8 +3223,13 @@ const guideRateLimits = {};
 const GUIDE_DAILY_LIMIT = 20;
 const GUIDE_MAX_HISTORY = 20;
 
+/** الحصول على تاريخ اليوم بصيغة YYYY-MM-DD */
+function getToday() {
+  return new Date().toISOString().split('T')[0];
+}
+
 function getGuideRemaining(sessionId) {
-  const today = new Date().toDateString();
+  const today = getToday();
   if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
     return GUIDE_DAILY_LIMIT;
   }
@@ -3230,14 +3237,14 @@ function getGuideRemaining(sessionId) {
 }
 
 function consumeGuideMsg(sessionId) {
-  const today = new Date().toDateString();
+  const today = getToday();
   if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
     guideRateLimits[sessionId] = { date: today, count: 0 };
   }
   guideRateLimits[sessionId].count++;
 }
 
-function buildGuideSystemPrompt(courseName, lectureTitle) {
+function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt) {
   let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
 
 ## دورك:
@@ -3259,16 +3266,95 @@ function buildGuideSystemPrompt(courseName, lectureTitle) {
 - ما تتكلمش عن أسعار أو كورسات أو اشتراكات — ده مش دورك
 - لو حد سألك عن أسعار أو كورسات قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية وهيساعدك"`;
 
-  if (courseName) p += `\n\n📚 الطالب حالياً في كورس: "${courseName}"`;
-  if (lectureTitle) p += `\n📖 الدرس الحالي: "${lectureTitle}"`;
-  if (courseName || lectureTitle) p += `\nحاول تربط إجاباتك بسياق الكورس والدرس لو السؤال ليه علاقة.`;
+  if (courseName || lectureTitle) {
+    p += `\n\n═══════════════════════════════════`;
+    p += `\n📍 سياق الطالب الحالي:`;
+    if (courseName) p += `\n📚 الكورس: "${courseName}"`;
+    if (lectureTitle) p += `\n📖 الدرس: "${lectureTitle}"`;
+
+    p += `\n\n⚡ تعليمات التعامل مع السياق (مهمة جداً):`;
+
+    p += `\n\n1️⃣ لو الطالب سأل سؤال عام زي "مش فاهم" أو "اشرحلي" أو "مش فاهم الدرس" أو "ممكن تساعدني":`;
+    p += `\n   - أأكدله إنك عارف هو في أنهي درس بالظبط (اذكر اسم الدرس)`;
+    p += `\n   - اشرحله الدرس ده بيتكلم عن إيه في 2-3 سطور بشكل مبسط`;
+    p += `\n   - بعد كده اسأله: "إيه بالظبط اللي محتاج أوضحهولك؟"`;
+    p += `\n   - أو اديله اختيارات يختار منها`;
+
+    p += `\n\n2️⃣ لو الطالب سأل سؤال محدد:`;
+    p += `\n   - جاوبه مباشرة وادّيله أمثلة عملية`;
+    p += `\n   - حاول تربط الإجابة بسياق الدرس الحالي`;
+
+    p += `\n\n3️⃣ لو الدرس عن كود أو برمجة:`;
+    p += `\n   - اكتب أكواد توضيحية واشرح كل سطر`;
+    p += `\n   - استخدم أمثلة بسيطة الأول وبعدين عقّد شوية`;
+
+    p += `\n\n4️⃣ لو مش عارف محتوى الدرس بالظبط:`;
+    p += `\n   - اشرح الموضوع العام بناءً على اسم الدرس`;
+    p += `\n   - اسأل الطالب يحددلك أكتر`;
+
+    p += `\n\n5️⃣ دايماً:`;
+    p += `\n   - خليك مشجع وإيجابي`;
+    p += `\n   - استخدم أمثلة من الواقع عشان يفهم`;
+    p += `\n   - لو الطالب قال "فهمت" — شجعه واسأله لو عنده حاجة تانية`;
+
+  } else {
+    p += `\n\n⚠️ ملاحظة: مش قادر أحدد الدرس الحالي للطالب.`;
+    p += `\nلو الطالب سأل سؤال عام — اسأله هو في أنهي كورس وأنهي درس عشان تساعده أحسن.`;
+    p += `\nلو سأل سؤال محدد — جاوبه عادي.`;
+  }
+
+  if (clientPrompt && clientPrompt.trim()) {
+    p += `\n\n═══ سياق إضافي من الصفحة ═══`;
+    p += `\n${clientPrompt.trim().substring(0, 500)}`;
+  }
 
   return p;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   🔥 NEW — GET /api/guide/status
+   بيرجع عدد الرسائل المتبقية لليوزر النهارده
+   الكلاينت بيستدعيه كل ما يفتح الشات عشان يعمل sync
+   ═══════════════════════════════════════════════════════════════ */
+app.get('/api/guide/status', (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
+
+    if (!sessionId) {
+      return res.json({
+        remaining_messages: GUIDE_DAILY_LIMIT,
+        daily_limit: GUIDE_DAILY_LIMIT,
+        date: getToday()
+      });
+    }
+
+    const remaining = getGuideRemaining(sessionId);
+
+    console.log(`📊 Guide Status | Session: ${sessionId.slice(0, 15)}... | Remaining: ${remaining}/${GUIDE_DAILY_LIMIT}`);
+
+    res.json({
+      remaining_messages: remaining,
+      daily_limit: GUIDE_DAILY_LIMIT,
+      date: getToday(),
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('❌ Guide Status Error:', error.message);
+    res.json({
+      remaining_messages: GUIDE_DAILY_LIMIT,
+      daily_limit: GUIDE_DAILY_LIMIT,
+      date: getToday()
+    });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   POST /api/guide — الرسالة الرئيسية
+   ═══════════════════════════════════════════════════════════════ */
 app.post('/api/guide', async (req, res) => {
   try {
-    const { message, session_id, course_name, lecture_title } = req.body;
+    const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
 
     if (!message || !session_id) {
       return res.status(400).json({ error: 'Missing message or session_id' });
@@ -3284,17 +3370,22 @@ app.post('/api/guide', async (req, res) => {
 
     consumeGuideMsg(session_id);
 
-    const systemPrompt = buildGuideSystemPrompt(course_name, lecture_title);
+    const finalSystemPrompt = buildGuideSystemPrompt(
+      course_name || '',
+      lecture_title || '',
+      system_prompt || ''
+    );
 
     if (!guideConversations[session_id]) {
       guideConversations[session_id] = {
-        messages: [{ role: 'system', content: systemPrompt }],
+        messages: [{ role: 'system', content: finalSystemPrompt }],
         lastActivity: Date.now()
       };
     }
 
     const conv = guideConversations[session_id];
-    conv.messages[0] = { role: 'system', content: systemPrompt };
+
+    conv.messages[0] = { role: 'system', content: finalSystemPrompt };
     conv.lastActivity = Date.now();
     conv.messages.push({ role: 'user', content: message });
 
@@ -3313,7 +3404,7 @@ app.post('/api/guide', async (req, res) => {
     conv.messages.push({ role: 'assistant', content: reply });
 
     const newRemaining = getGuideRemaining(session_id);
-    console.log(`🎓 Guide | Session: ${session_id.slice(0,12)}... | Course: ${course_name || 'N/A'} | Remaining: ${newRemaining}`);
+    console.log(`🎓 Guide | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || 'N/A'} | Lecture: ${lecture_title || 'N/A'} | Remaining: ${newRemaining}`);
 
     res.json({ reply, remaining_messages: newRemaining });
 
@@ -3327,34 +3418,52 @@ app.post('/api/guide', async (req, res) => {
   }
 });
 
+/* ═══════════════════════════════════════════════════════════════
+   GET /api/guide/health — Health Check
+   ═══════════════════════════════════════════════════════════════ */
 app.get('/api/guide/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'Ziko Guide',
+    service: 'Ziko Guide v1.5',
     model: 'gpt-4o-mini',
     daily_limit: GUIDE_DAILY_LIMIT,
-    active_sessions: Object.keys(guideConversations).length
+    active_sessions: Object.keys(guideConversations).length,
+    active_rate_limits: Object.keys(guideRateLimits).length
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════
+   🧹 Cleanup old sessions every hour
+   ═══════════════════════════════════════════════════════════════ */
 setInterval(() => {
   const now = Date.now();
-  let cleaned = 0;
+  const today = getToday();
+  let cleanedConv = 0;
+  let cleanedRate = 0;
+
   for (const sid in guideConversations) {
     if (now - guideConversations[sid].lastActivity > 2 * 60 * 60 * 1000) {
       delete guideConversations[sid];
-      cleaned++;
+      cleanedConv++;
     }
   }
-  const today = new Date().toDateString();
+
   for (const sid in guideRateLimits) {
-    if (guideRateLimits[sid].date !== today) delete guideRateLimits[sid];
+    if (guideRateLimits[sid].date !== today) {
+      delete guideRateLimits[sid];
+      cleanedRate++;
+    }
   }
-  if (cleaned > 0) console.log(`🧹 Guide: Cleaned ${cleaned} old sessions`);
+
+  if (cleanedConv > 0 || cleanedRate > 0) {
+    console.log(`🧹 Guide Cleanup: ${cleanedConv} conversations, ${cleanedRate} rate limits removed`);
+  }
 }, 60 * 60 * 1000);
 
-console.log('🎓 Guide Bot endpoint ready at /api/guide');
-
+console.log('🎓 Guide Bot v1.5 (Persistent Counter) endpoints ready:');
+console.log('   POST /api/guide        — Chat');
+console.log('   GET  /api/guide/status  — Counter Sync');
+console.log('   GET  /api/guide/health  — Health Check');
 
 
   app.listen(PORT, () => {
