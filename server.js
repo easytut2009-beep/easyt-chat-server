@@ -3404,4 +3404,108 @@ console.log('   GET  /api/guide/health  — Health Check');
   });
 }
 
+
+/* ══════════════════════════════════════════════════════════
+   🧬 Generate Embeddings Route
+   ══════════════════════════════════════════════════════════ */
+async function generateSingleEmbedding(text) {
+  const cleanText = text.substring(0, 8000);
+  const response = await openai.embeddings.create({
+    model: 'text-embedding-ada-002',
+    input: cleanText,
+  });
+  return response.data[0].embedding;
+}
+
+app.get('/api/admin/generate-embeddings', async (req, res) => {
+  if (!supabase || !openai) {
+    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
+  }
+
+  try {
+    console.log('🚀 Starting embedding generation...');
+    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
+
+    // ====== COURSES ======
+    const { data: courses, error: cErr } = await supabase
+      .from('courses')
+      .select('id, title, description, subtitle, syllabus, objectives, keywords')
+      .is('embedding', null);
+
+    if (cErr) {
+      console.error('Error fetching courses:', cErr);
+    } else {
+      results.courses.total = courses.length;
+      console.log(`📚 Found ${courses.length} courses without embeddings`);
+
+      for (const course of courses) {
+        try {
+          const text = [course.title, course.description, course.subtitle, course.syllabus, course.objectives, course.keywords]
+            .filter(Boolean).join(' ');
+          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
+
+          if (upErr) {
+            console.error(`❌ Course "${course.title}":`, upErr.message);
+            results.courses.errors++;
+          } else {
+            results.courses.processed++;
+            console.log(`✅ ${results.courses.processed}/${courses.length} Course: ${course.title}`);
+          }
+          await new Promise(r => setTimeout(r, 250));
+        } catch (err) {
+          console.error(`❌ Course "${course.title}":`, err.message);
+          results.courses.errors++;
+        }
+      }
+    }
+
+    // ====== DIPLOMAS ======
+    const { data: diplomas, error: dErr } = await supabase
+      .from('diplomas')
+      .select('id, title, description, overview, skills, career_outcomes')
+      .is('embedding', null);
+
+    if (dErr) {
+      console.error('Error fetching diplomas:', dErr);
+    } else {
+      results.diplomas.total = diplomas.length;
+      console.log(`🎓 Found ${diplomas.length} diplomas without embeddings`);
+
+      for (const diploma of diplomas) {
+        try {
+          const text = [diploma.title, diploma.description, diploma.overview, diploma.skills, diploma.career_outcomes]
+            .filter(Boolean).join(' ');
+          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
+
+          if (upErr) {
+            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
+            results.diplomas.errors++;
+          } else {
+            results.diplomas.processed++;
+            console.log(`✅ ${results.diplomas.processed}/${diplomas.length} Diploma: ${diploma.title}`);
+          }
+          await new Promise(r => setTimeout(r, 250));
+        } catch (err) {
+          console.error(`❌ Diploma "${diploma.title}":`, err.message);
+          results.diplomas.errors++;
+        }
+      }
+    }
+
+    console.log('🎉 Embedding generation complete!', results);
+    res.json({ message: 'Embeddings generated!', results });
+
+  } catch (error) {
+    console.error('❌ Generate embeddings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 startServer();
