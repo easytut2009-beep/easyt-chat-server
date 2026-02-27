@@ -1525,6 +1525,24 @@ ${categoriesList}
 - لو في الردود المرجعية فيه رد مناسب، استخدمه`;
 }
 
+/* ═══════════════════════════════════
+   Smart Fallback — varied "didn't understand" messages
+   ═══════════════════════════════════ */
+const FALLBACK_MESSAGES = [
+  "ممكن توضحلي أكتر؟ 🤔 مثلاً قولي اسم المجال أو المهارة اللي عايز تتعلمها",
+  "مش متأكد فهمتك 😅 ممكن تقولي الموضوع اللي عايز تتعلمه بشكل أوضح؟",
+  "ممكن توضح سؤالك بشكل أفضل؟ 🙏 مثلاً: \"عايز كورس فوتوشوب\" أو \"ازاي ادفع\"",
+  "معلش مش قادر أفهم طلبك 😊 جرب تكتب اسم الكورس أو المجال اللي بتدور عليه",
+  "ممكن تحدد أكتر؟ 🎯 مثلاً: برمجة، تصميم، مونتاج، تسويق...",
+];
+
+function getSmartFallback(sessionId) {
+  const mem = getSessionMemory(sessionId);
+  const idx = (mem.messageCount || 0) % FALLBACK_MESSAGES.length;
+  return FALLBACK_MESSAGES[idx];
+}
+
+
 async function analyzeMessage(
   message,
   chatHistory,
@@ -1578,7 +1596,7 @@ async function analyzeMessage(
       return {
         action: "CHAT",
         search_terms: [],
-        response_message: "أقدر أساعدك في إيه؟ 😊",
+        response_message: "",
         intent: "GENERAL",
         user_level: null,
         topics: [],
@@ -2379,7 +2397,7 @@ intent = "SUBSCRIPTION";
     // CHAT
     reply =
       analysis.response_message ||
-      "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
+      getSmartFallback(sessionId);
 
     // 🆕 Smart Upsell: if chat topic relates to courses, suggest them
     if (analysis.search_terms && analysis.search_terms.length > 0) {
