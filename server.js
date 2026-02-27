@@ -151,7 +151,7 @@ const limiter = rateLimit({
    SECTION 5: Constants
    ═══════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
-const ALL_DIPLOMAS_URL = "https://easyt.online/p/diplomas";
+const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 
 const CATEGORIES = {
   "الجرافيكس والتصميم": {
@@ -1055,7 +1055,7 @@ function formatCourseCard(course, instructors, index) {
 }
 
 function formatDiplomaCard(diploma) {
-  const url = diploma.link || "https://easyt.online/p/diplomas";
+  const url = diploma.link || "https://easyt.online/p/easyt-diplomas";
   const rawPrice = diploma.price;
   let priceNum =
     typeof rawPrice === "string"
