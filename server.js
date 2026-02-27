@@ -1362,6 +1362,83 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
 
 
 /* ═══════════════════════════════════
+   🆕 FIX #19: Extract domain from GPT's own response
+   GPT knows ROAS=marketing, BIM=engineering, etc.
+   We scan its response for category keywords → use them for search
+   No manual keyword lists needed!
+   ═══════════════════════════════════ */
+function enrichSearchTermsFromResponse(analysis) {
+  if (analysis.action !== "CHAT") return analysis;
+  if (!analysis.response_message || analysis.response_message.length < 30) return analysis;
+
+  const currentTerms = analysis.search_terms || [];
+
+  // Check if current terms already match known categories
+  const hasStrongTerm = currentTerms.some((t) => {
+    if (t.length <= 2) return false;
+    const norm = normalizeArabic(t.toLowerCase());
+    for (const [, catInfo] of Object.entries(CATEGORIES)) {
+      for (const kw of catInfo.keywords) {
+        const normKw = normalizeArabic(kw.toLowerCase());
+        if (normKw.length <= 2) continue;
+        if (norm === normKw) return true;
+        if (norm.length > 3 && normKw.length > 3) {
+          if (norm.includes(normKw) || normKw.includes(norm)) return true;
+        }
+      }
+    }
+    return false;
+  });
+
+  if (hasStrongTerm) return analysis; // Already has good domain terms
+
+  // Scan GPT's response for domain/category keywords
+  const responseNorm = normalizeArabic(analysis.response_message.toLowerCase());
+  const foundTerms = new Map(); // keyword → category name
+
+  for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+    let catHits = 0;
+
+    for (const kw of catInfo.keywords) {
+      const normKw = normalizeArabic(kw.toLowerCase());
+      if (normKw.length <= 3) continue;
+
+      // Direct substring match
+      if (responseNorm.includes(normKw)) {
+        foundTerms.set(kw, catName);
+        catHits++;
+        continue;
+      }
+
+      // Root matching — first 4-5 chars (catches الإعلانية→اعلان, البرمجة→برمج)
+      if (normKw.length >= 5) {
+        const root = normKw.substring(0, Math.min(normKw.length - 1, 5));
+        if (root.length >= 4 && responseNorm.includes(root)) {
+          foundTerms.set(kw, catName);
+          catHits++;
+        }
+      }
+    }
+
+    // Bonus: if category name itself appears in response
+    const normCatName = normalizeArabic(catName.toLowerCase());
+    if (normCatName.length > 4 && responseNorm.includes(normCatName)) {
+      catInfo.keywords.slice(0, 3).forEach((kw) => foundTerms.set(kw, catName));
+    }
+  }
+
+  if (foundTerms.size > 0) {
+    const newTerms = [...foundTerms.keys()].slice(0, 5);
+    analysis.search_terms = [...new Set([...currentTerms, ...newTerms])].slice(0, 6);
+    const cats = [...new Set(foundTerms.values())];
+    console.log(`🧠 FIX #19: Extracted domains from GPT response → [${newTerms.join(", ")}] (categories: ${cats.join(", ")})`);
+  }
+
+  return analysis;
+}
+
+
+/* ═══════════════════════════════════
    11-B: Context Loaders
    ═══════════════════════════════════ */
 async function loadBotInstructions() {
@@ -1549,7 +1626,21 @@ ${categoriesList}
   - مثال: "يعني ايه مونتير" → action: "CHAT", search_terms: ["مونتير","مونتاج","montage","video editing"]
   - مثال: "ايه هو الجرافيك ديزاين" → action: "CHAT", search_terms: ["جرافيك","graphic","تصميم"]
   - ⚠️ أي سؤال "يعني ايه X" أو "ما معنى X" أو "ايه هو X" → دايماً حط search_terms بالكلمة + مرادفاتها
-  - مثال: "الحمد لله بخير" → action: "CHAT", search_terms: [] (مفيش موضوع تعليمي)
+  
+- ⚠️ أي سؤال عن مصطلح تقني أو اختصار (ROAS, CTR, API, OOP, BIM, إلخ):
+    - action: "CHAT"
+    - response_message = اشرح المصطلح بوضوح
+    - search_terms = اسم المجال/التخصص الأوسع بالعربي + الإنجليزي (مش المصطلح نفسه!)
+    - لأن الكورسات بأسماء المجالات مش بأسماء المصطلحات
+    - مثال: "ايه هي ROAS" → search_terms: ["تسويق رقمي", "اعلانات", "ماركيتنج", "digital marketing"]
+    - مثال: "يعني ايه BIM" → search_terms: ["هندسة", "ريفيت", "برامج هندسية", "revit"]
+    - مثال: "ايه هي API" → search_terms: ["برمجة", "تطوير مواقع", "programming"]
+    - ❌ ممنوع: search_terms: ["roas"] ← مفيش كورس اسمه "roas"
+    - ✅ صح: search_terms: ["تسويق رقمي", "اعلانات"] ← فيه كورسات تسويق
+    - أنت تعرف كل المصطلحات — استخدم معرفتك لتحديد المجال الصحيح
+
+
+- مثال: "الحمد لله بخير" → action: "CHAT", search_terms: [] (مفيش موضوع تعليمي)
 
 ═══ قاعدة المتابعة (Follow-up) ═══
 لو المستخدم قال "فيه حاجة للمبتدئين" أو "عندكم حاجة أسهل" بدون ذكر موضوع جديد:
@@ -2171,6 +2262,8 @@ async function smartChat(message, sessionId) {
 
 // 🆕 FIX #18: Ensure educational topics get search_terms even in CHAT
   ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
+// 🆕 FIX #19: Extract domain from GPT's response (for acronyms like ROAS, CTR, BIM)
+  enrichSearchTermsFromResponse(analysis);
 
   // 3. Route based on action
   let reply = "";
