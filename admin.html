@@ -674,6 +674,41 @@ input:focus, textarea:focus, select:focus {
 .debug-row { font-family: monospace; font-size: 11px; }
 .debug-row:nth-child(odd) { background: #f9fafb; }
 
+.pagination-bar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.page-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.page-btn.active {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.page-btn:not(.active) {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.page-btn:not(.active):hover {
+  background: #cbd5e1;
+}
+
 @media (max-width: 768px) {
   .sidebar { width: 100%; height: auto; position: relative; }
   .main { margin-right: 0; }
@@ -701,7 +736,7 @@ input:focus, textarea:focus, select:focus {
   <div class="sidebar">
     <div style="padding:16px 20px;border-bottom:1px solid #334155">
       <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v12 — Bot Instructions</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.1 — Fixed Pagination</div>
     </div>
     <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
     <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
@@ -784,8 +819,8 @@ input:focus, textarea:focus, select:focus {
       <h2 style="margin:0 0 16px;font-size:20px">📚 الكورسات</h2>
       <div class="card">
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="coursesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCrud('courses')" style="max-width:400px;margin:0">
-          <button class="btn btn-primary btn-sm" onclick="loadCrud('courses')">بحث</button>
+          <input type="text" id="coursesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCrud('courses',1,true)" style="max-width:400px;margin:0">
+          <button class="btn btn-primary btn-sm" onclick="loadCrud('courses',1,true)">بحث</button>
           <button class="btn btn-success btn-sm" onclick="openAddModal('courses')">+ إضافة</button>
         </div>
         <div id="courses-table"></div>
@@ -796,7 +831,11 @@ input:focus, textarea:focus, select:focus {
     <div id="tab-diplomas" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">🎓 الدبلومات</h2>
       <div class="card">
-        <button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')" style="margin-bottom:12px">+ إضافة</button>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="diplomasSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCrud('diplomas',1,true)" style="max-width:400px;margin:0">
+          <button class="btn btn-primary btn-sm" onclick="loadCrud('diplomas',1,true)">بحث</button>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')">+ إضافة</button>
+        </div>
         <div id="diplomas-table"></div>
       </div>
     </div>
@@ -854,7 +893,6 @@ input:focus, textarea:focus, select:focus {
     </div>
   </div>
 </div>
-
 <script>
 // ═══════════════════════════════════════
 // GLOBALS
@@ -872,6 +910,11 @@ var _botInstructionsCache = [];
 var _convViewMode = 'flat';
 var _convSortedMessages = [];
 var _convSessionId = '';
+
+// ✅ NEW: متغيرات الـ Pagination المحلي
+var _allCrudItems = {};
+var _crudPages = {};
+var ITEMS_PER_PAGE = 50;
 
 // ═══════════════════════════════════════
 // UTILS
@@ -972,11 +1015,6 @@ function doLogout() {
   document.getElementById('passInput').value='';
 }
 
-/* ═══════════════════════════════════════════════
-   🐛 FIX: apiCall now throws on HTTP errors
-   كان بيتجاهل errors من السيرفر (400/500)
-   فالـ saveModal كان بيقول "تم" حتى لو الحفظ فشل
-   ═══════════════════════════════════════════════ */
 function apiCall(path, opts) {
   opts = opts||{};
   return fetch(API+path, {
@@ -1056,9 +1094,6 @@ async function loadStats() {
       extra.totalSitePages = (spResp.pages || spResp.items || []).length;
     } catch(e) { extra.totalSitePages = 0; }
 
-    console.log('📊 Stats:', d);
-    console.log('📊 Extra:', extra);
-
     var g = document.getElementById('statsGrid');
     var items = [
       ['💬', d.totalChats || 0, 'إجمالي الرسائل'],
@@ -1107,7 +1142,6 @@ async function loadConversations(page) {
   try {
     var s = document.getElementById('convSearch').value;
     var d = await apiCall('/admin/conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
-    console.log('💬 Conversations response:', d);
 
     var conversations = d.conversations || d.items || d.data || [];
     if(!conversations.length) {
@@ -1145,7 +1179,7 @@ function closeConvDetail() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 💬 CHAT — FIXED SORTING + FLAT/GROUPED VIEWS
+// 💬 CHAT — SORTING + VIEWS
 // ═══════════════════════════════════════════════════════════
 function sortMessages(messages) {
   return messages.slice().sort(function(a, b) {
@@ -1174,8 +1208,6 @@ async function loadConvDetail(sid) {
   _convSessionId = sid;
   try {
     var d = await apiCall('/admin/conversations/' + encodeURIComponent(sid));
-    console.log('💬 Conversation detail response:', d);
-
     var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || d.items || [];
     if (!Array.isArray(messages)) messages = [];
     if (!messages.length) {
@@ -1222,7 +1254,7 @@ function renderConversation() {
   if(sb) sb.scrollTop = sb.scrollHeight;
 }
 
- function renderFlat(messages, sid) {
+function renderFlat(messages, sid) {
   var h = '';
   var lastDate = '';
   var seq = 0;
@@ -1241,11 +1273,8 @@ function renderConversation() {
     h += isUser ? '👤 المستخدم' : '🤖 البوت';
     if (m.intent) h += ' <span class="flat-intent">' + esc(m.intent) + '</span>';
     h += '</div>';
-
-    // ✅ FIX: Bot messages render as HTML, user messages are escaped
     var msgText = (m.content || m.message || '').slice(0, 3000);
-h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
-
+    h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
     h += '<div class="flat-meta">';
     h += '<span class="flat-id">ID: ' + (m.id || '?') + '</span>';
     h += '<span class="flat-time">' + fmtTime(m.created_at) + '</span>';
@@ -1322,7 +1351,7 @@ function renderGrouped(messages, sid) {
       h += '<div class="qa-answer">';
       h += '<span class="qa-answer-label">🤖 ' + (g.botOnly ? 'رسالة تلقائية' : (ai === 0 ? 'رد البوت' : 'رد إضافي ' + (ai+1))) + '</span>';
       h += '<span style="font-size:10px;color:#94a3b8;margin-right:8px">ID:' + (ans.id||'?') + ' | ' + fmtTime(ans.created_at) + '</span>';
-h += '<div class="qa-answer-text">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div>';
+      h += '<div class="qa-answer-text">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div>';
       if (!g.botOnly) {
         var safeQ = '';
         try { safeQ = btoa(unescape(encodeURIComponent((g.question ? (g.question.content || g.question.message || '') : '').slice(0,500)))); } catch(e){}
@@ -1338,9 +1367,9 @@ h += '<div class="qa-answer-text">' + closeTags((ans.content || ans.message || '
 
 function renderDebug(messages) {
   var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto">';
-  h += '<h4 style="margin:0 0 8px;font-size:13px;color:#64748b">🔧 ترتيب الرسائل الفعلي (مرتب حسب created_at → id)</h4>';
+  h += '<h4 style="margin:0 0 8px;font-size:13px;color:#64748b">🔧 ترتيب الرسائل الفعلي</h4>';
   h += '<table style="font-size:11px"><thead><tr>';
-  h += '<th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>created_at</th><th>Content (أول 80 حرف)</th>';
+  h += '<th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>created_at</th><th>Content</th>';
   h += '</tr></thead><tbody>';
   messages.forEach(function(m, i) {
     var rowColor = m.role === 'user' ? '#dcf8c6' : '#fff';
@@ -1353,10 +1382,7 @@ function renderDebug(messages) {
     h += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content || m.message || '').slice(0, 80)) + '</td>';
     h += '</tr>';
   });
-  h += '</tbody></table>';
-  h += '<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">';
-  h += '💡 <b>لو الترتيب غلط هنا</b> يبقى المشكلة من الباك اند. لو صح هنا بس غلط في المجمّع، يبقى مشكلة الـ grouping.';
-  h += '</div></div>';
+  h += '</tbody></table></div>';
   return h;
 }
 
@@ -1403,9 +1429,7 @@ function openAddCorrectionModal() {
 async function loadCorrections() {
   try {
     var d = await apiCall('/admin/corrections');
-    console.log('✅ Corrections response:', d);
     var el = document.getElementById('corrList');
-
     var corrections = d.corrections || d.items || d.data || [];
     if(!corrections.length) {
       el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات</p>';
@@ -1426,7 +1450,7 @@ async function loadCorrections() {
 }
 
 // ═══════════════════════════════════════
-// 🧠 BOT INSTRUCTIONS — v12
+// 🧠 BOT INSTRUCTIONS
 // ═══════════════════════════════════════
 var BOT_INSTRUCTION_CATEGORIES = [
   { value: 'GENERAL', label: '🌐 عام', desc: 'تعليمات تنطبق على كل الردود' },
@@ -1446,14 +1470,13 @@ async function loadBotInstructions() {
     var se = document.getElementById('botInstructionsSearch');
     var s = se ? se.value : '';
     var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
-    console.log('🧠 Bot instructions response:', d);
     var items = d.instructions || d.items || d.data || [];
     _botInstructionsCache = items.slice();
 
     if (!items.length) {
       el.innerHTML = '<div class="card" style="text-align:center;padding:30px">' +
         '<div style="font-size:48px;margin-bottom:12px">📝</div>' +
-        '<p style="color:#94a3b8;margin-bottom:12px">مفيش تعليمات لسه — البوت بيستخدم الإعدادات الافتراضية</p>' +
+        '<p style="color:#94a3b8;margin-bottom:12px">مفيش تعليمات لسه</p>' +
         '<button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف أول تعليمة</button>' +
         '</div>';
       return;
@@ -1467,13 +1490,11 @@ async function loadBotInstructions() {
     });
 
     var html = '';
-
     var activeCount = items.filter(function(i) { return i.is_active !== false; }).length;
     html += '<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:12px">';
     html += '<span style="font-size:13px"><b>' + items.length + '</b> تعليمة</span>';
     html += '<span style="font-size:13px;color:#16a34a"><b>' + activeCount + '</b> مفعّلة ✅</span>';
     html += '<span style="font-size:13px;color:#dc2626"><b>' + (items.length - activeCount) + '</b> موقفة ❌</span>';
-    html += '<span style="font-size:11px;color:#94a3b8;margin-right:auto">البوت بيقرأ كل التعليمات المفعّلة قبل كل رد</span>';
     html += '</div>';
 
     for (var catKey in grouped) {
@@ -1488,38 +1509,29 @@ async function loadBotInstructions() {
       html += '<span style="font-size:11px;color:#94a3b8">' + catDesc + '</span>';
       html += '<span style="font-size:12px;color:#64748b;margin-right:auto">' + catItems.length + ' تعليمة</span>';
       html += '</div>';
-
       html += '<div style="display:grid;gap:10px">';
+
       catItems.forEach(function(item) {
         var ia = item.is_active !== false;
         var globalIdx = _botInstructionsCache.indexOf(item);
         html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '">';
-
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
         html += '<div style="display:flex;align-items:center;gap:8px">';
         html += '<span style="font-size:11px;color:#94a3b8">#' + item.id + '</span>';
-        html += '<div class="priority-bar">';
-        html += '<span>أولوية: ' + (item.priority || 0) + '</span>';
-        html += renderPriorityDots(item.priority);
-        html += '</div>';
+        html += '<div class="priority-bar"><span>أولوية: ' + (item.priority || 0) + '</span>' + renderPriorityDots(item.priority) + '</div>';
         html += '</div>';
         html += '<span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + ';font-weight:700">' + (ia ? '✅ مفعّل' : '❌ موقف') + '</span>';
         html += '</div>';
-
         html += '<div class="instruction-text">' + esc(item.instruction || '') + '</div>';
-
         html += '<div style="display:flex;gap:6px;margin-top:8px;align-items:center">';
         html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + globalIdx + ')">✏️ تعديل</button>';
         html += '<button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️ إيقاف' : '▶️ تفعيل') + '</button>';
         html += '<button class="btn btn-danger btn-sm" onclick="deleteBotInstruction(\'' + item.id + '\')">🗑️</button>';
         html += '<span style="font-size:10px;color:#94a3b8;margin-right:auto">' + fmtFull(item.created_at) + '</span>';
-        html += '</div>';
-
-        html += '</div>';
+        html += '</div></div>';
       });
       html += '</div></div>';
     }
-
     el.innerHTML = html;
   } catch(e) {
     console.error('❌ loadBotInstructions error:', e);
@@ -1548,47 +1560,21 @@ function buildBIForm(item) {
   var cat = item ? (item.category || 'GENERAL') : 'GENERAL';
   var p = item ? (item.priority != null ? item.priority : 10) : 10;
   var a = item ? (item.is_active !== false) : true;
-
   var h = '';
-  h += '<div class="prompt-badge" style="margin-bottom:12px">📝 اكتب التعليمة بالعربي العادي — البوت هيفهمها ويتبعها</div>';
-
+  h += '<div class="prompt-badge" style="margin-bottom:12px">📝 اكتب التعليمة بالعربي العادي</div>';
   h += '<label style="font-size:12px;font-weight:600">التعليمة:</label>';
-  h += '<textarea id="bi_instruction" rows="6" style="margin-top:4px;margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="مثلاً: لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان...">' + inst + '</textarea>';
-
+  h += '<textarea id="bi_instruction" rows="6" style="margin-top:4px;margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="مثلاً: لما حد يسأل عن سعر الاشتراك قوله 49$...">' + inst + '</textarea>';
   h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
-
-  h += '<div style="flex:1;min-width:180px">';
-  h += '<label style="font-size:12px;font-weight:600">التصنيف:</label>';
-  h += '<select id="bi_category" style="margin-top:4px">';
+  h += '<div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">التصنيف:</label><select id="bi_category" style="margin-top:4px">';
   BOT_INSTRUCTION_CATEGORIES.forEach(function(c) {
     h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + ' — ' + c.desc + '</option>';
   });
-  h += '</select>';
+  h += '</select></div>';
+  h += '<div style="flex:0 0 120px"><label style="font-size:12px;font-weight:600">الأولوية:</label><input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px"><div style="font-size:10px;color:#94a3b8;margin-top:2px">0=أقل | 100=أعلى</div></div>';
   h += '</div>';
-
-  h += '<div style="flex:0 0 120px">';
-  h += '<label style="font-size:12px;font-weight:600">الأولوية:</label>';
-  h += '<input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px">';
-  h += '<div style="font-size:10px;color:#94a3b8;margin-top:2px">0 = أقل | 100 = أعلى</div>';
-  h += '</div>';
-
-  h += '</div>';
-
   h += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#f8fafc;border-radius:8px">';
   h += '<label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
-  h += '<span style="font-size:13px">مفعّل — البوت هيقرأ التعليمة دي</span>';
-  h += '</div>';
-
-  h += '<div style="margin-top:12px;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">';
-  h += '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">💡 أمثلة لتعليمات:</div>';
-  h += '<div style="font-size:11px;color:#78350f;line-height:2">';
-  h += '▸ "لما حد يسأل عن سعر الاشتراك قوله إن العرض الحالي 49$ بدل 59$"<br>';
-  h += '▸ "ما تقترحش أي منصة تانية غير إيزي تي"<br>';
-  h += '▸ "لو حد قالك مشكلة في الفيديو، قوله يجرب Chrome ويمسح الكاش"<br>';
-  h += '▸ "كلم العميل بعامية مصرية واستخدم إيموجي خفيف"<br>';
-  h += '▸ "لو حد سأل عن كورس مش موجود، اقترح عليه أقرب كورس متاح"<br>';
-  h += '</div></div>';
-
+  h += '<span style="font-size:13px">مفعّل</span></div>';
   return h;
 }
 
@@ -1620,7 +1606,6 @@ async function loadCustomResponses() {
     var se = document.getElementById('customresponsesSearch');
     var s = se?se.value:'';
     var d = await apiCall('/admin/custom-responses?limit=100'+(s?'&search='+encodeURIComponent(s):''));
-    console.log('🛠️ Custom responses:', d);
     var items = d.responses || d.items || d.data || [];
     _customResponsesCache = items.slice();
     if (!items.length) {
@@ -1685,48 +1670,221 @@ async function deleteCustomResponse(id) {
   try { await apiCall('/admin/custom-responses/'+id,{method:'DELETE'}); toast('تم ✅'); loadCustomResponses(); } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
 
-// ═══════════════════════════════════════
-// GENERIC CRUD
-// ═══════════════════════════════════════
-async function loadCrud(entity) {
-  var el = document.getElementById(entity+'-table');
-  if (!el) { console.error('❌ Element not found:', entity+'-table'); return; }
-  try {
-    var se = document.getElementById(entity+'Search');
-    var s = se?se.value:'';
-    var d = await apiCall('/admin/'+entity+'?limit=50'+(s?'&search='+encodeURIComponent(s):''));
-    console.log('📦 CRUD ['+entity+'] response:', d);
+// ═══════════════════════════════════════════════════════════
+// ✅ GENERIC CRUD — مع Pagination محلي (الحل الأساسي)
+// ═══════════════════════════════════════════════════════════
+async function loadCrud(entity, page, forceReload) {
+  page = page || 1;
+  _crudPages[entity] = page;
 
-    var items = d.items || d.courses || d.diplomas || d.instructors || d.faqs || d.pages || d.corrections || d.data || d.entries || [];
-    _crudCache[entity] = {};
-    items.forEach(function(i){_crudCache[entity][i.id]=i;});
-    if(!items.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center">لا توجد بيانات</p>'; return; }
-    var cols = Object.keys(items[0]).filter(function(k){return k!=='full_content'&&k!=='content';}).slice(0,6);
-    var html = '<div style="overflow-x:auto"><table><thead><tr>';
-    cols.forEach(function(c){html+='<th>'+esc(c)+'</th>';});
-    html += '<th>إجراء</th></tr></thead><tbody>';
-    items.forEach(function(item) {
-      html += '<tr>';
-      cols.forEach(function(c){ html+='<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(item[c]!=null?String(item[c]):'').slice(0,60)+'</td>'; });
-      html += '<td><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-left:4px" onclick="openEditFromCache(\''+esc(entity)+'\',\''+esc(item.id)+'\')">تعديل</button> <button class="btn btn-danger btn-sm" onclick="deleteCrud(\''+esc(entity)+'\',\''+esc(item.id)+'\')">حذف</button></td></tr>';
-    });
-    html += '</tbody></table></div>';
-    el.innerHTML = html;
+  var el = document.getElementById(entity + '-table');
+  if (!el) { console.error('❌ Element not found:', entity + '-table'); return; }
+
+  // ✅ لو البيانات محملة قبل كده ومش محتاج reload
+  if (!forceReload && _allCrudItems[entity] && _allCrudItems[entity].length > 0) {
+    renderCrudPage(entity, page);
+    return;
+  }
+
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳ جاري تحميل كل البيانات...</p>';
+
+  try {
+    var se = document.getElementById(entity + 'Search');
+    var s = se ? se.value : '';
+
+    // ✅ تحميل كل البيانات مرة واحدة (limit=2000 يكفي لـ 350+ كورس)
+    var url = '/admin/' + entity + '?limit=2000';
+    if (s) url += '&search=' + encodeURIComponent(s);
+
+    var d = await apiCall(url);
+    console.log('📦 CRUD [' + entity + '] loaded:', d);
+
+    var items = d.items || d.courses || d.diplomas || d.instructors
+                || d.faqs || d.pages || d.corrections || d.data || d.entries || [];
+
+    // ✅ حفظ كل البيانات
+    _allCrudItems[entity] = items;
+    if (!_crudCache[entity]) _crudCache[entity] = {};
+    items.forEach(function(i) { _crudCache[entity][i.id] = i; });
+
+    console.log('📦 [' + entity + '] Total items loaded: ' + items.length);
+
+    renderCrudPage(entity, page);
+
   } catch(e) {
-    console.error('❌ loadCrud ['+entity+'] error:', e);
-    if(el) el.innerHTML='<p style="color:#ef4444;text-align:center">❌ ' + esc(e.message || 'خطأ') + '</p>';
+    console.error('❌ loadCrud [' + entity + '] error:', e);
+    el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message || 'خطأ') + '</p>';
   }
 }
 
-function openEditFromCache(e,id) {
-  if(_crudCache[e]&&_crudCache[e][id]) openEditModal(e,_crudCache[e][id]);
-  else toast('حدّث الصفحة','error');
+// ✅ NEW: عرض صفحة من البيانات المحفوظة (بدون API call)
+function renderCrudPage(entity, page) {
+  var el = document.getElementById(entity + '-table');
+  if (!el) return;
+
+  var allItems = _allCrudItems[entity] || [];
+  var totalItems = allItems.length;
+  var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+
+  // تأكد الصفحة صحيحة
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  _crudPages[entity] = page;
+
+  if (!totalItems) {
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد بيانات</p>';
+    return;
+  }
+
+  var start = (page - 1) * ITEMS_PER_PAGE;
+  var end = Math.min(start + ITEMS_PER_PAGE, totalItems);
+  var items = allItems.slice(start, end);
+
+  // ✅ تحديد الأعمدة
+  var cols = Object.keys(items[0]).filter(function(k) {
+    return k !== 'full_content' && k !== 'content' && k !== 'embedding'
+           && k !== 'search_vector' && k !== 'raw_html' && k !== 'metadata';
+  }).slice(0, 7);
+
+  var html = '';
+
+  // ✅ شريط المعلومات
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;padding:10px 14px;background:#f0f9ff;border-radius:8px;border:1px solid #bfdbfe">';
+  html += '<span style="font-size:13px;font-weight:700;color:#1e40af">📊 إجمالي: ' + totalItems + ' عنصر</span>';
+  html += '<span style="font-size:12px;color:#64748b">عرض ' + (start + 1) + ' - ' + end + ' من ' + totalItems + '</span>';
+  if (totalPages > 1) {
+    html += '<span style="font-size:12px;color:#64748b">صفحة ' + page + ' من ' + totalPages + '</span>';
+  }
+  html += '</div>';
+
+  // ✅ Pagination فوق
+  if (totalPages > 1) {
+    html += buildPaginationBar(entity, page, totalPages);
+  }
+
+  // ✅ الجدول
+  html += '<div style="overflow-x:auto;margin-top:8px"><table><thead><tr>';
+  html += '<th style="width:30px">#</th>';
+  cols.forEach(function(c) { html += '<th>' + esc(c) + '</th>'; });
+  html += '<th>إجراء</th></tr></thead><tbody>';
+
+  items.forEach(function(item, idx) {
+    html += '<tr>';
+    html += '<td style="font-size:11px;color:#94a3b8">' + (start + idx + 1) + '</td>';
+    cols.forEach(function(c) {
+      var val = item[c] != null ? String(item[c]) : '';
+      var display = val.length > 60 ? val.slice(0, 57) + '...' : val;
+      html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(val.slice(0, 300)) + '">' + esc(display) + '</td>';
+    });
+    html += '<td style="white-space:nowrap">';
+    html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-left:4px" onclick="openEditFromCache(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">✏️</button> ';
+    html += '<button class="btn btn-danger btn-sm" onclick="deleteCrud(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">🗑️</button>';
+    html += '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  // ✅ Pagination تحت
+  if (totalPages > 1) {
+    html += buildPaginationBar(entity, page, totalPages);
+  }
+
+  el.innerHTML = html;
 }
 
-async function deleteCrud(entity,id) {
+// ✅ NEW: بناء شريط الـ Pagination
+function buildPaginationBar(entity, page, totalPages) {
+  var h = '<div class="pagination-bar">';
+
+  // زر أول صفحة
+  if (page > 2) {
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',1)" title="أول صفحة">⏮️</button>';
+  }
+
+  // زر السابق
+  if (page > 1) {
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page - 1) + ')">→</button>';
+  }
+
+  // أرقام الصفحات
+  var startP = Math.max(1, page - 3);
+  var endP = Math.min(totalPages, page + 3);
+
+  if (startP > 1) {
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',1)">1</button>';
+    if (startP > 2) h += '<span style="color:#94a3b8;font-size:12px">...</span>';
+  }
+
+  for (var p = startP; p <= endP; p++) {
+    h += '<button class="page-btn' + (p === page ? ' active' : '') + '" onclick="goToPage(\'' + entity + '\',' + p + ')">' + p + '</button>';
+  }
+
+  if (endP < totalPages) {
+    if (endP < totalPages - 1) h += '<span style="color:#94a3b8;font-size:12px">...</span>';
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + totalPages + ')">' + totalPages + '</button>';
+  }
+
+  // زر التالي
+  if (page < totalPages) {
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page + 1) + ')">←</button>';
+  }
+
+  // زر آخر صفحة
+  if (page < totalPages - 1) {
+    h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + totalPages + ')" title="آخر صفحة">⏭️</button>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+// ✅ NEW: التنقل بين الصفحات بدون API call
+function goToPage(entity, page) {
+  _crudPages[entity] = page;
+  renderCrudPage(entity, page);
+  // Scroll to top of table
+  var el = document.getElementById(entity + '-table');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openEditFromCache(e, id) {
+  if (_crudCache[e] && _crudCache[e][id]) openEditModal(e, _crudCache[e][id]);
+  else toast('حدّث الصفحة', 'error');
+}
+
+// ✅ UPDATED: حذف مع تحديث الكاش المحلي
+async function deleteCrud(entity, id) {
   var ok = await showConfirm('حذف؟');
-  if(!ok) return;
-  try { await apiCall('/admin/'+entity+'/'+id,{method:'DELETE'}); toast('تم ✅'); if(entity==='corrections') loadCorrections(); else loadCrud(entity); } catch(e) { toast('خطأ: '+e.message,'error'); }
+  if (!ok) return;
+  try {
+    await apiCall('/admin/' + entity + '/' + id, { method: 'DELETE' });
+    toast('تم ✅');
+
+    if (entity === 'corrections') {
+      loadCorrections();
+      return;
+    }
+
+    // ✅ حذف من الكاش المحلي بدون إعادة تحميل من السيرفر
+    if (_allCrudItems[entity]) {
+      _allCrudItems[entity] = _allCrudItems[entity].filter(function(item) {
+        return String(item.id) !== String(id);
+      });
+    }
+    if (_crudCache[entity]) {
+      delete _crudCache[entity][id];
+    }
+
+    // ✅ إعادة عرض نفس الصفحة
+    var currentPage = _crudPages[entity] || 1;
+    var totalItems = (_allCrudItems[entity] || []).length;
+    var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    renderCrudPage(entity, currentPage);
+
+  } catch(e) {
+    toast('خطأ: ' + e.message, 'error');
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1816,7 +1974,7 @@ async function saveModal() {
         priority: parseInt(document.getElementById('bi_priority').value)||0,
         is_active: document.getElementById('bi_active').checked
       };
-      if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة واضحة (5 حروف على الأقل)!','error'); return; }
+      if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة واضحة!','error'); return; }
       if(modalState.type==='bot_instruction_add') {
         await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
       } else {
@@ -1826,16 +1984,24 @@ async function saveModal() {
       return;
     }
 
-    // Generic CRUD
+    // ✅ Generic CRUD — مع تحديث الكاش
     var fields = getFields(modalState.entity);
     var body = {};
     fields.forEach(function(f){ var v=document.getElementById('modal_'+f.key); if(v) body[f.key]=v.value; });
+
     if(modalState.type==='add') {
       await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
     } else {
       await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
     }
-    closeModal(); loadCrud(modalState.entity); toast('تم ✅');
+
+    closeModal();
+    toast('تم ✅');
+
+    // ✅ مسح الكاش وإعادة تحميل
+    delete _allCrudItems[modalState.entity];
+    loadCrud(modalState.entity, _crudPages[modalState.entity] || 1, true);
+
   } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
 </script>
