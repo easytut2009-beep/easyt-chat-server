@@ -518,16 +518,44 @@ function quickIntentCheck(message) {
     }
   }
 
-  const greetingPatterns = [
-    /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم)/,
+const greetingPatterns = [
+    /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم|ازيك|إزيك|ازيكم|عامل\s*ايه|كيفك|شلونك|يا\s*هلا)/,
   ];
   for (const p of greetingPatterns) {
     if (p.test(norm) || p.test(lower)) {
       if (lower.split(/\s+/).length <= 4) {
-        return { intent: "GREETING", confidence: 0.9 };
+        return { intent: "GREETING", confidence: 0.9, isCasual: true };
       }
     }
   }
+
+  // 🆕 FIX #22: Casual chat — no courses/upsell needed
+  const casualChatPatterns = [
+    /^الحمد\s*(لله|الله)/,
+    /^بخير/,
+    /^تمام(\s|$)/,
+    /^كويس/,
+    /^ماشي/,
+    /^الله يسلمك/,
+    /^الله يبارك/,
+    /^جزاك الله/,
+    /^يسلمو/,
+    /^مشكور/,
+    /^شكرا\s*(جدا|ليك|لك|اوي)?$/,
+    /^حلو/,
+    /^اوكي$/,
+    /^ok(ay)?$/i,
+    /^نايس/,
+    /^nice/i,
+    /^good/i,
+    /^تسلم/,
+  ];
+  for (const p of casualChatPatterns) {
+    if ((p.test(norm) || p.test(lower)) && lower.split(/\s+/).length <= 6) {
+      return { intent: "CHAT", confidence: 0.95, isCasual: true };
+    }
+  }
+
 
   const catPatterns = [
     /عندكم.*ايه/, /عندكم.*شو/, /عندكم.*وش/, /ايه.*المجالات/,
@@ -2207,11 +2235,19 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-  if (quickCheck && quickCheck.confidence >= 0.9) {
+if (quickCheck && quickCheck.confidence >= 0.9) {
     if (analysis.action !== quickCheck.intent) {
       console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
       analysis.action = quickCheck.intent;
     }
+  }
+
+  // 🆕 FIX #22: Skip upsell & enrichment for casual chat / greetings
+  let skipUpsell = false;
+  if (quickCheck && quickCheck.isCasual) {
+    analysis.search_terms = [];
+    skipUpsell = true;
+    console.log(`🛡️ FIX #22: Casual/Greeting detected — clearing search_terms, skipping upsell`);
   }
 
   if (isContextFollowUp && !analysis.is_follow_up) {
@@ -2265,8 +2301,11 @@ async function smartChat(message, sessionId) {
     }
   }
 
-  ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
-  enrichSearchTermsFromResponse(analysis);
+// 🆕 FIX #22: Skip enrichment for casual/greeting messages
+  if (!skipUpsell) {
+    ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
+    enrichSearchTermsFromResponse(analysis);
+  }
 
   let reply = "";
   let intent = analysis.intent || analysis.action;
@@ -2574,7 +2613,7 @@ async function smartChat(message, sessionId) {
       analysis.response_message ||
       getSmartFallback(sessionId);
 
-    if (analysis.search_terms && analysis.search_terms.length > 0) {
+   if (analysis.search_terms && analysis.search_terms.length > 0 && !skipUpsell) {
       try {
         const [upsellCourses, upsellDiplomas] = await Promise.all([
           searchCourses(analysis.search_terms, [], null),
