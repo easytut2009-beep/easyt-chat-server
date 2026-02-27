@@ -707,38 +707,74 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     const cols =
       allTerms.length > 8
         ? ["title", "subtitle", "description"]
-        : [
-            "title",
-            "description",
-            "subtitle",
-            "full_content",
-            "page_content",
-            "syllabus",
-            "objectives",
-          ];
+        : ["title", "description", "subtitle", "full_content", "page_content", "syllabus", "objectives"];
 
     const orFilters = allTerms
       .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
 
-    const { data: courses, error } = await supabase
+    // 🆕 Run ilike + semantic search in parallel
+    const ilikePromise = supabase
       .from("courses")
-      .select(
-        "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
-      )
+      .select("id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives")
       .or(orFilters)
       .limit(30);
+
+    const semanticPromise = openai ? (async () => {
+      try {
+        const queryText = searchTerms.join(" ");
+        const embResp = await openai.embeddings.create({
+          model: "text-embedding-ada-002",
+          input: queryText,
+        });
+        const { data } = await supabase.rpc("match_courses", {
+          query_embedding: embResp.data[0].embedding,
+          match_threshold: 0.75,
+          match_count: 10,
+        });
+        return data || [];
+      } catch (e) {
+        console.error("Semantic course search error:", e.message);
+        return [];
+      }
+    })() : Promise.resolve([]);
+
+    const [ilikeResult, semanticResults] = await Promise.all([ilikePromise, semanticPromise]);
+    const { data: courses, error } = ilikeResult;
 
     if (error) {
       console.error("Search error:", error.message);
       return [];
     }
-    if (!courses || courses.length === 0)
-      return await fuzzySearchFallback(allTerms);
 
-    let filtered = courses;
+    let allCourses = courses || [];
+
+    // 🆕 Merge semantic-only results
+    const semanticMap = new Map();
+    if (semanticResults.length > 0) {
+      console.log(`🧠 Semantic course matches: ${semanticResults.length}`);
+      semanticResults.forEach(s => semanticMap.set(s.id, s.similarity));
+
+      const ilikeIds = new Set(allCourses.map(c => c.id));
+      const semanticOnlyIds = [...semanticMap.keys()].filter(id => !ilikeIds.has(id));
+
+      if (semanticOnlyIds.length > 0) {
+        const { data: semCourses } = await supabase
+          .from("courses")
+          .select("id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives")
+          .in("id", semanticOnlyIds);
+        if (semCourses) {
+          console.log(`🧠 Semantic-only courses added: ${semCourses.length}`);
+          allCourses = [...allCourses, ...semCourses];
+        }
+      }
+    }
+
+    if (allCourses.length === 0) return await fuzzySearchFallback(allTerms);
+
+    let filtered = allCourses;
     if (excludeTerms.length > 0) {
-      filtered = courses.filter((c) => {
+      filtered = allCourses.filter((c) => {
         const tn = normalizeArabic((c.title || "").toLowerCase());
         return !excludeTerms.some((ex) =>
           tn.includes(normalizeArabic(ex.toLowerCase()))
@@ -748,19 +784,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     if (audience) {
       const af = filtered.filter((c) => {
-        const combined = (
-          (c.title || "") +
-          " " +
-          (c.description || "") +
-          " " +
-          (c.subtitle || "")
-        ).toLowerCase();
-        if (audience === "مبتدئ")
-          return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(
-            combined
-          );
-        if (audience === "متقدم")
-          return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
+        const combined = ((c.title || "") + " " + (c.description || "") + " " + (c.subtitle || "")).toLowerCase();
+        if (audience === "مبتدئ") return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(combined);
+        if (audience === "متقدم") return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
         return true;
       });
       if (af.length > 0) filtered = af;
@@ -777,17 +803,12 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
 
       const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
-      if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) {
-        score += 200;
-      }
-      if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) {
-        score += 50;
-      }
+      if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 200;
+      if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 50;
 
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-
         if (titleNorm.includes(nt)) score += 50;
         if (subtitleNorm.includes(nt)) score += 15;
         if (pageNorm.includes(nt)) score += 5;
@@ -801,6 +822,13 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         titleNorm.includes(normalizeArabic(t.toLowerCase()))
       ).length;
       if (titleHits >= 2) score += 40;
+
+      // 🆕 Semantic score boost
+      if (semanticMap.has(c.id)) {
+        const semSim = semanticMap.get(c.id);
+        score += Math.round(semSim * 100);
+        if (score <= Math.round(semSim * 100)) score += Math.round(semSim * 50);
+      }
 
       return { ...c, relevanceScore: score };
     });
@@ -819,7 +847,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     return [];
   }
 }
-
 async function fuzzySearchFallback(terms) {
   if (!supabase) return [];
   try {
