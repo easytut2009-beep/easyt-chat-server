@@ -475,6 +475,10 @@ function splitIntoSearchableTerms(terms) {
 function finalizeReply(html) {
   if (!html) return "";
   html = html.replace(/\n/g, "<br>");
+  
+  // 🆕 FIX: Force line breaks before numbered list items
+  html = html.replace(/([.!؟،])\s*(\d+)\.\s/g, "$1<br>$2. ");
+  
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
   html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
@@ -1454,6 +1458,11 @@ ${categoriesList}
 
 🛠️ SUPPORT — مشاكل تقنية/شكاوي
 💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
+  - ⚠️ حتى لو الأكشن CHAT — لو الموضوع له علاقة بكورسات على المنصة، ضع search_terms بالكلمات المرتبطة
+  - مثال: "سمات المدير الناجح" → action: "CHAT", search_terms: ["قيادة","ادارة","management","leadership"]
+  - مثال: "الفرق بين UI و UX" → action: "CHAT", search_terms: ["ui","ux","تصميم واجهات"]
+  - مثال: "ازاي اكون مبرمج" → action: "CHAT", search_terms: ["برمجة","programming","اساسيات برمجة"]
+  - مثال: "الحمد لله بخير" → action: "CHAT", search_terms: [] (مفيش موضوع تعليمي)
 
 ═══ قاعدة المتابعة (Follow-up) ═══
 لو المستخدم قال "فيه حاجة للمبتدئين" أو "عندكم حاجة أسهل" بدون ذكر موضوع جديد:
@@ -2366,11 +2375,49 @@ intent = "SUBSCRIPTION";
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
 
-  } else {
+} else {
     // CHAT
     reply =
       analysis.response_message ||
       "أهلاً بيك! 😊 أقدر أساعدك تلاقي كورسات في أي مجال تحبه. قولي عايز تتعلم إيه؟";
+
+    // 🆕 Smart Upsell: if chat topic relates to courses, suggest them
+    if (analysis.search_terms && analysis.search_terms.length > 0) {
+      try {
+        const [upsellCourses, upsellDiplomas] = await Promise.all([
+          searchCourses(analysis.search_terms, [], null),
+          searchDiplomas(analysis.search_terms),
+        ]);
+
+        if (upsellCourses.length > 0 || upsellDiplomas.length > 0) {
+          const instructors = await getInstructors();
+
+          reply += `<br><br>💡 <strong>بالمناسبة، عندنا كورسات ممكن تفيدك في الموضوع ده:</strong>`;
+
+          if (upsellDiplomas.length > 0) {
+            upsellDiplomas.slice(0, 1).forEach((d) => {
+              reply += formatDiplomaCard(d);
+            });
+          }
+
+          if (upsellCourses.length > 0) {
+            upsellCourses.slice(0, 3).forEach((c, i) => {
+              reply += formatCourseCard(c, instructors, i + 1);
+            });
+          }
+
+          const cat = detectRelevantCategory(analysis.search_terms);
+          if (cat) {
+            reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
+<a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
+          }
+
+          reply += `<br>✨ كل الكورسات دي متاحة مع الاشتراك السنوي (49$ عرض رمضان) 🎓`;
+        }
+      } catch (e) {
+        console.error("Smart upsell error:", e.message);
+      }
+    }
   }
 
   // 4. Clean up
