@@ -536,6 +536,23 @@ function quickIntentCheck(message) {
     }
   }
 
+// ═══ 🆕 FIX: Diploma intent detection ═══
+  const hasDiploma = /دبلوم|diploma/i.test(norm) || /دبلوم|diploma/i.test(lower);
+  if (hasDiploma) {
+    // Check if there's a specific subject (e.g., "دبلومة فوتوشوب")
+    const allCatKeywords = Object.values(CATEGORIES).flatMap((c) => c.keywords);
+    const hasSpecificSubject = allCatKeywords.some((kw) => {
+      const normKw = normalizeArabic(kw.toLowerCase());
+      return normKw.length > 2 && (norm.includes(normKw) || lower.includes(kw.toLowerCase()));
+    });
+
+    if (!hasSpecificSubject) {
+      // General diploma query → force DIPLOMAS
+      return { intent: "DIPLOMAS", confidence: 0.93 };
+    }
+    // Has specific subject like "دبلومة تصميم" → let analyzer handle (probably SEARCH)
+  }
+
   return null;
 }
 
@@ -595,6 +612,47 @@ function formatCategoriesList() {
   });
   html += `<br>✨ اختار تصنيف وأنا هجيبلك الكورسات المتاحة فيه!`;
   html += `<br><br>💡 أو تصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات (+600 دورة)</a>`;
+  return html;
+}
+
+/* ══════════════════════════════════════════════════════════
+   🆕 Diploma List — loads ALL diplomas from DB
+   ══════════════════════════════════════════════════════════ */
+async function loadAllDiplomas() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("diplomas")
+      .select("id, title, link, description, price")
+      .order("title", { ascending: true });
+    if (error) {
+      console.error("loadAllDiplomas error:", error.message);
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    console.error("loadAllDiplomas exception:", e.message);
+    return [];
+  }
+}
+
+function formatDiplomasList(diplomas) {
+  if (!diplomas || diplomas.length === 0) {
+    return `🎓 عندنا دبلومات كتير على المنصة!<br><br>` +
+      `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح جميع الدبلومات ←</a>`;
+  }
+
+  let html = `🎓 <strong>الدبلومات المتاحة على المنصة (${diplomas.length} دبلومة):</strong><br><br>`;
+
+  diplomas.forEach((d, i) => {
+    const url = d.link || ALL_DIPLOMAS_URL;
+    html += `${i + 1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${d.title}</a><br>`;
+  });
+
+  html += `<br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي (<strong>49$ عرض رمضان</strong>)`;
+  html += `<br><br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة جميع الدبلومات ←</a>`;
+  html += `<br><a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
+
   return html;
 }
 
@@ -1306,6 +1364,7 @@ async function loadCustomResponsesSummary() {
    🔴 FIX #12: Removed duplicate "قاعدة ذهبية"
    🔴 FIX #13: Removed orphan "قاعدة الرسالة الغامضة" header
    🟡 FIX #17: Trimmed SUBSCRIPTION examples
+   🟢 NEW: Added DIPLOMAS action
    ═══════════════════════════════════ */
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
@@ -1346,7 +1405,7 @@ ${categoriesList}
 ═══ مهمتك ═══
 حلل رسالة المستخدم وارجع JSON فقط:
 {
-  "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "CHAT" | "SUPPORT",
+  "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "DIPLOMAS" | "CHAT" | "SUPPORT",
   "search_terms": ["كلمة1", "كلمة2"],
   "response_message": "ردك (للأكشنز غير SEARCH فقط)",
   "intent": "وصف النية",
@@ -1365,15 +1424,34 @@ ${categoriesList}
   - "كام سعر الاشتراك" / "طرق الدفع" ← SUBSCRIPTION ✅
   - أي كلمة فيها: دفع/سعر/اشتراك/فلوس/تكلفة/pay/price ← SUBSCRIPTION ✅
 
-🔍 SEARCH — لما يدور على كورس/دبلومة/مهارة:
+🎓 DIPLOMAS — لما يسأل عن الدبلومات بصفة عامة (مش كورس معين):
+  - "الدبلومات" ← DIPLOMAS ✅
+  - "عاوز اعرف الدبلومات" ← DIPLOMAS ✅
+  - "ايه الدبلومات اللى عندكم" ← DIPLOMAS ✅
+  - "عندكم دبلومات" ← DIPLOMAS ✅
+  - "كل الدبلومات" ← DIPLOMAS ✅
+  - "عاوز اعرف كل الدبلومات" ← DIPLOMAS ✅
+  - أي رسالة فيها كلمة "دبلوم/دبلومات/دبلومة" بدون تحديد مجال معين ← DIPLOMAS ✅
+  - ⚠️ لو سأل عن دبلومة في مجال معين (مثلاً "دبلومة جرافيك" أو "دبلومة برمجة") ← SEARCH مش DIPLOMAS
+  - ⚠️ لـ DIPLOMAS: response_message = "" (القائمة هتتجاب تلقائي من الداتابيز)
+  - ❌ ممنوع تخترع أسماء دبلومات — القائمة هتتعرض تلقائي من الداتابيز
+  - ❌ ممنوع تعرض التصنيفات مع الدبلومات
+
+🔍 SEARCH — لما يدور على كورس/دبلومة محددة/مهارة:
   - search_terms: كلمات بالعربي + الإنجليزي (3-6 كلمات مفيدة فقط)
   - ❌ لا تضع كلمات عامة مثل "كورس" أو "تعلم" — ضع اسم الموضوع فقط
   - "عايز فوتوشوب" → ["فوتوشوب","photoshop"]
   - "ابي ريفيت" → ["ريفيت","revit","برامج هندسية"]
   - "شلون اتعلم بايثون" → ["بايثون","python"]
+  - "دبلومة جرافيك" → ["جرافيك","graphic","تصميم","دبلومة"] ← SEARCH ✅ (مجال محدد)
   - لو متابعة لموضوع سابق: ادمج السياق مع الموضوع السابق
 
-📂 CATEGORIES — لما يسأل عن المجالات المتاحة
+📂 CATEGORIES — لما يسأل عن المجالات/التصنيفات المتاحة فقط (مش الدبلومات):
+  - "ايه المجالات عندكم" ← CATEGORIES ✅
+  - "ايه التصنيفات" ← CATEGORIES ✅
+  - ⚠️ لو قال "دبلومات" ← DIPLOMAS مش CATEGORIES
+  - ⚠️ لو قال "كورسات" بصفة عامة بدون موضوع ← CATEGORIES ✅
+
 🛠️ SUPPORT — مشاكل تقنية/شكاوي
 💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
 
@@ -1387,6 +1465,7 @@ ${categoriesList}
 
 ═══ قاعدة ذهبية ═══
 لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
+لو الرسالة فيها كلمة دبلوم/دبلومات/دبلومة بدون مجال محدد = DIPLOMAS حتى لو فيها كلمات تانية!
 
 ═══ ⚠️ متى CHAT ومتى SEARCH؟ ═══
 
@@ -1401,6 +1480,7 @@ ${categoriesList}
 - "ابغى ريفيت" ← SEARCH ✅
 - "بدي فوتوشوب" ← SEARCH ✅
 - "ذكاء اصطناعي" ← SEARCH ✅
+- "دبلومة جرافيك" ← SEARCH ✅ (دبلومة + مجال محدد)
 
 💬 CHAT = فقط لما الرسالة مفيهاش أي موضوع خالص:
 - "عايز اتعلم" ← CHAT (اتعلم ايه؟ مفيش موضوع)
@@ -1416,6 +1496,7 @@ ${categoriesList}
 
 لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (ودود وطبيعي بلهجة المستخدم)
 لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
+لـ DIPLOMAS: response_message = "" (القائمة هتتجاب تلقائي من الداتابيز)
 
 ═══ معلومات المنصة ═══
 - +600 دورة، +27 دبلومة، +750,000 طالب
@@ -1431,6 +1512,7 @@ ${categoriesList}
 - لو المستخدم بالإنجليزي رد بالإنجليزي
 - لو عراقي رد عراقي، لو خليجي رد خليجي (أو على الأقل فصحى بسيطة)
 - ❌ ممنوع تخترع كورسات
+- ❌ ممنوع تخترع أسماء دبلومات
 - لو في الردود المرجعية فيه رد مناسب، استخدمه`;
 }
 
@@ -2251,13 +2333,36 @@ async function smartChat(message, sessionId) {
     reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
     reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
 
-    intent = "SUBSCRIPTION";
+intent = "SUBSCRIPTION";
+
+  } else if (analysis.action === "DIPLOMAS") {
+    /* ═══ 🆕 DIPLOMAS FLOW — loads all diplomas from DB ═══ */
+    console.log("🎓 DIPLOMAS action — loading all diplomas from DB...");
+    const allDiplomas = await loadAllDiplomas();
+    console.log(`🎓 Loaded ${allDiplomas.length} diplomas`);
+    reply = formatDiplomasList(allDiplomas);
+    intent = "DIPLOMAS";
+
+    updateSessionMemory(sessionId, {
+      topics: ["دبلومات"],
+      interests: ["دبلومات"],
+    });
 
   } else if (analysis.action === "CATEGORIES") {
-    reply =
-      (analysis.response_message
-        ? analysis.response_message + "<br><br>"
-        : "") + formatCategoriesList();
+    // ⚠️ Safety: if GPT wrote diploma-related content, redirect to DIPLOMAS
+    const respNorm = normalizeArabic((analysis.response_message || "").toLowerCase());
+    if (/دبلوم/.test(respNorm) && !/تصنيف|مجال|قسم/.test(respNorm)) {
+      console.log("🔀 CATEGORIES contained diploma content → redirecting to DIPLOMAS");
+      const allDiplomas = await loadAllDiplomas();
+      reply = formatDiplomasList(allDiplomas);
+      intent = "DIPLOMAS";
+    } else {
+      reply =
+        (analysis.response_message
+          ? analysis.response_message + "<br><br>"
+          : "") + formatCategoriesList();
+    }
+
 
   } else if (analysis.action === "SUPPORT") {
     reply =
