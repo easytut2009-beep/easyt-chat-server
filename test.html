@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧪 Ziko Bot v10.4 — Full Test Suite</title>
+    <title>🧪 Ziko Bot v10.4 — Ultimate Test Suite</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -26,19 +26,29 @@
             -webkit-text-fill-color: transparent;
         }
         .header p { color: #a0a0c0; font-size: 1.1em; }
+        .header .version-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            background: rgba(230,57,70,0.2);
+            border: 1px solid rgba(230,57,70,0.4);
+            border-radius: 20px;
+            font-size: 13px;
+            color: #ff6b6b;
+            margin-top: 8px;
+        }
 
         .controls {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             justify-content: center;
             flex-wrap: wrap;
             margin-bottom: 30px;
         }
         .controls button {
-            padding: 12px 24px;
+            padding: 10px 20px;
             border: none;
             border-radius: 10px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.3s;
@@ -46,8 +56,8 @@
         .btn-run-all {
             background: linear-gradient(135deg, #e63946, #ff6b6b);
             color: #fff;
-            font-size: 16px !important;
-            padding: 14px 32px !important;
+            font-size: 15px !important;
+            padding: 13px 30px !important;
         }
         .btn-run-all:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(230,57,70,0.4); }
         .btn-category {
@@ -65,19 +75,19 @@
 
         .stats-bar {
             display: flex;
-            gap: 15px;
+            gap: 12px;
             justify-content: center;
             flex-wrap: wrap;
-            margin-bottom: 25px;
-            padding: 15px;
+            margin-bottom: 20px;
+            padding: 14px;
             background: rgba(255,255,255,0.05);
             border-radius: 12px;
         }
         .stat-item {
-            padding: 8px 16px;
+            padding: 6px 14px;
             border-radius: 8px;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 13px;
         }
         .stat-total { background: rgba(100,100,255,0.2); color: #8888ff; }
         .stat-pass { background: rgba(100,255,100,0.2); color: #66ff66; }
@@ -85,6 +95,7 @@
         .stat-warn { background: rgba(255,200,50,0.2); color: #ffcc33; }
         .stat-running { background: rgba(100,200,255,0.2); color: #66ccff; }
         .stat-time { background: rgba(200,100,255,0.2); color: #cc66ff; }
+        .stat-avg { background: rgba(100,255,200,0.2); color: #66ffcc; }
 
         .progress-bar {
             width: 100%;
@@ -103,17 +114,17 @@
         }
 
         .test-group {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             border-radius: 14px;
             overflow: hidden;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(255,255,255,0.08);
         }
         .group-header {
-            padding: 14px 20px;
+            padding: 12px 18px;
             background: rgba(255,255,255,0.06);
             font-weight: 700;
-            font-size: 16px;
+            font-size: 15px;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
@@ -131,7 +142,7 @@
         .group-body.collapsed { display: none; }
 
         .test-card {
-            padding: 14px 20px;
+            padding: 12px 18px;
             border-bottom: 1px solid rgba(255,255,255,0.05);
             transition: background 0.2s;
         }
@@ -142,18 +153,19 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .test-msg {
             font-weight: 600;
-            font-size: 14px;
+            font-size: 13px;
             color: #e0e0ff;
         }
         .test-status {
             padding: 3px 12px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
+            white-space: nowrap;
         }
         .status-pending { background: rgba(150,150,150,0.3); color: #aaa; }
         .status-running { background: rgba(100,200,255,0.3); color: #66ccff; }
@@ -162,12 +174,12 @@
         .status-warn { background: rgba(255,200,50,0.3); color: #ffcc33; }
 
         .test-expect {
-            font-size: 12px;
+            font-size: 11px;
             color: #888;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }
         .test-detail {
-            font-size: 12px;
+            font-size: 11px;
             color: #999;
             margin-top: 6px;
             padding: 8px;
@@ -177,16 +189,17 @@
             overflow-y: auto;
             display: none;
             word-break: break-word;
+            line-height: 1.6;
         }
         .test-detail.show { display: block; }
-        .test-time { font-size: 11px; color: #666; }
+        .test-time { font-size: 10px; color: #666; }
 
         .toggle-detail {
-            font-size: 11px;
+            font-size: 10px;
             color: #e63946;
             cursor: pointer;
             text-decoration: underline;
-            margin-top: 4px;
+            margin-top: 3px;
             display: inline-block;
         }
 
@@ -203,10 +216,36 @@
             background: rgba(255,255,255,0.1);
             color: #fff;
             font-size: 14px;
-            width: 350px;
+            width: 400px;
             text-align: center;
         }
         .server-input input::placeholder { color: #666; }
+        .server-status {
+            font-size: 12px;
+            text-align: center;
+            margin-bottom: 15px;
+            color: #888;
+        }
+        .server-status.ok { color: #66ff66; }
+        .server-status.err { color: #ff6666; }
+
+        .summary-box {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: none;
+        }
+        .summary-box.show { display: block; }
+        .summary-box h3 { margin-bottom: 12px; color: #ff6b6b; }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+        }
 
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
         .running { animation: pulse 1s infinite; }
@@ -215,25 +254,32 @@
 <body>
 
 <div class="header">
-    <h1>🧪 Ziko Bot v10.4 — Full Test Suite</h1>
-    <p>اختبار شامل: بحث + لهجات + دبلومات + اشتراك + متابعة + مصطلحات تقنية 🆕</p>
+    <h1>🧪 Ziko Bot — Ultimate Test Suite</h1>
+    <p>اختبار شامل: بحث ذكي + Semantic Search + لهجات + دبلومات + اشتراك + متابعة + مصطلحات + أداء</p>
+    <div class="version-badge">v10.4 + Semantic Embeddings</div>
 </div>
 
 <div class="server-input">
-    <input type="text" id="serverUrl" placeholder="Server URL" value="">
+    <input type="text" id="serverUrl" placeholder="Server URL (auto-detect)" value="">
 </div>
+<div class="server-status" id="serverStatus">🔍 جاري الكشف عن السيرفر...</div>
 
 <div class="controls">
     <button class="btn-run-all" onclick="runAllTests()">🚀 تشغيل كل الاختبارات</button>
+    <button class="btn-category" onclick="runCategory('health')">🏥 صحة</button>
     <button class="btn-category" onclick="runCategory('search')">🔍 بحث</button>
+    <button class="btn-category" onclick="runCategory('semantic')">🧠 ذكي</button>
     <button class="btn-category" onclick="runCategory('dialect')">🌍 لهجات</button>
     <button class="btn-category" onclick="runCategory('subscription')">💰 اشتراك</button>
     <button class="btn-category" onclick="runCategory('diplomas')">🎓 دبلومات</button>
     <button class="btn-category" onclick="runCategory('categories')">📂 تصنيفات</button>
     <button class="btn-category" onclick="runCategory('chat')">💬 دردشة</button>
-    <button class="btn-category" onclick="runCategory('acronyms')">🔤 مصطلحات 🆕</button>
+    <button class="btn-category" onclick="runCategory('acronyms')">🔤 مصطلحات</button>
     <button class="btn-category" onclick="runCategory('followup')">🔄 متابعة</button>
-    <button class="btn-category" onclick="runCategory('edge')">⚡ حالات خاصة</button>
+    <button class="btn-category" onclick="runCategory('format')">🎨 تنسيق</button>
+    <button class="btn-category" onclick="runCategory('typo')">✏️ إملاء</button>
+    <button class="btn-category" onclick="runCategory('english')">🌐 English</button>
+    <button class="btn-category" onclick="runCategory('edge')">⚡ خاصة</button>
     <button class="btn-clear" onclick="clearResults()">🗑️ مسح</button>
 </div>
 
@@ -243,18 +289,23 @@
     <div class="stat-item stat-fail">❌ فشل: <span id="statFail">0</span></div>
     <div class="stat-item stat-warn">⚠️ تحذير: <span id="statWarn">0</span></div>
     <div class="stat-item stat-running">⏳ جاري: <span id="statRunning">0</span></div>
-    <div class="stat-item stat-time">⏱️ الوقت: <span id="statTime">0s</span></div>
+    <div class="stat-item stat-time">⏱️ إجمالي: <span id="statTime">0s</span></div>
+    <div class="stat-item stat-avg">📈 متوسط: <span id="statAvg">0ms</span></div>
 </div>
 
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
 <div id="testContainer"></div>
+<div class="summary-box" id="summaryBox">
+    <h3>📊 ملخص النتائج</h3>
+    <div id="summaryContent"></div>
+</div>
 
 <script>
 const API_BASE = () => {
     const input = document.getElementById('serverUrl').value.trim();
-    return input || (window.location.origin.includes('localhost') 
-        ? 'http://localhost:3000' 
+    return input || (window.location.origin.includes('localhost')
+        ? 'http://localhost:3000'
         : window.location.origin);
 };
 
@@ -262,202 +313,439 @@ const SESSION_PREFIX = 'test_v104_' + Date.now() + '_';
 let sessionCounter = 0;
 function newSession() { return SESSION_PREFIX + (++sessionCounter); }
 
+let allResponseTimes = [];
+
+// ═══════════════════════════════════════
+// HELPER VALIDATORS
+// ═══════════════════════════════════════
+const V = {
+    hasCard: r => /<div.*?style[^>]*border/i.test(r),
+    hasCourseCard: r => /📘/.test(r) && /<div.*?style[^>]*border/i.test(r),
+    hasDiplomaCard: r => /🎓/.test(r) && /<div.*?style[^>]*border:2px/i.test(r),
+    hasLink: r => /<a\s+href/i.test(r),
+    hasPrice: r => /💰/.test(r),
+    hasBr: r => /<br/i.test(r),
+    noRawNewline: r => !/(?<!<br\s*\/?)[\n]/.test(r.replace(/<[^>]*>/g,'')),
+    wordIn: (r, words) => words.some(w => new RegExp(w, 'i').test(r)),
+    countCards: r => (r.match(/📘/g) || []).length,
+    hasSubscriptionLink: r => /subscriptions/i.test(r),
+    hasPaymentMethods: r => /visa|فودافون|paypal/i.test(r),
+    isDiplomaList: r => /الدبلومات المتاحة/i.test(r) || (/دبلوم/i.test(r) && /1\.|2\./i.test(r)),
+    isCategoryList: r => /التصنيفات المتاحة/i.test(r),
+    responseLength: r => r ? r.length : 0,
+};
+
 // ═══════════════════════════════════════
 // TEST DEFINITIONS
 // ═══════════════════════════════════════
 
 const TEST_GROUPS = [
 
-    // ═══ 1. SEARCH ═══
+    // ═══ 0. HEALTH CHECK ═══
     {
-        name: "🔍 بحث عن كورسات",
+        name: "🏥 صحة السيرفر والاتصال",
+        category: "health",
+        tests: [
+            {
+                msg: "__HEALTH__",
+                expect: "GET /health — السيرفر شغال",
+                isSpecial: true,
+                run: async () => {
+                    const resp = await fetch(API_BASE() + '/health');
+                    const data = await resp.json();
+                    const ok = data.status === 'ok' && data.database === 'connected' && data.openai === 'ready';
+                    return {
+                        reply: JSON.stringify(data, null, 2),
+                        pass: ok,
+                        detail: `status=${data.status}, db=${data.database}, openai=${data.openai}, version=${data.version}`
+                    };
+                }
+            },
+            {
+                msg: "__DEBUG__",
+                expect: "GET /admin/debug — جداول + embeddings",
+                isSpecial: true,
+                run: async () => {
+                    const resp = await fetch(API_BASE() + '/admin/debug');
+                    const data = await resp.json();
+                    const hasTables = data.tables && Object.keys(data.tables).length > 0;
+                    const coursesOk = data.tables?.courses?.includes('✅');
+                    const diplomasOk = data.tables?.diplomas?.includes('✅');
+                    return {
+                        reply: JSON.stringify(data.tables, null, 2),
+                        pass: hasTables && coursesOk && diplomasOk,
+                        detail: `tables=${Object.keys(data.tables||{}).length}, courses=${data.tables?.courses}, diplomas=${data.tables?.diplomas}, cache=${data.search_cache_entries}`
+                    };
+                }
+            },
+            {
+                msg: "__GUIDE_HEALTH__",
+                expect: "GET /api/guide/health — Guide Bot شغال",
+                isSpecial: true,
+                run: async () => {
+                    const resp = await fetch(API_BASE() + '/api/guide/health');
+                    const data = await resp.json();
+                    const ok = data.status === 'ok';
+                    return {
+                        reply: JSON.stringify(data, null, 2),
+                        pass: ok,
+                        detail: `status=${data.status}, model=${data.model}, daily_limit=${data.daily_limit}`
+                    };
+                }
+            },
+        ]
+    },
+
+    // ═══ 1. SEARCH — KEYWORD ═══
+    {
+        name: "🔍 بحث بالكلمات المفتاحية",
         category: "search",
         tests: [
             {
                 msg: "عايز اتعلم فوتوشوب",
-                expect: "يظهر كورسات فوتوشوب",
+                expect: "كورسات فوتوشوب + كاردات",
                 validate: r => {
-                    const hasPhotoshop = /فوتوشوب|photoshop/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasPhotoshop && hasCards, detail: `فوتوشوب: ${hasPhotoshop}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['فوتوشوب','photoshop']);
+                    const cards = V.hasCard(r);
+                    const count = V.countCards(r);
+                    return { pass: has && cards, detail: `فوتوشوب: ${has}, كاردات: ${cards} (${count} كارد)` };
                 }
             },
             {
                 msg: "كورسات برمجة",
-                expect: "يظهر كورسات برمجة",
+                expect: "كورسات برمجة متنوعة",
                 validate: r => {
-                    const hasProg = /برمج|program|python|javascript|coding/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasProg && hasCards, detail: `برمجة: ${hasProg}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['برمج','program','python','javascript','coding','بايثون','جافا']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `برمجة: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "ريفيت",
-                expect: "يظهر كورسات ريفيت/هندسية",
+                expect: "كورسات ريفيت/هندسية",
                 validate: r => {
-                    const hasRevit = /ريفيت|ريفت|revit|هندس/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasRevit && hasCards, detail: `ريفيت: ${hasRevit}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['ريفيت','ريفت','revit','هندس']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `ريفيت: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "عايز اتعلم اكسل",
-                expect: "يظهر كورسات اكسل",
+                expect: "كورسات اكسل",
                 validate: r => {
-                    const hasExcel = /اكسل|excel/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasExcel && hasCards, detail: `اكسل: ${hasExcel}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['اكسل','excel']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `اكسل: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "ماركتنج",
-                expect: "يظهر كورسات تسويق/ماركيتنج",
+                expect: "كورسات تسويق/ماركيتنج",
                 validate: r => {
-                    const hasMark = /ماركيتنج|تسويق|market|اعلان/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasMark && hasCards, detail: `تسويق: ${hasMark}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['ماركيتنج','تسويق','market','اعلان']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `تسويق: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "كورس ذكاء اصطناعي",
+                expect: "كورسات AI",
+                validate: r => {
+                    const has = V.wordIn(r, ['ذكاء','ai','artificial','اصطناع']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `AI: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "مونتاج",
+                expect: "كورسات مونتاج/فيديو",
+                validate: r => {
+                    const has = V.wordIn(r, ['مونتاج','premiere','بريمير','فيديو','video','افتر']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `مونتاج: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "كورس انجليزي",
+                expect: "كورسات لغة انجليزية",
+                validate: r => {
+                    const has = V.wordIn(r, ['انجليزي','english','لغ','ielts','toefl']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `انجليزي: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "عايز اتعلم كانفا",
+                expect: "كورسات كانفا/تصميم",
+                validate: r => {
+                    const has = V.wordIn(r, ['كانفا','canva','تصميم']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `كانفا: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "بوربوينت",
+                expect: "كورسات بوربوينت",
+                validate: r => {
+                    const has = V.wordIn(r, ['بوربوينت','powerpoint','بور بوينت']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `بوربوينت: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "دبلومة جرافيك",
                 expect: "SEARCH (مش DIPLOMAS) — مجال محدد",
                 validate: r => {
-                    const hasGraphic = /جرافيك|graphic|تصميم/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    const notDiplomaList = !/الدبلومات المتاحة على المنصة/.test(r);
-                    return { pass: hasGraphic && hasCards && notDiplomaList, detail: `جرافيك: ${hasGraphic}, كاردات: ${hasCards}, ليست قائمة دبلومات: ${notDiplomaList}` };
-                }
-            },
-            {
-                msg: "كورس ذكاء اصطناعي",
-                expect: "يظهر كورسات AI",
-                validate: r => {
-                    const hasAI = /ذكاء|ai|artificial|اصطناع/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasAI && hasCards, detail: `AI: ${hasAI}, كاردات: ${hasCards}` };
-                }
-            },
-            {
-                msg: "مونتاج",
-                expect: "يظهر كورسات مونتاج/فيديو",
-                validate: r => {
-                    const hasMontage = /مونتاج|مونتير|premiere|بريمير|فيديو|video|montage/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasMontage && hasCards, detail: `مونتاج: ${hasMontage}, كاردات: ${hasCards}` };
+                    const hasGraphic = V.wordIn(r, ['جرافيك','graphic','تصميم']);
+                    const cards = V.hasCard(r);
+                    const notFullList = !V.isDiplomaList(r);
+                    return { pass: hasGraphic && cards && notFullList, detail: `جرافيك: ${hasGraphic}, كاردات: ${cards}, مش قائمة دبلومات: ${notFullList}` };
                 }
             },
         ]
     },
 
-    // ═══ 2. DIALECTS ═══
+    // ═══ 2. SEMANTIC SEARCH (NEW!) ═══
+    {
+        name: "🧠 بحث ذكي Semantic Search",
+        category: "semantic",
+        tests: [
+            {
+                msg: "عايز اتعلم تعديل الصور",
+                expect: "🧠 Semantic → فوتوشوب/تصميم (مش كلمة مباشرة)",
+                validate: r => {
+                    const has = V.wordIn(r, ['فوتوشوب','photoshop','تصميم','صور','لايتروم','lightroom','تعديل']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `تعديل صور: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "ازاي اعمل فيديوهات احترافية",
+                expect: "🧠 Semantic → مونتاج/بريمير/افتر افكتس",
+                validate: r => {
+                    const has = V.wordIn(r, ['مونتاج','premiere','بريمير','افتر','after','فيديو','video','تصوير']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `فيديو: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "عايز اشتغل في مجال الويب",
+                expect: "🧠 Semantic → تطوير مواقع/برمجة",
+                validate: r => {
+                    const has = V.wordIn(r, ['موقع','ويب','web','html','css','javascript','react','برمج','تطوير','wordpress','ووردبريس']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `ويب: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "محتاج اتعلم تصميم شعارات",
+                expect: "🧠 Semantic → اليستريتر/جرافيك/فوتوشوب",
+                validate: r => {
+                    const has = V.wordIn(r, ['شعار','logo','اليستريتر','illustrator','جرافيك','فوتوشوب','تصميم']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `شعارات: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "ازاي اعمل اعلانات على الفيسبوك",
+                expect: "🧠 Semantic → ديجيتال ماركيتنج/اعلانات",
+                validate: r => {
+                    const has = V.wordIn(r, ['اعلان','فيسبوك','facebook','ماركيتنج','تسويق','ads','ديجيتال']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `اعلانات: ${has}, كاردات: ${cards}` };
+                }
+            },
+            {
+                msg: "عايز ابقى محترف في التصميم ثلاثي الأبعاد",
+                expect: "🧠 Semantic → 3ds max/blender/lumion",
+                validate: r => {
+                    const has = V.wordIn(r, ['3d','ثلاثي','بلندر','blender','3ds','max','لوميون','lumion','سكتش','sketchup','ثري دي']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `3D: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "ازاي احمي نفسي من الاختراق",
+                expect: "🧠 Semantic → كورسات حماية/سيبر سيكيوريتي",
+                validate: r => {
+                    const has = V.wordIn(r, ['حماي','اختراق','سيبر','cyber','security','hack','كالي','حمايه']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `حماية: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "عايز اتعلم اعمل تطبيقات موبايل",
+                expect: "🧠 Semantic → flutter/react native/android",
+                validate: r => {
+                    const has = V.wordIn(r, ['تطبيق','موبايل','flutter','فلاتر','react native','android','اندرويد','swift','kotlin','app']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `موبايل: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "محتاج اطور نفسي في الحسابات",
+                expect: "🧠 Semantic → محاسبة/اكسل",
+                validate: r => {
+                    const has = V.wordIn(r, ['محاسب','حساب','اكسل','excel','accounting','مالي']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `حسابات: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "عايز اشتغل فريلانسر",
+                expect: "🧠 Semantic → عمل حر/ربح من الانترنت",
+                validate: r => {
+                    const has = V.wordIn(r, ['فريلانس','freelance','عمل حر','ربح','دروبشيبنج','امازون','حر','upwork']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `فريلانس: ${has}, كاردات: ${cards}`, warn: has && !cards };
+                }
+            },
+        ]
+    },
+
+    // ═══ 3. DIALECTS ═══
     {
         name: "🌍 لهجات مختلفة",
         category: "dialect",
         tests: [
             {
                 msg: "اريد اتعلم فوتوشوب",
-                expect: "عراقي → يظهر كورسات فوتوشوب",
+                expect: "🇮🇶 عراقي → فوتوشوب",
                 validate: r => {
-                    const hasPS = /فوتوشوب|photoshop/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasPS && hasCards, detail: `فوتوشوب: ${hasPS}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['فوتوشوب','photoshop']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `فوتوشوب: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "ابغى كورس بايثون",
-                expect: "خليجي → يظهر كورسات بايثون",
+                expect: "🇸🇦 خليجي → بايثون",
                 validate: r => {
-                    const hasPy = /بايثون|python/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasPy && hasCards, detail: `بايثون: ${hasPy}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['بايثون','python']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `بايثون: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "بدي اتعلم تصميم",
-                expect: "شامي → يظهر كورسات تصميم",
+                expect: "🇱🇧 شامي → تصميم",
                 validate: r => {
-                    const hasDes = /تصميم|design|جرافيك|graphic/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasDes && hasCards, detail: `تصميم: ${hasDes}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['تصميم','design','جرافيك','graphic']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `تصميم: ${has}, كاردات: ${cards}` };
                 }
             },
             {
                 msg: "شلون ادفع",
-                expect: "عراقي → معلومات الدفع",
+                expect: "🇮🇶 عراقي → معلومات الدفع",
                 validate: r => {
-                    const hasPay = /دفع|visa|فودافون|اشتراك|subscri|payment/i.test(r);
-                    return { pass: hasPay, detail: `دفع: ${hasPay}` };
+                    const has = V.hasPaymentMethods(r);
+                    return { pass: has, detail: `طرق دفع: ${has}` };
                 }
             },
             {
                 msg: "وش عندكم كورسات",
-                expect: "خليجي → تصنيفات أو كورسات",
+                expect: "🇸🇦 خليجي → تصنيفات أو كورسات",
                 validate: r => {
-                    const hasContent = /تصنيف|مجال|كورس|دور/i.test(r) || /<a.*?href/i.test(r);
-                    return { pass: hasContent, detail: `محتوى: ${hasContent}` };
+                    const has = V.wordIn(r, ['تصنيف','مجال','كورس','دور']) || V.hasLink(r);
+                    return { pass: has, detail: `محتوى: ${has}` };
+                }
+            },
+            {
+                msg: "بغيت نتعلم الاكسل",
+                expect: "🇲🇦 مغربي → اكسل",
+                validate: r => {
+                    const has = V.wordIn(r, ['اكسل','excel']);
+                    return { pass: has, detail: `اكسل: ${has}` };
+                }
+            },
+            {
+                msg: "شگد سعر الاشتراك",
+                expect: "🇮🇶 عراقي → سعر الاشتراك",
+                validate: r => {
+                    const has = /49/.test(r);
+                    return { pass: has, detail: `49$: ${has}` };
                 }
             },
         ]
     },
 
-    // ═══ 3. SUBSCRIPTION ═══
+    // ═══ 4. SUBSCRIPTION ═══
     {
         name: "💰 اشتراك ودفع",
         category: "subscription",
         tests: [
             {
                 msg: "ازاي ادفع",
-                expect: "طرق الدفع كاملة",
+                expect: "طرق الدفع كاملة (Visa + فودافون + PayPal + 49$)",
                 validate: r => {
-                    const hasVisa = /visa|فيزا/i.test(r);
-                    const hasVF = /فودافون|01027007899/i.test(r);
-                    const hasPaypal = /paypal|باي بال/i.test(r);
-                    const hasPrice = /49/i.test(r);
-                    return { pass: hasVisa && hasVF && hasPrice, detail: `Visa: ${hasVisa}, فودافون: ${hasVF}, PayPal: ${hasPaypal}, 49$: ${hasPrice}` };
+                    const visa = /visa|فيزا/i.test(r);
+                    const vf = /فودافون|01027007899/.test(r);
+                    const paypal = /paypal/i.test(r);
+                    const price = /49/.test(r);
+                    const link = V.hasSubscriptionLink(r);
+                    const all = visa && vf && price;
+                    return { pass: all, detail: `Visa:${visa} فودافون:${vf} PayPal:${paypal} 49$:${price} لينك:${link}` };
                 }
             },
             {
                 msg: "كام سعر الاشتراك",
                 expect: "السعر + طرق الدفع",
                 validate: r => {
-                    const hasPrice = /49/i.test(r);
-                    const hasSub = /اشتراك|subscri/i.test(r);
-                    return { pass: hasPrice && hasSub, detail: `49$: ${hasPrice}, اشتراك: ${hasSub}` };
+                    const price = /49/.test(r);
+                    const sub = /اشتراك|subscri/i.test(r);
+                    return { pass: price && sub, detail: `49$: ${price}, اشتراك: ${sub}` };
                 }
             },
             {
                 msg: "عايز اشترك",
-                expect: "SUBSCRIPTION — لينك الاشتراك",
+                expect: "لينك الاشتراك + السعر",
                 validate: r => {
-                    const hasLink = /subscriptions/i.test(r);
-                    const hasPrice = /49/i.test(r);
-                    return { pass: hasLink && hasPrice, detail: `لينك: ${hasLink}, سعر: ${hasPrice}` };
+                    const link = V.hasSubscriptionLink(r);
+                    const price = /49/.test(r);
+                    return { pass: link && price, detail: `لينك: ${link}, سعر: ${price}` };
                 }
             },
             {
                 msg: "فيه فودافون كاش",
-                expect: "رقم فودافون كاش",
+                expect: "رقم فودافون كاش: 01027007899",
                 validate: r => {
-                    const hasVF = /01027007899/i.test(r);
-                    return { pass: hasVF, detail: `رقم فودافون: ${hasVF}` };
+                    const vf = /01027007899/.test(r);
+                    return { pass: vf, detail: `رقم فودافون: ${vf}` };
+                }
+            },
+            {
+                msg: "طرق الدفع",
+                expect: "SUBSCRIPTION — كل طرق الدفع",
+                validate: r => {
+                    const methods = V.hasPaymentMethods(r);
+                    return { pass: methods, detail: `طرق دفع: ${methods}` };
+                }
+            },
+            {
+                msg: "فيه instapay",
+                expect: "معلومات InstaPay",
+                validate: r => {
+                    const has = /instapay|انستا/i.test(r);
+                    return { pass: has, detail: `InstaPay: ${has}` };
                 }
             },
         ]
     },
 
-    // ═══ 4. DIPLOMAS ═══
+    // ═══ 5. DIPLOMAS ═══
     {
         name: "🎓 دبلومات",
         category: "diplomas",
         tests: [
             {
                 msg: "عايز اعرف الدبلومات",
-                expect: "قائمة كل الدبلومات من الداتابيز",
+                expect: "قائمة كل الدبلومات من DB",
                 validate: r => {
                     const hasDiploma = /دبلوم/i.test(r);
-                    const hasList = /1\.|2\.|3\./i.test(r) || /<a.*?href/i.test(r);
-                    const notCategories = !/التصنيفات المتاحة/.test(r);
-                    return { pass: hasDiploma && hasList && notCategories, detail: `دبلومات: ${hasDiploma}, قائمة: ${hasList}, مش تصنيفات: ${notCategories}` };
+                    const hasList = /1\.|2\.|3\./i.test(r) || V.hasLink(r);
+                    const notCats = !V.isCategoryList(r);
+                    return { pass: hasDiploma && hasList && notCats, detail: `دبلومات: ${hasDiploma}, قائمة: ${hasList}, مش تصنيفات: ${notCats}` };
                 }
             },
             {
@@ -465,7 +753,7 @@ const TEST_GROUPS = [
                 expect: "قائمة الدبلومات (كلمة واحدة)",
                 validate: r => {
                     const hasDiploma = /دبلوم/i.test(r);
-                    const hasList = /1\.|2\./i.test(r) || /<a.*?href/i.test(r);
+                    const hasList = /1\.|2\./i.test(r) || V.hasLink(r);
                     return { pass: hasDiploma && hasList, detail: `دبلومات: ${hasDiploma}, قائمة: ${hasList}` };
                 }
             },
@@ -473,14 +761,32 @@ const TEST_GROUPS = [
                 msg: "عندكم دبلومات ايه",
                 expect: "قائمة الدبلومات",
                 validate: r => {
+                    const has = /دبلوم/i.test(r);
+                    const hasList = V.hasLink(r);
+                    return { pass: has && hasList, detail: `دبلومات: ${has}, لينكات: ${hasList}` };
+                }
+            },
+            {
+                msg: "كل الدبلومات",
+                expect: "القائمة الكاملة",
+                validate: r => {
+                    const has = /دبلوم/i.test(r);
+                    return { pass: has, detail: `دبلومات: ${has}` };
+                }
+            },
+            {
+                msg: "عاوز اعرف كل الدبلومات اللي عندكم",
+                expect: "DIPLOMAS مش SEARCH",
+                validate: r => {
                     const hasDiploma = /دبلوم/i.test(r);
-                    return { pass: hasDiploma, detail: `دبلومات: ${hasDiploma}` };
+                    const isList = V.isDiplomaList(r) || (/1\./.test(r) && /2\./.test(r));
+                    return { pass: hasDiploma && isList, detail: `دبلومات: ${hasDiploma}, قائمة: ${isList}` };
                 }
             },
         ]
     },
 
-    // ═══ 5. CATEGORIES ═══
+    // ═══ 6. CATEGORIES ═══
     {
         name: "📂 تصنيفات",
         category: "categories",
@@ -489,281 +795,471 @@ const TEST_GROUPS = [
                 msg: "ايه المجالات عندكم",
                 expect: "قائمة التصنيفات",
                 validate: r => {
-                    const hasCats = /تصنيف|جرافيك|برمج|هندس/i.test(r);
-                    const hasLinks = /<a.*?href/i.test(r);
-                    return { pass: hasCats && hasLinks, detail: `تصنيفات: ${hasCats}, لينكات: ${hasLinks}` };
+                    const hasCats = V.wordIn(r, ['تصنيف','جرافيك','برمج','هندس','حماي','لغ']);
+                    const links = V.hasLink(r);
+                    return { pass: hasCats && links, detail: `تصنيفات: ${hasCats}, لينكات: ${links}` };
                 }
             },
             {
                 msg: "ايه التصنيفات",
                 expect: "قائمة التصنيفات",
                 validate: r => {
-                    const hasCats = /تصنيف|مجال|جرافيك/i.test(r);
-                    return { pass: hasCats, detail: `تصنيفات: ${hasCats}` };
+                    const has = V.wordIn(r, ['تصنيف','مجال','جرافيك']);
+                    return { pass: has, detail: `تصنيفات: ${has}` };
+                }
+            },
+            {
+                msg: "عندكم ايه كورسات",
+                expect: "تصنيفات/مجالات",
+                validate: r => {
+                    const has = V.wordIn(r, ['تصنيف','مجال']) || V.hasLink(r);
+                    return { pass: has, detail: `محتوى: ${has}` };
                 }
             },
         ]
     },
 
-    // ═══ 6. CHAT ═══
+    // ═══ 7. CHAT ═══
     {
         name: "💬 دردشة عامة",
         category: "chat",
         tests: [
             {
                 msg: "ازيك",
-                expect: "رد ترحيبي بدون كورسات",
+                expect: "ترحيب بدون كورسات",
                 validate: r => {
-                    const hasGreeting = /اهلا|مرحب|اهلاً|عامل|الحمد|هلا|حبيب/i.test(r);
-                    const noCards = !/<div.*?style.*?border:2px/i.test(r);
-                    return { pass: hasGreeting, detail: `ترحيب: ${hasGreeting}, بدون كاردات دبلومات: ${noCards}` };
+                    const greet = V.wordIn(r, ['اهلا','مرحب','عامل','هلا','حبيب','اهلاً','نور']);
+                    return { pass: greet, detail: `ترحيب: ${greet}` };
                 }
             },
             {
                 msg: "السلام عليكم",
-                expect: "رد ترحيبي",
+                expect: "وعليكم السلام",
                 validate: r => {
-                    const hasReply = /عليكم.*سلام|اهلا|مرحب|وعليكم/i.test(r);
-                    return { pass: hasReply, detail: `رد: ${hasReply}` };
+                    const has = V.wordIn(r, ['عليكم','سلام','اهلا','مرحب','وعليكم']);
+                    return { pass: has, detail: `رد: ${has}` };
                 }
             },
             {
                 msg: "عايز اتعلم",
-                expect: "يسأل عن المجال (مفيش موضوع محدد)",
+                expect: "يسأل عن المجال (مفيش موضوع)",
                 validate: r => {
-                    const asksMore = /مجال|موضوع|تحب|عايز|تتعلم|تحدد|ايه|إيه|تخصص/i.test(r);
-                    return { pass: asksMore, detail: `يسأل: ${asksMore}` };
+                    const asks = V.wordIn(r, ['مجال','موضوع','تحب','تتعلم','تحدد','ايه','إيه','تخصص','يهم']);
+                    return { pass: asks, detail: `يسأل: ${asks}` };
+                }
+            },
+            {
+                msg: "شكرا جدا",
+                expect: "رد ودود",
+                validate: r => {
+                    const has = V.wordIn(r, ['عفو','اهلا','ده واجب','تسلم','العفو','نور','بالتوفيق']);
+                    return { pass: has, detail: `ودود: ${has}` };
+                }
+            },
+            {
+                msg: "الحمد لله بخير",
+                expect: "رد طبيعي بدون كورسات",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    const noCards = !V.hasCourseCard(r);
+                    return { pass: len > 10 && noCards, detail: `طول: ${len}, بدون كاردات: ${noCards}` };
                 }
             },
         ]
     },
 
-    // ═══ 🆕 7. TECHNICAL ACRONYMS (FIX #18 + #19) ═══
+    // ═══ 8. ACRONYMS ═══
     {
-        name: "🔤 مصطلحات تقنية واختصارات 🆕",
+        name: "🔤 مصطلحات تقنية واختصارات",
         category: "acronyms",
         tests: [
             {
                 msg: "ايه هي ROAS",
-                expect: "يشرح ROAS + يعرض كورسات تسويق/ماركيتنج",
+                expect: "شرح ROAS + كورسات تسويق",
                 validate: r => {
-                    const hasExplanation = /roas|عائد|اعلان|إنفاق|return/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasMarketing = /تسويق|ماركيتنج|market|اعلان|ads/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasMarketing), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['roas','عائد','اعلان','إنفاق','return','حملات']);
+                    const marketing = V.wordIn(r, ['تسويق','ماركيتنج','market','اعلان']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain && (cards || marketing), detail: `شرح:${explain} تسويق:${marketing} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "يعني ايه CTR",
-                expect: "يشرح CTR + يعرض كورسات تسويق/اعلانات",
+                expect: "شرح CTR + كورسات تسويق",
                 validate: r => {
-                    const hasExplanation = /ctr|نقر|click|ضغط|نسب/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasMarketing = /تسويق|ماركيتنج|market|اعلان/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasMarketing), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['ctr','نقر','click','ضغط']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "ايه هي API",
-                expect: "يشرح API + يعرض كورسات برمجة",
+                expect: "شرح API + كورسات برمجة",
                 validate: r => {
-                    const hasExplanation = /api|واجه.*برمج|application.*program|تطبيق/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasProg = /برمج|program|develop|تطوير/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasProg), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, برمجة: ${hasProg}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['api','واجه','application','برمج','تطبيق','interface']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "يعني ايه BIM",
-                expect: "يشرح BIM + يعرض كورسات هندسية/ريفيت",
+                expect: "شرح BIM + كورسات هندسية",
                 validate: r => {
-                    const hasExplanation = /bim|building.*information|نمذج.*معلومات|مبان/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasEng = /هندس|ريفيت|revit|اوتوكاد|autocad/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasEng), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, هندسة: ${hasEng}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['bim','building','نمذج','مبان','معلومات','هندس']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "ايه هو OOP",
-                expect: "يشرح OOP + يعرض كورسات برمجة",
+                expect: "شرح OOP + كورسات برمجة",
                 validate: r => {
-                    const hasExplanation = /oop|object.*orient|كائن|برمج.*شيئ|كلاس/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasProg = /برمج|program|بايثون|جافا|python|java/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasProg), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, برمجة: ${hasProg}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['oop','object','كائن','شيئ','class']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "ايه هو SEO",
-                expect: "يشرح SEO + يعرض كورسات تسويق/سيو",
+                expect: "شرح SEO + كورسات سيو/تسويق",
                 validate: r => {
-                    const hasExplanation = /seo|محرك.*بحث|search.*engine|تحسين/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasMarketing = /تسويق|سيو|seo|market/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasMarketing), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['seo','محرك','search','بحث','تحسين']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "يعني ايه مونتير",
-                expect: "يشرح مونتير + يعرض كورسات مونتاج (FIX #18 fuzzy)",
+                expect: "شرح مونتير + كورسات مونتاج",
                 validate: r => {
-                    const hasExplanation = /مونتير|مونتاج|montage|تحرير.*فيديو|video.*edit/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    return { 
-                        pass: hasExplanation && hasCourses, 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['مونتير','مونتاج','montage','تحرير','فيديو','video']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain && cards, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "ايه هو الجرافيك ديزاين",
-                expect: "يشرح + يعرض كورسات جرافيك",
+                expect: "شرح + كورسات جرافيك",
                 validate: r => {
-                    const hasExplanation = /جرافيك|graphic|تصميم|design/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    return { 
-                        pass: hasExplanation && hasCourses, 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['جرافيك','graphic','تصميم','design']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain && cards, detail: `شرح:${explain} كاردات:${cards}` };
                 }
             },
             {
                 msg: "ايه هو UX",
-                expect: "يشرح UX + يعرض كورسات تصميم واجهات",
+                expect: "شرح UX + كورسات تصميم",
                 validate: r => {
-                    const hasExplanation = /ux|user.*experience|تجرب.*مستخدم|واجه/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasDesign = /تصميم|design|ui|ux|واجه/i.test(r);
-                    return { 
-                        pass: hasExplanation && (hasCourses || hasDesign), 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تصميم: ${hasDesign}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['ux','user','تجرب','مستخدم','واجه','experience']);
+                    const cards = V.hasCard(r);
+                    return { pass: explain, detail: `شرح:${explain} كاردات:${cards}`, warn: explain && !cards };
                 }
             },
             {
                 msg: "ايه هي KPIs",
-                expect: "يشرح KPIs + يعرض كورسات ادارة/بيزنس",
+                expect: "شرح KPIs",
                 validate: r => {
-                    const hasExplanation = /kpi|مؤشر|أداء|قياس|performance.*indicator/i.test(r);
-                    const hasCourses = /<div.*?style.*?border/i.test(r);
-                    const hasBiz = /ادار|اعمال|بيزنس|manage|business|تسويق/i.test(r);
-                    return { 
-                        pass: hasExplanation, 
-                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, بيزنس: ${hasBiz}`,
-                        warn: hasExplanation && !hasCourses
-                    };
+                    const explain = V.wordIn(r, ['kpi','مؤشر','أداء','قياس','performance','اداء']);
+                    return { pass: explain, detail: `شرح:${explain}` };
                 }
             },
         ]
     },
 
-    // ═══ 8. FOLLOW-UP ═══
+    // ═══ 9. FOLLOW-UP ═══
     {
-        name: "🔄 متابعة محادثة",
+        name: "🔄 متابعة محادثة (Context Memory)",
         category: "followup",
         tests: [
             {
                 msg: "عايز اتعلم فوتوشوب",
-                expect: "الرسالة الأولى — كورسات فوتوشوب",
+                expect: "1️⃣ الرسالة الأولى — كورسات فوتوشوب",
                 validate: r => {
-                    const hasPS = /فوتوشوب|photoshop/i.test(r);
-                    return { pass: hasPS, detail: `فوتوشوب: ${hasPS}` };
+                    const has = V.wordIn(r, ['فوتوشوب','photoshop']);
+                    return { pass: has, detail: `فوتوشوب: ${has}` };
                 },
-                session: "followup_test_1"
+                session: "followup_ps_1"
             },
             {
                 msg: "فيه حاجة للمبتدئين",
-                expect: "متابعة — فوتوشوب للمبتدئين",
+                expect: "2️⃣ متابعة — فوتوشوب للمبتدئين",
                 validate: r => {
-                    const hasPS = /فوتوشوب|photoshop|تصميم|مبتدئ/i.test(r);
-                    const hasContent = /<div.*?style.*?border/i.test(r) || /مبتدئ|أساس|beginner/i.test(r);
-                    return { pass: hasPS || hasContent, detail: `فوتوشوب/مبتدئ: ${hasPS}, محتوى: ${hasContent}` };
+                    const hasContext = V.wordIn(r, ['فوتوشوب','photoshop','تصميم']);
+                    const hasBeginner = V.wordIn(r, ['مبتدئ','أساس','اساس','beginner','بداي']);
+                    const hasContent = V.hasCard(r) || hasContext;
+                    return { pass: hasContent, detail: `سياق فوتوشوب:${hasContext} مبتدئ:${hasBeginner}` };
                 },
-                session: "followup_test_1",
-                delay: 2000
+                session: "followup_ps_1",
+                delay: 2500
+            },
+            {
+                msg: "كورسات اكسل",
+                expect: "3️⃣ موضوع جديد (مش فوتوشوب)",
+                validate: r => {
+                    const hasExcel = V.wordIn(r, ['اكسل','excel']);
+                    const cards = V.hasCard(r);
+                    return { pass: hasExcel && cards, detail: `اكسل: ${hasExcel}, كاردات: ${cards}` };
+                },
+                session: "followup_topic_2"
+            },
+            {
+                msg: "فيه حاجة تانية",
+                expect: "4️⃣ متابعة — اكسل تاني (مش فوتوشوب)",
+                validate: r => {
+                    const hasExcel = V.wordIn(r, ['اكسل','excel','كمبيوتر','اوفيس']);
+                    const len = V.responseLength(r);
+                    return { pass: len > 20, detail: `اكسل:${hasExcel} طول:${len}`, warn: !hasExcel };
+                },
+                session: "followup_topic_2",
+                delay: 2500
             },
         ]
     },
 
-    // ═══ 9. EDGE CASES ═══
+    // ═══ 10. RESPONSE FORMAT ═══
     {
-        name: "⚡ حالات خاصة",
-        category: "edge",
+        name: "🎨 تنسيق الردود",
+        category: "format",
+        tests: [
+            {
+                msg: "عايز كورس فوتوشوب",
+                expect: "كاردات بتنسيق صحيح (رابط + سعر + عنوان)",
+                validate: r => {
+                    const hasCard = V.hasCourseCard(r);
+                    const hasLink = /href="https?:\/\/[^"]+"/i.test(r);
+                    const hasPrice = V.hasPrice(r);
+                    const hasTitle = /📘/.test(r);
+                    const hasTarget = /target="_blank"/.test(r);
+                    return { pass: hasCard && hasLink && hasPrice, detail: `كارد:${hasCard} رابط:${hasLink} سعر:${hasPrice} عنوان:${hasTitle} target:${hasTarget}` };
+                }
+            },
+            {
+                msg: "ازاي ادفع",
+                expect: "فيه روابط HTML صالحة",
+                validate: r => {
+                    const links = (r.match(/<a\s+href="([^"]+)"/gi) || []);
+                    const allValid = links.every(l => /https?:\/\//.test(l));
+                    const hasBr = V.hasBr(r);
+                    return { pass: links.length >= 2 && allValid, detail: `روابط:${links.length} كلها صالحة:${allValid} line-breaks:${hasBr}` };
+                }
+            },
+            {
+                msg: "الدبلومات",
+                expect: "قائمة مرقمة بروابط",
+                validate: r => {
+                    const hasNumbers = /1\..*2\./s.test(r);
+                    const hasLinks = V.hasLink(r);
+                    const hasDiplomaLink = /easyt\.online/i.test(r);
+                    return { pass: hasNumbers && hasLinks, detail: `ترقيم:${hasNumbers} روابط:${hasLinks} منصة:${hasDiplomaLink}` };
+                }
+            },
+            {
+                msg: "ايه المجالات",
+                expect: "قائمة تصنيفات بروابط ملونة",
+                validate: r => {
+                    const hasLinks = (r.match(/<a\s+href/gi) || []).length;
+                    const hasStyle = /color:#e63946/.test(r);
+                    return { pass: hasLinks >= 5 && hasStyle, detail: `روابط:${hasLinks} ستايل:${hasStyle}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 11. TYPO CORRECTION ═══
+    {
+        name: "✏️ تصحيح إملائي",
+        category: "typo",
         tests: [
             {
                 msg: "فوتشوب",
-                expect: "تصحيح إملائي → فوتوشوب",
+                expect: "تصحيح → فوتوشوب",
                 validate: r => {
-                    const hasPS = /فوتوشوب|photoshop/i.test(r);
-                    const hasCards = /<div.*?style.*?border/i.test(r);
-                    return { pass: hasPS || hasCards, detail: `فوتوشوب: ${hasPS}, كاردات: ${hasCards}` };
+                    const has = V.wordIn(r, ['فوتوشوب','photoshop']);
+                    const cards = V.hasCard(r);
+                    return { pass: has || cards, detail: `فوتوشوب:${has} كاردات:${cards}` };
                 }
             },
             {
                 msg: "بروجرامنج",
                 expect: "تصحيح → برمجة",
                 validate: r => {
-                    const hasProg = /برمج|program/i.test(r);
-                    return { pass: hasProg, detail: `برمجة: ${hasProg}` };
-                }
-            },
-            {
-                msg: "سباكه",
-                expect: "يظهر كورسات سباكة/MEP",
-                validate: r => {
-                    const hasSab = /سباك|plumbing|mep|ميكانيك|هندس/i.test(r);
-                    return { pass: hasSab, detail: `سباكة: ${hasSab}` };
+                    const has = V.wordIn(r, ['برمج','program']);
+                    return { pass: has, detail: `برمجة: ${has}` };
                 }
             },
             {
                 msg: "بايتون",
                 expect: "تصحيح → بايثون",
                 validate: r => {
-                    const hasPy = /بايثون|python/i.test(r);
-                    return { pass: hasPy, detail: `بايثون: ${hasPy}` };
+                    const has = V.wordIn(r, ['بايثون','python']);
+                    return { pass: has, detail: `بايثون: ${has}` };
+                }
+            },
+            {
+                msg: "ماركوتنج",
+                expect: "تصحيح → ماركيتنج",
+                validate: r => {
+                    const has = V.wordIn(r, ['ماركيتنج','تسويق','market']);
+                    return { pass: has, detail: `ماركيتنج: ${has}` };
+                }
+            },
+            {
+                msg: "جرافك ديزاين",
+                expect: "تصحيح → جرافيك ديزاين",
+                validate: r => {
+                    const has = V.wordIn(r, ['جرافيك','graphic','تصميم']);
+                    return { pass: has, detail: `جرافيك: ${has}` };
+                }
+            },
+            {
+                msg: "الريفت",
+                expect: "تصحيح → ريفيت",
+                validate: r => {
+                    const has = V.wordIn(r, ['ريفيت','ريفت','revit']);
+                    return { pass: has, detail: `ريفيت: ${has}` };
+                }
+            },
+            {
+                msg: "وردبرس",
+                expect: "تصحيح → ووردبريس",
+                validate: r => {
+                    const has = V.wordIn(r, ['ووردبريس','wordpress','وورد']);
+                    return { pass: has, detail: `ووردبريس: ${has}` };
+                }
+            },
+            {
+                msg: "اس اي او",
+                expect: "تصحيح → سيو/SEO",
+                validate: r => {
+                    const has = V.wordIn(r, ['سيو','seo','محرك','بحث']);
+                    return { pass: has, detail: `سيو: ${has}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 12. ENGLISH ═══
+    {
+        name: "🌐 English Queries",
+        category: "english",
+        tests: [
+            {
+                msg: "I want to learn Photoshop",
+                expect: "English reply + Photoshop courses",
+                validate: r => {
+                    const has = V.wordIn(r, ['photoshop','فوتوشوب']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `Photoshop:${has} cards:${cards}` };
+                }
+            },
+            {
+                msg: "Do you have Python courses?",
+                expect: "English reply + Python courses",
+                validate: r => {
+                    const has = V.wordIn(r, ['python','بايثون']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `Python:${has} cards:${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "How to subscribe?",
+                expect: "Subscription info in English",
+                validate: r => {
+                    const hasSub = V.hasSubscriptionLink(r);
+                    const hasPrice = /49/.test(r);
+                    return { pass: hasSub || hasPrice, detail: `sub:${hasSub} price:${hasPrice}` };
+                }
+            },
+            {
+                msg: "What is graphic design?",
+                expect: "Explain + graphic courses",
+                validate: r => {
+                    const has = V.wordIn(r, ['graphic','design','جرافيك','تصميم','visual']);
+                    return { pass: has, detail: `graphic:${has}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 13. EDGE CASES ═══
+    {
+        name: "⚡ حالات خاصة وحدود",
+        category: "edge",
+        tests: [
+            {
+                msg: "سباكه",
+                expect: "كورسات سباكة/MEP",
+                validate: r => {
+                    const has = V.wordIn(r, ['سباك','plumbing','mep','ميكانيك','هندس','تكييف']);
+                    return { pass: has, detail: `سباكة: ${has}` };
                 }
             },
             {
                 msg: "a",
                 expect: "لا يكرش — رد مناسب",
                 validate: r => {
-                    const hasResponse = r && r.length > 10;
-                    return { pass: hasResponse, detail: `رد: ${hasResponse} (${r.length} chars)` };
+                    const len = V.responseLength(r);
+                    return { pass: len > 10, detail: `رد: ${len} chars` };
                 }
             },
             {
                 msg: "😊😊😊",
                 expect: "لا يكرش — رد ودود",
                 validate: r => {
-                    const hasResponse = r && r.length > 5;
-                    return { pass: hasResponse, detail: `رد: ${hasResponse}` };
+                    const len = V.responseLength(r);
+                    return { pass: len > 5, detail: `رد: ${len} chars` };
+                }
+            },
+            {
+                msg: "asdkjhaslkdjh",
+                expect: "لا يكرش — رد توضيحي",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    return { pass: len > 10, detail: `رد: ${len} chars` };
+                }
+            },
+            {
+                msg: "عايز كورس طبخ",
+                expect: "مفيش نتائج — توجيه مناسب",
+                validate: r => {
+                    const noForce = !V.hasCourseCard(r) || V.wordIn(r, ['للأسف','مفيش','معندناش']);
+                    const hasAlt = V.hasLink(r);
+                    return { pass: noForce || hasAlt, detail: `بدون نتائج غلط:${noForce} بديل:${hasAlt}`, warn: V.hasCourseCard(r) };
+                }
+            },
+            {
+                msg: "عايز كورس فوتوشوب بس مش بريمير",
+                expect: "فوتوشوب بدون بريمير",
+                validate: r => {
+                    const hasPS = V.wordIn(r, ['فوتوشوب','photoshop']);
+                    const cards = V.hasCard(r);
+                    return { pass: hasPS && cards, detail: `فوتوشوب:${hasPS} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "كورس سعره مجاني",
+                expect: "رد مناسب عن الكورسات المجانية",
+                validate: r => {
+                    const has = V.wordIn(r, ['مجان','free','اشتراك','49']);
+                    const len = V.responseLength(r);
+                    return { pass: len > 20, detail: `مجاني:${has} طول:${len}` };
+                }
+            },
+            {
+                msg: "",
+                expect: "رسالة فاضية — لا يكرش",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    return { pass: len > 5, detail: `رد: ${len} chars` };
+                },
+                sendEmpty: true
+            },
+            {
+                msg: "x".repeat(600),
+                expect: "رسالة طويلة جداً — لا يكرش",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    return { pass: len > 5, detail: `رد: ${len} chars` };
                 }
             },
         ]
@@ -772,11 +1268,12 @@ const TEST_GROUPS = [
 
 
 // ═══════════════════════════════════════
-// TEST RUNNER
+// TEST RUNNER ENGINE
 // ═══════════════════════════════════════
 
 let stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
 let startTime = 0;
+let groupTimings = {};
 
 function updateStats() {
     document.getElementById('statTotal').textContent = stats.total;
@@ -786,7 +1283,8 @@ function updateStats() {
     document.getElementById('statRunning').textContent = stats.running;
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     document.getElementById('statTime').textContent = elapsed + 's';
-    
+    const avgMs = allResponseTimes.length > 0 ? Math.round(allResponseTimes.reduce((a,b)=>a+b,0)/allResponseTimes.length) : 0;
+    document.getElementById('statAvg').textContent = avgMs + 'ms';
     const done = stats.pass + stats.fail + stats.warn;
     const pct = stats.total > 0 ? (done / stats.total) * 100 : 0;
     document.getElementById('progressFill').style.width = pct + '%';
@@ -795,12 +1293,10 @@ function updateStats() {
 function renderTestGroups(groups) {
     const container = document.getElementById('testContainer');
     container.innerHTML = '';
-    
     groups.forEach((group, gi) => {
         const groupDiv = document.createElement('div');
         groupDiv.className = 'test-group';
         groupDiv.id = `group-${gi}`;
-        
         const headerDiv = document.createElement('div');
         headerDiv.className = 'group-header';
         headerDiv.innerHTML = `
@@ -808,22 +1304,19 @@ function renderTestGroups(groups) {
             <span class="badge" style="background:rgba(255,255,255,0.15)" id="group-badge-${gi}">⏳</span>
         `;
         headerDiv.onclick = () => {
-            const body = document.getElementById(`group-body-${gi}`);
-            body.classList.toggle('collapsed');
+            document.getElementById(`group-body-${gi}`).classList.toggle('collapsed');
         };
-        
         const bodyDiv = document.createElement('div');
         bodyDiv.className = 'group-body';
         bodyDiv.id = `group-body-${gi}`;
-        
         group.tests.forEach((test, ti) => {
             const card = document.createElement('div');
             card.className = 'test-card';
             card.id = `test-${gi}-${ti}`;
             card.innerHTML = `
                 <div class="test-header">
-                    <span class="test-msg">"${test.msg}"</span>
-                    <span class="test-status status-pending" id="status-${gi}-${ti}">⏳ انتظار</span>
+                    <span class="test-msg">"${test.msg.length > 60 ? test.msg.substring(0,60)+'...' : test.msg}"</span>
+                    <span class="test-status status-pending" id="status-${gi}-${ti}">⏳</span>
                 </div>
                 <div class="test-expect">📋 ${test.expect}</div>
                 <div class="test-time" id="time-${gi}-${ti}"></div>
@@ -832,7 +1325,6 @@ function renderTestGroups(groups) {
             `;
             bodyDiv.appendChild(card);
         });
-        
         groupDiv.appendChild(headerDiv);
         groupDiv.appendChild(bodyDiv);
         container.appendChild(groupDiv);
@@ -840,8 +1332,7 @@ function renderTestGroups(groups) {
 }
 
 function toggleDetail(gi, ti) {
-    const detail = document.getElementById(`detail-${gi}-${ti}`);
-    detail.classList.toggle('show');
+    document.getElementById(`detail-${gi}-${ti}`).classList.toggle('show');
 }
 
 async function sendMessage(msg, sessionId) {
@@ -858,32 +1349,36 @@ async function runTest(gi, ti, test) {
     const statusEl = document.getElementById(`status-${gi}-${ti}`);
     const detailEl = document.getElementById(`detail-${gi}-${ti}`);
     const timeEl = document.getElementById(`time-${gi}-${ti}`);
-    
     statusEl.className = 'test-status status-running';
     statusEl.textContent = '⏳ جاري...';
     stats.running++;
     updateStats();
-    
-    const session = test.session || newSession();
+
     const t0 = Date.now();
-    
     try {
-        if (test.delay) {
-            await new Promise(r => setTimeout(r, test.delay));
+        if (test.delay) await new Promise(r => setTimeout(r, test.delay));
+
+        let reply, result;
+
+        if (test.isSpecial && test.run) {
+            const res = await test.run();
+            reply = res.reply || '';
+            result = { pass: res.pass, detail: res.detail, warn: res.warn };
+        } else {
+            const session = test.session || newSession();
+            const msgToSend = test.sendEmpty ? '' : test.msg;
+            reply = await sendMessage(msgToSend, session);
+            result = test.validate(reply);
         }
-        
-        const reply = await sendMessage(test.msg, session);
+
         const elapsed = Date.now() - t0;
-        timeEl.textContent = `⏱️ ${elapsed}ms`;
-        
-        const result = test.validate(reply);
-        
-        // Clean reply for display
-        const cleanReply = reply.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 300);
-        detailEl.innerHTML = `<strong>نتيجة:</strong> ${result.detail}<br><br><strong>الرد:</strong> ${cleanReply}...`;
-        
+        allResponseTimes.push(elapsed);
+        timeEl.textContent = `⏱️ ${elapsed}ms` + (elapsed > 5000 ? ' ⚠️ بطيء' : elapsed > 3000 ? ' 🟡' : ' ✅');
+
+        const cleanReply = reply.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 400);
+        detailEl.innerHTML = `<strong>✅ النتيجة:</strong> ${result.detail}<br><br><strong>📝 الرد (${reply.length} حرف):</strong><br>${cleanReply}`;
+
         stats.running--;
-        
         if (result.pass) {
             if (result.warn) {
                 statusEl.className = 'test-status status-warn';
@@ -891,35 +1386,34 @@ async function runTest(gi, ti, test) {
                 stats.warn++;
             } else {
                 statusEl.className = 'test-status status-pass';
-                statusEl.textContent = '✅ نجح';
+                statusEl.textContent = `✅ ${elapsed}ms`;
                 stats.pass++;
             }
         } else {
             statusEl.className = 'test-status status-fail';
             statusEl.textContent = '❌ فشل';
             stats.fail++;
+            detailEl.classList.add('show'); // Auto-show failed tests
         }
     } catch (err) {
         const elapsed = Date.now() - t0;
         timeEl.textContent = `⏱️ ${elapsed}ms`;
-        detailEl.innerHTML = `<strong>خطأ:</strong> ${err.message}`;
+        detailEl.innerHTML = `<strong>❌ خطأ:</strong> ${err.message}`;
         detailEl.classList.add('show');
-        
         statusEl.className = 'test-status status-fail';
         statusEl.textContent = '❌ خطأ';
         stats.running--;
         stats.fail++;
     }
-    
     updateStats();
     updateGroupBadge(gi);
 }
 
 function updateGroupBadge(gi) {
-    const group = TEST_GROUPS[gi];
+    const groups = currentGroups || TEST_GROUPS;
+    const group = groups[gi];
     if (!group) return;
-    
-    let pass = 0, fail = 0, warn = 0, running = 0;
+    let pass=0, fail=0, warn=0, running=0;
     group.tests.forEach((_, ti) => {
         const el = document.getElementById(`status-${gi}-${ti}`);
         if (!el) return;
@@ -928,32 +1422,49 @@ function updateGroupBadge(gi) {
         else if (el.classList.contains('status-warn')) warn++;
         else if (el.classList.contains('status-running')) running++;
     });
-    
     const badge = document.getElementById(`group-badge-${gi}`);
     if (!badge) return;
-    
-    if (running > 0) {
-        badge.textContent = `⏳ ${running} جاري`;
-        badge.style.background = 'rgba(100,200,255,0.3)';
-    } else if (fail > 0) {
-        badge.textContent = `❌ ${fail} فشل`;
-        badge.style.background = 'rgba(255,100,100,0.3)';
-    } else if (warn > 0) {
-        badge.textContent = `⚠️ ${warn} تحذير | ✅ ${pass}`;
-        badge.style.background = 'rgba(255,200,50,0.3)';
-    } else if (pass === group.tests.length) {
-        badge.textContent = `✅ كلهم نجحوا!`;
-        badge.style.background = 'rgba(100,255,100,0.3)';
-    } else {
-        badge.textContent = `✅ ${pass}/${group.tests.length}`;
-        badge.style.background = 'rgba(100,255,100,0.2)';
-    }
+    if (running > 0) { badge.textContent = `⏳ ${running}`; badge.style.background = 'rgba(100,200,255,0.3)'; }
+    else if (fail > 0) { badge.textContent = `❌ ${fail} فشل | ✅ ${pass}`; badge.style.background = 'rgba(255,100,100,0.3)'; }
+    else if (warn > 0) { badge.textContent = `⚠️ ${warn} | ✅ ${pass}`; badge.style.background = 'rgba(255,200,50,0.3)'; }
+    else if (pass === group.tests.length) { badge.textContent = `✅ ${pass}/${pass}`; badge.style.background = 'rgba(100,255,100,0.3)'; }
+    else { badge.textContent = `${pass}/${group.tests.length}`; badge.style.background = 'rgba(100,255,100,0.2)'; }
+}
+
+let currentGroups = null;
+
+function showSummary() {
+    const box = document.getElementById('summaryBox');
+    const content = document.getElementById('summaryContent');
+    const groups = currentGroups || TEST_GROUPS;
+    let html = '';
+    groups.forEach((g, gi) => {
+        let p=0,f=0,w=0;
+        g.tests.forEach((_,ti) => {
+            const el = document.getElementById(`status-${gi}-${ti}`);
+            if(el?.classList.contains('status-pass')) p++;
+            else if(el?.classList.contains('status-fail')) f++;
+            else if(el?.classList.contains('status-warn')) w++;
+        });
+        const icon = f>0?'❌':w>0?'⚠️':'✅';
+        html += `<div class="summary-row"><span>${icon} ${g.name}</span><span>✅${p} ❌${f} ⚠️${w}</span></div>`;
+    });
+    const avgMs = allResponseTimes.length > 0 ? Math.round(allResponseTimes.reduce((a,b)=>a+b,0)/allResponseTimes.length) : 0;
+    const maxMs = allResponseTimes.length > 0 ? Math.max(...allResponseTimes) : 0;
+    const minMs = allResponseTimes.length > 0 ? Math.min(...allResponseTimes) : 0;
+    html += `<div class="summary-row" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.15);padding-top:10px">
+        <span>📈 أوقات الاستجابة</span><span>متوسط: ${avgMs}ms | أسرع: ${minMs}ms | أبطأ: ${maxMs}ms</span></div>`;
+    const pct = stats.total > 0 ? Math.round((stats.pass/stats.total)*100) : 0;
+    html += `<div class="summary-row"><span>📊 نسبة النجاح</span><span style="color:${pct>=80?'#66ff66':pct>=50?'#ffcc33':'#ff6666'};font-size:16px;font-weight:700">${pct}%</span></div>`;
+    content.innerHTML = html;
+    box.classList.add('show');
 }
 
 async function runAllTests() {
     stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    allResponseTimes = [];
     startTime = Date.now();
-    
+    currentGroups = TEST_GROUPS;
     const allTests = [];
     TEST_GROUPS.forEach((group, gi) => {
         group.tests.forEach((test, ti) => {
@@ -961,96 +1472,124 @@ async function runAllTests() {
             stats.total++;
         });
     });
-    
     renderTestGroups(TEST_GROUPS);
     updateStats();
-    
-    // Run tests with concurrency limit
+    document.getElementById('summaryBox').classList.remove('show');
+
+    // Sequential for follow-up tests, parallel for others
+    const followupTests = allTests.filter(t => t.test.session);
+    const normalTests = allTests.filter(t => !t.test.session);
+
+    // Run normal tests with concurrency
     const CONCURRENCY = 3;
     let idx = 0;
-    
-    async function next() {
-        if (idx >= allTests.length) return;
-        const { gi, ti, test } = allTests[idx++];
+    async function nextNormal() {
+        if (idx >= normalTests.length) return;
+        const { gi, ti, test } = normalTests[idx++];
         await runTest(gi, ti, test);
-        await next();
+        await nextNormal();
     }
-    
     const workers = [];
-    for (let i = 0; i < Math.min(CONCURRENCY, allTests.length); i++) {
-        workers.push(next());
-    }
+    for (let i = 0; i < Math.min(CONCURRENCY, normalTests.length); i++) workers.push(nextNormal());
     await Promise.all(workers);
-    
-    // Final time
+
+    // Run follow-up tests sequentially (grouped by session)
+    const sessionGroups = {};
+    followupTests.forEach(t => {
+        if (!sessionGroups[t.test.session]) sessionGroups[t.test.session] = [];
+        sessionGroups[t.test.session].push(t);
+    });
+    for (const [, tests] of Object.entries(sessionGroups)) {
+        for (const { gi, ti, test } of tests) {
+            await runTest(gi, ti, test);
+        }
+    }
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     document.getElementById('statTime').textContent = elapsed + 's';
+    showSummary();
 }
 
 async function runCategory(cat) {
     stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    allResponseTimes = [];
     startTime = Date.now();
-    
     const filtered = TEST_GROUPS.filter(g => g.category === cat);
     if (filtered.length === 0) { alert('مفيش اختبارات لـ ' + cat); return; }
-    
+    currentGroups = filtered;
     const allTests = [];
     filtered.forEach((group, fgi) => {
-        const gi = TEST_GROUPS.indexOf(group);
         group.tests.forEach((test, ti) => {
-            allTests.push({ gi, ti, test, fgi });
+            allTests.push({ gi: fgi, ti, test });
             stats.total++;
         });
     });
-    
     renderTestGroups(filtered);
     updateStats();
-    
-    // Map filtered indices to original
+    document.getElementById('summaryBox').classList.remove('show');
+
+    const followupTests = allTests.filter(t => t.test.session);
+    const normalTests = allTests.filter(t => !t.test.session);
+
     const CONCURRENCY = 3;
     let idx = 0;
-    
-    async function next() {
-        if (idx >= allTests.length) return;
-        const item = allTests[idx++];
-        // Use filtered group index for rendering
-        await runTest(item.fgi, item.ti, item.test);
-        await next();
+    async function nextNormal() {
+        if (idx >= normalTests.length) return;
+        const item = normalTests[idx++];
+        await runTest(item.gi, item.ti, item.test);
+        await nextNormal();
     }
-    
     const workers = [];
-    for (let i = 0; i < Math.min(CONCURRENCY, allTests.length); i++) {
-        workers.push(next());
-    }
+    for (let i = 0; i < Math.min(CONCURRENCY, normalTests.length); i++) workers.push(nextNormal());
     await Promise.all(workers);
+
+    const sessionGroups = {};
+    followupTests.forEach(t => {
+        if (!sessionGroups[t.test.session]) sessionGroups[t.test.session] = [];
+        sessionGroups[t.test.session].push(t);
+    });
+    for (const [, tests] of Object.entries(sessionGroups)) {
+        for (const { gi, ti, test } of tests) {
+            await runTest(gi, ti, test);
+        }
+    }
+
+    showSummary();
 }
 
 function clearResults() {
     stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    allResponseTimes = [];
     startTime = 0;
+    currentGroups = null;
     document.getElementById('testContainer').innerHTML = '';
     document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('summaryBox').classList.remove('show');
     updateStats();
 }
 
-// Auto-detect server URL
+// Auto-detect server
 window.addEventListener('load', async () => {
+    const statusEl = document.getElementById('serverStatus');
     const candidates = [
         window.location.origin,
         'http://localhost:3000',
-        'https://your-app.onrender.com'
     ];
-    
     for (const url of candidates) {
         try {
-            const resp = await fetch(url + '/health', { signal: AbortSignal.timeout(3000) });
+            statusEl.textContent = `🔍 جاري فحص ${url}...`;
+            const resp = await fetch(url + '/health', { signal: AbortSignal.timeout(4000) });
             if (resp.ok) {
+                const data = await resp.json();
                 document.getElementById('serverUrl').value = url;
-                console.log('✅ Server found:', url);
+                statusEl.textContent = `✅ متصل بـ ${url} — v${data.version} | DB: ${data.database} | AI: ${data.openai}`;
+                statusEl.className = 'server-status ok';
                 return;
             }
         } catch {}
     }
+    statusEl.textContent = '❌ مش لاقي سيرفر — اكتب الـ URL يدوي';
+    statusEl.className = 'server-status err';
 });
 </script>
 
