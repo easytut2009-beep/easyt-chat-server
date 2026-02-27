@@ -1435,10 +1435,10 @@ async function loadCorrections() {
       el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات</p>';
       return;
     }
-    var html = '<table><thead><tr><th>ID</th><th>السؤال</th><th>الإجابة الصحيحة</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
+    var html = '<table><thead><tr><th>ID</th><th>السؤال</th><th>الرد الصحيح</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
     corrections.forEach(function(c) {
-      var question = c.original_question || (Array.isArray(c.wrong_terms) ? c.wrong_terms.join(', ') : (c.wrong_terms || '—'));
-      var answer = c.corrected_answer || (Array.isArray(c.search_terms) ? c.search_terms.join(', ') : (c.search_terms || ''));
+      var question = c.original_question || c.user_message || '—';
+      var answer = c.corrected_reply || '';
       html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(question).slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(answer).slice(0,80))+'</td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\',\''+c.id+'\')">حذف</button></td></tr>';
     });
     html += '</tbody></table>';
@@ -1929,22 +1929,22 @@ function openEditModal(entity, item) {
 
 async function saveModal() {
   try {
-    // Correction
-    if(modalState.type==='correction'||modalState.type==='correction_manual') {
-      var b = {
-        chat_log_id: modalState.logId||null,
-        session_id: modalState.sid||null,
-        original_answer: modalState.original||null,
-        original_question: document.getElementById('corrQuestion').value||null,
-        corrected_answer: document.getElementById('corrAnswer').value,
-        note: document.getElementById('corrNote').value||null
-      };
-      if(!b.corrected_answer) { toast('اكتب الإجابة!','error'); return; }
-      await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
-      closeModal(); toast('تم التصحيح ✅');
-      if(currentTab==='corrections') loadCorrections();
-      return;
-    }
+// Correction
+if(modalState.type==='correction'||modalState.type==='correction_manual') {
+  var b = {
+    chat_log_id: modalState.logId||null,
+    session_id: modalState.sid||null,
+    original_reply: modalState.original||null,
+    original_question: document.getElementById('corrQuestion').value||null,
+    corrected_reply: document.getElementById('corrAnswer').value,
+    note: document.getElementById('corrNote').value||null
+  };
+  if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
+  await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
+  closeModal(); toast('تم التصحيح ✅');
+  if(currentTab==='corrections') loadCorrections();
+  return;
+}
 
     // Custom Response
     if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
