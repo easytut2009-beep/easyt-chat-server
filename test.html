@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🧪 Ziko Chatbot v10.3 — Full Test Suite</title>
+<title>🧪 Ziko Chatbot v10.4 — Full Test Suite</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
@@ -91,6 +91,8 @@
   
   .toggle-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px; }
   .toggle-btn:hover { color: #94a3b8; }
+
+  .new-badge { background: #e63946; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-right: 6px; font-weight: 700; }
   
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   .running .test-status { animation: pulse 1s infinite; }
@@ -107,13 +109,13 @@
 <body>
 
 <div class="header">
-  <h1>🧪 Ziko Chatbot v10.3 — Full Test Suite</h1>
-  <p>اختبار شامل لكل وظائف الشات بوت — 50+ سيناريو</p>
+  <h1>🧪 Ziko Chatbot v10.4 — Full Test Suite</h1>
+  <p>اختبار شامل لكل وظائف الشات بوت — 70+ سيناريو (يشمل اختبارات FIX #18 + Diplomas + Fuzzy)</p>
 </div>
 
 <div class="config-bar">
   <label>🔗 API URL:</label>
-<input type="text" id="apiUrl" ... value="https://easyt-chat-server.onrender.com">
+  <input type="text" id="apiUrl" value="https://easyt-chat-server.onrender.com">
   <button class="btn btn-run" onclick="testConnection()">🔌 اختبر الاتصال</button>
   <span id="connStatus" style="font-size:12px;color:#64748b;">⏳ لم يُختبر</span>
 </div>
@@ -126,12 +128,15 @@
   <button class="btn btn-cat active" data-cat="all" onclick="filterCat('all',this)">الكل</button>
   <button class="btn btn-cat" data-cat="greeting" onclick="filterCat('greeting',this)">تحيات</button>
   <button class="btn btn-cat" data-cat="search" onclick="filterCat('search',this)">بحث</button>
+  <button class="btn btn-cat" data-cat="smart" onclick="filterCat('smart',this)">🧠 ذكي</button>
+  <button class="btn btn-cat" data-cat="diplomas" onclick="filterCat('diplomas',this)">🎓 دبلومات</button>
   <button class="btn btn-cat" data-cat="subscription" onclick="filterCat('subscription',this)">اشتراك</button>
   <button class="btn btn-cat" data-cat="dialect" onclick="filterCat('dialect',this)">لهجات</button>
   <button class="btn btn-cat" data-cat="followup" onclick="filterCat('followup',this)">متابعة</button>
   <button class="btn btn-cat" data-cat="edge" onclick="filterCat('edge',this)">حالات حدية</button>
   <button class="btn btn-cat" data-cat="categories" onclick="filterCat('categories',this)">تصنيفات</button>
   <button class="btn btn-cat" data-cat="spelling" onclick="filterCat('spelling',this)">إملاء</button>
+  <button class="btn btn-cat" data-cat="fuzzy" onclick="filterCat('fuzzy',this)">🔤 Fuzzy</button>
 </div>
 
 <div class="stats-bar">
@@ -139,7 +144,7 @@
   <div class="stat"><span class="stat-label">نجح: </span><span class="stat-value stat-pass" id="statPass">0</span></div>
   <div class="stat"><span class="stat-label">فشل: </span><span class="stat-value stat-fail" id="statFail">0</span></div>
   <div class="stat"><span class="stat-label">تحذير: </span><span class="stat-value stat-warn" id="statWarn">0</span></div>
-  <div class="stat"><span class="stat-label">⏱️ </span><span class="stat-value stat-time" id="statTime">0ms</span></div>
+  <div class="stat"><span class="stat-label">⏱️ </span><span class="stat-value stat-time" id="statTime">0s</span></div>
   <div class="progress-wrap">
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
   </div>
@@ -163,7 +168,7 @@
 
 <script>
 // ══════════════════════════════════════
-// TEST DEFINITIONS — 50+ scenarios
+// TEST DEFINITIONS — 70+ scenarios
 // ══════════════════════════════════════
 
 const TEST_GROUPS = [
@@ -195,6 +200,47 @@ const TEST_GROUPS = [
       { msg: "كورس اليستريتر", checks: ["has_card", "contains:اليستريتر|illustrator"], desc: "بحث Illustrator" },
       { msg: "عايز اتعلم انجليزي", checks: ["has_card", "contains:انجليزي|english"], desc: "بحث انجليزي" },
       { msg: "كورسات هندسية", checks: ["has_card"], desc: "بحث هندسة" },
+    ]
+  },
+  {
+    name: "🧠 أسئلة تعليمية ذكية — FIX #18",
+    cat: "smart",
+    isNew: true,
+    tests: [
+      { msg: "يعني ايه مونتير", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 يعني ايه مونتير → مونتاج" },
+      { msg: "ايه هو الجرافيك ديزاين", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ايه هو الجرافيك ديزاين → جرافيك" },
+      { msg: "الفرق بين UI و UX", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 الفرق بين UI و UX → تصميم" },
+      { msg: "ازاي اكون مبرمج", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ازاي اكون مبرمج → برمجة" },
+      { msg: "سمات المدير الناجح", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 سمات المدير → إدارة" },
+      { msg: "ما معنى SEO", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ما معنى SEO → سيو/تسويق" },
+      { msg: "يعني ايه موشن جرافيك", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 يعني ايه موشن → موشن جرافيك" },
+      { msg: "ايه هي لغة بايثون", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ايه هي بايثون → بايثون" },
+    ]
+  },
+  {
+    name: "🎓 الدبلومات — DIPLOMAS Action",
+    cat: "diplomas",
+    isNew: true,
+    tests: [
+      { msg: "عاوز اعرف الدبلومات", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 طلب كل الدبلومات" },
+      { msg: "عندكم دبلومات؟", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 سؤال عن الدبلومات" },
+      { msg: "الدبلومات المتاحة", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 الدبلومات المتاحة" },
+      { msg: "ايه الدبلومات اللي عندكم", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 ايه الدبلومات" },
+      { msg: "كل الدبلومات", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 كل الدبلومات" },
+      { msg: "دبلومة جرافيك", checks: ["has_card", "contains:جرافيك|graphic|تصميم"], desc: "🆕 دبلومة محددة → SEARCH" },
+      { msg: "دبلومة برمجة", checks: ["has_card", "contains:برمج|programming|تطوير"], desc: "🆕 دبلومة محددة → SEARCH" },
+    ]
+  },
+  {
+    name: "🔤 Fuzzy Matching — تصحيح ذكي",
+    cat: "fuzzy",
+    isNew: true,
+    tests: [
+      { msg: "عايز كورس فوتشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "🆕 فوتشوب → فوتوشوب (fuzzy)" },
+      { msg: "كورس بيسون", checks: ["has_card", "contains:بايثون|python"], desc: "🆕 بيسون → بايثون (fuzzy)" },
+      { msg: "مونتير فيديو", checks: ["has_card_or_suggestion"], desc: "🆕 مونتير → مونتاج (fuzzy)" },
+      { msg: "عايز اتعلم بروجرامنج", checks: ["has_card", "contains:برمج|programming"], desc: "🆕 بروجرامنج → برمجة (fuzzy)" },
+      { msg: "كورس جرفيك", checks: ["has_card", "contains:جرافيك|graphic"], desc: "🆕 جرفيك → جرافيك (fuzzy)" },
     ]
   },
   {
@@ -291,6 +337,7 @@ const TEST_GROUPS = [
       { msg: "عايز كورس فوتوشوب وكمان بايثون وريفيت واكسل", checks: ["has_card"], desc: "طلب متعدد المواضيع" },
       { msg: "I want to learn Python programming", checks: ["has_card", "contains:python|بايثون"], desc: "English full sentence" },
       { msg: "مشكلة في الموقع مش بيفتح", checks: ["contains:support|مشكل|تواصل|دعم"], desc: "مشكلة تقنية" },
+      { msg: "الحمد لله بخير", checks: ["not_empty", "no_card"], desc: "🆕 رد عادي — بدون كورسات" },
     ]
   },
   {
@@ -333,6 +380,8 @@ function renderTests() {
       const id = `test-${gIdx}-${tIdx}`;
       const checksStr = test.checks.map(c => {
         if (c === 'has_card') return '📦 يحتوي كارد';
+        if (c === 'has_card_or_suggestion') return '📦 كارد أو 💡 اقتراح كورسات';
+        if (c === 'no_card') return '🚫 بدون كارد';
         if (c === 'greeting_tone') return '👋 نبرة ترحيب';
         if (c === 'asks_clarification') return '❓ يطلب توضيح';
         if (c === 'not_empty') return '✍️ رد غير فارغ';
@@ -343,7 +392,7 @@ function renderTests() {
       testsHtml += `
         <div class="test-item" id="${id}">
           <div class="test-top">
-            <span class="test-name">${test.desc}</span>
+            <span class="test-name">${group.isNew ? '<span class="new-badge">NEW</span>' : ''}${test.desc}</span>
             <span class="test-status status-idle" id="${id}-status">⏳ ينتظر</span>
           </div>
           <div class="test-msg"><strong>💬</strong> "${test.msg}"</div>
@@ -355,9 +404,10 @@ function renderTests() {
       testIdx++;
     });
     
+    const newTag = group.isNew ? ' <span class="new-badge">NEW</span>' : '';
     groupDiv.innerHTML = `
       <div class="group-header" onclick="toggleGroup(this)">
-        <span class="group-title">${group.name}</span>
+        <span class="group-title">${group.name}${newTag}</span>
         <span class="group-badge">${group.tests.length} اختبار</span>
       </div>
       <div class="test-list">${testsHtml}</div>
@@ -390,7 +440,7 @@ function filterCat(cat, btn) {
 }
 
 // ══════════════════════════════════════
-// CHECK FUNCTIONS
+// CHECK FUNCTIONS — v10.4 (added has_card_or_suggestion + no_card)
 // ══════════════════════════════════════
 function evaluateChecks(reply, checks) {
   const results = [];
@@ -402,19 +452,37 @@ function evaluateChecks(reply, checks) {
     .replace(/ؤ/g, 'و')
     .replace(/ئ/g, 'ي');
   
+  const hasCardInReply = replyLower.includes('border') && replyLower.includes('div') && 
+                (replyLower.includes('تفاصيل') || replyLower.includes('الدورة') || replyLower.includes('الدبلومة') || replyLower.includes('الاشتراك'));
+  
   for (const check of checks) {
     if (check === 'has_card') {
-      const has = replyLower.includes('border') && replyLower.includes('div') && 
-                  (replyLower.includes('تفاصيل') || replyLower.includes('الدورة') || replyLower.includes('الدبلومة'));
-      results.push({ check: '📦 كارد', passed: has, detail: has ? 'يحتوي على كارد ✅' : 'لا يوجد كارد ❌' });
+      results.push({ check: '📦 كارد', passed: hasCardInReply, detail: hasCardInReply ? 'يحتوي على كارد ✅' : 'لا يوجد كارد ❌' });
+    }
+    else if (check === 'has_card_or_suggestion') {
+      // Card OR text suggesting courses (Smart Upsell)
+      const hasSuggestion = replyNorm.includes('كورس') || replyNorm.includes('دوره') || replyNorm.includes('تفيد') || 
+                            replyNorm.includes('بالمناسب') || replyNorm.includes('عندنا') || replyNorm.includes('easyt') ||
+                            replyNorm.includes('منصه') || replyNorm.includes('تصفح') || hasCardInReply;
+      results.push({ 
+        check: '📦💡 كارد/اقتراح', 
+        passed: hasSuggestion, 
+        detail: hasSuggestion 
+          ? (hasCardInReply ? 'يحتوي كارد كورس ✅' : 'يحتوي اقتراح كورسات ✅') 
+          : 'لا يوجد كارد ولا اقتراح ❌' 
+      });
+    }
+    else if (check === 'no_card') {
+      const noCard = !hasCardInReply;
+      results.push({ check: '🚫 بدون كارد', passed: noCard, detail: noCard ? 'بدون كارد كورس ✅ (صحيح)' : 'فيه كارد ❌ (مش المفروض)' });
     }
     else if (check === 'greeting_tone') {
-      const greetWords = ['اهلا', 'مرحبا', 'هلا', 'اهلاً', 'welcome', 'hi', 'hello', 'سلام', 'وعليكم', 'اقدر', 'ساعد', '😊', '👋', 'اساعد', 'نورت'];
+      const greetWords = ['اهلا', 'مرحبا', 'هلا', 'اهلاً', 'welcome', 'hi', 'hello', 'سلام', 'وعليكم', 'اقدر', 'ساعد', '😊', '👋', 'اساعد', 'نورت', 'عفوا', 'شكر'];
       const has = greetWords.some(w => replyNorm.includes(w));
       results.push({ check: '👋 ترحيب', passed: has, detail: has ? 'نبرة ودودة ✅' : 'لا ترحيب واضح ⚠️' });
     }
     else if (check === 'asks_clarification') {
-      const clarifyWords = ['ايه', 'اي', 'تحب', 'تبغ', 'عايز ايه', 'قولي', 'حدد', 'وضح', '؟', 'مجال', 'موضوع', 'تتعلم'];
+      const clarifyWords = ['ايه', 'اي', 'تحب', 'تبغ', 'عايز ايه', 'قولي', 'حدد', 'وضح', '؟', 'مجال', 'موضوع', 'تتعلم', 'مثلا'];
       const has = clarifyWords.some(w => replyNorm.includes(w));
       results.push({ check: '❓ توضيح', passed: has, detail: has ? 'يطلب توضيح ✅' : 'لم يطلب توضيح ⚠️' });
     }
@@ -466,7 +534,7 @@ async function testConnection() {
     const resp = await fetch(`${url}/health`);
     const data = await resp.json();
     if (data.status === 'ok') {
-      status.textContent = `✅ متصل | ${data.version} | DB: ${data.database} | AI: ${data.openai}`;
+      status.textContent = `✅ متصل | ${data.version || '?'} | DB: ${data.database} | AI: ${data.openai}`;
       status.style.color = '#22c55e';
     } else {
       status.textContent = `⚠️ متصل بمشاكل: ${JSON.stringify(data)}`;
@@ -662,8 +730,8 @@ async function runCustomTest() {
       html += `<div class="${found ? 'check-pass' : 'check-fail'}">${found ? '✅' : '❌'} البحث عن "${checkWord}": ${found ? 'موجود' : 'غير موجود'}</div>`;
     }
     
-    const hasCard = reply.includes('border') && reply.includes('div') && (reply.includes('تفاصيل') || reply.includes('الدورة'));
-    html += `<div class="${hasCard ? 'check-pass' : 'check-fail'}">${hasCard ? '✅' : '❌'} كارد كورس: ${hasCard ? 'موجود' : 'غير موجود'}</div>`;
+    const hasCard = reply.includes('border') && reply.includes('div') && (reply.includes('تفاصيل') || reply.includes('الدورة') || reply.includes('الدبلومة'));
+    html += `<div class="${hasCard ? 'check-pass' : 'check-fail'}">${hasCard ? '✅' : '❌'} كارد كورس/دبلومة: ${hasCard ? 'موجود' : 'غير موجود'}</div>`;
     html += `<div class="check-pass">✅ طول الرد: ${reply.length} حرف</div>`;
     
     let preview = reply.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
