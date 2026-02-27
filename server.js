@@ -23,6 +23,8 @@
    ✅ FIX #15: Smarter verifyCourseRelevance — multi-term awareness
    ✅ FIX #16: Dynamic Phase 2 model — gpt-4o-mini when must-show exists
    ✅ FIX #17: Trimmed analyzer prompt — fewer redundant examples
+   ✅ FIX #20: Fixed corrections table columns (wrong_terms → original_question)
+   ✅ FIX #21: Fixed custom_responses insert (added title, category, priority)
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -475,10 +477,7 @@ function splitIntoSearchableTerms(terms) {
 function finalizeReply(html) {
   if (!html) return "";
   html = html.replace(/\n/g, "<br>");
-  
-  // 🆕 FIX: Force line breaks before numbered list items
   html = html.replace(/([.!؟،])\s*(\d+)\.\s/g, "$1<br>$2. ");
-  
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
   html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
@@ -540,10 +539,8 @@ function quickIntentCheck(message) {
     }
   }
 
-// ═══ 🆕 FIX: Diploma intent detection ═══
   const hasDiploma = /دبلوم|diploma/i.test(norm) || /دبلوم|diploma/i.test(lower);
   if (hasDiploma) {
-    // Check if there's a specific subject (e.g., "دبلومة فوتوشوب")
     const allCatKeywords = Object.values(CATEGORIES).flatMap((c) => c.keywords);
     const hasSpecificSubject = allCatKeywords.some((kw) => {
       const normKw = normalizeArabic(kw.toLowerCase());
@@ -551,10 +548,8 @@ function quickIntentCheck(message) {
     });
 
     if (!hasSpecificSubject) {
-      // General diploma query → force DIPLOMAS
       return { intent: "DIPLOMAS", confidence: 0.93 };
     }
-    // Has specific subject like "دبلومة تصميم" → let analyzer handle (probably SEARCH)
   }
 
   return null;
@@ -693,13 +688,10 @@ setInterval(() => {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
-   FIX #7: Title weight 50x (was 10x), exact match +200
-   FIX #14: Search cache integrated
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
 
-  // 🆕 FIX #14: Check cache first
   const cacheKey = "sc:" + searchTerms.slice().sort().join("|") + "|ex:" + excludeTerms.slice().sort().join("|") + "|a:" + (audience || "");
   const cached = getCachedSearch(cacheKey);
   if (cached) return cached;
@@ -820,10 +812,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     });
 
     const result = scored.slice(0, 10);
-
-    // 🆕 FIX #14: Store in cache
     setCachedSearch(cacheKey, result);
-
     return result;
   } catch (e) {
     console.error("searchCourses error:", e.message);
@@ -897,7 +886,6 @@ async function fuzzySearchFallback(terms) {
 async function searchDiplomas(searchTerms) {
   if (!supabase) return [];
 
-  // 🆕 FIX #14: Check cache
   const cacheKey = "sd:" + searchTerms.slice().sort().join("|");
   const cached = getCachedSearch(cacheKey);
   if (cached) return cached;
@@ -926,22 +914,23 @@ async function searchDiplomas(searchTerms) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   🔧 FIX #20: searchCorrections — uses correct column names
+   ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
   if (!supabase || !terms || terms.length === 0) return [];
   try {
     const { data: corrections, error } = await supabase
       .from("corrections")
-      .select("wrong_terms, correct_course_ids, search_terms");
+      .select("original_question, user_message, correct_course_ids, corrected_reply");
     if (error || !corrections) return [];
 
     const normInput = normalizeArabic(terms.join(" ").toLowerCase());
     const matches = [];
 
     for (const row of corrections) {
-      const wt = row.wrong_terms || [];
-      const wrongNorm = normalizeArabic(
-        (Array.isArray(wt) ? wt.join(" ") : String(wt)).toLowerCase()
-      );
+      const wt = row.original_question || row.user_message || "";
+      const wrongNorm = normalizeArabic(String(wt).toLowerCase());
       if (!wrongNorm) continue;
 
       if (normInput.includes(wrongNorm) || wrongNorm.includes(normInput)) {
@@ -963,13 +952,11 @@ async function searchCorrections(terms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   Priority Title Search — catches exact title matches
-   that the main search might miss
+   Priority Title Search
    ══════════════════════════════════════════════════════════ */
 async function priorityTitleSearch(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
 
-  // 🆕 FIX #14: Check cache
   const cacheKey = "pt:" + searchTerms.slice().sort().join("|");
   const cached = getCachedSearch(cacheKey);
   if (cached) return cached;
@@ -1022,7 +1009,6 @@ async function priorityTitleSearch(searchTerms) {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 9: Card Formatting
-   FIX #9: Image support + no blank space
    ══════════════════════════════════════════════════════════ */
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1135,7 +1121,6 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 
 /* ═══════════════════════════════════
    11-A: Session Memory System
-   FIX #8: Added lastSearchTopic for follow-up context
    ═══════════════════════════════════ */
 const sessionMemory = new Map();
 const SESSION_MEMORY_TTL = 30 * 60 * 1000;
@@ -1193,7 +1178,7 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 /* ═══════════════════════════════════
-   FIX #8: Follow-up Context Detection
+   Follow-up Context Detection
    ═══════════════════════════════════ */
 function extractMainTopic(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
@@ -1277,23 +1262,16 @@ function enrichMessageWithContext(message, sessionMem) {
   return { enriched: message, isFollowUp: false };
 }
 
-
-
 /* ═══════════════════════════════════
-   🆕 FIX #18: Ensure search_terms for educational topics
-   Uses FUZZY matching — no need for manual keyword lists!
-   "مونتير" → matches "مونتاج" (67% similarity)
-   "فوتشوب" → matches "فوتوشوب" (83% similarity)
+   FIX #18: Ensure search_terms for educational topics
    ═══════════════════════════════════ */
 function ensureSearchTermsForEducationalTopics(message, analysis) {
-  // Only intervene if CHAT with no search_terms
   if (analysis.action !== "CHAT") return analysis;
   if (analysis.search_terms && analysis.search_terms.length > 0) return analysis;
 
   const corrected = applyArabicCorrections(message.toLowerCase());
   const norm = normalizeArabic(corrected);
 
-  // Extract meaningful words from the message
   const messageWords = corrected.split(/\s+/)
     .filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w))
     .map(w => ({ original: w, norm: normalizeArabic(w) }));
@@ -1307,19 +1285,16 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
       const normKw = normalizeArabic(kw.toLowerCase());
       if (normKw.length <= 2) continue;
 
-      // 1️⃣ Exact substring match
       if (norm.includes(normKw) || corrected.includes(kw.toLowerCase())) {
         foundTerms.add(kw);
         continue;
       }
 
-      // 2️⃣ Fuzzy match — the SMART part!
       for (const mw of messageWords) {
         if (mw.norm.length <= 2) continue;
         const sim = similarityRatio(mw.norm, normKw);
         if (sim >= 63) {
           foundTerms.add(kw);
-          // Also add the user's original word (for search variety)
           foundTerms.add(mw.original);
           console.log(`🧠 FIX #18 fuzzy: "${mw.original}" ≈ "${kw}" (${sim}%)`);
           break;
@@ -1328,7 +1303,6 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
     }
   }
 
-  // 3️⃣ Also check against SEARCH_SYNONYMS keys & values
   for (const mw of messageWords) {
     if (mw.norm.length <= 2) continue;
     for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
@@ -1360,12 +1334,8 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
   return analysis;
 }
 
-
 /* ═══════════════════════════════════
-   🆕 FIX #19: Extract domain from GPT's own response
-   GPT knows ROAS=marketing, BIM=engineering, etc.
-   We scan its response for category keywords → use them for search
-   No manual keyword lists needed!
+   FIX #19: Extract domain from GPT's own response
    ═══════════════════════════════════ */
 function enrichSearchTermsFromResponse(analysis) {
   if (analysis.action !== "CHAT") return analysis;
@@ -1373,7 +1343,6 @@ function enrichSearchTermsFromResponse(analysis) {
 
   const currentTerms = analysis.search_terms || [];
 
-  // Check if current terms already match known categories
   const hasStrongTerm = currentTerms.some((t) => {
     if (t.length <= 2) return false;
     const norm = normalizeArabic(t.toLowerCase());
@@ -1390,11 +1359,10 @@ function enrichSearchTermsFromResponse(analysis) {
     return false;
   });
 
-  if (hasStrongTerm) return analysis; // Already has good domain terms
+  if (hasStrongTerm) return analysis;
 
-  // Scan GPT's response for domain/category keywords
   const responseNorm = normalizeArabic(analysis.response_message.toLowerCase());
-  const foundTerms = new Map(); // keyword → category name
+  const foundTerms = new Map();
 
   for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
     let catHits = 0;
@@ -1403,14 +1371,12 @@ function enrichSearchTermsFromResponse(analysis) {
       const normKw = normalizeArabic(kw.toLowerCase());
       if (normKw.length <= 3) continue;
 
-      // Direct substring match
       if (responseNorm.includes(normKw)) {
         foundTerms.set(kw, catName);
         catHits++;
         continue;
       }
 
-      // Root matching — first 4-5 chars (catches الإعلانية→اعلان, البرمجة→برمج)
       if (normKw.length >= 5) {
         const root = normKw.substring(0, Math.min(normKw.length - 1, 5));
         if (root.length >= 4 && responseNorm.includes(root)) {
@@ -1420,7 +1386,6 @@ function enrichSearchTermsFromResponse(analysis) {
       }
     }
 
-    // Bonus: if category name itself appears in response
     const normCatName = normalizeArabic(catName.toLowerCase());
     if (normCatName.length > 4 && responseNorm.includes(normCatName)) {
       catInfo.keywords.slice(0, 3).forEach((kw) => foundTerms.set(kw, catName));
@@ -1436,7 +1401,6 @@ function enrichSearchTermsFromResponse(analysis) {
 
   return analysis;
 }
-
 
 /* ═══════════════════════════════════
    11-B: Context Loaders
@@ -1526,10 +1490,6 @@ async function loadCustomResponsesSummary() {
 
 /* ═══════════════════════════════════
    11-C: Phase 1 — Smart Analyzer
-   🔴 FIX #12: Removed duplicate "قاعدة ذهبية"
-   🔴 FIX #13: Removed orphan "قاعدة الرسالة الغامضة" header
-   🟡 FIX #17: Trimmed SUBSCRIPTION examples
-   🟢 NEW: Added DIPLOMAS action
    ═══════════════════════════════════ */
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
@@ -1704,7 +1664,7 @@ ${categoriesList}
 }
 
 /* ═══════════════════════════════════
-   Smart Fallback — varied "didn't understand" messages
+   Smart Fallback
    ═══════════════════════════════════ */
 const FALLBACK_MESSAGES = [
   "ممكن توضحلي أكتر؟ 🤔 مثلاً قولي اسم المجال أو المهارة اللي عايز تتعلمها",
@@ -1719,7 +1679,6 @@ function getSmartFallback(sessionId) {
   const idx = (mem.messageCount || 0) % FALLBACK_MESSAGES.length;
   return FALLBACK_MESSAGES[idx];
 }
-
 
 async function analyzeMessage(
   message,
@@ -1818,8 +1777,6 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
-   FIX #10: Receives relevance scores
-   🆕 FIX #16: Accepts model parameter for dynamic selection
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1883,7 +1840,7 @@ async function generateSmartRecommendation(
   sessionMem,
   analysis,
   instructors,
-  model = "gpt-4o" // 🆕 FIX #16: dynamic model parameter
+  model = "gpt-4o"
 ) {
   const courseData = courses.slice(0, 8).map((c, i) => ({
     index: i,
@@ -1976,7 +1933,7 @@ ${JSON.stringify(allItems, null, 1)}
 
   try {
     const resp = await openai.chat.completions.create({
-      model, // 🆕 FIX #16: dynamic model
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
@@ -2018,7 +1975,6 @@ ${JSON.stringify(allItems, null, 1)}
     };
   } catch (e) {
     console.error(`❌ RAG Recommender error (${model}):`, e.message);
-    // Fallback to gpt-4o-mini if primary failed
     const fallbackModel = model === "gpt-4o" ? "gpt-4o-mini" : "gpt-4o-mini";
     try {
       const resp = await openai.chat.completions.create({
@@ -2066,7 +2022,6 @@ ${JSON.stringify(allItems, null, 1)}
 
 /* ═══════════════════════════════════
    Safety Check — verify GPT's choices
-   🆕 FIX #15: Smarter — requires 2 matches for 3+ core terms
    ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
@@ -2094,7 +2049,7 @@ function verifyCourseRelevance(course, searchTerms) {
 
     if (courseText.includes(normTerm)) {
       matchCount++;
-      continue; // 🆕 FIX #15: avoid double-counting from fuzzy below
+      continue;
     }
 
     const titleNorm = normalizeArabic((course.title || "").toLowerCase());
@@ -2106,7 +2061,6 @@ function verifyCourseRelevance(course, searchTerms) {
     }
   }
 
-  // 🆕 FIX #15: require more matches when there are more core terms
   const requiredMatches = coreTerms.length >= 3 ? 2 : 1;
   return matchCount >= requiredMatches;
 }
@@ -2154,11 +2108,9 @@ async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
 
-  /* Step 0: Normalize dialect BEFORE anything else */
   const dialectNormalized = normalizeDialect(message);
   console.log(`🌍 Dialect: "${message}" → "${dialectNormalized}"`);
 
-  /* Step 0.5: Enrich with follow-up context */
   const contextResult = enrichMessageWithContext(dialectNormalized, sessionMem);
   const enrichedMessage = contextResult.enriched;
   const isContextFollowUp = contextResult.isFollowUp;
@@ -2170,7 +2122,6 @@ async function smartChat(message, sessionId) {
     );
   }
 
-  // 1. Load all context in parallel
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
     loadBotInstructions(),
     loadRecentHistory(sessionId, 10),
@@ -2181,7 +2132,6 @@ async function smartChat(message, sessionId) {
     `📦 Context: instructions=${botInstructions ? "yes" : "no"}, history=${chatHistory.length}msgs, memory=${sessionMem.messageCount}msgs`
   );
 
-  /* Quick Intent Check (safety net) */
   const quickCheck = quickIntentCheck(enrichedMessage);
   if (quickCheck) {
     console.log(
@@ -2189,7 +2139,6 @@ async function smartChat(message, sessionId) {
     );
   }
 
-  // 2. PHASE 1: Analyze the (enriched) message
   const analysis = await analyzeMessage(
     enrichedMessage,
     chatHistory,
@@ -2198,7 +2147,6 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-  // 🔴 FIX: Force action if quickCheck detected it with high confidence
   if (quickCheck && quickCheck.confidence >= 0.9) {
     if (analysis.action !== quickCheck.intent) {
       console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
@@ -2206,7 +2154,6 @@ async function smartChat(message, sessionId) {
     }
   }
 
-  /* Inject follow-up info into analysis if detected by our own logic */
   if (isContextFollowUp && !analysis.is_follow_up) {
     analysis.is_follow_up = true;
     analysis.previous_topic_reference = previousTopic;
@@ -2219,7 +2166,6 @@ async function smartChat(message, sessionId) {
     }
   }
 
-  // 🔴 FIX: Prevent GPT false follow-ups
   if (
     analysis.is_follow_up &&
     !isContextFollowUp &&
@@ -2259,34 +2205,26 @@ async function smartChat(message, sessionId) {
     }
   }
 
-
-// 🆕 FIX #18: Ensure educational topics get search_terms even in CHAT
   ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
-// 🆕 FIX #19: Extract domain from GPT's response (for acronyms like ROAS, CTR, BIM)
   enrichSearchTermsFromResponse(analysis);
 
-  // 3. Route based on action
   let reply = "";
   let intent = analysis.intent || analysis.action;
 
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-    /* ═══ SEARCH FLOW — v10.4 with Priority Title Search + Cache ═══ */
     const termsToSearch = analysis.search_terms;
 
-    // Step A: Priority title search (separate, focused query)
     const priorityCourses = await priorityTitleSearch(termsToSearch);
     console.log(`🏆 Priority title search: ${priorityCourses.length} results`);
     priorityCourses.slice(0, 3).forEach((c) => {
       console.log(`   🏆 [score=${c.relevanceScore}] ${c.title}`);
     });
 
-    // Step B: Regular broad search
     let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
     ]);
 
-    // Step C: Merge priority results INTO regular results (no duplicates)
     const seenIds = new Set(courses.map((c) => c.id));
     for (const pc of priorityCourses) {
       if (!seenIds.has(pc.id)) {
@@ -2300,10 +2238,9 @@ async function smartChat(message, sessionId) {
       }
     }
 
-    // Re-sort by score after merge
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-    // Try corrections if no results
+    // 🔧 FIX #20: Try corrections if no results — uses corrected_reply instead of search_terms
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
       if (corrections.length > 0) {
@@ -2320,15 +2257,19 @@ async function smartChat(message, sessionId) {
           if (corrCourses?.length > 0) courses = corrCourses;
         }
         if (courses.length === 0) {
+          // 🔧 FIX #20: Extract search terms from corrected_reply
           const corrTerms = corrections
-            .flatMap((c) => c.search_terms || [])
+            .flatMap((c) => {
+              const reply = c.corrected_reply || "";
+              if (!reply) return [];
+              return reply.split(/\s+/).filter((w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
+            })
             .filter(Boolean);
           if (corrTerms.length > 0) courses = await searchCourses(corrTerms);
         }
       }
     }
 
-    // Pre-filter weak results BEFORE Phase 2
     if (courses.length > 3) {
       const maxScore = Math.max(
         ...courses.map((c) => c.relevanceScore || 0)
@@ -2351,7 +2292,6 @@ async function smartChat(message, sessionId) {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      // Step D: Identify MUST-SHOW courses
       const mustShowCourses = courses.filter((c) => {
         const titleNorm = normalizeArabic((c.title || "").toLowerCase());
         return termsToSearch.some((t) => {
@@ -2363,7 +2303,6 @@ async function smartChat(message, sessionId) {
       console.log(`📌 Must-show courses: ${mustShowCourses.length}`);
       mustShowCourses.forEach((c) => console.log(`   📌 ${c.title}`));
 
-      // 🆕 FIX #16: Choose Phase 2 model dynamically
       const phase2Model = mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
       console.log(`🤖 Phase 2 model: ${phase2Model} (must-show=${mustShowCourses.length})`);
 
@@ -2379,7 +2318,7 @@ async function smartChat(message, sessionId) {
           sessionMem,
           analysis,
           instructors,
-          phase2Model // 🆕 FIX #16
+          phase2Model
         );
 
         recommendationMessage = recommendation.message || "";
@@ -2396,7 +2335,6 @@ async function smartChat(message, sessionId) {
           verifyCourseRelevance(c, termsToSearch)
         );
 
-        // FORCE include must-show courses
         relevantCourses = [...gptCourses];
         for (const mc of mustShowCourses) {
           if (!relevantCourses.find((rc) => rc.id === mc.id)) {
@@ -2407,7 +2345,6 @@ async function smartChat(message, sessionId) {
           }
         }
 
-        // Override GPT's "no match" if we have must-shows
         if (!recommendation.hasExactMatch && mustShowCourses.length > 0) {
           console.log(
             `🔄 Overriding GPT's "no match" — we have title matches!`
@@ -2425,7 +2362,7 @@ async function smartChat(message, sessionId) {
           sessionMem,
           analysis,
           instructors,
-          phase2Model // 🆕 FIX #16
+          phase2Model
         );
 
         recommendationMessage = recommendation.message || "";
@@ -2484,7 +2421,6 @@ async function smartChat(message, sessionId) {
         reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
 
-      // Save search topic
       const mainTopic = extractMainTopic(termsToSearch);
       const detectedCat = detectRelevantCategory(termsToSearch);
       updateSessionMemory(sessionId, {
@@ -2520,7 +2456,6 @@ async function smartChat(message, sessionId) {
     );
 
   } else if (analysis.action === "SUBSCRIPTION") {
-    /* ═══ SUBSCRIPTION FLOW — Always structured ═══ */
     const gptMsg = (analysis.response_message || "").trim();
 
     let intro = "أهلاً بيك! 🎉";
@@ -2544,10 +2479,9 @@ async function smartChat(message, sessionId) {
     reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
     reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
 
-intent = "SUBSCRIPTION";
+    intent = "SUBSCRIPTION";
 
   } else if (analysis.action === "DIPLOMAS") {
-    /* ═══ 🆕 DIPLOMAS FLOW — loads all diplomas from DB ═══ */
     console.log("🎓 DIPLOMAS action — loading all diplomas from DB...");
     const allDiplomas = await loadAllDiplomas();
     console.log(`🎓 Loaded ${allDiplomas.length} diplomas`);
@@ -2560,30 +2494,26 @@ intent = "SUBSCRIPTION";
     });
 
   } else if (analysis.action === "CATEGORIES") {
-    // ⚠️ Safety: if GPT wrote diploma-related content, redirect to DIPLOMAS
     const respNorm = normalizeArabic((analysis.response_message || "").toLowerCase());
     if (/دبلوم/.test(respNorm) && !/تصنيف|مجال|قسم/.test(respNorm)) {
       console.log("🔀 CATEGORIES contained diploma content → redirecting to DIPLOMAS");
       const allDiplomas = await loadAllDiplomas();
       reply = formatDiplomasList(allDiplomas);
       intent = "DIPLOMAS";
-} else {
+    } else {
       reply = formatCategoriesList();
     }
-
 
   } else if (analysis.action === "SUPPORT") {
     reply =
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
 
-} else {
-    // CHAT
+  } else {
     reply =
       analysis.response_message ||
       getSmartFallback(sessionId);
 
-    // 🆕 Smart Upsell: if chat topic relates to courses, suggest them
     if (analysis.search_terms && analysis.search_terms.length > 0) {
       try {
         const [upsellCourses, upsellDiplomas] = await Promise.all([
@@ -2622,11 +2552,9 @@ intent = "SUBSCRIPTION";
     }
   }
 
-  // 4. Clean up
   reply = markdownToHtml(reply);
   reply = finalizeReply(reply);
 
-  // 5. Update session memory (for non-SEARCH actions)
   if (analysis.action !== "SEARCH") {
     updateSessionMemory(sessionId, {
       searchTerms: analysis.search_terms,
@@ -2639,7 +2567,6 @@ intent = "SUBSCRIPTION";
     });
   }
 
-  // 6. Generate conversation summary every 4 messages
   if (sessionMem.messageCount > 0 && sessionMem.messageCount % 4 === 0) {
     generateConversationSummary(chatHistory, sessionMem.summary)
       .then((summary) => {
@@ -2697,7 +2624,7 @@ app.post("/chat", limiter, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 13: Admin Endpoints (ALL PRESERVED)
+   SECTION 13: Admin Endpoints
    ══════════════════════════════════════════════════════════ */
 
 app.post("/admin/login", (req, res) => {
@@ -2811,21 +2738,19 @@ app.get("/admin/corrections", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// 🔧 FIX #20: POST corrections — uses correct column names
 app.post("/admin/corrections", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const insertData = {};
-    if (req.body.wrong_terms) insertData.wrong_terms = Array.isArray(req.body.wrong_terms) ? req.body.wrong_terms : req.body.wrong_terms.split(",").map((t) => t.trim());
-    else if (req.body.original_question) insertData.wrong_terms = [req.body.original_question];
-    if (req.body.search_terms) insertData.search_terms = Array.isArray(req.body.search_terms) ? req.body.search_terms : req.body.search_terms.split(",").map((t) => t.trim());
-    else if (req.body.corrected_answer) insertData.search_terms = [req.body.corrected_answer];
-    insertData.correct_course_ids = req.body.correct_course_ids || [];
     if (req.body.original_question) insertData.original_question = req.body.original_question;
-    if (req.body.corrected_answer) insertData.corrected_answer = req.body.corrected_answer;
-    if (req.body.note) insertData.note = req.body.note;
+    insertData.user_message = req.body.user_message || req.body.original_question || null;
+    insertData.corrected_reply = req.body.corrected_reply || req.body.corrected_answer || null;
+    insertData.original_reply = req.body.original_reply || req.body.original_answer || null;
+    insertData.correct_course_ids = req.body.correct_course_ids || [];
     if (req.body.chat_log_id) insertData.chat_log_id = req.body.chat_log_id;
     if (req.body.session_id) insertData.session_id = req.body.session_id;
-    if (req.body.original_answer) insertData.original_answer = req.body.original_answer;
+    if (req.body.note) insertData.note = req.body.note;
     const { data, error } = await supabase.from("corrections").insert(insertData).select().single();
     if (error) throw error;
     res.json({ success: true, data });
@@ -2899,28 +2824,38 @@ app.get("/admin/custom-responses", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// 🔧 FIX #21: POST custom-responses — adds title, category, priority
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
-    const { keywords, response, match_type, is_active } = req.body;
+    const { title, keywords, response, match_type, is_active, category, priority } = req.body;
     if (!keywords || !response) return res.status(400).json({ success: false, error: "keywords and response required" });
     const { data, error } = await supabase.from("custom_responses").insert({
+      title: title || "بدون عنوان",
       keywords: Array.isArray(keywords) ? keywords : keywords.split(",").map((k) => k.trim()),
-      response, match_type: match_type || "any", is_active: is_active !== false,
+      response,
+      match_type: match_type || "any",
+      is_active: is_active !== false,
+      category: category || "SUPPORT",
+      priority: priority != null ? priority : 10,
     }).select().single();
     if (error) throw error;
     res.json({ success: true, data });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// 🔧 FIX #21: PUT custom-responses — adds title, category, priority
 app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const u = {};
+    if (req.body.title !== undefined) u.title = req.body.title;
     if (req.body.keywords !== undefined) u.keywords = Array.isArray(req.body.keywords) ? req.body.keywords : req.body.keywords.split(",").map((k) => k.trim());
     if (req.body.response !== undefined) u.response = req.body.response;
     if (req.body.match_type !== undefined) u.match_type = req.body.match_type;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
+    if (req.body.category !== undefined) u.category = req.body.category;
+    if (req.body.priority !== undefined) u.priority = req.body.priority;
     const { data, error } = await supabase.from("custom_responses").update(u).eq("id", req.params.id).select().single();
     if (error) throw error;
     res.json({ success: true, data });
@@ -3197,6 +3132,8 @@ app.get("/", (req, res) => {
       "🆕 Dynamic Phase 2 model — saves cost with must-show courses",
       "🆕 Smarter verifyCourseRelevance — multi-term awareness",
       "🆕 Fixed duplicate prompt rules",
+      "🔧 FIX #20: corrections table — correct column names",
+      "🔧 FIX #21: custom_responses — title/category/priority support",
     ],
     endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health", debug: "GET /admin/debug" },
   });
@@ -3211,11 +3148,8 @@ async function startServer() {
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
-
-
 /* ═══════════════════════════════════════════════════════════════
    🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.5
-   ✅ Persistent Counter Support (status endpoint)
    ═══════════════════════════════════════════════════════════════ */
 
 const guideConversations = {};
@@ -3223,7 +3157,6 @@ const guideRateLimits = {};
 const GUIDE_DAILY_LIMIT = 20;
 const GUIDE_MAX_HISTORY = 20;
 
-/** الحصول على تاريخ اليوم بصيغة YYYY-MM-DD */
 function getToday() {
   return new Date().toISOString().split('T')[0];
 }
@@ -3311,11 +3244,6 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt) {
   return p;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   🔥 NEW — GET /api/guide/status
-   بيرجع عدد الرسائل المتبقية لليوزر النهارده
-   الكلاينت بيستدعيه كل ما يفتح الشات عشان يعمل sync
-   ═══════════════════════════════════════════════════════════════ */
 app.get('/api/guide/status', (req, res) => {
   try {
     const sessionId = req.query.session_id;
@@ -3349,9 +3277,6 @@ app.get('/api/guide/status', (req, res) => {
   }
 });
 
-/* ═══════════════════════════════════════════════════════════════
-   POST /api/guide — الرسالة الرئيسية
-   ═══════════════════════════════════════════════════════════════ */
 app.post('/api/guide', async (req, res) => {
   try {
     const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
@@ -3418,9 +3343,6 @@ app.post('/api/guide', async (req, res) => {
   }
 });
 
-/* ═══════════════════════════════════════════════════════════════
-   GET /api/guide/health — Health Check
-   ═══════════════════════════════════════════════════════════════ */
 app.get('/api/guide/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -3432,9 +3354,6 @@ app.get('/api/guide/health', (req, res) => {
   });
 });
 
-/* ═══════════════════════════════════════════════════════════════
-   🧹 Cleanup old sessions every hour
-   ═══════════════════════════════════════════════════════════════ */
 setInterval(() => {
   const now = Date.now();
   const today = getToday();
@@ -3464,7 +3383,6 @@ console.log('🎓 Guide Bot v1.5 (Persistent Counter) endpoints ready:');
 console.log('   POST /api/guide        — Chat');
 console.log('   GET  /api/guide/status  — Counter Sync');
 console.log('   GET  /api/guide/health  — Health Check');
-
 
   app.listen(PORT, () => {
     console.log(`
