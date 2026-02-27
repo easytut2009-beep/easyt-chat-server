@@ -3465,7 +3465,7 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
     // ====== DIPLOMAS ======
     const { data: diplomas, error: dErr } = await supabase
       .from('diplomas')
-      .select('id, title, description, overview, skills, career_outcomes')
+.select('id, title, description, keywords, search_text')
       .is('embedding', null);
 
     if (dErr) {
@@ -3476,7 +3476,7 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
 
       for (const diploma of diplomas) {
         try {
-          const text = [diploma.title, diploma.description, diploma.overview, diploma.skills, diploma.career_outcomes]
+const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
             .filter(Boolean).join(' ');
           if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
 
