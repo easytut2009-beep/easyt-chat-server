@@ -1,764 +1,1058 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🧪 Ziko Chatbot v10.4 — Full Test Suite</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-  
-  .header { background: linear-gradient(135deg, #1e293b, #334155); padding: 20px; text-align: center; border-bottom: 2px solid #e63946; }
-  .header h1 { font-size: 24px; color: #fff; margin-bottom: 8px; }
-  .header p { color: #94a3b8; font-size: 14px; }
-  
-  .config-bar { background: #1e293b; padding: 12px 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #334155; }
-  .config-bar label { color: #94a3b8; font-size: 13px; }
-  .config-bar input { background: #0f172a; border: 1px solid #475569; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px; width: 320px; }
-  .config-bar input::placeholder { color: #64748b; }
-  
-  .controls { background: #1e293b; padding: 12px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #334155; }
-  .btn { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
-  .btn-run { background: #22c55e; color: #fff; }
-  .btn-run:hover { background: #16a34a; }
-  .btn-stop { background: #ef4444; color: #fff; }
-  .btn-stop:hover { background: #dc2626; }
-  .btn-clear { background: #64748b; color: #fff; }
-  .btn-clear:hover { background: #475569; }
-  .btn-cat { background: #334155; color: #94a3b8; border: 1px solid #475569; }
-  .btn-cat:hover, .btn-cat.active { background: #e63946; color: #fff; border-color: #e63946; }
-  .btn-custom { background: #8b5cf6; color: #fff; }
-  .btn-custom:hover { background: #7c3aed; }
-  
-  .stats-bar { background: #1e293b; padding: 10px 20px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #334155; }
-  .stat { font-size: 13px; }
-  .stat-label { color: #64748b; }
-  .stat-value { font-weight: 700; margin-right: 4px; }
-  .stat-total { color: #fff; }
-  .stat-pass { color: #22c55e; }
-  .stat-fail { color: #ef4444; }
-  .stat-warn { color: #f59e0b; }
-  .stat-skip { color: #64748b; }
-  .stat-time { color: #38bdf8; }
-  
-  .progress-wrap { flex: 1; min-width: 200px; }
-  .progress-bar { height: 6px; background: #334155; border-radius: 3px; overflow: hidden; }
-  .progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s; border-radius: 3px; }
-  
-  .main { padding: 16px; max-width: 1200px; margin: 0 auto; }
-  
-  .test-group { margin-bottom: 16px; }
-  .group-header { background: #1e293b; padding: 10px 16px; border-radius: 10px 10px 0 0; border: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-  .group-header:hover { background: #253348; }
-  .group-title { font-size: 15px; font-weight: 700; }
-  .group-badge { background: #334155; color: #94a3b8; padding: 2px 10px; border-radius: 10px; font-size: 12px; }
-  
-  .test-list { border: 1px solid #334155; border-top: none; border-radius: 0 0 10px 10px; overflow: hidden; }
-  .test-item { padding: 10px 16px; border-bottom: 1px solid #1e293b; background: #0f172a; transition: all 0.2s; }
-  .test-item:last-child { border-bottom: none; }
-  .test-item:hover { background: #162032; }
-  .test-item.running { background: #1e293b; border-right: 3px solid #38bdf8; }
-  .test-item.passed { border-right: 3px solid #22c55e; }
-  .test-item.failed { border-right: 3px solid #ef4444; }
-  .test-item.warning { border-right: 3px solid #f59e0b; }
-  
-  .test-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .test-name { font-size: 13px; font-weight: 600; color: #e2e8f0; }
-  .test-status { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
-  .status-idle { background: #334155; color: #64748b; }
-  .status-running { background: #0c4a6e; color: #38bdf8; }
-  .status-pass { background: #14532d; color: #22c55e; }
-  .status-fail { background: #7f1d1d; color: #ef4444; }
-  .status-warn { background: #713f12; color: #f59e0b; }
-  
-  .test-msg { font-size: 12px; color: #64748b; margin-bottom: 4px; direction: rtl; }
-  .test-msg strong { color: #94a3b8; }
-  .test-checks { font-size: 11px; color: #475569; }
-  
-  .test-result { margin-top: 8px; padding: 8px 12px; background: #1e293b; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto; display: none; }
-  .test-result.show { display: block; }
-  .test-result .reply-preview { color: #94a3b8; line-height: 1.6; word-break: break-word; }
-  .test-result .check-line { padding: 2px 0; }
-  .check-pass { color: #22c55e; }
-  .check-fail { color: #ef4444; }
-  .test-time { color: #38bdf8; font-size: 11px; }
-  
-  .custom-test { background: #1e293b; padding: 16px; border-radius: 10px; margin-bottom: 16px; border: 1px solid #334155; }
-  .custom-test h3 { font-size: 15px; margin-bottom: 10px; color: #fff; }
-  .custom-row { display: flex; gap: 10px; flex-wrap: wrap; }
-  .custom-input { flex: 1; min-width: 200px; background: #0f172a; border: 1px solid #475569; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
-  .custom-input::placeholder { color: #64748b; }
-  
-  .toggle-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px; }
-  .toggle-btn:hover { color: #94a3b8; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Ziko Bot v10.4 — Full Test Suite</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 30px 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #e63946, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header p { color: #a0a0c0; font-size: 1.1em; }
 
-  .new-badge { background: #e63946; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-right: 6px; font-weight: 700; }
-  
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-  .running .test-status { animation: pulse 1s infinite; }
-  
-  .hidden { display: none; }
-  
-  @media (max-width: 768px) {
-    .config-bar input { width: 100%; }
-    .controls { justify-content: center; }
-    .stats-bar { justify-content: center; }
-  }
-</style>
+        .controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+        .controls button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-run-all {
+            background: linear-gradient(135deg, #e63946, #ff6b6b);
+            color: #fff;
+            font-size: 16px !important;
+            padding: 14px 32px !important;
+        }
+        .btn-run-all:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(230,57,70,0.4); }
+        .btn-category {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2) !important;
+        }
+        .btn-category:hover { background: rgba(255,255,255,0.2); }
+        .btn-category.active { background: #e63946; border-color: #e63946 !important; }
+        .btn-clear {
+            background: rgba(255,100,100,0.2);
+            color: #ff6b6b;
+            border: 1px solid rgba(255,100,100,0.3) !important;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+        }
+        .stat-item {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .stat-total { background: rgba(100,100,255,0.2); color: #8888ff; }
+        .stat-pass { background: rgba(100,255,100,0.2); color: #66ff66; }
+        .stat-fail { background: rgba(255,100,100,0.2); color: #ff6666; }
+        .stat-warn { background: rgba(255,200,50,0.2); color: #ffcc33; }
+        .stat-running { background: rgba(100,200,255,0.2); color: #66ccff; }
+        .stat-time { background: rgba(200,100,255,0.2); color: #cc66ff; }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e63946, #ff6b6b);
+            border-radius: 3px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .test-group {
+            margin-bottom: 25px;
+            border-radius: 14px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .group-header {
+            padding: 14px 20px;
+            background: rgba(255,255,255,0.06);
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+        .group-header:hover { background: rgba(255,255,255,0.1); }
+        .group-header .badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .group-body { padding: 0; }
+        .group-body.collapsed { display: none; }
+
+        .test-card {
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: background 0.2s;
+        }
+        .test-card:last-child { border-bottom: none; }
+        .test-card:hover { background: rgba(255,255,255,0.03); }
+
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .test-msg {
+            font-weight: 600;
+            font-size: 14px;
+            color: #e0e0ff;
+        }
+        .test-status {
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .status-pending { background: rgba(150,150,150,0.3); color: #aaa; }
+        .status-running { background: rgba(100,200,255,0.3); color: #66ccff; }
+        .status-pass { background: rgba(100,255,100,0.3); color: #66ff66; }
+        .status-fail { background: rgba(255,100,100,0.3); color: #ff6666; }
+        .status-warn { background: rgba(255,200,50,0.3); color: #ffcc33; }
+
+        .test-expect {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .test-detail {
+            font-size: 12px;
+            color: #999;
+            margin-top: 6px;
+            padding: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            max-height: 250px;
+            overflow-y: auto;
+            display: none;
+            word-break: break-word;
+        }
+        .test-detail.show { display: block; }
+        .test-time { font-size: 11px; color: #666; }
+
+        .toggle-detail {
+            font-size: 11px;
+            color: #e63946;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-top: 4px;
+            display: inline-block;
+        }
+
+        .server-input {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .server-input input {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 14px;
+            width: 350px;
+            text-align: center;
+        }
+        .server-input input::placeholder { color: #666; }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .running { animation: pulse 1s infinite; }
+    </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>🧪 Ziko Chatbot v10.4 — Full Test Suite</h1>
-  <p>اختبار شامل لكل وظائف الشات بوت — 70+ سيناريو (يشمل اختبارات FIX #18 + Diplomas + Fuzzy)</p>
+    <h1>🧪 Ziko Bot v10.4 — Full Test Suite</h1>
+    <p>اختبار شامل: بحث + لهجات + دبلومات + اشتراك + متابعة + مصطلحات تقنية 🆕</p>
 </div>
 
-<div class="config-bar">
-  <label>🔗 API URL:</label>
-  <input type="text" id="apiUrl" value="https://easyt-chat-server.onrender.com">
-  <button class="btn btn-run" onclick="testConnection()">🔌 اختبر الاتصال</button>
-  <span id="connStatus" style="font-size:12px;color:#64748b;">⏳ لم يُختبر</span>
+<div class="server-input">
+    <input type="text" id="serverUrl" placeholder="Server URL" value="">
 </div>
 
 <div class="controls">
-  <button class="btn btn-run" onclick="runAllTests()" id="btnRunAll">🚀 تشغيل الكل</button>
-  <button class="btn btn-stop hidden" onclick="stopTests()" id="btnStop">⏹️ إيقاف</button>
-  <button class="btn btn-clear" onclick="clearResults()">🗑️ مسح النتائج</button>
-  <span style="color:#334155;">|</span>
-  <button class="btn btn-cat active" data-cat="all" onclick="filterCat('all',this)">الكل</button>
-  <button class="btn btn-cat" data-cat="greeting" onclick="filterCat('greeting',this)">تحيات</button>
-  <button class="btn btn-cat" data-cat="search" onclick="filterCat('search',this)">بحث</button>
-  <button class="btn btn-cat" data-cat="smart" onclick="filterCat('smart',this)">🧠 ذكي</button>
-  <button class="btn btn-cat" data-cat="diplomas" onclick="filterCat('diplomas',this)">🎓 دبلومات</button>
-  <button class="btn btn-cat" data-cat="subscription" onclick="filterCat('subscription',this)">اشتراك</button>
-  <button class="btn btn-cat" data-cat="dialect" onclick="filterCat('dialect',this)">لهجات</button>
-  <button class="btn btn-cat" data-cat="followup" onclick="filterCat('followup',this)">متابعة</button>
-  <button class="btn btn-cat" data-cat="edge" onclick="filterCat('edge',this)">حالات حدية</button>
-  <button class="btn btn-cat" data-cat="categories" onclick="filterCat('categories',this)">تصنيفات</button>
-  <button class="btn btn-cat" data-cat="spelling" onclick="filterCat('spelling',this)">إملاء</button>
-  <button class="btn btn-cat" data-cat="fuzzy" onclick="filterCat('fuzzy',this)">🔤 Fuzzy</button>
+    <button class="btn-run-all" onclick="runAllTests()">🚀 تشغيل كل الاختبارات</button>
+    <button class="btn-category" onclick="runCategory('search')">🔍 بحث</button>
+    <button class="btn-category" onclick="runCategory('dialect')">🌍 لهجات</button>
+    <button class="btn-category" onclick="runCategory('subscription')">💰 اشتراك</button>
+    <button class="btn-category" onclick="runCategory('diplomas')">🎓 دبلومات</button>
+    <button class="btn-category" onclick="runCategory('categories')">📂 تصنيفات</button>
+    <button class="btn-category" onclick="runCategory('chat')">💬 دردشة</button>
+    <button class="btn-category" onclick="runCategory('acronyms')">🔤 مصطلحات 🆕</button>
+    <button class="btn-category" onclick="runCategory('followup')">🔄 متابعة</button>
+    <button class="btn-category" onclick="runCategory('edge')">⚡ حالات خاصة</button>
+    <button class="btn-clear" onclick="clearResults()">🗑️ مسح</button>
 </div>
 
-<div class="stats-bar">
-  <div class="stat"><span class="stat-label">الإجمالي: </span><span class="stat-value stat-total" id="statTotal">0</span></div>
-  <div class="stat"><span class="stat-label">نجح: </span><span class="stat-value stat-pass" id="statPass">0</span></div>
-  <div class="stat"><span class="stat-label">فشل: </span><span class="stat-value stat-fail" id="statFail">0</span></div>
-  <div class="stat"><span class="stat-label">تحذير: </span><span class="stat-value stat-warn" id="statWarn">0</span></div>
-  <div class="stat"><span class="stat-label">⏱️ </span><span class="stat-value stat-time" id="statTime">0s</span></div>
-  <div class="progress-wrap">
-    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-  </div>
+<div class="stats-bar" id="statsBar">
+    <div class="stat-item stat-total">📊 الكل: <span id="statTotal">0</span></div>
+    <div class="stat-item stat-pass">✅ نجح: <span id="statPass">0</span></div>
+    <div class="stat-item stat-fail">❌ فشل: <span id="statFail">0</span></div>
+    <div class="stat-item stat-warn">⚠️ تحذير: <span id="statWarn">0</span></div>
+    <div class="stat-item stat-running">⏳ جاري: <span id="statRunning">0</span></div>
+    <div class="stat-item stat-time">⏱️ الوقت: <span id="statTime">0s</span></div>
 </div>
 
-<div class="main">
-  
-  <!-- Custom Test -->
-  <div class="custom-test">
-    <h3>✏️ اختبار يدوي</h3>
-    <div class="custom-row">
-      <input type="text" class="custom-input" id="customMsg" placeholder="اكتب رسالتك هنا...">
-      <input type="text" class="custom-input" id="customCheck" placeholder="كلمة متوقعة في الرد (اختياري)" style="max-width:250px;">
-      <button class="btn btn-custom" onclick="runCustomTest()">🧪 اختبر</button>
-    </div>
-    <div class="test-result" id="customResult"></div>
-  </div>
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
-  <div id="testContainer"></div>
-</div>
+<div id="testContainer"></div>
 
 <script>
-// ══════════════════════════════════════
-// TEST DEFINITIONS — 70+ scenarios
-// ══════════════════════════════════════
+const API_BASE = () => {
+    const input = document.getElementById('serverUrl').value.trim();
+    return input || (window.location.origin.includes('localhost') 
+        ? 'http://localhost:3000' 
+        : window.location.origin);
+};
+
+const SESSION_PREFIX = 'test_v104_' + Date.now() + '_';
+let sessionCounter = 0;
+function newSession() { return SESSION_PREFIX + (++sessionCounter); }
+
+// ═══════════════════════════════════════
+// TEST DEFINITIONS
+// ═══════════════════════════════════════
 
 const TEST_GROUPS = [
-  {
-    name: "👋 التحيات والترحيب",
-    cat: "greeting",
-    tests: [
-      { msg: "السلام عليكم", checks: ["greeting_tone"], desc: "تحية إسلامية" },
-      { msg: "هاي", checks: ["greeting_tone"], desc: "تحية بسيطة" },
-      { msg: "مرحبا", checks: ["greeting_tone"], desc: "مرحبا" },
-      { msg: "صباح الخير", checks: ["greeting_tone"], desc: "صباح الخير" },
-      { msg: "hello", checks: ["greeting_tone"], desc: "English greeting" },
-      { msg: "hey there", checks: ["greeting_tone"], desc: "Casual English" },
-    ]
-  },
-  {
-    name: "🔍 البحث عن كورسات — موضوعات عامة",
-    cat: "search",
-    tests: [
-      { msg: "عايز كورس فوتوشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "بحث فوتوشوب" },
-      { msg: "عايز اتعلم بايثون", checks: ["has_card", "contains:بايثون|python"], desc: "بحث بايثون" },
-      { msg: "كورسات ريفيت", checks: ["has_card", "contains:ريفيت|revit"], desc: "بحث ريفيت" },
-      { msg: "عايز اتعلم اكسل", checks: ["has_card", "contains:اكسل|excel"], desc: "بحث اكسل" },
-      { msg: "فيه كورس ووردبريس؟", checks: ["has_card", "contains:ووردبريس|wordpress"], desc: "بحث ووردبريس" },
-      { msg: "كورس ذكاء اصطناعي", checks: ["has_card", "contains:ذكاء|ai"], desc: "بحث AI" },
-      { msg: "عايز اتعلم تسويق رقمي", checks: ["has_card", "contains:تسويق|ماركيتنج|marketing"], desc: "بحث تسويق" },
-      { msg: "كورسات برمجة مواقع", checks: ["has_card"], desc: "بحث برمجة مواقع" },
-      { msg: "عايز افتر افكتس", checks: ["has_card", "contains:افتر|after"], desc: "بحث After Effects" },
-      { msg: "كورس اليستريتر", checks: ["has_card", "contains:اليستريتر|illustrator"], desc: "بحث Illustrator" },
-      { msg: "عايز اتعلم انجليزي", checks: ["has_card", "contains:انجليزي|english"], desc: "بحث انجليزي" },
-      { msg: "كورسات هندسية", checks: ["has_card"], desc: "بحث هندسة" },
-    ]
-  },
-  {
-    name: "🧠 أسئلة تعليمية ذكية — FIX #18",
-    cat: "smart",
-    isNew: true,
-    tests: [
-      { msg: "يعني ايه مونتير", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 يعني ايه مونتير → مونتاج" },
-      { msg: "ايه هو الجرافيك ديزاين", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ايه هو الجرافيك ديزاين → جرافيك" },
-      { msg: "الفرق بين UI و UX", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 الفرق بين UI و UX → تصميم" },
-      { msg: "ازاي اكون مبرمج", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ازاي اكون مبرمج → برمجة" },
-      { msg: "سمات المدير الناجح", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 سمات المدير → إدارة" },
-      { msg: "ما معنى SEO", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ما معنى SEO → سيو/تسويق" },
-      { msg: "يعني ايه موشن جرافيك", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 يعني ايه موشن → موشن جرافيك" },
-      { msg: "ايه هي لغة بايثون", checks: ["not_empty", "has_card_or_suggestion"], desc: "🆕 ايه هي بايثون → بايثون" },
-    ]
-  },
-  {
-    name: "🎓 الدبلومات — DIPLOMAS Action",
-    cat: "diplomas",
-    isNew: true,
-    tests: [
-      { msg: "عاوز اعرف الدبلومات", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 طلب كل الدبلومات" },
-      { msg: "عندكم دبلومات؟", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 سؤال عن الدبلومات" },
-      { msg: "الدبلومات المتاحة", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 الدبلومات المتاحة" },
-      { msg: "ايه الدبلومات اللي عندكم", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 ايه الدبلومات" },
-      { msg: "كل الدبلومات", checks: ["contains:دبلوم", "not_empty"], desc: "🆕 كل الدبلومات" },
-      { msg: "دبلومة جرافيك", checks: ["has_card", "contains:جرافيك|graphic|تصميم"], desc: "🆕 دبلومة محددة → SEARCH" },
-      { msg: "دبلومة برمجة", checks: ["has_card", "contains:برمج|programming|تطوير"], desc: "🆕 دبلومة محددة → SEARCH" },
-    ]
-  },
-  {
-    name: "🔤 Fuzzy Matching — تصحيح ذكي",
-    cat: "fuzzy",
-    isNew: true,
-    tests: [
-      { msg: "عايز كورس فوتشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "🆕 فوتشوب → فوتوشوب (fuzzy)" },
-      { msg: "كورس بيسون", checks: ["has_card", "contains:بايثون|python"], desc: "🆕 بيسون → بايثون (fuzzy)" },
-      { msg: "مونتير فيديو", checks: ["has_card_or_suggestion"], desc: "🆕 مونتير → مونتاج (fuzzy)" },
-      { msg: "عايز اتعلم بروجرامنج", checks: ["has_card", "contains:برمج|programming"], desc: "🆕 بروجرامنج → برمجة (fuzzy)" },
-      { msg: "كورس جرفيك", checks: ["has_card", "contains:جرافيك|graphic"], desc: "🆕 جرفيك → جرافيك (fuzzy)" },
-    ]
-  },
-  {
-    name: "💰 الاشتراك وطرق الدفع",
-    cat: "subscription",
-    tests: [
-      { msg: "ازاي ادفع؟", checks: ["contains:دفع|visa|فودافون|instapay", "contains:اشتراك|اشترك|subscri"], desc: "سؤال دفع" },
-      { msg: "كام سعر الاشتراك؟", checks: ["contains:49|سعر|اشتراك"], desc: "سؤال سعر" },
-      { msg: "طرق الدفع المتاحة", checks: ["contains:visa|فودافون|paypal"], desc: "طرق دفع" },
-      { msg: "عايز اشترك", checks: ["contains:اشتراك|اشترك|subscri"], desc: "طلب اشتراك" },
-      { msg: "ينفع ادفع فودافون كاش؟", checks: ["contains:فودافون|01027007899"], desc: "فودافون كاش" },
-      { msg: "فيه باي بال؟", checks: ["contains:paypal|PayPal"], desc: "PayPal" },
-      { msg: "how much is the subscription?", checks: ["contains:49|price|subscri"], desc: "English price question" },
-    ]
-  },
-  {
-    name: "🌍 اللهجات — عراقي",
-    cat: "dialect",
-    tests: [
-      { msg: "شلون ادفع؟", checks: ["contains:دفع|visa|فودافون"], desc: "عراقي — كيف ادفع" },
-      { msg: "اريد كورس فوتوشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "عراقي — اريد فوتوشوب" },
-      { msg: "شگد سعر الاشتراك؟", checks: ["contains:49|سعر|اشتراك"], desc: "عراقي — كم السعر" },
-      { msg: "اكو كورسات بايثون؟", checks: ["has_card", "contains:بايثون|python"], desc: "عراقي — فيه بايثون" },
-    ]
-  },
-  {
-    name: "🌍 اللهجات — خليجي",
-    cat: "dialect",
-    tests: [
-      { msg: "ابغى كورس ريفيت", checks: ["has_card", "contains:ريفيت|revit"], desc: "خليجي — ابغى ريفيت" },
-      { msg: "وش طرق الدفع؟", checks: ["contains:دفع|visa|فودافون"], desc: "خليجي — وش طرق الدفع" },
-      { msg: "كيف اشترك؟", checks: ["contains:اشتراك|اشترك|subscri"], desc: "خليجي — كيف اشترك" },
-      { msg: "ابي اتعلم تصميم", checks: ["has_card"], desc: "خليجي — ابي تصميم" },
-    ]
-  },
-  {
-    name: "🌍 اللهجات — شامي",
-    cat: "dialect",
-    tests: [
-      { msg: "بدي كورس برمجة", checks: ["has_card"], desc: "شامي — بدي برمجة" },
-      { msg: "شو عندكم كورسات؟", checks: ["not_empty"], desc: "شامي — شو عندكم" },
-      { msg: "كيفك يا زيكو", checks: ["greeting_tone"], desc: "شامي — كيفك" },
-    ]
-  },
-  {
-    name: "🌍 اللهجات — مغربي",
-    cat: "dialect",
-    tests: [
-      { msg: "بغيت كورس فوتوشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "مغربي — بغيت فوتوشوب" },
-      { msg: "واش عندكم كورسات؟", checks: ["not_empty"], desc: "مغربي — واش عندكم" },
-    ]
-  },
-  {
-    name: "🔄 المتابعة والسياق",
-    cat: "followup",
-    tests: [
-      { msg: "عايز كورس فوتوشوب", checks: ["has_card"], desc: "🔵 الخطوة 1: بحث فوتوشوب", sessionHint: "followup1" },
-      { msg: "فيه حاجة للمبتدئين؟", checks: ["not_empty"], desc: "🔵 الخطوة 2: متابعة — مبتدئين", sessionHint: "followup1" },
-      { msg: "فيه حاجة تانية؟", checks: ["not_empty"], desc: "🔵 الخطوة 3: متابعة — بديل", sessionHint: "followup1" },
-      { msg: "طيب عايز بايثون", checks: ["has_card", "contains:بايثون|python"], desc: "🟢 موضوع جديد بعد المتابعة", sessionHint: "followup1" },
-    ]
-  },
-  {
-    name: "📂 التصنيفات",
-    cat: "categories",
-    tests: [
-      { msg: "عندكم ايه من كورسات؟", checks: ["contains:تصنيف|مجال"], desc: "سؤال عام عن المحتوى" },
-      { msg: "ايه المجالات المتاحة؟", checks: ["contains:تصنيف|مجال|جرافيك|برمج"], desc: "المجالات" },
-      { msg: "التصنيفات", checks: ["contains:تصنيف|مجال"], desc: "كلمة تصنيفات مباشرة" },
-    ]
-  },
-  {
-    name: "📝 تصحيح الإملاء",
-    cat: "spelling",
-    tests: [
-      { msg: "عايز فتوشوب", checks: ["has_card", "contains:فوتوشوب|photoshop"], desc: "فتوشوب → فوتوشوب" },
-      { msg: "كورس بيثون", checks: ["has_card", "contains:بايثون|python"], desc: "بيثون → بايثون" },
-      { msg: "ماركتنج", checks: ["has_card", "contains:ماركيتنج|marketing|تسويق"], desc: "ماركتنج → ماركيتنج" },
-      { msg: "جرافك ديزاين", checks: ["has_card", "contains:جرافيك|graphic"], desc: "جرافك → جرافيك" },
-      { msg: "اليستريتور", checks: ["has_card", "contains:اليستريتر|illustrator"], desc: "اليستريتور → اليستريتر" },
-    ]
-  },
-  {
-    name: "⚠️ حالات حدية",
-    cat: "edge",
-    tests: [
-      { msg: "عايز اتعلم", checks: ["asks_clarification"], desc: "رسالة غامضة — بدون موضوع" },
-      { msg: "عايز كورس", checks: ["asks_clarification"], desc: "طلب كورس بدون تحديد" },
-      { msg: "فيه حاجة كويسة؟", checks: ["asks_clarification"], desc: "سؤال عام جداً" },
-      { msg: "شكراً", checks: ["greeting_tone"], desc: "شكر" },
-      { msg: "   ", checks: ["not_empty"], desc: "مسافات فقط" },
-      { msg: "asdfghjkl", checks: ["not_empty"], desc: "كلام غير مفهوم" },
-      { msg: "a", checks: ["not_empty"], desc: "حرف واحد" },
-      { msg: "عايز كورس فوتوشوب وكمان بايثون وريفيت واكسل", checks: ["has_card"], desc: "طلب متعدد المواضيع" },
-      { msg: "I want to learn Python programming", checks: ["has_card", "contains:python|بايثون"], desc: "English full sentence" },
-      { msg: "مشكلة في الموقع مش بيفتح", checks: ["contains:support|مشكل|تواصل|دعم"], desc: "مشكلة تقنية" },
-      { msg: "الحمد لله بخير", checks: ["not_empty", "no_card"], desc: "🆕 رد عادي — بدون كورسات" },
-    ]
-  },
-  {
-    name: "🔒 الأمان والحدود",
-    cat: "edge",
-    tests: [
-      { msg: "اديني كل الكورسات مجانا", checks: ["not_empty"], desc: "طلب غير مشروع" },
-      { msg: "مين عملك؟", checks: ["not_empty"], desc: "سؤال شخصي عن البوت" },
-      { msg: "انت بوت ولا انسان؟", checks: ["not_empty"], desc: "سؤال هوية" },
-    ]
-  },
+
+    // ═══ 1. SEARCH ═══
+    {
+        name: "🔍 بحث عن كورسات",
+        category: "search",
+        tests: [
+            {
+                msg: "عايز اتعلم فوتوشوب",
+                expect: "يظهر كورسات فوتوشوب",
+                validate: r => {
+                    const hasPhotoshop = /فوتوشوب|photoshop/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasPhotoshop && hasCards, detail: `فوتوشوب: ${hasPhotoshop}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "كورسات برمجة",
+                expect: "يظهر كورسات برمجة",
+                validate: r => {
+                    const hasProg = /برمج|program|python|javascript|coding/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasProg && hasCards, detail: `برمجة: ${hasProg}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "ريفيت",
+                expect: "يظهر كورسات ريفيت/هندسية",
+                validate: r => {
+                    const hasRevit = /ريفيت|ريفت|revit|هندس/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasRevit && hasCards, detail: `ريفيت: ${hasRevit}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "عايز اتعلم اكسل",
+                expect: "يظهر كورسات اكسل",
+                validate: r => {
+                    const hasExcel = /اكسل|excel/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasExcel && hasCards, detail: `اكسل: ${hasExcel}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "ماركتنج",
+                expect: "يظهر كورسات تسويق/ماركيتنج",
+                validate: r => {
+                    const hasMark = /ماركيتنج|تسويق|market|اعلان/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasMark && hasCards, detail: `تسويق: ${hasMark}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "دبلومة جرافيك",
+                expect: "SEARCH (مش DIPLOMAS) — مجال محدد",
+                validate: r => {
+                    const hasGraphic = /جرافيك|graphic|تصميم/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    const notDiplomaList = !/الدبلومات المتاحة على المنصة/.test(r);
+                    return { pass: hasGraphic && hasCards && notDiplomaList, detail: `جرافيك: ${hasGraphic}, كاردات: ${hasCards}, ليست قائمة دبلومات: ${notDiplomaList}` };
+                }
+            },
+            {
+                msg: "كورس ذكاء اصطناعي",
+                expect: "يظهر كورسات AI",
+                validate: r => {
+                    const hasAI = /ذكاء|ai|artificial|اصطناع/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasAI && hasCards, detail: `AI: ${hasAI}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "مونتاج",
+                expect: "يظهر كورسات مونتاج/فيديو",
+                validate: r => {
+                    const hasMontage = /مونتاج|مونتير|premiere|بريمير|فيديو|video|montage/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasMontage && hasCards, detail: `مونتاج: ${hasMontage}, كاردات: ${hasCards}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 2. DIALECTS ═══
+    {
+        name: "🌍 لهجات مختلفة",
+        category: "dialect",
+        tests: [
+            {
+                msg: "اريد اتعلم فوتوشوب",
+                expect: "عراقي → يظهر كورسات فوتوشوب",
+                validate: r => {
+                    const hasPS = /فوتوشوب|photoshop/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasPS && hasCards, detail: `فوتوشوب: ${hasPS}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "ابغى كورس بايثون",
+                expect: "خليجي → يظهر كورسات بايثون",
+                validate: r => {
+                    const hasPy = /بايثون|python/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasPy && hasCards, detail: `بايثون: ${hasPy}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "بدي اتعلم تصميم",
+                expect: "شامي → يظهر كورسات تصميم",
+                validate: r => {
+                    const hasDes = /تصميم|design|جرافيك|graphic/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasDes && hasCards, detail: `تصميم: ${hasDes}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "شلون ادفع",
+                expect: "عراقي → معلومات الدفع",
+                validate: r => {
+                    const hasPay = /دفع|visa|فودافون|اشتراك|subscri|payment/i.test(r);
+                    return { pass: hasPay, detail: `دفع: ${hasPay}` };
+                }
+            },
+            {
+                msg: "وش عندكم كورسات",
+                expect: "خليجي → تصنيفات أو كورسات",
+                validate: r => {
+                    const hasContent = /تصنيف|مجال|كورس|دور/i.test(r) || /<a.*?href/i.test(r);
+                    return { pass: hasContent, detail: `محتوى: ${hasContent}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 3. SUBSCRIPTION ═══
+    {
+        name: "💰 اشتراك ودفع",
+        category: "subscription",
+        tests: [
+            {
+                msg: "ازاي ادفع",
+                expect: "طرق الدفع كاملة",
+                validate: r => {
+                    const hasVisa = /visa|فيزا/i.test(r);
+                    const hasVF = /فودافون|01027007899/i.test(r);
+                    const hasPaypal = /paypal|باي بال/i.test(r);
+                    const hasPrice = /49/i.test(r);
+                    return { pass: hasVisa && hasVF && hasPrice, detail: `Visa: ${hasVisa}, فودافون: ${hasVF}, PayPal: ${hasPaypal}, 49$: ${hasPrice}` };
+                }
+            },
+            {
+                msg: "كام سعر الاشتراك",
+                expect: "السعر + طرق الدفع",
+                validate: r => {
+                    const hasPrice = /49/i.test(r);
+                    const hasSub = /اشتراك|subscri/i.test(r);
+                    return { pass: hasPrice && hasSub, detail: `49$: ${hasPrice}, اشتراك: ${hasSub}` };
+                }
+            },
+            {
+                msg: "عايز اشترك",
+                expect: "SUBSCRIPTION — لينك الاشتراك",
+                validate: r => {
+                    const hasLink = /subscriptions/i.test(r);
+                    const hasPrice = /49/i.test(r);
+                    return { pass: hasLink && hasPrice, detail: `لينك: ${hasLink}, سعر: ${hasPrice}` };
+                }
+            },
+            {
+                msg: "فيه فودافون كاش",
+                expect: "رقم فودافون كاش",
+                validate: r => {
+                    const hasVF = /01027007899/i.test(r);
+                    return { pass: hasVF, detail: `رقم فودافون: ${hasVF}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 4. DIPLOMAS ═══
+    {
+        name: "🎓 دبلومات",
+        category: "diplomas",
+        tests: [
+            {
+                msg: "عايز اعرف الدبلومات",
+                expect: "قائمة كل الدبلومات من الداتابيز",
+                validate: r => {
+                    const hasDiploma = /دبلوم/i.test(r);
+                    const hasList = /1\.|2\.|3\./i.test(r) || /<a.*?href/i.test(r);
+                    const notCategories = !/التصنيفات المتاحة/.test(r);
+                    return { pass: hasDiploma && hasList && notCategories, detail: `دبلومات: ${hasDiploma}, قائمة: ${hasList}, مش تصنيفات: ${notCategories}` };
+                }
+            },
+            {
+                msg: "الدبلومات",
+                expect: "قائمة الدبلومات (كلمة واحدة)",
+                validate: r => {
+                    const hasDiploma = /دبلوم/i.test(r);
+                    const hasList = /1\.|2\./i.test(r) || /<a.*?href/i.test(r);
+                    return { pass: hasDiploma && hasList, detail: `دبلومات: ${hasDiploma}, قائمة: ${hasList}` };
+                }
+            },
+            {
+                msg: "عندكم دبلومات ايه",
+                expect: "قائمة الدبلومات",
+                validate: r => {
+                    const hasDiploma = /دبلوم/i.test(r);
+                    return { pass: hasDiploma, detail: `دبلومات: ${hasDiploma}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 5. CATEGORIES ═══
+    {
+        name: "📂 تصنيفات",
+        category: "categories",
+        tests: [
+            {
+                msg: "ايه المجالات عندكم",
+                expect: "قائمة التصنيفات",
+                validate: r => {
+                    const hasCats = /تصنيف|جرافيك|برمج|هندس/i.test(r);
+                    const hasLinks = /<a.*?href/i.test(r);
+                    return { pass: hasCats && hasLinks, detail: `تصنيفات: ${hasCats}, لينكات: ${hasLinks}` };
+                }
+            },
+            {
+                msg: "ايه التصنيفات",
+                expect: "قائمة التصنيفات",
+                validate: r => {
+                    const hasCats = /تصنيف|مجال|جرافيك/i.test(r);
+                    return { pass: hasCats, detail: `تصنيفات: ${hasCats}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 6. CHAT ═══
+    {
+        name: "💬 دردشة عامة",
+        category: "chat",
+        tests: [
+            {
+                msg: "ازيك",
+                expect: "رد ترحيبي بدون كورسات",
+                validate: r => {
+                    const hasGreeting = /اهلا|مرحب|اهلاً|عامل|الحمد|هلا|حبيب/i.test(r);
+                    const noCards = !/<div.*?style.*?border:2px/i.test(r);
+                    return { pass: hasGreeting, detail: `ترحيب: ${hasGreeting}, بدون كاردات دبلومات: ${noCards}` };
+                }
+            },
+            {
+                msg: "السلام عليكم",
+                expect: "رد ترحيبي",
+                validate: r => {
+                    const hasReply = /عليكم.*سلام|اهلا|مرحب|وعليكم/i.test(r);
+                    return { pass: hasReply, detail: `رد: ${hasReply}` };
+                }
+            },
+            {
+                msg: "عايز اتعلم",
+                expect: "يسأل عن المجال (مفيش موضوع محدد)",
+                validate: r => {
+                    const asksMore = /مجال|موضوع|تحب|عايز|تتعلم|تحدد|ايه|إيه|تخصص/i.test(r);
+                    return { pass: asksMore, detail: `يسأل: ${asksMore}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 🆕 7. TECHNICAL ACRONYMS (FIX #18 + #19) ═══
+    {
+        name: "🔤 مصطلحات تقنية واختصارات 🆕",
+        category: "acronyms",
+        tests: [
+            {
+                msg: "ايه هي ROAS",
+                expect: "يشرح ROAS + يعرض كورسات تسويق/ماركيتنج",
+                validate: r => {
+                    const hasExplanation = /roas|عائد|اعلان|إنفاق|return/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasMarketing = /تسويق|ماركيتنج|market|اعلان|ads/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasMarketing), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "يعني ايه CTR",
+                expect: "يشرح CTR + يعرض كورسات تسويق/اعلانات",
+                validate: r => {
+                    const hasExplanation = /ctr|نقر|click|ضغط|نسب/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasMarketing = /تسويق|ماركيتنج|market|اعلان/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasMarketing), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هي API",
+                expect: "يشرح API + يعرض كورسات برمجة",
+                validate: r => {
+                    const hasExplanation = /api|واجه.*برمج|application.*program|تطبيق/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasProg = /برمج|program|develop|تطوير/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasProg), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, برمجة: ${hasProg}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "يعني ايه BIM",
+                expect: "يشرح BIM + يعرض كورسات هندسية/ريفيت",
+                validate: r => {
+                    const hasExplanation = /bim|building.*information|نمذج.*معلومات|مبان/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasEng = /هندس|ريفيت|revit|اوتوكاد|autocad/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasEng), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, هندسة: ${hasEng}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هو OOP",
+                expect: "يشرح OOP + يعرض كورسات برمجة",
+                validate: r => {
+                    const hasExplanation = /oop|object.*orient|كائن|برمج.*شيئ|كلاس/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasProg = /برمج|program|بايثون|جافا|python|java/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasProg), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, برمجة: ${hasProg}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هو SEO",
+                expect: "يشرح SEO + يعرض كورسات تسويق/سيو",
+                validate: r => {
+                    const hasExplanation = /seo|محرك.*بحث|search.*engine|تحسين/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasMarketing = /تسويق|سيو|seo|market/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasMarketing), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تسويق: ${hasMarketing}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "يعني ايه مونتير",
+                expect: "يشرح مونتير + يعرض كورسات مونتاج (FIX #18 fuzzy)",
+                validate: r => {
+                    const hasExplanation = /مونتير|مونتاج|montage|تحرير.*فيديو|video.*edit/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    return { 
+                        pass: hasExplanation && hasCourses, 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هو الجرافيك ديزاين",
+                expect: "يشرح + يعرض كورسات جرافيك",
+                validate: r => {
+                    const hasExplanation = /جرافيك|graphic|تصميم|design/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    return { 
+                        pass: hasExplanation && hasCourses, 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هو UX",
+                expect: "يشرح UX + يعرض كورسات تصميم واجهات",
+                validate: r => {
+                    const hasExplanation = /ux|user.*experience|تجرب.*مستخدم|واجه/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasDesign = /تصميم|design|ui|ux|واجه/i.test(r);
+                    return { 
+                        pass: hasExplanation && (hasCourses || hasDesign), 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, تصميم: ${hasDesign}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+            {
+                msg: "ايه هي KPIs",
+                expect: "يشرح KPIs + يعرض كورسات ادارة/بيزنس",
+                validate: r => {
+                    const hasExplanation = /kpi|مؤشر|أداء|قياس|performance.*indicator/i.test(r);
+                    const hasCourses = /<div.*?style.*?border/i.test(r);
+                    const hasBiz = /ادار|اعمال|بيزنس|manage|business|تسويق/i.test(r);
+                    return { 
+                        pass: hasExplanation, 
+                        detail: `شرح: ${hasExplanation}, كورسات: ${hasCourses}, بيزنس: ${hasBiz}`,
+                        warn: hasExplanation && !hasCourses
+                    };
+                }
+            },
+        ]
+    },
+
+    // ═══ 8. FOLLOW-UP ═══
+    {
+        name: "🔄 متابعة محادثة",
+        category: "followup",
+        tests: [
+            {
+                msg: "عايز اتعلم فوتوشوب",
+                expect: "الرسالة الأولى — كورسات فوتوشوب",
+                validate: r => {
+                    const hasPS = /فوتوشوب|photoshop/i.test(r);
+                    return { pass: hasPS, detail: `فوتوشوب: ${hasPS}` };
+                },
+                session: "followup_test_1"
+            },
+            {
+                msg: "فيه حاجة للمبتدئين",
+                expect: "متابعة — فوتوشوب للمبتدئين",
+                validate: r => {
+                    const hasPS = /فوتوشوب|photoshop|تصميم|مبتدئ/i.test(r);
+                    const hasContent = /<div.*?style.*?border/i.test(r) || /مبتدئ|أساس|beginner/i.test(r);
+                    return { pass: hasPS || hasContent, detail: `فوتوشوب/مبتدئ: ${hasPS}, محتوى: ${hasContent}` };
+                },
+                session: "followup_test_1",
+                delay: 2000
+            },
+        ]
+    },
+
+    // ═══ 9. EDGE CASES ═══
+    {
+        name: "⚡ حالات خاصة",
+        category: "edge",
+        tests: [
+            {
+                msg: "فوتشوب",
+                expect: "تصحيح إملائي → فوتوشوب",
+                validate: r => {
+                    const hasPS = /فوتوشوب|photoshop/i.test(r);
+                    const hasCards = /<div.*?style.*?border/i.test(r);
+                    return { pass: hasPS || hasCards, detail: `فوتوشوب: ${hasPS}, كاردات: ${hasCards}` };
+                }
+            },
+            {
+                msg: "بروجرامنج",
+                expect: "تصحيح → برمجة",
+                validate: r => {
+                    const hasProg = /برمج|program/i.test(r);
+                    return { pass: hasProg, detail: `برمجة: ${hasProg}` };
+                }
+            },
+            {
+                msg: "سباكه",
+                expect: "يظهر كورسات سباكة/MEP",
+                validate: r => {
+                    const hasSab = /سباك|plumbing|mep|ميكانيك|هندس/i.test(r);
+                    return { pass: hasSab, detail: `سباكة: ${hasSab}` };
+                }
+            },
+            {
+                msg: "بايتون",
+                expect: "تصحيح → بايثون",
+                validate: r => {
+                    const hasPy = /بايثون|python/i.test(r);
+                    return { pass: hasPy, detail: `بايثون: ${hasPy}` };
+                }
+            },
+            {
+                msg: "a",
+                expect: "لا يكرش — رد مناسب",
+                validate: r => {
+                    const hasResponse = r && r.length > 10;
+                    return { pass: hasResponse, detail: `رد: ${hasResponse} (${r.length} chars)` };
+                }
+            },
+            {
+                msg: "😊😊😊",
+                expect: "لا يكرش — رد ودود",
+                validate: r => {
+                    const hasResponse = r && r.length > 5;
+                    return { pass: hasResponse, detail: `رد: ${hasResponse}` };
+                }
+            },
+        ]
+    },
 ];
 
-// ══════════════════════════════════════
-// STATE
-// ══════════════════════════════════════
-let isRunning = false;
-let shouldStop = false;
-let results = { total: 0, pass: 0, fail: 0, warn: 0, totalTime: 0 };
-let sessionIds = {};
-let currentFilter = 'all';
 
-// ══════════════════════════════════════
-// RENDER
-// ══════════════════════════════════════
-function renderTests() {
-  const container = document.getElementById('testContainer');
-  container.innerHTML = '';
-  
-  let testIdx = 0;
-  TEST_GROUPS.forEach((group, gIdx) => {
-    if (currentFilter !== 'all' && group.cat !== currentFilter) return;
-    
-    const groupDiv = document.createElement('div');
-    groupDiv.className = 'test-group';
-    groupDiv.setAttribute('data-cat', group.cat);
-    
-    let testsHtml = '';
-    group.tests.forEach((test, tIdx) => {
-      const id = `test-${gIdx}-${tIdx}`;
-      const checksStr = test.checks.map(c => {
-        if (c === 'has_card') return '📦 يحتوي كارد';
-        if (c === 'has_card_or_suggestion') return '📦 كارد أو 💡 اقتراح كورسات';
-        if (c === 'no_card') return '🚫 بدون كارد';
-        if (c === 'greeting_tone') return '👋 نبرة ترحيب';
-        if (c === 'asks_clarification') return '❓ يطلب توضيح';
-        if (c === 'not_empty') return '✍️ رد غير فارغ';
-        if (c.startsWith('contains:')) return '🔍 يحتوي: ' + c.replace('contains:', '');
-        return c;
-      }).join(' | ');
-      
-      testsHtml += `
-        <div class="test-item" id="${id}">
-          <div class="test-top">
-            <span class="test-name">${group.isNew ? '<span class="new-badge">NEW</span>' : ''}${test.desc}</span>
-            <span class="test-status status-idle" id="${id}-status">⏳ ينتظر</span>
-          </div>
-          <div class="test-msg"><strong>💬</strong> "${test.msg}"</div>
-          <div class="test-checks">🎯 ${checksStr}</div>
-          <div class="test-result" id="${id}-result"></div>
-          <button class="toggle-btn" id="${id}-toggle" onclick="toggleResult('${id}')" style="display:none;">📋 عرض التفاصيل</button>
-        </div>
-      `;
-      testIdx++;
-    });
-    
-    const newTag = group.isNew ? ' <span class="new-badge">NEW</span>' : '';
-    groupDiv.innerHTML = `
-      <div class="group-header" onclick="toggleGroup(this)">
-        <span class="group-title">${group.name}${newTag}</span>
-        <span class="group-badge">${group.tests.length} اختبار</span>
-      </div>
-      <div class="test-list">${testsHtml}</div>
-    `;
-    
-    container.appendChild(groupDiv);
-  });
-  
-  results.total = testIdx;
-  document.getElementById('statTotal').textContent = testIdx;
-}
+// ═══════════════════════════════════════
+// TEST RUNNER
+// ═══════════════════════════════════════
 
-function toggleGroup(header) {
-  const list = header.nextElementSibling;
-  list.style.display = list.style.display === 'none' ? 'block' : 'none';
-}
-
-function toggleResult(id) {
-  const el = document.getElementById(`${id}-result`);
-  el.classList.toggle('show');
-  const btn = document.getElementById(`${id}-toggle`);
-  btn.textContent = el.classList.contains('show') ? '📋 إخفاء التفاصيل' : '📋 عرض التفاصيل';
-}
-
-function filterCat(cat, btn) {
-  currentFilter = cat;
-  document.querySelectorAll('.btn-cat').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  renderTests();
-}
-
-// ══════════════════════════════════════
-// CHECK FUNCTIONS — v10.4 (added has_card_or_suggestion + no_card)
-// ══════════════════════════════════════
-function evaluateChecks(reply, checks) {
-  const results = [];
-  const replyLower = (reply || '').toLowerCase();
-  const replyNorm = replyLower
-    .replace(/[أإآٱ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي');
-  
-  const hasCardInReply = replyLower.includes('border') && replyLower.includes('div') && 
-                (replyLower.includes('تفاصيل') || replyLower.includes('الدورة') || replyLower.includes('الدبلومة') || replyLower.includes('الاشتراك'));
-  
-  for (const check of checks) {
-    if (check === 'has_card') {
-      results.push({ check: '📦 كارد', passed: hasCardInReply, detail: hasCardInReply ? 'يحتوي على كارد ✅' : 'لا يوجد كارد ❌' });
-    }
-    else if (check === 'has_card_or_suggestion') {
-      // Card OR text suggesting courses (Smart Upsell)
-      const hasSuggestion = replyNorm.includes('كورس') || replyNorm.includes('دوره') || replyNorm.includes('تفيد') || 
-                            replyNorm.includes('بالمناسب') || replyNorm.includes('عندنا') || replyNorm.includes('easyt') ||
-                            replyNorm.includes('منصه') || replyNorm.includes('تصفح') || hasCardInReply;
-      results.push({ 
-        check: '📦💡 كارد/اقتراح', 
-        passed: hasSuggestion, 
-        detail: hasSuggestion 
-          ? (hasCardInReply ? 'يحتوي كارد كورس ✅' : 'يحتوي اقتراح كورسات ✅') 
-          : 'لا يوجد كارد ولا اقتراح ❌' 
-      });
-    }
-    else if (check === 'no_card') {
-      const noCard = !hasCardInReply;
-      results.push({ check: '🚫 بدون كارد', passed: noCard, detail: noCard ? 'بدون كارد كورس ✅ (صحيح)' : 'فيه كارد ❌ (مش المفروض)' });
-    }
-    else if (check === 'greeting_tone') {
-      const greetWords = ['اهلا', 'مرحبا', 'هلا', 'اهلاً', 'welcome', 'hi', 'hello', 'سلام', 'وعليكم', 'اقدر', 'ساعد', '😊', '👋', 'اساعد', 'نورت', 'عفوا', 'شكر'];
-      const has = greetWords.some(w => replyNorm.includes(w));
-      results.push({ check: '👋 ترحيب', passed: has, detail: has ? 'نبرة ودودة ✅' : 'لا ترحيب واضح ⚠️' });
-    }
-    else if (check === 'asks_clarification') {
-      const clarifyWords = ['ايه', 'اي', 'تحب', 'تبغ', 'عايز ايه', 'قولي', 'حدد', 'وضح', '؟', 'مجال', 'موضوع', 'تتعلم', 'مثلا'];
-      const has = clarifyWords.some(w => replyNorm.includes(w));
-      results.push({ check: '❓ توضيح', passed: has, detail: has ? 'يطلب توضيح ✅' : 'لم يطلب توضيح ⚠️' });
-    }
-    else if (check === 'not_empty') {
-      const has = (reply || '').trim().length > 10;
-      results.push({ check: '✍️ غير فارغ', passed: has, detail: has ? `الرد ${reply.length} حرف ✅` : 'رد فارغ أو قصير جداً ❌' });
-    }
-    else if (check.startsWith('contains:')) {
-      const keywords = check.replace('contains:', '').split('|');
-      const found = keywords.filter(kw => replyNorm.includes(kw.toLowerCase()) || replyLower.includes(kw.toLowerCase()));
-      const has = found.length > 0;
-      results.push({ 
-        check: `🔍 ${keywords.join('|')}`, 
-        passed: has, 
-        detail: has ? `وُجد: ${found.join(', ')} ✅` : `لم يُوجد أي من: ${keywords.join(', ')} ❌` 
-      });
-    }
-  }
-  
-  return results;
-}
-
-// ══════════════════════════════════════
-// API CALLS
-// ══════════════════════════════════════
-async function sendMessage(msg, sessionId) {
-  const url = document.getElementById('apiUrl').value.replace(/\/+$/, '');
-  const start = Date.now();
-  
-  const resp = await fetch(`${url}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: msg, session_id: sessionId || 'test_' + Date.now() })
-  });
-  
-  const data = await resp.json();
-  const elapsed = Date.now() - start;
-  
-  return { reply: data.reply || '', elapsed };
-}
-
-async function testConnection() {
-  const url = document.getElementById('apiUrl').value.replace(/\/+$/, '');
-  const status = document.getElementById('connStatus');
-  status.textContent = '⏳ جاري الاختبار...';
-  status.style.color = '#f59e0b';
-  
-  try {
-    const resp = await fetch(`${url}/health`);
-    const data = await resp.json();
-    if (data.status === 'ok') {
-      status.textContent = `✅ متصل | ${data.version || '?'} | DB: ${data.database} | AI: ${data.openai}`;
-      status.style.color = '#22c55e';
-    } else {
-      status.textContent = `⚠️ متصل بمشاكل: ${JSON.stringify(data)}`;
-      status.style.color = '#f59e0b';
-    }
-  } catch (e) {
-    status.textContent = `❌ فشل الاتصال: ${e.message}`;
-    status.style.color = '#ef4444';
-  }
-}
-
-// ══════════════════════════════════════
-// RUN TESTS
-// ══════════════════════════════════════
-async function runAllTests() {
-  if (isRunning) return;
-  isRunning = true;
-  shouldStop = false;
-  
-  document.getElementById('btnRunAll').classList.add('hidden');
-  document.getElementById('btnStop').classList.remove('hidden');
-  
-  results = { total: 0, pass: 0, fail: 0, warn: 0, totalTime: 0 };
-  sessionIds = {};
-  
-  let allTests = [];
-  TEST_GROUPS.forEach((group, gIdx) => {
-    if (currentFilter !== 'all' && group.cat !== currentFilter) return;
-    group.tests.forEach((test, tIdx) => {
-      allTests.push({ ...test, gIdx, tIdx, id: `test-${gIdx}-${tIdx}` });
-    });
-  });
-  
-  results.total = allTests.length;
-  document.getElementById('statTotal').textContent = allTests.length;
-  
-  const totalStart = Date.now();
-  
-  for (let i = 0; i < allTests.length; i++) {
-    if (shouldStop) break;
-    
-    const test = allTests[i];
-    const el = document.getElementById(test.id);
-    const statusEl = document.getElementById(`${test.id}-status`);
-    const resultEl = document.getElementById(`${test.id}-result`);
-    const toggleEl = document.getElementById(`${test.id}-toggle`);
-    
-    if (!el) continue;
-    
-    // Mark running
-    el.className = 'test-item running';
-    statusEl.className = 'test-status status-running';
-    statusEl.textContent = '⏳ جاري...';
-    
-    // Scroll into view
-    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    
-    try {
-      // Generate session ID for follow-up tests
-      let sessionId = 'test_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-      if (test.sessionHint) {
-        if (!sessionIds[test.sessionHint]) {
-          sessionIds[test.sessionHint] = 'test_followup_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-        }
-        sessionId = sessionIds[test.sessionHint];
-      }
-      
-      const { reply, elapsed } = await sendMessage(test.msg, sessionId);
-      results.totalTime += elapsed;
-      
-      // Evaluate
-      const checkResults = evaluateChecks(reply, test.checks);
-      const allPassed = checkResults.every(c => c.passed);
-      const somePassed = checkResults.some(c => c.passed);
-      
-      // Determine status
-      let finalStatus, cssClass;
-      if (allPassed) {
-        finalStatus = 'pass';
-        cssClass = 'passed';
-        results.pass++;
-      } else if (somePassed) {
-        finalStatus = 'warn';
-        cssClass = 'warning';
-        results.warn++;
-      } else {
-        finalStatus = 'fail';
-        cssClass = 'failed';
-        results.fail++;
-      }
-      
-      el.className = `test-item ${cssClass}`;
-      statusEl.className = `test-status status-${finalStatus}`;
-      statusEl.textContent = finalStatus === 'pass' ? '✅ نجح' : finalStatus === 'warn' ? '⚠️ جزئي' : '❌ فشل';
-      
-      // Show result details
-      let detailHtml = `<span class="test-time">⏱️ ${elapsed}ms</span><br>`;
-      checkResults.forEach(cr => {
-        detailHtml += `<div class="check-line ${cr.passed ? 'check-pass' : 'check-fail'}">${cr.passed ? '✅' : '❌'} ${cr.check}: ${cr.detail}</div>`;
-      });
-      
-      // Preview reply (strip heavy HTML)
-      let preview = reply.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                         .replace(/<[^>]*>/g, ' ')
-                         .replace(/\s+/g, ' ')
-                         .trim();
-      if (preview.length > 300) preview = preview.substring(0, 300) + '...';
-      detailHtml += `<br><div class="reply-preview">💬 ${preview}</div>`;
-      
-      resultEl.innerHTML = detailHtml;
-      toggleEl.style.display = 'inline-block';
-      
-      // Auto-show failures
-      if (finalStatus === 'fail') {
-        resultEl.classList.add('show');
-        toggleEl.textContent = '📋 إخفاء التفاصيل';
-      }
-      
-    } catch (e) {
-      el.className = 'test-item failed';
-      statusEl.className = 'test-status status-fail';
-      statusEl.textContent = '❌ خطأ';
-      resultEl.innerHTML = `<div class="check-fail">❌ Error: ${e.message}</div>`;
-      resultEl.classList.add('show');
-      toggleEl.style.display = 'inline-block';
-      toggleEl.textContent = '📋 إخفاء التفاصيل';
-      results.fail++;
-    }
-    
-    // Update stats
-    updateStats();
-    
-    // Update progress
-    const pct = Math.round(((i + 1) / allTests.length) * 100);
-    document.getElementById('progressFill').style.width = pct + '%';
-    
-    // Small delay to avoid rate limiting
-    if (i < allTests.length - 1) {
-      await new Promise(r => setTimeout(r, 800));
-    }
-  }
-  
-  results.totalTime = Date.now() - totalStart;
-  updateStats();
-  
-  isRunning = false;
-  document.getElementById('btnRunAll').classList.remove('hidden');
-  document.getElementById('btnStop').classList.add('hidden');
-}
-
-function stopTests() {
-  shouldStop = true;
-  document.getElementById('btnStop').textContent = '⏳ جاري الإيقاف...';
-}
+let stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+let startTime = 0;
 
 function updateStats() {
-  document.getElementById('statTotal').textContent = results.total;
-  document.getElementById('statPass').textContent = results.pass;
-  document.getElementById('statFail').textContent = results.fail;
-  document.getElementById('statWarn').textContent = results.warn;
-  document.getElementById('statTime').textContent = (results.totalTime / 1000).toFixed(1) + 's';
+    document.getElementById('statTotal').textContent = stats.total;
+    document.getElementById('statPass').textContent = stats.pass;
+    document.getElementById('statFail').textContent = stats.fail;
+    document.getElementById('statWarn').textContent = stats.warn;
+    document.getElementById('statRunning').textContent = stats.running;
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    document.getElementById('statTime').textContent = elapsed + 's';
+    
+    const done = stats.pass + stats.fail + stats.warn;
+    const pct = stats.total > 0 ? (done / stats.total) * 100 : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+}
+
+function renderTestGroups(groups) {
+    const container = document.getElementById('testContainer');
+    container.innerHTML = '';
+    
+    groups.forEach((group, gi) => {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'test-group';
+        groupDiv.id = `group-${gi}`;
+        
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'group-header';
+        headerDiv.innerHTML = `
+            <span>${group.name} (${group.tests.length} اختبار)</span>
+            <span class="badge" style="background:rgba(255,255,255,0.15)" id="group-badge-${gi}">⏳</span>
+        `;
+        headerDiv.onclick = () => {
+            const body = document.getElementById(`group-body-${gi}`);
+            body.classList.toggle('collapsed');
+        };
+        
+        const bodyDiv = document.createElement('div');
+        bodyDiv.className = 'group-body';
+        bodyDiv.id = `group-body-${gi}`;
+        
+        group.tests.forEach((test, ti) => {
+            const card = document.createElement('div');
+            card.className = 'test-card';
+            card.id = `test-${gi}-${ti}`;
+            card.innerHTML = `
+                <div class="test-header">
+                    <span class="test-msg">"${test.msg}"</span>
+                    <span class="test-status status-pending" id="status-${gi}-${ti}">⏳ انتظار</span>
+                </div>
+                <div class="test-expect">📋 ${test.expect}</div>
+                <div class="test-time" id="time-${gi}-${ti}"></div>
+                <span class="toggle-detail" onclick="toggleDetail(${gi},${ti})">📄 تفاصيل</span>
+                <div class="test-detail" id="detail-${gi}-${ti}"></div>
+            `;
+            bodyDiv.appendChild(card);
+        });
+        
+        groupDiv.appendChild(headerDiv);
+        groupDiv.appendChild(bodyDiv);
+        container.appendChild(groupDiv);
+    });
+}
+
+function toggleDetail(gi, ti) {
+    const detail = document.getElementById(`detail-${gi}-${ti}`);
+    detail.classList.toggle('show');
+}
+
+async function sendMessage(msg, sessionId) {
+    const resp = await fetch(API_BASE() + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, session_id: sessionId })
+    });
+    const data = await resp.json();
+    return data.reply || '';
+}
+
+async function runTest(gi, ti, test) {
+    const statusEl = document.getElementById(`status-${gi}-${ti}`);
+    const detailEl = document.getElementById(`detail-${gi}-${ti}`);
+    const timeEl = document.getElementById(`time-${gi}-${ti}`);
+    
+    statusEl.className = 'test-status status-running';
+    statusEl.textContent = '⏳ جاري...';
+    stats.running++;
+    updateStats();
+    
+    const session = test.session || newSession();
+    const t0 = Date.now();
+    
+    try {
+        if (test.delay) {
+            await new Promise(r => setTimeout(r, test.delay));
+        }
+        
+        const reply = await sendMessage(test.msg, session);
+        const elapsed = Date.now() - t0;
+        timeEl.textContent = `⏱️ ${elapsed}ms`;
+        
+        const result = test.validate(reply);
+        
+        // Clean reply for display
+        const cleanReply = reply.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 300);
+        detailEl.innerHTML = `<strong>نتيجة:</strong> ${result.detail}<br><br><strong>الرد:</strong> ${cleanReply}...`;
+        
+        stats.running--;
+        
+        if (result.pass) {
+            if (result.warn) {
+                statusEl.className = 'test-status status-warn';
+                statusEl.textContent = '⚠️ جزئي';
+                stats.warn++;
+            } else {
+                statusEl.className = 'test-status status-pass';
+                statusEl.textContent = '✅ نجح';
+                stats.pass++;
+            }
+        } else {
+            statusEl.className = 'test-status status-fail';
+            statusEl.textContent = '❌ فشل';
+            stats.fail++;
+        }
+    } catch (err) {
+        const elapsed = Date.now() - t0;
+        timeEl.textContent = `⏱️ ${elapsed}ms`;
+        detailEl.innerHTML = `<strong>خطأ:</strong> ${err.message}`;
+        detailEl.classList.add('show');
+        
+        statusEl.className = 'test-status status-fail';
+        statusEl.textContent = '❌ خطأ';
+        stats.running--;
+        stats.fail++;
+    }
+    
+    updateStats();
+    updateGroupBadge(gi);
+}
+
+function updateGroupBadge(gi) {
+    const group = TEST_GROUPS[gi];
+    if (!group) return;
+    
+    let pass = 0, fail = 0, warn = 0, running = 0;
+    group.tests.forEach((_, ti) => {
+        const el = document.getElementById(`status-${gi}-${ti}`);
+        if (!el) return;
+        if (el.classList.contains('status-pass')) pass++;
+        else if (el.classList.contains('status-fail')) fail++;
+        else if (el.classList.contains('status-warn')) warn++;
+        else if (el.classList.contains('status-running')) running++;
+    });
+    
+    const badge = document.getElementById(`group-badge-${gi}`);
+    if (!badge) return;
+    
+    if (running > 0) {
+        badge.textContent = `⏳ ${running} جاري`;
+        badge.style.background = 'rgba(100,200,255,0.3)';
+    } else if (fail > 0) {
+        badge.textContent = `❌ ${fail} فشل`;
+        badge.style.background = 'rgba(255,100,100,0.3)';
+    } else if (warn > 0) {
+        badge.textContent = `⚠️ ${warn} تحذير | ✅ ${pass}`;
+        badge.style.background = 'rgba(255,200,50,0.3)';
+    } else if (pass === group.tests.length) {
+        badge.textContent = `✅ كلهم نجحوا!`;
+        badge.style.background = 'rgba(100,255,100,0.3)';
+    } else {
+        badge.textContent = `✅ ${pass}/${group.tests.length}`;
+        badge.style.background = 'rgba(100,255,100,0.2)';
+    }
+}
+
+async function runAllTests() {
+    stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    startTime = Date.now();
+    
+    const allTests = [];
+    TEST_GROUPS.forEach((group, gi) => {
+        group.tests.forEach((test, ti) => {
+            allTests.push({ gi, ti, test });
+            stats.total++;
+        });
+    });
+    
+    renderTestGroups(TEST_GROUPS);
+    updateStats();
+    
+    // Run tests with concurrency limit
+    const CONCURRENCY = 3;
+    let idx = 0;
+    
+    async function next() {
+        if (idx >= allTests.length) return;
+        const { gi, ti, test } = allTests[idx++];
+        await runTest(gi, ti, test);
+        await next();
+    }
+    
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, allTests.length); i++) {
+        workers.push(next());
+    }
+    await Promise.all(workers);
+    
+    // Final time
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    document.getElementById('statTime').textContent = elapsed + 's';
+}
+
+async function runCategory(cat) {
+    stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    startTime = Date.now();
+    
+    const filtered = TEST_GROUPS.filter(g => g.category === cat);
+    if (filtered.length === 0) { alert('مفيش اختبارات لـ ' + cat); return; }
+    
+    const allTests = [];
+    filtered.forEach((group, fgi) => {
+        const gi = TEST_GROUPS.indexOf(group);
+        group.tests.forEach((test, ti) => {
+            allTests.push({ gi, ti, test, fgi });
+            stats.total++;
+        });
+    });
+    
+    renderTestGroups(filtered);
+    updateStats();
+    
+    // Map filtered indices to original
+    const CONCURRENCY = 3;
+    let idx = 0;
+    
+    async function next() {
+        if (idx >= allTests.length) return;
+        const item = allTests[idx++];
+        // Use filtered group index for rendering
+        await runTest(item.fgi, item.ti, item.test);
+        await next();
+    }
+    
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, allTests.length); i++) {
+        workers.push(next());
+    }
+    await Promise.all(workers);
 }
 
 function clearResults() {
-  results = { total: 0, pass: 0, fail: 0, warn: 0, totalTime: 0 };
-  document.getElementById('progressFill').style.width = '0%';
-  document.getElementById('customResult').innerHTML = '';
-  document.getElementById('customResult').classList.remove('show');
-  renderTests();
-  updateStats();
+    stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
+    startTime = 0;
+    document.getElementById('testContainer').innerHTML = '';
+    document.getElementById('progressFill').style.width = '0%';
+    updateStats();
 }
 
-// ══════════════════════════════════════
-// CUSTOM TEST
-// ══════════════════════════════════════
-async function runCustomTest() {
-  const msg = document.getElementById('customMsg').value.trim();
-  if (!msg) return;
-  
-  const checkWord = document.getElementById('customCheck').value.trim();
-  const resultEl = document.getElementById('customResult');
-  
-  resultEl.innerHTML = '<span style="color:#38bdf8;">⏳ جاري الإرسال...</span>';
-  resultEl.classList.add('show');
-  
-  try {
-    const { reply, elapsed } = await sendMessage(msg);
+// Auto-detect server URL
+window.addEventListener('load', async () => {
+    const candidates = [
+        window.location.origin,
+        'http://localhost:3000',
+        'https://your-app.onrender.com'
+    ];
     
-    let html = `<span class="test-time">⏱️ ${elapsed}ms</span><br>`;
-    
-    if (checkWord) {
-      const found = reply.toLowerCase().includes(checkWord.toLowerCase());
-      html += `<div class="${found ? 'check-pass' : 'check-fail'}">${found ? '✅' : '❌'} البحث عن "${checkWord}": ${found ? 'موجود' : 'غير موجود'}</div>`;
+    for (const url of candidates) {
+        try {
+            const resp = await fetch(url + '/health', { signal: AbortSignal.timeout(3000) });
+            if (resp.ok) {
+                document.getElementById('serverUrl').value = url;
+                console.log('✅ Server found:', url);
+                return;
+            }
+        } catch {}
     }
-    
-    const hasCard = reply.includes('border') && reply.includes('div') && (reply.includes('تفاصيل') || reply.includes('الدورة') || reply.includes('الدبلومة'));
-    html += `<div class="${hasCard ? 'check-pass' : 'check-fail'}">${hasCard ? '✅' : '❌'} كارد كورس/دبلومة: ${hasCard ? 'موجود' : 'غير موجود'}</div>`;
-    html += `<div class="check-pass">✅ طول الرد: ${reply.length} حرف</div>`;
-    
-    let preview = reply.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (preview.length > 500) preview = preview.substring(0, 500) + '...';
-    html += `<br><div class="reply-preview">💬 ${preview}</div>`;
-    
-    // Show raw HTML option
-    html += `<br><button class="toggle-btn" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">🔧 عرض HTML الخام</button>`;
-    html += `<pre style="display:none;background:#0f172a;padding:8px;border-radius:4px;overflow-x:auto;font-size:11px;color:#64748b;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">${reply.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
-    
-    resultEl.innerHTML = html;
-  } catch (e) {
-    resultEl.innerHTML = `<div class="check-fail">❌ Error: ${e.message}</div>`;
-  }
-}
-
-// Allow Enter key for custom test
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('customMsg').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') runCustomTest();
-  });
 });
-
-// ══════════════════════════════════════
-// INIT
-// ══════════════════════════════════════
-renderTests();
 </script>
+
 </body>
 </html>
