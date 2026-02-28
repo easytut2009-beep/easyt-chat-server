@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.6 — Two-Phase RAG + Context Memory + Lesson Search
+   🤖 Ziko Chatbot v10.7 — Two-Phase RAG + Context Memory + Lesson Search
    
    🔧 FIXES from v10.2:
    ✅ FIX #1: \n → <br> everywhere
@@ -38,6 +38,10 @@
    ✅ FIX #30: Phase 2 prompt includes matchedLessons rules
    ✅ FIX #31: Course cards show matched lessons with timestamps
    ✅ FIX #32: verifyCourseRelevance allows lesson-matched courses
+
+   🆕 NEW in v10.7:
+   ✅ FIX #33: Penalize non-lesson courses when lesson matches exist
+   ✅ FIX #34: Category link uses actual course category, not search terms
 
    🧹 CLEANUP:
    ✅ Removed /test endpoint
@@ -692,6 +696,23 @@ function getCourseCategories(course) {
   return matchedCats;
 }
 
+/* ══════════════════════════════════════════════════════════
+   FIX #34: Smart Category — from actual courses first, fallback to search terms
+   ══════════════════════════════════════════════════════════ */
+function getSmartCategoryFromCourses(relevantCourses, searchTerms) {
+  if (relevantCourses && relevantCourses.length > 0) {
+    const topCourseCats = getCourseCategories(relevantCourses[0]);
+    if (topCourseCats.length > 0) {
+      const catName = topCourseCats[0].name;
+      if (CATEGORIES[catName]) {
+        console.log(`📂 FIX #34: Category from actual course "${relevantCourses[0].title}" → "${catName}"`);
+        return { name: catName, url: CATEGORIES[catName].url };
+      }
+    }
+  }
+  return detectRelevantCategory(searchTerms);
+}
+
 function formatCategoriesList() {
   let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong><br><br>`;
   Object.keys(CATEGORIES).forEach((name, i) => {
@@ -1180,7 +1201,6 @@ async function searchLessonsInCourses(searchTerms) {
               existingLessonIds.add(chunk.lesson_id);
             }
 
-            // Attach timestamps to existing lessons that don't have them
             const existing = allLessons.find(l => l.id === chunk.lesson_id);
             if (existing && !existing.timestamp_start && chunk.timestamp_start) {
               existing.timestamp_start = chunk.timestamp_start;
@@ -1198,14 +1218,12 @@ async function searchLessonsInCourses(searchTerms) {
       return [];
     }
 
-    // Get unique course IDs
     const courseIds = [...new Set(allLessons.filter(l => l.course_id).map(l => l.course_id))];
     if (courseIds.length === 0) {
       setCachedSearch(cacheKey, []);
       return [];
     }
 
-    // Fetch parent courses
     const { data: courses, error: cErr } = await supabase
       .from('courses')
       .select(COURSE_SELECT_COLS)
@@ -1216,7 +1234,6 @@ async function searchLessonsInCourses(searchTerms) {
       return [];
     }
 
-    // Attach matched lessons to each course and score
     const results = courses.map(course => {
       const matched = allLessons
         .filter(l => l.course_id === course.id)
@@ -1401,7 +1418,6 @@ function formatCourseCard(course, instructors, index) {
     card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>`;
   }
 
-  /* ══ FIX #31: Show matched lessons inside the card ══ */
   if (course.matchedLessons && course.matchedLessons.length > 0) {
     card += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
     card += `<strong>📖 الدروس المرتبطة:</strong><br>`;
@@ -1480,7 +1496,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.6                    ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.7                    ██
    ██   Two-Phase RAG + Context Memory + Lesson Search     ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
@@ -2183,7 +2199,6 @@ function prepareCourseForRAG(course, instructors) {
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
     relevanceScore: course.relevanceScore || 0,
-    /* FIX #28: Lesson-level matches */
     matchedLessons: (course.matchedLessons || []).map(l => ({
       title: l.title,
       timestamp: l.timestamp_start || null,
@@ -2430,7 +2445,6 @@ ${JSON.stringify(allItems, null, 1)}
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
-  /* FIX #32: Lesson-matched courses always pass verification */
   if (course.matchType === 'lesson_title' && course.matchedLessons && course.matchedLessons.length > 0) {
     console.log(`   🛡️ FIX #32: "${course.title}" PASSED (lesson-matched: ${course.matchedLessons.map(l => l.title).join(', ')})`);
     return true;
@@ -2527,7 +2541,7 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.6
+   11-F: 🧠 Master Orchestrator v10.7
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
@@ -2654,14 +2668,12 @@ async function smartChat(message, sessionId) {
       console.log(`   🏆 [score=${c.relevanceScore}] ${c.title}`);
     });
 
-    /* FIX #28: Search courses, diplomas, AND lessons in parallel */
     let [courses, diplomas, lessonResults] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
       searchLessonsInCourses(termsToSearch),
     ]);
 
-    /* FIX #28: Merge lesson-matched courses into main results */
     if (lessonResults && lessonResults.length > 0) {
       console.log(`🎓 Merging ${lessonResults.length} lesson-matched courses`);
       const seenCourseIds = new Set(courses.map(c => c.id));
@@ -2669,12 +2681,10 @@ async function smartChat(message, sessionId) {
       for (const lr of lessonResults) {
         const existing = courses.find(c => c.id === lr.id);
         if (existing) {
-          // Course already in results — attach lessons and boost score
           existing.matchedLessons = lr.matchedLessons;
           existing.matchType = 'lesson_title';
           existing.relevanceScore = Math.max(existing.relevanceScore || 0, lr.relevanceScore);
         } else {
-          // Course not in results yet — add it
           courses.push(lr);
           seenCourseIds.add(lr.id);
         }
@@ -2696,6 +2706,26 @@ async function smartChat(message, sessionId) {
     }
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+    /* FIX #33: When lesson-matched courses exist, penalize non-lesson courses without title match */
+    const hasLessonMatchedCourses = courses.some(c => c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0);
+    if (hasLessonMatchedCourses) {
+      for (const c of courses) {
+        if (c.matchType !== 'lesson_title' || !c.matchedLessons || c.matchedLessons.length === 0) {
+          const titleNormCheck = normalizeArabic((c.title || '').toLowerCase());
+          const hasDirectTitleMatch = termsToSearch.some(t => {
+            const nt = normalizeArabic(t.toLowerCase());
+            return nt.length > 3 && titleNormCheck.includes(nt);
+          });
+          if (!hasDirectTitleMatch) {
+            const oldScore = c.relevanceScore;
+            c.relevanceScore = Math.round(c.relevanceScore * 0.2);
+            console.log(`   📉 FIX #33: "${c.title}" penalized (no lesson/title match) ${oldScore} → ${c.relevanceScore}`);
+          }
+        }
+      }
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+    }
 
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
@@ -2745,15 +2775,12 @@ async function smartChat(message, sessionId) {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
-      /* Must-show: courses with title match OR lesson match */
       const mustShowCourses = courses.filter((c) => {
-        // Title match
         const titleNorm = normalizeArabic((c.title || "").toLowerCase());
         const hasTitleMatch = termsToSearch.some((t) => {
           const termNorm = normalizeArabic(t.toLowerCase());
           return termNorm.length > 3 && titleNorm.includes(termNorm);
         });
-        // Lesson match
         const hasLessonMatch = c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0;
         return hasTitleMatch || hasLessonMatch;
       });
@@ -2872,7 +2899,8 @@ async function smartChat(message, sessionId) {
       }
 
       if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-        const cat = detectRelevantCategory(termsToSearch);
+        /* FIX #34 */
+        const cat = getSmartCategoryFromCourses([], termsToSearch);
         if (cat) {
           reply += `<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
 📂 تصفح كل كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a> — ممكن تلاقي اللي يناسبك!
@@ -2880,7 +2908,8 @@ async function smartChat(message, sessionId) {
         }
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       } else {
-        const cat = detectRelevantCategory(termsToSearch);
+        /* FIX #34: Use actual course category */
+        const cat = getSmartCategoryFromCourses(relevantCourses, termsToSearch);
         if (cat) {
           reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
 <a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
@@ -2900,7 +2929,8 @@ async function smartChat(message, sessionId) {
         interests: termsToSearch.slice(0, 3),
       });
     } else {
-      const cat = detectRelevantCategory(termsToSearch);
+      /* FIX #34 */
+      const cat = getSmartCategoryFromCourses([], termsToSearch);
       reply = analysis.is_follow_up
         ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅`
         : `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.`;
@@ -3080,7 +3110,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.6" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.7" });
 
     return res.json({ reply });
   } catch (error) {
@@ -3520,7 +3550,7 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
 app.get("/admin/debug", adminAuth, async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.6",
+    version: "10.7",
     engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords + LessonSearch",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
@@ -3553,7 +3583,7 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.6",
+    version: "10.7",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
     engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
@@ -3566,15 +3596,17 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.6",
+    version: "10.7",
     status: "running ✅",
     engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
-      "🆕 Lesson-level search — finds topics inside courses (lessons + chunks)",
-      "🆕 Course cards show matched lessons with timestamps",
-      "🆕 Phase 2 GPT sees matchedLessons for smarter recommendations",
+      "🆕 FIX #33: Penalize non-lesson courses when lesson matches exist",
+      "🆕 FIX #34: Category link uses actual course category, not search terms",
+      "Lesson-level search — finds topics inside courses (lessons + chunks)",
+      "Course cards show matched lessons with timestamps",
+      "Phase 2 GPT sees matchedLessons for smarter recommendations",
       "Title-priority scoring (50x weight, +200 exact match)",
       "Domain scoring (30x weight) + Keywords scoring (20x weight)",
       "Richer embeddings (page_content + domain + keywords)",
@@ -3601,7 +3633,7 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.6...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.7...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
@@ -4012,10 +4044,11 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.6                              ║
+║  🤖 زيكو Chatbot — v10.7                              ║
 ║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
 ║  🔍 Search: Title 50x + Domain 30x + Keywords 20x     ║
-║  🆕 Lesson-Level Search: finds topics inside courses   ║
+║  🆕 FIX #33: Penalize non-lesson when lessons exist    ║
+║  🆕 FIX #34: Smart category from actual courses        ║
 ║  🔄 Follow-up: Remembers last topic for context        ║
 ║  📦 Cache: 5min TTL search cache                       ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
@@ -4048,7 +4081,7 @@ app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
   }
 
   try {
-    console.log('🚀 Starting embedding generation (v10.6 — richer content)...');
+    console.log('🚀 Starting embedding generation (v10.7 — richer content)...');
     const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
 
     // ====== COURSES ======
