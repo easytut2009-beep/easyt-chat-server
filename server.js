@@ -3867,87 +3867,124 @@ app.get('/api/admin/regenerate-all-embeddings', async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   🔍 Audit: Check all domain values in courses table
+   🔍 Audit: Find courses with WRONG domain
    ══════════════════════════════════════════════════════════ */
-app.get('/api/admin/audit-domains', async (req, res) => {
+app.get('/api/admin/audit-mismatched', async (req, res) => {
   if (!supabase) return res.status(500).json({ error: 'DB not connected' });
+  
   try {
     const { data, error } = await supabase
       .from('courses')
-      .select('id, title, domain, keywords');
+      .select('id, title, domain, keywords, subtitle');
 
     if (error) throw error;
 
-    const domainMap = {};
-    let emptyCount = 0;
-    const emptyCourses = [];
+    var DOMAIN_KEYWORDS = {
+      "design": ["جرافيك","فوتوشوب","photoshop","اليستريتور","illustrator","افتر افكت","after effects","بريمير","premiere","figma","فيجما","ui","ux","canva","لوجو","logo","موشن","motion","graphic","indesign"],
+      "web": ["html","css","javascript","react","angular","vue","node","php","laravel","wordpress","مواقع","ويب","frontend","backend","bootstrap","django"],
+      "mobile": ["اندرويد","android","ios","flutter","react native","kotlin","swift","dart","موبايل","تطبيقات الهواتف"],
+      "data": ["بيانات","data","python","بايثون","machine learning","ذكاء اصطناعي","ai","excel","اكسل","power bi","tableau","sql","تحليل","analytics","scraping","r programming"],
+      "programming": ["برمجة","programming","c++","java","خوارزميات","oop","قواعد بيانات","database","scratch","سكراتش","solidity","blockchain","oracle"],
+      "it": ["شبكات","network","سيرفر","server","linux","حماية","security","سيبراني","cyber","هاكر","hack","اختراق","wifi","iso"],
+      "marketing": ["تسويق","marketing","سوشيال ميديا","اعلانات","ads","فيسبوك","seo","محتوى","content","affiliate","بالعمولة","ماركتنج"],
+      "leadership": ["قيادة","ادارة","تنمية بشرية","مهارات","تخطيط","ازمات","عرض","تقديم","presentation","مالية","شركات"],
+      "language": ["انجليزي","english","فرنسي","french","الماني","deutsch","toefl","ielts","لغة","language"],
+      "game": ["العاب","game","gaming","unity","unreal","godot"],
+      "media": ["بودكاست","podcast","يوتيوب","youtube","فيديو","مونتاج"],
+      "business": ["اعمال","business","مشروع","ريادة","startup","نموذج","model"]
+    };
 
-    for (const course of (data || [])) {
-      const d = (course.domain || '').trim();
-      if (!d) {
-        emptyCount++;
-        emptyCourses.push({ id: course.id, title: course.title });
-        continue;
+    var mismatched = [];
+    var uncertain = [];
+    var correctCount = 0;
+
+    for (var i = 0; i < (data || []).length; i++) {
+      var course = data[i];
+      var domain = (course.domain || "").trim().toLowerCase();
+      if (!domain) continue;
+
+      var titleLower = normalizeArabic((course.title || "").toLowerCase());
+      var kwLower = normalizeArabic((course.keywords || "").toLowerCase());
+      var subLower = normalizeArabic((course.subtitle || "").toLowerCase());
+      var allText = titleLower + " " + kwLower + " " + subLower;
+
+      var currentKws = DOMAIN_KEYWORDS[domain] || [];
+      var currentScore = 0;
+      var currentHits = [];
+      for (var j = 0; j < currentKws.length; j++) {
+        var nkw = normalizeArabic(currentKws[j].toLowerCase());
+        if (allText.includes(nkw)) {
+          currentScore += titleLower.includes(nkw) ? 3 : 1;
+          currentHits.push(currentKws[j]);
+        }
       }
-      if (!domainMap[d]) domainMap[d] = { count: 0, courses: [] };
-      domainMap[d].count++;
-      domainMap[d].courses.push({ id: course.id, title: course.title });
+
+      var bestDomain = domain;
+      var bestScore = currentScore;
+      var bestHits = currentHits;
+      var domainNames = Object.keys(DOMAIN_KEYWORDS);
+
+      for (var k = 0; k < domainNames.length; k++) {
+        var d = domainNames[k];
+        var dKws = DOMAIN_KEYWORDS[d];
+        var dScore = 0;
+        var dHits = [];
+        for (var m = 0; m < dKws.length; m++) {
+          var nk = normalizeArabic(dKws[m].toLowerCase());
+          if (allText.includes(nk)) {
+            dScore += titleLower.includes(nk) ? 3 : 1;
+            dHits.push(dKws[m]);
+          }
+        }
+        if (dScore > bestScore) {
+          bestScore = dScore;
+          bestDomain = d;
+          bestHits = dHits;
+        }
+      }
+
+      if (bestDomain !== domain && bestScore > currentScore + 1) {
+        mismatched.push({
+          id: course.id,
+          title: course.title,
+          current_domain: domain,
+          current_score: currentScore,
+          current_hits: currentHits.slice(0, 5),
+          suggested_domain: bestDomain,
+          suggested_score: bestScore,
+          suggested_hits: bestHits.slice(0, 5)
+        });
+      } else if (currentScore === 0) {
+        uncertain.push({
+          id: course.id,
+          title: course.title,
+          current_domain: domain,
+          best_domain: bestDomain,
+          best_score: bestScore,
+          best_hits: bestHits.slice(0, 5)
+        });
+      } else {
+        correctCount++;
+      }
     }
 
-    // Check each domain against CATEGORIES
-    const domainAnalysis = {};
-    for (const [domain, info] of Object.entries(domainMap)) {
-      const fakeCourse = { title: '', domain, keywords: '', subtitle: '' };
-      const matchedCats = getCourseCategories(fakeCourse);
-      domainAnalysis[domain] = {
-        count: info.count,
-        matched_category: matchedCats.length > 0 ? matchedCats[0].name : '❌ NO MATCH',
-        match_score: matchedCats.length > 0 ? matchedCats[0].score : 0,
-        sample_courses: info.courses.slice(0, 5).map(c => c.title),
-      };
-    }
+    mismatched.sort(function(a, b) {
+      return (b.suggested_score - b.current_score) - (a.suggested_score - a.current_score);
+    });
 
-    // Sort: unmatched first, then by count
-    const sorted = Object.entries(domainAnalysis)
-      .sort((a, b) => {
-        if (a[1].match_score === 0 && b[1].match_score > 0) return -1;
-        if (b[1].match_score === 0 && a[1].match_score > 0) return 1;
-        return b[1].count - a[1].count;
-      });
-
-    res.json({
-      total_courses: (data || []).length,
-      empty_domain_count: emptyCount,
-      empty_domain_courses: emptyCourses.slice(0, 20),
-      unique_domains: Object.keys(domainMap).length,
-      domains: Object.fromEntries(sorted),
+    return res.json({
+      total: (data || []).length,
+      correct: correctCount,
+      mismatched_count: mismatched.length,
+      uncertain_count: uncertain.length,
+      mismatched: mismatched,
+      uncertain: uncertain
     });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e.message });
   }
 });
 
-
-
-{
-  "summary": {
-    "total": 360,
-    "correct": 250,
-    "mismatched": 45,
-    "uncertain": 65
-  },
-  "mismatched": [
-    {
-      "id": 123,
-      "title": "تصميم وبرمجة الألعاب باستخدام GoDot Engine",
-      "current_domain": "design",
-      "current_domain_score": 0,
-      "suggested_domain": "game",
-      "suggested_domain_score": 6,
-      "status": "❌ WRONG DOMAIN"
-    }
-  ]
-}
 
 startServer();
