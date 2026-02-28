@@ -1191,9 +1191,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
           try {
             const queryText = searchTerms.join(" ");
             const embResp = await openai.embeddings.create({
-              model: "text-embedding-ada-002",
-              input: queryText,
-            });
+      model: "text-embedding-ada-002",
+      input: queryText.substring(0, 2000),
+    });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
               match_threshold: 0.75,
@@ -1547,7 +1547,7 @@ async function searchLessonsInCourses(searchTerms) {
       try {
         const queryText = searchTerms.join(" ");
         const embResp = await openai.embeddings.create({
-          model: "text-embedding-ada-002",
+          model: "text-embedding-3-small",
           input: queryText.substring(0, 2000),
         });
 
@@ -4729,23 +4729,23 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
     // Step 1: Direct ilike
     let query = supabase
       .from("lessons")
-      .select("id, title, course_id, duration")
+      .select("id, title, course_id, lesson_order")
       .ilike("title", `%${lessonTitle}%`)
-      .limit(5);
+      .limit(10);
     if (courseId) query = query.eq("course_id", courseId);
     let { data } = await query;
 
-    // Step 2: Partial word search if no results
+    // Step 2: Try individual words (for bilingual titles)
     if (!data || data.length === 0) {
       const words = lessonTitle.split(/\s+/).filter((w) => w.length > 3);
       if (words.length > 0) {
         const partialFilter = words
-          .slice(0, 3)
+          .slice(0, 4)
           .map((w) => `title.ilike.%${w}%`)
           .join(",");
         let q2 = supabase
           .from("lessons")
-          .select("id, title, course_id, duration")
+          .select("id, title, course_id, lesson_order")
           .or(partialFilter)
           .limit(10);
         if (courseId) q2 = q2.eq("course_id", courseId);
@@ -4754,36 +4754,53 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
       }
     }
 
-    // Step 3: Get ALL lessons for this course if still nothing
+    // Step 3: Get ALL lessons for course as fallback
     if ((!data || data.length === 0) && courseId) {
       const { data: allLessons } = await supabase
         .from("lessons")
-        .select("id, title, course_id, duration")
-        .eq("course_id", courseId);
+        .select("id, title, course_id, lesson_order")
+        .eq("course_id", courseId)
+        .order("lesson_order", { ascending: true });
       data = allLessons;
     }
 
     if (!data || data.length === 0) return null;
 
-    // Fuzzy match
-    const normTitle = normalizeArabic(lessonTitle.toLowerCase());
-    let best = data[0];
-    let bestSim = 0;
+    // Smart matching
+    const normTitle = normalizeArabic(lessonTitle.toLowerCase().trim());
+    let best = null;
+    let bestScore = 0;
+
     for (const d of data) {
-      const sim = similarityRatio(
-        normTitle,
-        normalizeArabic((d.title || "").toLowerCase())
-      );
-      if (sim > bestSim) {
-        bestSim = sim;
+      const dbTitle = (d.title || "").toLowerCase().trim();
+      const dbNorm = normalizeArabic(dbTitle);
+      let score = 0;
+
+      if (dbNorm === normTitle || dbTitle === lessonTitle.toLowerCase().trim()) {
+        score = 100;
+      } else if (dbNorm.includes(normTitle) || dbTitle.includes(lessonTitle.toLowerCase().trim())) {
+        score = 95;
+      } else if (normTitle.includes(dbNorm)) {
+        score = 90;
+      } else {
+        const searchWords = normTitle.split(/\s+/).filter(w => w.length > 2);
+        const matchedWords = searchWords.filter(w => dbNorm.includes(w));
+        if (searchWords.length > 0 && matchedWords.length > 0) {
+          score = 40 + Math.round((matchedWords.length / searchWords.length) * 40);
+        }
+        if (score < 50) {
+          score = Math.max(score, similarityRatio(normTitle, dbNorm));
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
         best = d;
       }
     }
 
-    console.log(
-      `🎓 FIX #44 findLessonByTitle: "${lessonTitle}" → "${best.title}" (${bestSim}%)`
-    );
-    return bestSim >= 35 ? best : data.length > 0 ? data[0] : null;
+    console.log(`🎓 findLessonByTitle: "${lessonTitle}" → "${best ? best.title : 'NONE'}" (score=${bestScore}%)`);
+    return bestScore >= 30 ? best : data.length > 0 ? data[0] : null;
   } catch (e) {
     console.error("findLessonByTitle error:", e.message);
     return null;
@@ -4912,14 +4929,14 @@ async function getRelevantChunks(query, courseId = null, limit = 8) {
   if (!supabase || !openai || !query) return [];
   try {
     const embResponse = await openai.embeddings.create({
-      model: "text-embedding-ada-002",
+      model: "text-embedding-3-small",  // 🔴 FIX: must match upload model!
       input: query.substring(0, 2000),
     });
     const queryEmbedding = embResponse.data[0].embedding;
 
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.55, // 🆕 lowered from 0.60 for better recall
+      match_threshold: 0.50,
       match_count: limit,
       filter_course_id: courseId || null,
     });
@@ -4928,6 +4945,8 @@ async function getRelevantChunks(query, courseId = null, limit = 8) {
       console.error("match_lesson_chunks RPC error:", error.message);
       return [];
     }
+
+    console.log(`🔍 Semantic search: ${(data || []).length} results (model: text-embedding-3-small)`);
 
     return (data || []).map((chunk) => ({
       ...chunk,
@@ -4989,122 +5008,106 @@ async function startServer() {
   /* ═══════════════════════════════════════════════════════════════
      🆕 FIX #45: buildGuideSystemPrompt v2.0 — content-first
      ═══════════════════════════════════════════════════════════════ */
-  function buildGuideSystemPrompt(
-    courseName,
-    lectureTitle,
-    clientPrompt,
-    currentLessonContext,
-    otherLessonsContext
+function buildGuideSystemPrompt(
+    courseName, lectureTitle, clientPrompt,
+    currentLessonContext, otherLessonsContext,
+    allCourseLessons, lessonFound
   ) {
-    let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
+    let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي".
 
 ## دورك:
-- تساعد الطلاب يفهموا محتوى الدروس اللي بيذاكروها
-- تشرح بأسلوب بسيط وعملي بالعامية المصرية
-- تدي أمثلة عملية من المحتوى الفعلي للدرس
+- تساعد الطلاب يفهموا محتوى الدروس
+- تشرح بأسلوب بسيط بالعامية المصرية
+- تدي أمثلة عملية من المحتوى الفعلي
 
 ## أسلوبك:
 - ودود ومشجع ومختصر
 - بالعامية المصرية البسيطة
 - إيموجي مناسبة بدون إفراط
-- تنظم الرد بنقاط وعناوين لو الموضوع طويل
 
 ## ممنوع:
 - ما تحلش امتحانات أو assignments كاملة
-- ما تقولش "أنا ChatGPT" أو "أنا AI" — أنت "زيكو المرشد التعليمي"
-- ما تتكلمش عن أسعار أو اشتراكات — لو حد سأل قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية"`;
+- ما تقولش "أنا ChatGPT" — أنت "زيكو المرشد التعليمي"
+- ما تتكلمش عن أسعار — لو حد سأل قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية"`;
 
     if (courseName || lectureTitle) {
       p += `\n\n═══════════════════════════════════`;
-      p += `\n📍 سياق الطالب الحالي:`;
+      p += `\n📍 سياق الطالب:`;
       if (courseName) p += `\n📚 الكورس: "${courseName}"`;
       if (lectureTitle) p += `\n📖 الدرس: "${lectureTitle}"`;
+      if (!lessonFound) p += `\n⚠️ تنبيه: محتوى هذا الدرس لم يُعثر عليه في قاعدة البيانات.`;
+    }
+
+    // Lesson list for anti-hallucination
+    if (allCourseLessons && allCourseLessons.length > 0) {
+      p += `\n\n╔════════════════════════════════╗`;
+      p += `\n║  📋 قائمة دروس الكورس الكاملة   ║`;
+      p += `\n╚════════════════════════════════╝`;
+      allCourseLessons.forEach((lesson) => {
+        const num = lesson.lesson_order || 0;
+        let isCurrent = false;
+        if (lectureTitle) {
+          const normLec = normalizeArabic(lectureTitle.toLowerCase());
+          const normDb = normalizeArabic((lesson.title || "").toLowerCase());
+          isCurrent = normDb.includes(normLec) || normLec.includes(normDb) || similarityRatio(normLec, normDb) >= 60;
+        }
+        p += `\n${num}. "${lesson.title}"${isCurrent ? " ← 📍 الدرس الحالي" : ""}`;
+      });
+      p += `\n\n🔴 مهم: لازم تستخدم أسماء الدروس بالظبط من القائمة دي!`;
+      p += `\n❌ ممنوع تخترع اسم درس مش في القائمة!`;
     }
 
     if (clientPrompt && clientPrompt.trim()) {
-      p += `\n\n═══ سياق إضافي من الصفحة ═══`;
-      p += `\n${clientPrompt.trim().substring(0, 500)}`;
+      p += `\n\n═══ سياق إضافي ═══\n${clientPrompt.trim().substring(0, 500)}`;
     }
 
-    /* ═══════════════════════════════════════════
-       🆕 FIX #45+#47+#48: Content sections
-       ═══════════════════════════════════════════ */
-    if (currentLessonContext && currentLessonContext.trim()) {
-      p += `\n\n╔══════════════════════════════════════════╗`;
-      p += `\n║  📖 محتوى الدرس الحالي (من قاعدة البيانات)  ║`;
-      p += `\n╚══════════════════════════════════════════╝`;
-      p += `\n${currentLessonContext}`;
-      p += `\n═══════════════════════════════════════════`;
-    }
-
-    if (otherLessonsContext && otherLessonsContext.trim()) {
-      p += `\n\n╔══════════════════════════════════════════╗`;
-      p += `\n║  📚 محتوى من دروس أخرى في نفس الكورس      ║`;
-      p += `\n╚══════════════════════════════════════════╝`;
-      p += `\n${otherLessonsContext}`;
-      p += `\n═══════════════════════════════════════════`;
-    }
-
-    const hasCurrentContent =
-      currentLessonContext && currentLessonContext.trim();
-    const hasOtherContent =
-      otherLessonsContext && otherLessonsContext.trim();
-
-    /* ═══════════════════════════════════════════
-       🆕 FIX #45: Strict answering rules
-       ═══════════════════════════════════════════ */
-    p += `\n\n╔══════════════════════════════════════════╗`;
-    p += `\n║  ⚠️⚠️⚠️ قواعد الإجابة (حرجة جداً!) ⚠️⚠️⚠️   ║`;
-    p += `\n╚══════════════════════════════════════════╝`;
-
-    p += `\n\n🔴 الأولوية رقم 1: المحتوى الفعلي أولاً!`;
-    p += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    const hasCurrentContent = currentLessonContext && currentLessonContext.trim();
+    const hasOtherContent = otherLessonsContext && otherLessonsContext.trim();
 
     if (hasCurrentContent) {
-      p += `\n\n✅ عندك محتوى فعلي من الدرس الحالي — استخدمه كمرجع أساسي!`;
-      p += `\n`;
-      p += `\n📌 لو الإجابة موجودة في "محتوى الدرس الحالي":`;
-      p += `\n   - جاوب منه مباشرة`;
-      p += `\n   - اذكر الـ timestamp لو موجود: "هتلاقي الكلام ده في الدقيقة X تقريباً ⏱️"`;
-      p += `\n   - استخدم نفس الأمثلة اللي المحاضر ذكرها — ما تخترعش أمثلة من عندك`;
-      p += `\n   - لو المحاضر ذكر اسم عالم أو تاريخ أو رقم — اذكره زي ما هو بالظبط`;
-      p += `\n`;
-      p += `\n   مثال صح ✅: "المحاضر شرح الموضوع ده في الدقيقة 5:35 تقريباً ⏱️ — وقال إن..."`;
-      p += `\n   مثال غلط ❌: "الموضوع ده عموماً يعني..." (بدون ما ترجع للمحتوى)`;
+      p += `\n\n╔════════════════════════════════════╗`;
+      p += `\n║  📖 محتوى الدرس الحالي               ║`;
+      p += `\n╚════════════════════════════════════╝`;
+      p += `\n${currentLessonContext}`;
     }
 
     if (hasOtherContent) {
-      p += `\n\n📌 لو الإجابة موجودة في "محتوى من دروس أخرى":`;
-      p += `\n   - قول: "هتلاقي المحاضر شارح الجزء ده في درس [اسم الدرس] من الدقيقة [X] تقريباً ⏱️"`;
-      p += `\n   - لو عايز تشرح باختصار: اشرح من المحتوى الفعلي + وجّه الطالب للدرس`;
-      p += `\n`;
-      p += `\n   مثال صح ✅: "الموضوع ده المحاضر شرحه بالتفصيل في درس 'البساطة في التصميم' من الدقيقة 3:20 ⏱️ — باختصار كده..."`;
+      p += `\n\n╔════════════════════════════════════╗`;
+      p += `\n║  📚 محتوى من دروس أخرى              ║`;
+      p += `\n╚════════════════════════════════════╝`;
+      p += `\n${otherLessonsContext}`;
     }
 
-    p += `\n\n📌 لو الإجابة مش موجودة في أي محتوى:`;
-    p += `\n   - قول بوضوح: "الموضوع ده مش متغطي في المحتوى اللي عندي من الكورس، بس خليني أشرحلك من خبرتي 💡"`;
-    p += `\n   - بعد كده اشرح من معرفتك العامة`;
+    // Answering rules
+    p += `\n\n╔════════════════════════════════════╗`;
+    p += `\n║  ⚠️ قواعد الإجابة                     ║`;
+    p += `\n╚════════════════════════════════════╝`;
 
-    p += `\n\n🔴🔴🔴 ممنوعات صارمة:`;
-    p += `\n❌ ممنوع تجاوب من معرفتك العامة لو الإجابة موجودة في المحتوى الفعلي!`;
-    p += `\n❌ ممنوع تخترع أمثلة أو أسماء أو أرقام مش موجودة في المحتوى!`;
-    p += `\n❌ ممنوع تقول "الدرس مش بيتكلم عن X" إلا لو فعلاً قرأت كل المحتوى وأكدت!`;
-    p += `\n❌ ممنوع تقترح مواقع خارجية لو الموضوع متشرح في الدرس!`;
-    p += `\n❌ لو المحاضر ذكر موقع معين (مثلاً FreePik) — اذكر نفس الموقع بالظبط، ما تحطش موقع تاني!`;
+    if (hasCurrentContent) {
+      p += `\n\n✅ عندك محتوى فعلي من الدرس الحالي — استخدمه أولاً!`;
+      p += `\n- جاوب من المحتوى مباشرة`;
+      p += `\n- اذكر الـ timestamp لو موجود: "المحاضر شرح ده عند الدقيقة X:XX ⏱️"`;
+      p += `\n- استخدم نفس أمثلة المحاضر — ما تخترعش`;
+    } else {
+      p += `\n\n⚠️ مفيش محتوى متاح من الدرس الحالي`;
+      p += `\n- قول بصراحة: "محتوى الدرس ده مش متاح عندي بالتفصيل، بس خليني أشرحلك من خبرتي 💡"`;
+    }
 
-    p += `\n\n✅ مسموح:`;
-    p += `\n✅ لو الطالب سأل سؤال عام "مش فاهم" → اعمل ملخص سريع للدرس من المحتوى`;
-    p += `\n✅ لو المحتوى فيه جزء بيجاوب على السؤال → اقتبس منه واشرح`;
-    p += `\n✅ لو المحتوى مش كافي → كمّل من معرفتك بس وضّح إنك بتكمّل`;
+    if (hasOtherContent) {
+      p += `\n\n📌 لو الإجابة في درس آخر:`;
+      p += `\n- قول: "المحاضر شرح ده في درس [الاسم بالظبط] عند الدقيقة [X:XX] ⏱️"`;
+    }
 
-    p += `\n\n═══ قاعدة الـ Timestamps ═══`;
-    p += `\n- كل جزء من المحتوى الفعلي معاه timestamp (وقت في الفيديو)`;
-    p += `\n- دايماً اذكر الوقت في إجابتك: "من الدقيقة X ⏱️"`;
-    p += `\n- ده بيساعد الطالب يرجع للمكان ده في الفيديو`;
+    p += `\n\n📌 لو الإجابة مش في أي محتوى:`;
+    p += `\n- قول: "الموضوع ده مش في المحتوى اللي عندي، بس خليني أشرحلك 💡"`;
+
+    p += `\n\n🔴 ممنوعات:`;
+    p += `\n❌ ممنوع تخترع اسم درس أو timestamp مش في المحتوى!`;
+    p += `\n❌ ممنوع تقول "في الدقيقة X" لو مفيش [⏱️] في المحتوى!`;
+    p += `\n❌ ممنوع تخترع أسماء مواقع المحاضر ما ذكرهاش!`;
 
     return p;
   }
-
   /* ═══════════════════════════════════
      Guide Bot Status Endpoint
      ═══════════════════════════════════ */
@@ -5150,117 +5153,102 @@ async function startServer() {
 
       consumeGuideMsg(session_id);
 
-      let currentLessonContext = "";
+let currentLessonContext = "";
       let otherLessonsContext = "";
-      let ragStats = {
-        currentLesson: 0,
-        semantic: 0,
-        text: 0,
-        otherLessons: 0,
-        total: 0,
-      };
+      let allCourseLessons = [];
+      let lessonMatch = null;
+      let ragStats = { currentLesson: 0, semantic: 0, text: 0, otherLessons: 0, total: 0 };
 
       if (course_name || lecture_title) {
         try {
-          // ═══ Step 1: Find Course ═══
-          const courseMatch = await findCourseByName(
-            course_name || lecture_title
-          );
+          // Step 1: Find Course
+          const courseMatch = await findCourseByName(course_name || lecture_title);
           var courseId = courseMatch ? courseMatch.id : null;
-          console.log(
-            `📚 Guide: course="${course_name}" → ${
-              courseId ? courseMatch.title : "NOT FOUND"
-            }`
-          );
+          console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
 
-          // ═══ Step 2: Find Lesson (FIX #44 improved) ═══
-          let lessonMatch = null;
-          if (lecture_title) {
-            lessonMatch = await findLessonByTitle(lecture_title, courseId);
-            console.log(
-              `📖 Guide: lesson="${lecture_title}" → ${
-                lessonMatch
-                  ? lessonMatch.title + " (id=" + lessonMatch.id + ")"
-                  : "NOT FOUND"
-              }`
-            );
+          // Step 1.5: Get ALL lessons (sorted by lesson_order)
+          if (courseId) {
+            const { data: courseLessons } = await supabase
+              .from("lessons")
+              .select("id, title, lesson_order")
+              .eq("course_id", courseId)
+              .order("lesson_order", { ascending: true });
+            allCourseLessons = courseLessons || [];
+            console.log(`📋 Found ${allCourseLessons.length} lessons in course`);
+            allCourseLessons.forEach((l, i) => {
+              console.log(`   ${i + 1}. [order=${l.lesson_order}] "${l.title}"`);
+            });
           }
 
-          // ═══ Step 3: 🆕 FIX #40 — Get ALL chunks of current lesson ═══
-          let currentChunks = [];
-          if (lessonMatch) {
-            currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
-            ragStats.currentLesson = currentChunks.length;
+          // Step 2: Find Current Lesson
+          if (lecture_title) {
+            lessonMatch = await findLessonByTitle(lecture_title, courseId);
+            console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : "❌ NOT FOUND"}`);
 
-            if (currentChunks.length > 0) {
-              // 🆕 FIX #43: 1200 chars per chunk
-              currentLessonContext = currentChunks
-                .map((c) => {
-                  const ts = c.timestamp_start
-                    ? `[⏱️ ${c.timestamp_start}]`
-                    : "";
-                  return `${ts} ${(c.content || "").substring(0, 1200)}`;
-                })
-                .join("\n\n");
+            // Extra fallback using all course lessons
+            if (!lessonMatch && allCourseLessons.length > 0) {
+              const normSearch = normalizeArabic(lecture_title.toLowerCase());
+              let bestL = null, bestS = 0;
+              for (const cl of allCourseLessons) {
+                const normDb = normalizeArabic((cl.title || "").toLowerCase());
+                let s = 0;
+                if (normDb.includes(normSearch) || normSearch.includes(normDb)) s = 90;
+                else {
+                  const words = normSearch.split(/\s+/).filter(w => w.length > 2);
+                  const matched = words.filter(w => normDb.includes(w));
+                  s = words.length > 0 ? Math.round((matched.length / words.length) * 80) : 0;
+                }
+                if (s > bestS) { bestS = s; bestL = cl; }
+              }
+              if (bestL && bestS >= 25) {
+                lessonMatch = bestL;
+                console.log(`📖 Fallback match → "${bestL.title}" (score=${bestS}%)`);
+              }
             }
           }
 
-          // ═══ Step 4: 🆕 FIX #46 — Search OTHER lessons in same course ═══
-          const currentLessonId = lessonMatch ? lessonMatch.id : null;
-          const otherChunksMap = new Map(); // lesson_title → chunks[]
+          // Step 3: Get ALL chunks of current lesson
+          if (lessonMatch) {
+            const currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
+            ragStats.currentLesson = currentChunks.length;
+            if (currentChunks.length > 0) {
+              currentLessonContext = currentChunks.map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n\n");
+            }
+          } else {
+            console.log(`⚠️ No lesson matched — currentLessonContext will be empty`);
+          }
 
-          // 4a. Semantic search across entire course
-          const searchQuery =
-            message + (lecture_title ? " " + lecture_title : "");
-          const semanticChunks = await getRelevantChunks(
-            searchQuery,
-            courseId,
-            8
-          );
+          // Step 4: Search OTHER lessons
+          const currentLessonId = lessonMatch ? lessonMatch.id : null;
+          const otherChunksMap = new Map();
+          const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
+
+          // Semantic search
+          const searchQuery = message + (lecture_title ? " " + lecture_title : "");
+          const semanticChunks = await getRelevantChunks(searchQuery, courseId, 8);
           ragStats.semantic = semanticChunks.length;
 
           for (const sc of semanticChunks) {
-            // Skip if it's from the current lesson (we already have full content)
             if (currentLessonId && sc.lesson_id === currentLessonId) continue;
-
-            const lessonName = sc.lesson_title || "درس آخر";
-            if (!otherChunksMap.has(lessonName)) {
-              otherChunksMap.set(lessonName, []);
-            }
+            const lessonName = lessonTitleMap.get(sc.lesson_id) || sc.lesson_title || "درس آخر";
+            if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
             otherChunksMap.get(lessonName).push(sc);
           }
 
-          // 4b. Text search across course (excluding current lesson)
-          const textTerms = message
-            .split(/\s+/)
-            .filter(
-              (w) =>
-                w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
-            );
-
+          // Text search
+          const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
           if (textTerms.length > 0) {
-            const textChunks = await searchChunksByText(
-              textTerms,
-              courseId,
-              null,
-              10
-            );
+            const textChunks = await searchChunksByText(textTerms, courseId, null, 10);
             ragStats.text = textChunks.length;
-
             for (const tc of textChunks) {
-              if (currentLessonId && tc.lesson_id === currentLessonId)
-                continue;
-
-              const lessonName = tc.lesson_title || "درس آخر";
-              if (!otherChunksMap.has(lessonName)) {
-                otherChunksMap.set(lessonName, []);
-              }
-
-              // Avoid duplicates
+              if (currentLessonId && tc.lesson_id === currentLessonId) continue;
+              const lessonName = lessonTitleMap.get(tc.lesson_id) || tc.lesson_title || "درس آخر";
+              if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
               const existing = otherChunksMap.get(lessonName);
-              if (!existing.find((e) => e.id === tc.id)) {
-                existing.push(tc);
-              }
+              if (!existing.find((e) => e.id === tc.id)) existing.push(tc);
             }
           }
 
@@ -5269,52 +5257,35 @@ async function startServer() {
             const parts = [];
             for (const [lessonName, chunks] of otherChunksMap) {
               ragStats.otherLessons += chunks.length;
-              // 🆕 FIX #43: 1200 chars
-              const chunkTexts = chunks
-                .slice(0, 4)
-                .map((c) => {
-                  const ts = c.timestamp_start
-                    ? `[⏱️ ${c.timestamp_start}]`
-                    : "";
-                  return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
-                })
-                .join("\n");
+              const chunkTexts = chunks.slice(0, 4).map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n");
               parts.push(`📎 درس: "${lessonName}"\n${chunkTexts}`);
             }
             otherLessonsContext = parts.join("\n\n---\n\n");
           }
 
           ragStats.total = ragStats.currentLesson + ragStats.otherLessons;
+          if (currentLessonContext.length > 40000) currentLessonContext = currentLessonContext.substring(0, 40000) + "\n\n[... بقية محتوى الدرس]";
+          if (otherLessonsContext.length > 10000) otherLessonsContext = otherLessonsContext.substring(0, 10000) + "\n\n[... بقية المحتوى]";
 
-          // Safety: limit total context
-          if (currentLessonContext.length > 40000) {
-            currentLessonContext =
-              currentLessonContext.substring(0, 40000) +
-              "\n\n[... بقية محتوى الدرس]";
-          }
-          if (otherLessonsContext.length > 10000) {
-            otherLessonsContext =
-              otherLessonsContext.substring(0, 10000) +
-              "\n\n[... بقية المحتوى]";
-          }
-
-          console.log(
-            `📚 Guide RAG v2.0: currentLesson=${ragStats.currentLesson} chunks | semantic=${ragStats.semantic} | text=${ragStats.text} | otherLessons=${ragStats.otherLessons} | total=${ragStats.total}`
-          );
+          console.log(`📚 Guide RAG: current=${ragStats.currentLesson} | semantic=${ragStats.semantic} | text=${ragStats.text} | other=${ragStats.otherLessons} | total=${ragStats.total}`);
         } catch (ragErr) {
-          console.error("Guide RAG error (non-fatal):", ragErr.message);
+          console.error("Guide RAG error:", ragErr.message);
         }
       }
 
-      // ═══ Build System Prompt (FIX #45) ═══
+      // Build System Prompt
       const finalSystemPrompt = buildGuideSystemPrompt(
         course_name || "",
         lecture_title || "",
         system_prompt || "",
         currentLessonContext,
-        otherLessonsContext
+        otherLessonsContext,
+        allCourseLessons,
+        !!lessonMatch
       );
-
 
 
       // ═══ Conversation Management ═══
@@ -5513,12 +5484,15 @@ async function startServer() {
               .join(" - ");
             if (!text.trim()) continue;
 
-            const embedding = await generateSingleEmbedding(text);
+const embRes = await openai.embeddings.create({
+              model: "text-embedding-3-small",
+              input: text.substring(0, 8000),
+            });
+            const embedding = embRes.data[0].embedding;
             const { error: upErr } = await supabase
               .from("chunks")
               .update({ embedding })
               .eq("id", chunk.id);
-
             if (upErr) results.errors++;
             else results.processed++;
 
