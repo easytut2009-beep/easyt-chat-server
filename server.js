@@ -4327,6 +4327,33 @@ app.delete("/api/admin/courses/:courseId/lessons/:lessonNumber/chunks", adminAut
 });
 
 
+
+// --- Rename a lesson ---
+app.patch("/api/admin/courses/:courseId/lessons/:lessonNumber", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { courseId, lessonNumber } = req.params;
+    const { lessonName } = req.body;
+
+    if (!lessonName || !lessonName.trim()) {
+      return res.status(400).json({ error: "Lesson name is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("chunks")
+      .update({ lesson_name: lessonName.trim() })
+      .eq("course_id", courseId)
+      .eq("lesson_number", parseInt(lessonNumber))
+      .select("id");
+
+    if (error) throw error;
+    res.json({ success: true, updated: (data || []).length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // --- Serve upload page ---
 app.get("/upload", (req, res) => {
   res.sendFile(path.join(__dirname, "upload.html"));
