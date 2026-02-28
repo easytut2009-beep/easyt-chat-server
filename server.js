@@ -163,14 +163,16 @@ const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 const COURSE_SELECT_COLS = "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
 
 const CATEGORIES = {
-  "الجرافيكس والتصميم": {
+
+"الجرافيكس والتصميم": {
     url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2",
     keywords: [
-      "جرافيك","تصميم","فوتوشوب","اليستريتر","كانفا","فيجما","photoshop",
-      "illustrator","canva","figma","indesign","graphic","design","شعار",
-      "logo","ui","ux","xd","كرتون",
+      "جرافيك","تصميم جرافيك","فوتوشوب","اليستريتر","كانفا","فيجما","photoshop",
+      "illustrator","canva","figma","indesign","graphic","graphic design","شعار",
+      "logo","ui","ux","xd","كرتون","بوستر","بنر","هوية بصرية","تعديل صور",
     ],
   },
+
   "الحماية والاختراق": {
     url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001",
     keywords: [
@@ -258,12 +260,15 @@ const CATEGORIES = {
     url: "https://easyt.online/courses/category/d00d3c49-7ef3-4041-8e71-4c6b6ce5026d",
     keywords: ["فن","هوايات","رسم","خط","art","hobby","موسيقى"],
   },
-  "الروبوت والالكترونيات والشبكات": {
+"الروبوت والالكترونيات والشبكات": {
     url: "https://easyt.online/courses/category/9a58b6bd-bf96-4a95-b87d-77b2a742c1b4",
     keywords: [
-      "روبوت","الكترونيات","شبكات","اردوينو","arduino","network","robot","raspberry",
+      "روبوت","الكترونيات","الكتروني","الكترونيه","شبكات","اردوينو","arduino",
+      "network","robot","raspberry","proteus","دوائر","دائره","plc","pcb",
+      "الكترونيك","electronic","circuit","iot","انترنت الاشياء",
     ],
   },
+
   "أساسيات البرمجة وقواعد البيانات": {
     url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
     keywords: [
@@ -639,6 +644,54 @@ function detectRelevantCategory(searchTerms) {
   return bestScore >= 2 ? bestCat : null;
 }
 
+
+
+/* 🆕 FIX #27: Classify which category a course belongs to */
+function getCourseCategories(course) {
+  const titleNorm = normalizeArabic((course.title || "").toLowerCase());
+  const domainNorm = normalizeArabic((course.domain || "").toLowerCase());
+  const kwNorm = normalizeArabic((course.keywords || "").toLowerCase());
+  const subtitleNorm = normalizeArabic((course.subtitle || "").toLowerCase());
+  const combined = titleNorm + " " + domainNorm + " " + kwNorm + " " + subtitleNorm;
+
+  const matchedCats = [];
+  for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+    let score = 0;
+    for (const kw of catInfo.keywords) {
+      const nkw = normalizeArabic(kw.toLowerCase());
+      if (nkw.length <= 2) continue;
+
+      if (combined.includes(nkw)) {
+        const inTitle = titleNorm.includes(nkw);
+        const inDomain = domainNorm.includes(nkw);
+        score += inTitle ? 3 : inDomain ? 4 : 1;
+        continue;
+      }
+
+      if (nkw.length >= 6) {
+        const root = nkw.substring(0, 5);
+        if (combined.includes(root)) {
+          score += 1;
+        }
+      }
+    }
+
+    const catNorm = normalizeArabic(catName.toLowerCase());
+    for (const word of catNorm.split(/\s+/)) {
+      if (word.length > 3 && combined.includes(word)) score += 2;
+    }
+
+    if (score >= 2) {
+      matchedCats.push({ name: catName, score });
+    }
+  }
+
+  matchedCats.sort((a, b) => b.score - a.score);
+  return matchedCats;
+}
+
+
+
 function formatCategoriesList() {
   let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong><br><br>`;
   Object.keys(CATEGORIES).forEach((name, i) => {
@@ -878,6 +931,31 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       return { ...c, relevanceScore: score };
     });
 
+
+/* 🆕 FIX #27: Category-Aware Penalty — penalize courses from wrong domain */
+    const searchCategory = detectRelevantCategory(searchTerms);
+    if (searchCategory) {
+      console.log(`📂 FIX #27: Search category = "${searchCategory.name}"`);
+      for (const item of scored) {
+        const courseCats = getCourseCategories(item);
+        if (courseCats.length === 0) continue; /* can't classify → leave alone */
+
+        const primaryCat = courseCats[0].name;
+        const matchesSearchCat = courseCats.some(c => c.name === searchCategory.name);
+
+        if (matchesSearchCat) {
+          /* ✅ Course is in the right category → boost */
+          item.relevanceScore += 40;
+        } else if (primaryCat !== searchCategory.name) {
+          /* ❌ Course clearly belongs to a DIFFERENT category → heavy penalty */
+          const oldScore = item.relevanceScore;
+          item.relevanceScore = Math.round(item.relevanceScore * 0.15);
+          console.log(`   ⚠️ FIX #27: "${item.title}" → "${primaryCat}" ≠ "${searchCategory.name}" | ${oldScore} → ${item.relevanceScore}`);
+        }
+      }
+    }
+
+
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
     scored.slice(0, 5).forEach((c, i) => {
@@ -959,8 +1037,28 @@ async function fuzzySearchFallback(terms) {
       if (bestSim >= 55) results.push({ ...course, relevanceScore: bestSim });
     }
 
+/* 🆕 FIX #27: Category-Aware Penalty in fuzzy fallback */
+    const searchCategory = detectRelevantCategory(terms);
+    if (searchCategory) {
+      for (const item of results) {
+        const courseCats = getCourseCategories(item);
+        if (courseCats.length === 0) continue;
+        const matchesSearchCat = courseCats.some(c => c.name === searchCategory.name);
+        if (matchesSearchCat) {
+          item.relevanceScore += 20;
+        } else {
+          const primaryCat = courseCats[0].name;
+          if (primaryCat !== searchCategory.name) {
+            item.relevanceScore = Math.round(item.relevanceScore * 0.2);
+          }
+        }
+      }
+    }
+
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
     return results.slice(0, 10);
+
+
   } catch (e) {
     console.error("fuzzySearch error:", e.message);
     return [];
@@ -2154,6 +2252,20 @@ ${JSON.stringify(allItems, null, 1)}
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
+  /* 🆕 FIX #27: Category mismatch = auto reject */
+  const searchCat = detectRelevantCategory(searchTerms);
+  if (searchCat) {
+    const courseCats = getCourseCategories(course);
+    if (courseCats.length > 0) {
+      const matchesSearchCat = courseCats.some(c => c.name === searchCat.name);
+      const primaryCat = courseCats[0].name;
+      if (!matchesSearchCat && primaryCat !== searchCat.name) {
+        console.log(`   🛡️ FIX #27 verify: "${course.title}" rejected (${primaryCat} ≠ ${searchCat.name})`);
+        return false;
+      }
+    }
+  }
+
   /* 🆕 v10.5: Added domain + keywords to courseText */
   const courseText = normalizeArabic(
     [
@@ -3236,7 +3348,7 @@ app.get("/health", async (req, res) => {
     version: "10.5",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords",
+engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
     active_sessions: sessionMemory.size,
     search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
@@ -3248,7 +3360,7 @@ app.get("/", (req, res) => {
     name: "زيكو — easyT Chatbot",
     version: "10.5",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords",
+engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
