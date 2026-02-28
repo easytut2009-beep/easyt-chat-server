@@ -1,62 +1,18 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.8 — Two-Phase RAG + Context Memory + Lesson Search + Guide Fix
+   🤖 Ziko Chatbot v10.9 — Guide Bot RAG Overhaul
    
-   🔧 FIXES from v10.2:
-   ✅ FIX #1: \n → <br> everywhere
-   ✅ FIX #2: Dialect normalization
-   ✅ FIX #3: Quick Intent Check
-   ✅ FIX #4: Stricter Phase 2 filtering
-   ✅ FIX #5: Safety check — verify GPT's choices
-   ✅ FIX #6: Better analyzer prompt with dialect examples
+   🔧 ALL PREVIOUS FIXES (v10.2 → v10.8) INCLUDED
    
-   🆕 NEW in v10.3:
-   ✅ FIX #7: Search scoring — title weight 50x (was 10x)
-   ✅ FIX #8: Follow-up context — remembers last topic
-   ✅ FIX #9: Card images — shows if available, hides if broken
-   ✅ FIX #10: Phase 2 sees relevance scores
-   ✅ FIX #11: Pre-sorts results by score before GPT
-
-   🆕 NEW in v10.4:
-   ✅ FIX #12: Removed duplicate "قاعدة ذهبية" in analyzer prompt
-   ✅ FIX #13: Removed orphan "قاعدة الرسالة الغامضة" header
-   ✅ FIX #14: Search cache — avoids repeated DB queries (5 min TTL)
-   ✅ FIX #15: Smarter verifyCourseRelevance — multi-term awareness
-   ✅ FIX #16: Dynamic Phase 2 model — gpt-4o-mini when must-show exists
-   ✅ FIX #17: Trimmed analyzer prompt — fewer redundant examples
-   ✅ FIX #20: Fixed corrections table columns (wrong_terms → original_question)
-   ✅ FIX #21: Fixed custom_responses insert (added title, category, priority)
-
-   🆕 NEW in v10.5:
-   ✅ FIX #23: Search uses domain + keywords columns for better matching
-   ✅ FIX #24: Embedding generation uses richer content (page_content + domain + keywords)
-   ✅ FIX #25: RAG Phase 2 sees domain + keywords for better recommendations
-   ✅ FIX #26: verifyCourseRelevance includes domain + keywords
-
-   🆕 NEW in v10.6:
-   ✅ FIX #28: Lesson-level search — finds topics INSIDE courses (lessons table)
-   ✅ FIX #29: Semantic chunk search for lesson discovery
-   ✅ FIX #30: Phase 2 prompt includes matchedLessons rules
-   ✅ FIX #31: Course cards show matched lessons with timestamps
-   ✅ FIX #32: verifyCourseRelevance allows lesson-matched courses
-
-   🆕 NEW in v10.7:
-   ✅ FIX #33: Penalize non-lesson courses when lesson matches exist
-   ✅ FIX #34: Category link uses actual course category, not search terms
-
-   🆕 NEW in v10.8 — Guide Bot Fixes:
-   ✅ FIX #35: findLessonByTitle() — finds specific lesson in DB for Guide RAG
-   ✅ FIX #36: searchChunksByText() — text-based fallback when semantic misses
-   ✅ FIX #37: Lower semantic threshold (0.70→0.60) for Guide RAG
-   ✅ FIX #38: Anti-denial rule — Guide Bot can't say "lesson doesn't cover X" without proof
-   ✅ FIX #39: Dual RAG (semantic + text search) in Guide endpoint
-
-   🧹 CLEANUP:
-   ✅ Removed /test endpoint
-   ✅ Removed /admin/test-search endpoint
-   ✅ Removed /api/admin/regenerate-all-embeddings endpoint
-   ✅ Removed /api/admin/audit-mismatched endpoint
-   ✅ Added adminAuth to /admin/debug
-   ✅ Added adminAuth to /api/admin/generate-embeddings
+   🆕 NEW in v10.9 — Guide Bot RAG Overhaul:
+   ✅ FIX #40: getAllLessonChunks() — gets ALL chunks for current lesson
+   ✅ FIX #41: searchChunksByText() now filters by courseId via lesson IDs
+   ✅ FIX #42: Increased chunk limits (lesson=50, semantic=8, text=10)
+   ✅ FIX #43: Chunk content limit 600→1200 chars
+   ✅ FIX #44: Improved findLessonByTitle with partial word matching
+   ✅ FIX #45: System prompt — strict content-first, anti-hallucination
+   ✅ FIX #46: Cross-lesson reference detection (other lessons in same course)
+   ✅ FIX #47: Timestamps mandatory in Guide responses
+   ✅ FIX #48: Context split: current lesson vs other lessons
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -133,14 +89,18 @@ const ADMIN_TOKEN_TTL = 24 * 60 * 60 * 1000;
 
 function generateAdminToken() {
   const token = crypto.randomBytes(32).toString("hex");
-  adminTokens.set(token, { created: Date.now(), lastUsed: Date.now() });
+  adminTokens.set(token, {
+    created: Date.now(),
+    lastUsed: Date.now(),
+  });
   return token;
 }
 
 function adminAuth(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token || !adminTokens.has(token))
+  if (!token || !adminTokens.has(token)) {
     return res.status(401).json({ error: "غير مصرح" });
+  }
   const td = adminTokens.get(token);
   if (Date.now() - td.created > ADMIN_TOKEN_TTL) {
     adminTokens.delete(token);
@@ -171,6 +131,7 @@ app.use(
     credentials: true,
   })
 );
+
 app.use(express.json({ limit: "50kb" }));
 
 const limiter = rateLimit({
@@ -185,146 +146,373 @@ const limiter = rateLimit({
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 
-const COURSE_SELECT_COLS = "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
+const COURSE_SELECT_COLS =
+  "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
 
 const CATEGORIES = {
   "الجرافيكس والتصميم": {
     url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2",
     keywords: [
-      "جرافيك","تصميم جرافيك","فوتوشوب","اليستريتر","كانفا","فيجما","photoshop",
-      "illustrator","canva","figma","indesign","graphic","graphic design","شعار",
-      "logo","ui","ux","xd","كرتون","بوستر","بنر","هوية بصرية","تعديل صور",
+      "جرافيك",
+      "تصميم جرافيك",
+      "فوتوشوب",
+      "اليستريتر",
+      "كانفا",
+      "فيجما",
+      "photoshop",
+      "illustrator",
+      "canva",
+      "figma",
+      "indesign",
+      "graphic",
+      "graphic design",
+      "شعار",
+      "logo",
+      "ui",
+      "ux",
+      "xd",
+      "كرتون",
+      "بوستر",
+      "بنر",
+      "هوية بصرية",
+      "تعديل صور",
     ],
   },
   "الحماية والاختراق": {
     url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001",
     keywords: [
-      "حماية","اختراق","هاكينج","سيبراني","cyber","hacking","security",
-      "كالي","wireshark","penetration","kali","ethical","تشفير",
+      "حماية",
+      "اختراق",
+      "هاكينج",
+      "سيبراني",
+      "cyber",
+      "hacking",
+      "security",
+      "كالي",
+      "wireshark",
+      "penetration",
+      "kali",
+      "ethical",
+      "تشفير",
     ],
   },
   "تعليم اللغات": {
     url: "https://easyt.online/courses/category/08769726-0fae-4442-9519-3b178e2ec04a",
     keywords: [
-      "لغة","لغات","انجليزي","فرنسي","الماني","english","french","german",
-      "language","توفل","ايلتس","toefl","ielts",
+      "لغة",
+      "لغات",
+      "انجليزي",
+      "فرنسي",
+      "الماني",
+      "english",
+      "french",
+      "german",
+      "language",
+      "توفل",
+      "ايلتس",
+      "toefl",
+      "ielts",
     ],
   },
   "الديجيتال ماركيتنج": {
     url: "https://easyt.online/courses/category/19606855-bae8-4588-98a6-b52819ff48d9",
     keywords: [
-      "ديجيتال","ماركيتنج","تسويق رقمي","تسويق الكتروني","اعلانات","سيو",
-      "seo","marketing","فيسبوك","جوجل","تيكتوك","ads","copywriting",
-      "سوشيال","محتوى","content","media buying","ميديا باينج","funnel",
-      "performance","analytics",
+      "ديجيتال",
+      "ماركيتنج",
+      "تسويق رقمي",
+      "تسويق الكتروني",
+      "اعلانات",
+      "سيو",
+      "seo",
+      "marketing",
+      "فيسبوك",
+      "جوجل",
+      "تيكتوك",
+      "ads",
+      "copywriting",
+      "سوشيال",
+      "محتوى",
+      "content",
+      "media buying",
+      "ميديا باينج",
+      "funnel",
+      "performance",
+      "analytics",
     ],
   },
   "البرامج الهندسية": {
     url: "https://easyt.online/courses/category/f3870633-bfcb-47a0-9c54-c2e71224571a",
     keywords: [
-      "هندسية","اوتوكاد","ريفت","ريفيت","revit","autocad","3ds max","solidworks",
-      "ماتلاب","matlab","blender","lumion","sketchup","etabs","archicad","vray",
-      "سباكه","سباكة","plumbing","ميكانيكا","كهرباء","mep","تكييف",
+      "هندسية",
+      "اوتوكاد",
+      "ريفت",
+      "ريفيت",
+      "revit",
+      "autocad",
+      "3ds max",
+      "solidworks",
+      "ماتلاب",
+      "matlab",
+      "blender",
+      "lumion",
+      "sketchup",
+      "etabs",
+      "archicad",
+      "vray",
+      "سباكه",
+      "سباكة",
+      "plumbing",
+      "ميكانيكا",
+      "كهرباء",
+      "mep",
+      "تكييف",
     ],
   },
   "تطوير وبرمجة المواقع والتطبيقات": {
     url: "https://easyt.online/courses/category/124745a9-cc19-4524-886d-46b8d96a71eb",
     keywords: [
-      "برمجة مواقع","تطوير مواقع","html","css","javascript","react","angular",
-      "flutter","php","laravel","node","nodejs","django","swift","kotlin",
-      "android","react native","firebase",
+      "برمجة مواقع",
+      "تطوير مواقع",
+      "html",
+      "css",
+      "javascript",
+      "react",
+      "angular",
+      "flutter",
+      "php",
+      "laravel",
+      "node",
+      "nodejs",
+      "django",
+      "swift",
+      "kotlin",
+      "android",
+      "react native",
+      "firebase",
     ],
   },
   "الربح من الانترنت": {
     url: "https://easyt.online/courses/category/7e3693f7-036e-4f16-a1ad-ef30a3678a43",
     keywords: [
-      "ربح","فريلانس","عمل حر","دروبشيبنج","dropshipping","امازون",
-      "شوبيفاي","shopify","تجارة الكترونية","freelance","يوتيوب","افليت","affiliate",
+      "ربح",
+      "فريلانس",
+      "عمل حر",
+      "دروبشيبنج",
+      "dropshipping",
+      "امازون",
+      "شوبيفاي",
+      "shopify",
+      "تجارة الكترونية",
+      "freelance",
+      "يوتيوب",
+      "افليت",
+      "affiliate",
     ],
   },
   "تعليم أساسيات الكمبيوتر": {
     url: "https://easyt.online/courses/category/0a28e8e3-c783-4e65-af69-7736cb4b1140",
     keywords: [
-      "ويندوز","وورد","اكسل","بوربوينت","اكسيس","windows","word","excel",
-      "powerpoint","access","كمبيوتر","اوفيس","office",
+      "ويندوز",
+      "وورد",
+      "اكسل",
+      "بوربوينت",
+      "اكسيس",
+      "windows",
+      "word",
+      "excel",
+      "powerpoint",
+      "access",
+      "كمبيوتر",
+      "اوفيس",
+      "office",
     ],
   },
   "الإدارة العامة وإدارة الأعمال": {
     url: "https://easyt.online/courses/category/2f7d934f-28a0-45c5-8212-7d27151585fc",
     keywords: [
-      "ادارة","اعمال","بيزنس","مشروع","ريادة","management","business","hr",
-      "قيادة","جودة","agile","scrum",
+      "ادارة",
+      "اعمال",
+      "بيزنس",
+      "مشروع",
+      "ريادة",
+      "management",
+      "business",
+      "hr",
+      "قيادة",
+      "جودة",
+      "agile",
+      "scrum",
     ],
   },
   "تربية وتعليم الأطفال": {
     url: "https://easyt.online/courses/category/a02f9974-a95f-410f-a338-a1cd83ab658a",
-    keywords: ["اطفال","تربية","سكراتش","scratch","kids","طفل"],
+    keywords: [
+      "اطفال",
+      "تربية",
+      "سكراتش",
+      "scratch",
+      "kids",
+      "طفل",
+    ],
   },
   "الاقتصاد والمحاسبة والاحصاء": {
     url: "https://easyt.online/courses/category/19b919fe-ee58-4971-b525-ff1693b309b2",
-    keywords: ["اقتصاد","محاسبة","احصاء","accounting","economics","statistics","ضرائب"],
+    keywords: [
+      "اقتصاد",
+      "محاسبة",
+      "احصاء",
+      "accounting",
+      "economics",
+      "statistics",
+      "ضرائب",
+    ],
   },
   "المهارات الشخصية وتطوير الذات": {
     url: "https://easyt.online/courses/category/6d089e8e-8cdf-4fa8-8244-5c128bd16805",
-    keywords: ["مهارات","تطوير ذات","شخصية","soft skills","تواصل"],
+    keywords: [
+      "مهارات",
+      "تطوير ذات",
+      "شخصية",
+      "soft skills",
+      "تواصل",
+    ],
   },
   "علم النفس": {
     url: "https://easyt.online/courses/category/8ed523c6-b088-4e63-807e-8fe325c1dd88",
-    keywords: ["نفس","psychology","سيكولوجي","نفسي"],
+    keywords: [
+      "نفس",
+      "psychology",
+      "سيكولوجي",
+      "نفسي",
+    ],
   },
   "الذكاء الاصطناعى وتطبيقاته": {
     url: "https://easyt.online/courses/category/98dc1962-99df-45fe-8ea6-c334260f279a",
     keywords: [
-      "ذكاء اصطناعي","ai","artificial intelligence","chatgpt","midjourney",
-      "stable diffusion","comfyui",
+      "ذكاء اصطناعي",
+      "ai",
+      "artificial intelligence",
+      "chatgpt",
+      "midjourney",
+      "stable diffusion",
+      "comfyui",
     ],
   },
   "الفن والهوايات": {
     url: "https://easyt.online/courses/category/d00d3c49-7ef3-4041-8e71-4c6b6ce5026d",
-    keywords: ["فن","هوايات","رسم","خط","art","hobby","موسيقى"],
+    keywords: [
+      "فن",
+      "هوايات",
+      "رسم",
+      "خط",
+      "art",
+      "hobby",
+      "موسيقى",
+    ],
   },
   "الروبوت والالكترونيات والشبكات": {
     url: "https://easyt.online/courses/category/9a58b6bd-bf96-4a95-b87d-77b2a742c1b4",
     keywords: [
-      "روبوت","الكترونيات","الكتروني","الكترونيه","شبكات","اردوينو","arduino",
-      "network","robot","raspberry","proteus","دوائر","دائره","plc","pcb",
-      "الكترونيك","electronic","circuit","iot","انترنت الاشياء",
+      "روبوت",
+      "الكترونيات",
+      "الكتروني",
+      "الكترونيه",
+      "شبكات",
+      "اردوينو",
+      "arduino",
+      "network",
+      "robot",
+      "raspberry",
+      "proteus",
+      "دوائر",
+      "دائره",
+      "plc",
+      "pcb",
+      "الكترونيك",
+      "electronic",
+      "circuit",
+      "iot",
+      "انترنت الاشياء",
     ],
   },
   "أساسيات البرمجة وقواعد البيانات": {
     url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
     keywords: [
-      "اساسيات برمجة","قواعد بيانات","database","sql","بايثون","جافا","c++",
-      "خوارزميات","برمجة","programming","coding",
+      "اساسيات برمجة",
+      "قواعد بيانات",
+      "database",
+      "sql",
+      "بايثون",
+      "جافا",
+      "c++",
+      "خوارزميات",
+      "برمجة",
+      "programming",
+      "coding",
     ],
   },
   "برمجة الذكاء الاصطناعي": {
     url: "https://easyt.online/courses/category/90b79ad7-0d90-4b7c-ba87-6c222ac6f22f",
     keywords: [
-      "برمجة ذكاء","machine learning","deep learning","تعلم آلي","تعلم عميق",
-      "tensorflow","pytorch",
+      "برمجة ذكاء",
+      "machine learning",
+      "deep learning",
+      "تعلم آلي",
+      "تعلم عميق",
+      "tensorflow",
+      "pytorch",
     ],
   },
   "تصميم المواقع والتطبيقات": {
     url: "https://easyt.online/courses/category/28a781a3-88fb-4460-bc68-7ea69aa2168d",
-    keywords: ["تصميم مواقع","تصميم تطبيقات","web design","app design","واجهة مستخدم"],
+    keywords: [
+      "تصميم مواقع",
+      "تصميم تطبيقات",
+      "web design",
+      "app design",
+      "واجهة مستخدم",
+    ],
   },
   "الاستثمار والأسواق المالية": {
     url: "https://easyt.online/courses/category/957e7f0d-ac31-49e6-939e-ead6134ccc3a",
     keywords: [
-      "استثمار","اسواق مالية","فوركس","forex","تداول","trading","بورصة",
-      "اسهم","crypto","كريبتو",
+      "استثمار",
+      "اسواق مالية",
+      "فوركس",
+      "forex",
+      "تداول",
+      "trading",
+      "بورصة",
+      "اسهم",
+      "crypto",
+      "كريبتو",
     ],
   },
   "التسويق والمبيعات": {
     url: "https://easyt.online/courses/category/f3ee963c-5e2d-44c3-b77e-1b118a438ee5",
-    keywords: ["مبيعات","sales","بيع","تفاوض","عملاء","crm"],
+    keywords: [
+      "مبيعات",
+      "sales",
+      "بيع",
+      "تفاوض",
+      "عملاء",
+      "crm",
+    ],
   },
   "التصوير والمونتاج والأنيميشن": {
     url: "https://easyt.online/courses/category/119ae93c-aade-459c-93df-6c6fb8c2e095",
     keywords: [
-      "تصوير","مونتاج","انيميشن","فيديو","premiere","بريميير","افتر افكتس",
-      "after effects","موشن","motion","animation",
+      "تصوير",
+      "مونتاج",
+      "انيميشن",
+      "فيديو",
+      "premiere",
+      "بريميير",
+      "افتر افكتس",
+      "after effects",
+      "موشن",
+      "motion",
+      "animation",
     ],
   },
 };
@@ -348,14 +536,24 @@ function levenshtein(a, b) {
   if (!a.length) return b.length;
   if (!b.length) return a.length;
   const m = [];
-  for (let i = 0; i <= b.length; i++) m[i] = [i];
-  for (let j = 0; j <= a.length; j++) m[0][j] = j;
-  for (let i = 1; i <= b.length; i++)
-    for (let j = 1; j <= a.length; j++)
+  for (let i = 0; i <= b.length; i++) {
+    m[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    m[0][j] = j;
+  }
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
       m[i][j] =
         b[i - 1] === a[j - 1]
           ? m[i - 1][j - 1]
-          : Math.min(m[i - 1][j - 1] + 1, m[i][j - 1] + 1, m[i - 1][j] + 1);
+          : Math.min(
+              m[i - 1][j - 1] + 1,
+              m[i][j - 1] + 1,
+              m[i - 1][j] + 1
+            );
+    }
+  }
   return m[b.length][a.length];
 }
 
@@ -369,23 +567,49 @@ function similarityRatio(a, b) {
   return Math.round(((max - levenshtein(na, nb)) / max) * 100);
 }
 
-/* ═══════════════════════════════════
-   Dialect Normalization
-   ═══════════════════════════════════ */
 const DIALECT_MAP = {
-  "شلون": "ازاي", "شگد": "كام", "شكد": "كام",
-  "اريد": "عايز", "أريد": "عايز", "هواية": "كتير",
-  "شكو": "فيه ايه", "ماكو": "مفيش", "اكو": "فيه",
-  "چا": "جا", "شسوي": "اعمل ايه", "شقصد": "تقصد ايه",
-  "ابغى": "عايز", "أبغى": "عايز", "ابي": "عايز", "أبي": "عايز",
-  "وش": "ايه", "ايش": "ايه", "حق": "بتاع", "زين": "كويس",
-  "مررره": "اوي", "مرره": "اوي", "حيل": "اوي", "يالله": "يلا",
-  "بدي": "عايز", "شو": "ايه", "هلق": "دلوقتي", "هلأ": "دلوقتي",
-  "كتير": "كتير", "هيك": "كده", "منيح": "كويس",
-  "كيفك": "عامل ايه", "شلونك": "عامل ايه",
-  "بغيت": "عايز", "علاش": "ليه", "واش": "هل", "فلوس": "فلوس",
-  "كيف": "ازاي", "حاب": "عايز", "حابب": "عايز",
-  "اشتي": "عايز", "ودي": "عايز",
+  شلون: "ازاي",
+  شگد: "كام",
+  شكد: "كام",
+  اريد: "عايز",
+  أريد: "عايز",
+  هواية: "كتير",
+  شكو: "فيه ايه",
+  ماكو: "مفيش",
+  اكو: "فيه",
+  چا: "جا",
+  شسوي: "اعمل ايه",
+  شقصد: "تقصد ايه",
+  ابغى: "عايز",
+  أبغى: "عايز",
+  ابي: "عايز",
+  أبي: "عايز",
+  وش: "ايه",
+  ايش: "ايه",
+  حق: "بتاع",
+  زين: "كويس",
+  مررره: "اوي",
+  مرره: "اوي",
+  حيل: "اوي",
+  يالله: "يلا",
+  بدي: "عايز",
+  شو: "ايه",
+  هلق: "دلوقتي",
+  هلأ: "دلوقتي",
+  كتير: "كتير",
+  هيك: "كده",
+  منيح: "كويس",
+  كيفك: "عامل ايه",
+  شلونك: "عامل ايه",
+  بغيت: "عايز",
+  علاش: "ليه",
+  واش: "هل",
+  فلوس: "فلوس",
+  كيف: "ازاي",
+  حاب: "عايز",
+  حابب: "عايز",
+  اشتي: "عايز",
+  ودي: "عايز",
 };
 
 function normalizeDialect(text) {
@@ -402,46 +626,115 @@ function normalizeDialect(text) {
 }
 
 const ARABIC_CORRECTIONS = {
-  ماركوتنج: "ماركيتنج", ماركتنج: "ماركيتنج", ماركتينج: "ماركيتنج",
-  مركتنج: "ماركيتنج", دجيتال: "ديجيتال", ديجتال: "ديجيتال",
-  دجتال: "ديجيتال", بروجرامنج: "برمجه", بروغرامنج: "برمجه",
-  بيثون: "بايثون", بايتون: "بايثون", بايسون: "بايثون",
-  جافاسكربت: "جافاسكريبت", جافسكربت: "جافاسكريبت",
-  جرافك: "جرافيك", قرافيك: "جرافيك", غرافيك: "جرافيك", جرفيك: "جرافيك",
-  فتوشوب: "فوتوشوب", فوتشوب: "فوتوشوب", فوطوشوب: "فوتوشوب",
-  اليستريتور: "اليستريتر", السترتور: "اليستريتر",
-  بزنس: "بيزنس", بزنيس: "بيزنس", بيزنيس: "بيزنس",
+  ماركوتنج: "ماركيتنج",
+  ماركتنج: "ماركيتنج",
+  ماركتينج: "ماركيتنج",
+  مركتنج: "ماركيتنج",
+  دجيتال: "ديجيتال",
+  ديجتال: "ديجيتال",
+  دجتال: "ديجيتال",
+  بروجرامنج: "برمجه",
+  بروغرامنج: "برمجه",
+  بيثون: "بايثون",
+  بايتون: "بايثون",
+  بايسون: "بايثون",
+  جافاسكربت: "جافاسكريبت",
+  جافسكربت: "جافاسكريبت",
+  جرافك: "جرافيك",
+  قرافيك: "جرافيك",
+  غرافيك: "جرافيك",
+  جرفيك: "جرافيك",
+  فتوشوب: "فوتوشوب",
+  فوتشوب: "فوتوشوب",
+  فوطوشوب: "فوتوشوب",
+  اليستريتور: "اليستريتر",
+  السترتور: "اليستريتر",
+  بزنس: "بيزنس",
+  بزنيس: "بيزنس",
+  بيزنيس: "بيزنس",
   "اس اي او": "سيو",
-  ريفت: "ريفيت", ريفيط: "ريفيت", الريفت: "ريفيت", الريفيت: "ريفيت",
-  دبلومه: "دبلومه", دبلومة: "دبلومه", دبلوما: "دبلومه",
-  اونلين: "اونلاين", "اون لاين": "اونلاين",
-  وردبرس: "ووردبريس", وردبريس: "ووردبريس", "وورد بريس": "ووردبريس",
+  ريفت: "ريفيت",
+  ريفيط: "ريفيت",
+  الريفت: "ريفيت",
+  الريفيت: "ريفيت",
+  دبلومه: "دبلومه",
+  دبلومة: "دبلومه",
+  دبلوما: "دبلومه",
+  اونلين: "اونلاين",
+  "اون لاين": "اونلاين",
+  وردبرس: "ووردبريس",
+  وردبريس: "ووردبريس",
+  "وورد بريس": "ووردبريس",
 };
 
 const SEARCH_SYNONYMS = {
-  "ديجيتال ماركيتنج": ["تسويق رقمي", "تسويق الكتروني", "digital marketing"],
-  "جرافيك ديزاين": ["تصميم جرافيك", "graphic design"],
-  برمجه: ["تطوير", "كودنج", "coding", "programming", "برمجة"],
-  سيو: ["تحسين محركات البحث", "seo"],
-  فوتوشوب: ["photoshop", "تعديل صور"],
-  بايثون: ["python", "بايثن"],
-  ريفيت: ["revit", "ريفت", "برامج هندسية"],
-  "سوشيال ميديا": ["social media", "منصات التواصل"],
-  بيزنس: ["business", "ادارة اعمال"],
-  اكسل: ["excel", "اكسيل"],
-  ووردبريس: ["wordpress"],
-  "ذكاء اصطناعي": ["ai", "artificial intelligence", "الذكاء الاصطناعي"],
+  "ديجيتال ماركيتنج": [
+    "تسويق رقمي",
+    "تسويق الكتروني",
+    "digital marketing",
+  ],
+  "جرافيك ديزاين": [
+    "تصميم جرافيك",
+    "graphic design",
+  ],
+  برمجه: [
+    "تطوير",
+    "كودنج",
+    "coding",
+    "programming",
+    "برمجة",
+  ],
+  سيو: [
+    "تحسين محركات البحث",
+    "seo",
+  ],
+  فوتوشوب: [
+    "photoshop",
+    "تعديل صور",
+  ],
+  بايثون: [
+    "python",
+    "بايثن",
+  ],
+  ريفيت: [
+    "revit",
+    "ريفت",
+    "برامج هندسية",
+  ],
+  "سوشيال ميديا": [
+    "social media",
+    "منصات التواصل",
+  ],
+  بيزنس: [
+    "business",
+    "ادارة اعمال",
+  ],
+  اكسل: [
+    "excel",
+    "اكسيل",
+  ],
+  ووردبريس: [
+    "wordpress",
+  ],
+  "ذكاء اصطناعي": [
+    "ai",
+    "artificial intelligence",
+    "الذكاء الاصطناعي",
+  ],
 };
 
 const ARABIC_STOP_WORDS = new Set([
-  "في","من","على","الى","إلى","عن","مع","هل","ما","هو","هي","هذا","هذه",
-  "يا","و","أو","او","ثم","لكن","حتى","اذا","لو","كل","بعض","غير",
-  "عايز","عايزه","عاوز","عاوزه","محتاج","محتاجه","نفسي",
-  "ممكن","يعني","طيب","اه","لا","ايه","مين","انا","انت","احنا",
-  "عندكم","فيه","بس","خلاص","ده","دي","كده","ازاي","ليه","فين",
-  "the","a","an","is","are","in","on","at","to","for","of","and","or","i","want","need","about",
-  "كورس","كورسات","دورة","دورات","تعلم","اتعلم","ابغى","اريد",
-  "شلون","كيف","بدي","حاب","شو","وش","ابي",
+  "في", "من", "على", "الى", "إلى", "عن", "مع", "هل", "ما",
+  "هو", "هي", "هذا", "هذه", "يا", "و", "أو", "او", "ثم",
+  "لكن", "حتى", "اذا", "لو", "كل", "بعض", "غير",
+  "عايز", "عايزه", "عاوز", "عاوزه", "محتاج", "محتاجه", "نفسي",
+  "ممكن", "يعني", "طيب", "اه", "لا", "ايه", "مين", "انا", "انت",
+  "احنا", "عندكم", "فيه", "بس", "خلاص", "ده", "دي", "كده",
+  "ازاي", "ليه", "فين",
+  "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
+  "of", "and", "or", "i", "want", "need", "about",
+  "كورس", "كورسات", "دورة", "دورات", "تعلم", "اتعلم",
+  "ابغى", "اريد", "شلون", "كيف", "بدي", "حاب", "شو", "وش", "ابي",
 ]);
 
 function applyArabicCorrections(text) {
@@ -458,6 +751,7 @@ function expandSynonyms(terms) {
   for (const t of terms) {
     const normT = normalizeArabic(t.toLowerCase());
     if (normT.length <= 1) continue;
+
     for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
       const normC = normalizeArabic(canonical.toLowerCase());
       if (
@@ -494,13 +788,16 @@ function splitIntoSearchableTerms(terms) {
     result.add(t);
     const normT = normalizeArabic(t);
     if (normT.length > 1) result.add(normT);
+
     for (const word of t.split(/\s+/)) {
       const w = word.trim();
       if (w.length <= 1 || ARABIC_STOP_WORDS.has(w)) continue;
       result.add(w);
       const nw = normalizeArabic(w);
       if (nw.length > 1) result.add(nw);
-      if (w.startsWith("ال") && w.length > 3) result.add(w.substring(2));
+      if (w.startsWith("ال") && w.length > 3) {
+        result.add(w.substring(2));
+      }
     }
     if (result.size >= 15) break;
   }
@@ -536,17 +833,41 @@ function markdownToHtml(text) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   Quick Intent Check (safety net)
+   Quick Intent Check
    ══════════════════════════════════════════════════════════ */
 function quickIntentCheck(message) {
   const lower = (message || "").toLowerCase();
   const norm = normalizeArabic(lower);
 
+  // Payment patterns
   const paymentPatterns = [
-    /ادفع/, /دفع/, /اشتراك/, /اشترك/, /سعر/, /اسعار/, /تكلف/, /كام.*سعر/,
-    /سعر.*كام/, /فلوس/, /ثمن/, /pay/, /price/, /subscri/, /كم.*سعر/,
-    /طريق.*دفع/, /طرق.*دفع/, /visa/, /فيزا/, /ماستر/, /master/,
-    /فودافون.*كاش/, /انستا.*باي/, /instapay/, /تحويل/, /باي.*بال/, /paypal/,
+    /ادفع/,
+    /دفع/,
+    /اشتراك/,
+    /اشترك/,
+    /سعر/,
+    /اسعار/,
+    /تكلف/,
+    /كام.*سعر/,
+    /سعر.*كام/,
+    /فلوس/,
+    /ثمن/,
+    /pay/,
+    /price/,
+    /subscri/,
+    /كم.*سعر/,
+    /طريق.*دفع/,
+    /طرق.*دفع/,
+    /visa/,
+    /فيزا/,
+    /ماستر/,
+    /master/,
+    /فودافون.*كاش/,
+    /انستا.*باي/,
+    /instapay/,
+    /تحويل/,
+    /باي.*بال/,
+    /paypal/,
   ];
   for (const p of paymentPatterns) {
     if (p.test(norm) || p.test(lower)) {
@@ -554,6 +875,7 @@ function quickIntentCheck(message) {
     }
   }
 
+  // Greeting patterns
   const greetingPatterns = [
     /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم|ازيك|إزيك|ازيكم|عامل\s*ايه|كيفك|شلونك|يا\s*هلا)/,
   ];
@@ -565,6 +887,7 @@ function quickIntentCheck(message) {
     }
   }
 
+  // Casual chat patterns
   const casualChatPatterns = [
     /^الحمد\s*(لله|الله)/,
     /^بخير/,
@@ -591,9 +914,16 @@ function quickIntentCheck(message) {
     }
   }
 
+  // Category patterns
   const catPatterns = [
-    /عندكم.*ايه/, /عندكم.*شو/, /عندكم.*وش/, /ايه.*المجالات/,
-    /شو.*المجالات/, /التصنيفات/, /المجالات.*المتاح/, /فيه.*ايه.*كورس/,
+    /عندكم.*ايه/,
+    /عندكم.*شو/,
+    /عندكم.*وش/,
+    /ايه.*المجالات/,
+    /شو.*المجالات/,
+    /التصنيفات/,
+    /المجالات.*المتاح/,
+    /فيه.*ايه.*كورس/,
   ];
   for (const p of catPatterns) {
     if (p.test(norm) || p.test(lower)) {
@@ -601,12 +931,17 @@ function quickIntentCheck(message) {
     }
   }
 
-  const hasDiploma = /دبلوم|diploma/i.test(norm) || /دبلوم|diploma/i.test(lower);
+  // Diploma patterns
+  const hasDiploma =
+    /دبلوم|diploma/i.test(norm) || /دبلوم|diploma/i.test(lower);
   if (hasDiploma) {
     const allCatKeywords = Object.values(CATEGORIES).flatMap((c) => c.keywords);
     const hasSpecificSubject = allCatKeywords.some((kw) => {
       const normKw = normalizeArabic(kw.toLowerCase());
-      return normKw.length > 2 && (norm.includes(normKw) || lower.includes(kw.toLowerCase()));
+      return (
+        normKw.length > 2 &&
+        (norm.includes(normKw) || lower.includes(kw.toLowerCase()))
+      );
     });
     if (!hasSpecificSubject) {
       return { intent: "DIPLOMAS", confidence: 0.93 };
@@ -624,8 +959,9 @@ const CACHE_TTL = 10 * 60 * 1000;
 
 async function getInstructors() {
   if (!supabase) return [];
-  if (instructorCache.data && Date.now() - instructorCache.ts < CACHE_TTL)
+  if (instructorCache.data && Date.now() - instructorCache.ts < CACHE_TTL) {
     return instructorCache.data;
+  }
   try {
     const { data } = await supabase
       .from("instructors")
@@ -642,12 +978,15 @@ async function getInstructors() {
 
 function detectRelevantCategory(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
+
   const normTerms = searchTerms.map((t) => normalizeArabic(t.toLowerCase()));
-  let bestCat = null,
-    bestScore = 0;
+  let bestCat = null;
+  let bestScore = 0;
+
   for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
     let score = 0;
     const normCat = normalizeArabic(catName.toLowerCase());
+
     for (const term of normTerms) {
       if (term.length <= 1) continue;
       if (normCat.includes(term) || term.includes(normCat)) score += 5;
@@ -657,11 +996,13 @@ function detectRelevantCategory(searchTerms) {
         else if (term.includes(normKw) || normKw.includes(term)) score += 2;
       }
     }
+
     if (score > bestScore) {
       bestScore = score;
       bestCat = { name: catName, url: catInfo.url };
     }
   }
+
   return bestScore >= 2 ? bestCat : null;
 }
 
@@ -670,49 +1011,51 @@ function getCourseCategories(course) {
   const domainNorm = normalizeArabic((course.domain || "").toLowerCase());
   const kwNorm = normalizeArabic((course.keywords || "").toLowerCase());
   const subtitleNorm = normalizeArabic((course.subtitle || "").toLowerCase());
-  const combined = titleNorm + " " + domainNorm + " " + kwNorm + " " + subtitleNorm;
+  const combined =
+    titleNorm + " " + domainNorm + " " + kwNorm + " " + subtitleNorm;
 
   const matchedCats = [];
+
   for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
     let score = 0;
+
     for (const kw of catInfo.keywords) {
       const nkw = normalizeArabic(kw.toLowerCase());
       if (nkw.length <= 2) continue;
+
       if (combined.includes(nkw)) {
         const inTitle = titleNorm.includes(nkw);
         const inDomain = domainNorm.includes(nkw);
         score += inTitle ? 3 : inDomain ? 4 : 1;
         continue;
       }
+
       if (nkw.length >= 6) {
         const root = nkw.substring(0, 5);
-        if (combined.includes(root)) {
-          score += 1;
-        }
+        if (combined.includes(root)) score += 1;
       }
     }
+
     const catNorm = normalizeArabic(catName.toLowerCase());
     for (const word of catNorm.split(/\s+/)) {
       if (word.length > 3 && combined.includes(word)) score += 2;
     }
+
     if (score >= 2) {
       matchedCats.push({ name: catName, score });
     }
   }
+
   matchedCats.sort((a, b) => b.score - a.score);
   return matchedCats;
 }
 
-/* ══════════════════════════════════════════════════════════
-   FIX #34: Smart Category — from actual courses first, fallback to search terms
-   ══════════════════════════════════════════════════════════ */
 function getSmartCategoryFromCourses(relevantCourses, searchTerms) {
   if (relevantCourses && relevantCourses.length > 0) {
     const topCourseCats = getCourseCategories(relevantCourses[0]);
     if (topCourseCats.length > 0) {
       const catName = topCourseCats[0].name;
       if (CATEGORIES[catName]) {
-        console.log(`📂 FIX #34: Category from actual course "${relevantCourses[0].title}" → "${catName}"`);
         return { name: catName, url: CATEGORIES[catName].url };
       }
     }
@@ -730,9 +1073,6 @@ function formatCategoriesList() {
   return html;
 }
 
-/* ══════════════════════════════════════════════════════════
-   Diploma List — loads ALL diplomas from DB
-   ══════════════════════════════════════════════════════════ */
 async function loadAllDiplomas() {
   if (!supabase) return [];
   try {
@@ -740,22 +1080,21 @@ async function loadAllDiplomas() {
       .from("diplomas")
       .select("id, title, link, description, price")
       .order("title", { ascending: true });
-    if (error) {
-      console.error("loadAllDiplomas error:", error.message);
-      return [];
-    }
+    if (error) return [];
     return data || [];
   } catch (e) {
-    console.error("loadAllDiplomas exception:", e.message);
     return [];
   }
 }
 
 function formatDiplomasList(diplomas) {
   if (!diplomas || diplomas.length === 0) {
-    return `🎓 عندنا دبلومات كتير على المنصة!<br><br>` +
-      `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح جميع الدبلومات ←</a>`;
+    return (
+      `🎓 عندنا دبلومات كتير على المنصة!<br><br>` +
+      `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح جميع الدبلومات ←</a>`
+    );
   }
+
   let html = `🎓 <strong>الدبلومات المتاحة على المنصة (${diplomas.length} دبلومة):</strong><br><br>`;
   diplomas.forEach((d, i) => {
     const url = d.link || ALL_DIPLOMAS_URL;
@@ -768,17 +1107,14 @@ function formatDiplomasList(diplomas) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIX #14: Search Cache — avoids repeated DB queries
+   Search Cache
    ══════════════════════════════════════════════════════════ */
 const searchCache = new Map();
 const SEARCH_CACHE_TTL = 5 * 60 * 1000;
 
 function getCachedSearch(key) {
   const cached = searchCache.get(key);
-  if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
-    console.log(`📦 Cache hit: "${key.substring(0, 60)}..."`);
-    return cached.data;
-  }
+  if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) return cached.data;
   if (cached) searchCache.delete(key);
   return null;
 }
@@ -786,7 +1122,9 @@ function getCachedSearch(key) {
 function setCachedSearch(key, data) {
   searchCache.set(key, { data, ts: Date.now() });
   if (searchCache.size > 200) {
-    const oldest = [...searchCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+    const oldest = [...searchCache.entries()].sort(
+      (a, b) => a[1].ts - b[1].ts
+    )[0];
     if (oldest) searchCache.delete(oldest[0]);
   }
 }
@@ -801,10 +1139,17 @@ setInterval(() => {
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
    ══════════════════════════════════════════════════════════ */
+
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
 
-  const cacheKey = "sc:" + searchTerms.slice().sort().join("|") + "|ex:" + excludeTerms.slice().sort().join("|") + "|a:" + (audience || "");
+  const cacheKey =
+    "sc:" +
+    searchTerms.slice().sort().join("|") +
+    "|ex:" +
+    excludeTerms.slice().sort().join("|") +
+    "|a:" +
+    (audience || "");
   const cached = getCachedSearch(cacheKey);
   if (cached) return cached;
 
@@ -819,7 +1164,17 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     const cols =
       allTerms.length > 8
         ? ["title", "subtitle", "description", "domain", "keywords"]
-        : ["title", "description", "subtitle", "full_content", "page_content", "syllabus", "objectives", "domain", "keywords"];
+        : [
+            "title",
+            "description",
+            "subtitle",
+            "full_content",
+            "page_content",
+            "syllabus",
+            "objectives",
+            "domain",
+            "keywords",
+          ];
 
     const orFilters = allTerms
       .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
@@ -831,58 +1186,60 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       .or(orFilters)
       .limit(30);
 
-    const semanticPromise = openai ? (async () => {
-      try {
-        const queryText = searchTerms.join(" ");
-        const embResp = await openai.embeddings.create({
-          model: "text-embedding-ada-002",
-          input: queryText,
-        });
-        const { data } = await supabase.rpc("match_courses", {
-          query_embedding: embResp.data[0].embedding,
-          match_threshold: 0.75,
-          match_count: 10,
-        });
-        return data || [];
-      } catch (e) {
-        console.error("Semantic course search error:", e.message);
-        return [];
-      }
-    })() : Promise.resolve([]);
+    const semanticPromise = openai
+      ? (async () => {
+          try {
+            const queryText = searchTerms.join(" ");
+            const embResp = await openai.embeddings.create({
+              model: "text-embedding-ada-002",
+              input: queryText,
+            });
+            const { data } = await supabase.rpc("match_courses", {
+              query_embedding: embResp.data[0].embedding,
+              match_threshold: 0.75,
+              match_count: 10,
+            });
+            return data || [];
+          } catch (e) {
+            return [];
+          }
+        })()
+      : Promise.resolve([]);
 
-    const [ilikeResult, semanticResults] = await Promise.all([ilikePromise, semanticPromise]);
+    const [ilikeResult, semanticResults] = await Promise.all([
+      ilikePromise,
+      semanticPromise,
+    ]);
+
     const { data: courses, error } = ilikeResult;
-
-    if (error) {
-      console.error("Search error:", error.message);
-      return [];
-    }
+    if (error) return [];
 
     let allCourses = courses || [];
-
     const semanticMap = new Map();
-    if (semanticResults.length > 0) {
-      console.log(`🧠 Semantic course matches: ${semanticResults.length}`);
-      semanticResults.forEach(s => semanticMap.set(s.id, s.similarity));
 
-      const ilikeIds = new Set(allCourses.map(c => c.id));
-      const semanticOnlyIds = [...semanticMap.keys()].filter(id => !ilikeIds.has(id));
+    if (semanticResults.length > 0) {
+      semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
+
+      const ilikeIds = new Set(allCourses.map((c) => c.id));
+      const semanticOnlyIds = [...semanticMap.keys()].filter(
+        (id) => !ilikeIds.has(id)
+      );
 
       if (semanticOnlyIds.length > 0) {
         const { data: semCourses } = await supabase
           .from("courses")
           .select(COURSE_SELECT_COLS)
           .in("id", semanticOnlyIds);
-        if (semCourses) {
-          console.log(`🧠 Semantic-only courses added: ${semCourses.length}`);
-          allCourses = [...allCourses, ...semCourses];
-        }
+        if (semCourses) allCourses = [...allCourses, ...semCourses];
       }
     }
 
-    if (allCourses.length === 0) return await fuzzySearchFallback(allTerms);
+    if (allCourses.length === 0) {
+      return await fuzzySearchFallback(allTerms);
+    }
 
     let filtered = allCourses;
+
     if (excludeTerms.length > 0) {
       filtered = allCourses.filter((c) => {
         const tn = normalizeArabic((c.title || "").toLowerCase());
@@ -894,9 +1251,19 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     if (audience) {
       const af = filtered.filter((c) => {
-        const combined = ((c.title || "") + " " + (c.description || "") + " " + (c.subtitle || "")).toLowerCase();
-        if (audience === "مبتدئ") return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(combined);
-        if (audience === "متقدم") return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
+        const combined = (
+          (c.title || "") +
+          " " +
+          (c.description || "") +
+          " " +
+          (c.subtitle || "")
+        ).toLowerCase();
+        if (audience === "مبتدئ")
+          return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(
+            combined
+          );
+        if (audience === "متقدم")
+          return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
         return true;
       });
       if (af.length > 0) filtered = af;
@@ -904,17 +1271,22 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     const scored = filtered.map((c) => {
       let score = 0;
+
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
       const pageNorm = normalizeArabic((c.page_content || "").toLowerCase());
       const syllabusNorm = normalizeArabic((c.syllabus || "").toLowerCase());
-      const objectivesNorm = normalizeArabic((c.objectives || "").toLowerCase());
+      const objectivesNorm = normalizeArabic(
+        (c.objectives || "").toLowerCase()
+      );
       const descNorm = normalizeArabic((c.description || "").toLowerCase());
       const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
       const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
       const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
-      const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
+      const fullQuery = normalizeArabic(
+        searchTerms.join(" ").toLowerCase()
+      );
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 200;
       if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 50;
 
@@ -942,7 +1314,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       if (semanticMap.has(c.id)) {
         const semSim = semanticMap.get(c.id);
         score += Math.round(semSim * 100);
-        if (score <= Math.round(semSim * 100)) score += Math.round(semSim * 50);
+        if (score <= Math.round(semSim * 100)) {
+          score += Math.round(semSim * 50);
+        }
       }
 
       return { ...c, relevanceScore: score };
@@ -950,18 +1324,17 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     const searchCategory = detectRelevantCategory(searchTerms);
     if (searchCategory) {
-      console.log(`📂 FIX #27: Search category = "${searchCategory.name}"`);
       for (const item of scored) {
         const courseCats = getCourseCategories(item);
         if (courseCats.length === 0) continue;
         const primaryCat = courseCats[0].name;
-        const matchesSearchCat = courseCats.some(c => c.name === searchCategory.name);
+        const matchesSearchCat = courseCats.some(
+          (c) => c.name === searchCategory.name
+        );
         if (matchesSearchCat) {
           item.relevanceScore += 40;
         } else if (primaryCat !== searchCategory.name) {
-          const oldScore = item.relevanceScore;
           item.relevanceScore = Math.round(item.relevanceScore * 0.15);
-          console.log(`   ⚠️ FIX #27: "${item.title}" → "${primaryCat}" ≠ "${searchCategory.name}" | ${oldScore} → ${item.relevanceScore}`);
         }
       }
     }
@@ -969,7 +1342,11 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
     scored.slice(0, 5).forEach((c, i) => {
-      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${c.domain ? ` (${c.domain})` : ""}`);
+      console.log(
+        `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
+          c.domain ? ` (${c.domain})` : ""
+        }`
+      );
     });
 
     const result = scored.slice(0, 10);
@@ -995,16 +1372,19 @@ async function fuzzySearchFallback(terms) {
 
     for (const course of all) {
       let bestSim = 0;
+
       const titleN = normalizeArabic((course.title || "").toLowerCase());
       const subtitleN = normalizeArabic((course.subtitle || "").toLowerCase());
       const pageN = normalizeArabic((course.page_content || "").toLowerCase());
       const domainN = normalizeArabic((course.domain || "").toLowerCase());
       const keywordsN = normalizeArabic((course.keywords || "").toLowerCase());
+
       let matchCount = 0;
 
       for (const term of searchable) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
+
         let matched = false;
 
         if (titleN.includes(nt) || nt.includes(titleN)) {
@@ -1037,6 +1417,7 @@ async function fuzzySearchFallback(terms) {
             }
           }
         }
+
         if (matched) matchCount++;
       }
 
@@ -1049,7 +1430,9 @@ async function fuzzySearchFallback(terms) {
       for (const item of results) {
         const courseCats = getCourseCategories(item);
         if (courseCats.length === 0) continue;
-        const matchesSearchCat = courseCats.some(c => c.name === searchCategory.name);
+        const matchesSearchCat = courseCats.some(
+          (c) => c.name === searchCategory.name
+        );
         if (matchesSearchCat) {
           item.relevanceScore += 20;
         } else {
@@ -1064,7 +1447,6 @@ async function fuzzySearchFallback(terms) {
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
     return results.slice(0, 10);
   } catch (e) {
-    console.error("fuzzySearch error:", e.message);
     return [];
   }
 }
@@ -1084,22 +1466,15 @@ async function searchDiplomas(searchTerms) {
           model: "text-embedding-ada-002",
           input: queryText,
         });
-        const queryEmbedding = embResponse.data[0].embedding;
-
         const { data: semanticResults, error: semErr } = await supabase.rpc(
           "match_diplomas",
           {
-            query_embedding: queryEmbedding,
+            query_embedding: embResponse.data[0].embedding,
             match_threshold: 0.75,
             match_count: 5,
           }
         );
-
         if (!semErr && semanticResults && semanticResults.length > 0) {
-          console.log(`🧠 Semantic diploma search: ${semanticResults.length} results`);
-          semanticResults.forEach((d, i) => {
-            console.log(`   ${i + 1}. [sim=${(d.similarity * 100).toFixed(1)}%] ${d.title}`);
-          });
           setCachedSearch(cacheKey, semanticResults);
           return semanticResults;
         }
@@ -1116,13 +1491,14 @@ async function searchDiplomas(searchTerms) {
     const orFilters = allTerms
       .flatMap((t) => [`title.ilike.%${t}%`, `description.ilike.%${t}%`])
       .join(",");
+
     const { data, error } = await supabase
       .from("diplomas")
       .select("id, title, link, description, price")
       .or(orFilters)
       .limit(5);
-    if (error) return [];
 
+    if (error) return [];
     const result = data || [];
     setCachedSearch(cacheKey, result);
     return result;
@@ -1131,9 +1507,6 @@ async function searchDiplomas(searchTerms) {
   }
 }
 
-/* ══════════════════════════════════════════════════════════
-   FIX #28: Lesson-Level Search — finds topics INSIDE courses
-   ══════════════════════════════════════════════════════════ */
 async function searchLessonsInCourses(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
 
@@ -1142,71 +1515,71 @@ async function searchLessonsInCourses(searchTerms) {
   if (cached) return cached;
 
   try {
-    const corrected = searchTerms.map(t => applyArabicCorrections(t));
+    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const expanded = expandSynonyms(corrected);
     const allTerms = splitIntoSearchableTerms(expanded);
     if (allTerms.length === 0) return [];
 
-    console.log('🎓 Lesson search terms:', allTerms);
-
-    const orFilters = allTerms
-      .map(t => `title.ilike.%${t}%`)
-      .join(',');
+    const orFilters = allTerms.map((t) => `title.ilike.%${t}%`).join(",");
 
     let allLessons = [];
 
+    // Title-based search
     try {
       const { data: lessons, error } = await supabase
-        .from('lessons')
-        .select('id, title, course_id')
+        .from("lessons")
+        .select("id, title, course_id")
         .or(orFilters)
         .limit(20);
 
-      if (error) {
-        console.error('Lesson title search error:', error.message);
-      } else {
-        allLessons = (lessons || []).map(l => ({
+      if (!error) {
+        allLessons = (lessons || []).map((l) => ({
           ...l,
-          matchSource: 'title_search'
+          matchSource: "title_search",
         }));
       }
     } catch (lessonErr) {
-      console.error('Lesson table query error:', lessonErr.message);
+      console.error("Lesson table query error:", lessonErr.message);
     }
 
+    // Semantic search in chunks
     if (openai) {
       try {
-        const queryText = searchTerms.join(' ');
+        const queryText = searchTerms.join(" ");
         const embResp = await openai.embeddings.create({
-          model: 'text-embedding-ada-002',
+          model: "text-embedding-ada-002",
           input: queryText.substring(0, 2000),
         });
 
-        const { data: chunkMatches, error: chunkErr } = await supabase.rpc('match_lesson_chunks', {
-          query_embedding: embResp.data[0].embedding,
-          match_threshold: 0.75,
-          match_count: 8,
-          filter_course_id: null,
-        });
+        const { data: chunkMatches, error: chunkErr } = await supabase.rpc(
+          "match_lesson_chunks",
+          {
+            query_embedding: embResp.data[0].embedding,
+            match_threshold: 0.75,
+            match_count: 8,
+            filter_course_id: null,
+          }
+        );
 
         if (!chunkErr && chunkMatches && chunkMatches.length > 0) {
-          console.log(`🧠 Semantic lesson chunks: ${chunkMatches.length} matches`);
+          const existingLessonIds = new Set(allLessons.map((l) => l.id));
 
-          const existingLessonIds = new Set(allLessons.map(l => l.id));
           for (const chunk of chunkMatches) {
             if (chunk.lesson_id && !existingLessonIds.has(chunk.lesson_id)) {
               allLessons.push({
                 id: chunk.lesson_id,
-                title: chunk.lesson_title || '',
+                title: chunk.lesson_title || "",
                 course_id: chunk.course_id,
                 timestamp_start: chunk.timestamp_start,
                 similarity: chunk.similarity,
-                matchSource: 'semantic_chunk',
+                matchSource: "semantic_chunk",
               });
               existingLessonIds.add(chunk.lesson_id);
             }
 
-            const existing = allLessons.find(l => l.id === chunk.lesson_id);
+            const existing = allLessons.find(
+              (l) => l.id === chunk.lesson_id
+            );
             if (existing && !existing.timestamp_start && chunk.timestamp_start) {
               existing.timestamp_start = chunk.timestamp_start;
               existing.similarity = chunk.similarity;
@@ -1214,7 +1587,7 @@ async function searchLessonsInCourses(searchTerms) {
           }
         }
       } catch (semErr) {
-        console.error('Semantic lesson search error:', semErr.message);
+        console.error("Semantic lesson search error:", semErr.message);
       }
     }
 
@@ -1223,26 +1596,30 @@ async function searchLessonsInCourses(searchTerms) {
       return [];
     }
 
-    const courseIds = [...new Set(allLessons.filter(l => l.course_id).map(l => l.course_id))];
+    const courseIds = [
+      ...new Set(
+        allLessons.filter((l) => l.course_id).map((l) => l.course_id)
+      ),
+    ];
     if (courseIds.length === 0) {
       setCachedSearch(cacheKey, []);
       return [];
     }
 
     const { data: courses, error: cErr } = await supabase
-      .from('courses')
+      .from("courses")
       .select(COURSE_SELECT_COLS)
-      .in('id', courseIds);
+      .in("id", courseIds);
 
     if (cErr || !courses || courses.length === 0) {
       setCachedSearch(cacheKey, []);
       return [];
     }
 
-    const results = courses.map(course => {
+    const results = courses.map((course) => {
       const matched = allLessons
-        .filter(l => l.course_id === course.id)
-        .map(l => ({
+        .filter((l) => l.course_id === course.id)
+        .map((l) => ({
           title: l.title,
           timestamp_start: l.timestamp_start || null,
           similarity: l.similarity || null,
@@ -1250,7 +1627,7 @@ async function searchLessonsInCourses(searchTerms) {
 
       let score = 0;
       for (const lesson of matched) {
-        const titleNorm = normalizeArabic((lesson.title || '').toLowerCase());
+        const titleNorm = normalizeArabic((lesson.title || "").toLowerCase());
         for (const term of allTerms) {
           const nt = normalizeArabic(term.toLowerCase());
           if (nt.length <= 1) continue;
@@ -1265,34 +1642,27 @@ async function searchLessonsInCourses(searchTerms) {
         ...course,
         matchedLessons: matched,
         relevanceScore: score,
-        matchType: 'lesson_title',
+        matchType: "lesson_title",
       };
     });
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
-
-    console.log(`🎓 Lesson search: ${results.length} courses with ${allLessons.length} matching lessons`);
-    results.forEach(r => {
-      console.log(`   🎓 "${r.title}" — lessons: [${r.matchedLessons.map(l => l.title).join(', ')}]`);
-    });
-
     setCachedSearch(cacheKey, results);
     return results;
   } catch (e) {
-    console.error('searchLessonsInCourses error:', e.message);
+    console.error("searchLessonsInCourses error:", e.message);
     return [];
   }
 }
 
-/* ══════════════════════════════════════════════════════════
-   FIX #20: searchCorrections — uses correct column names
-   ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
   if (!supabase || !terms || terms.length === 0) return [];
   try {
     const { data: corrections, error } = await supabase
       .from("corrections")
-      .select("original_question, user_message, correct_course_ids, corrected_reply");
+      .select(
+        "original_question, user_message, correct_course_ids, corrected_reply"
+      );
     if (error || !corrections) return [];
 
     const normInput = normalizeArabic(terms.join(" ").toLowerCase());
@@ -1307,11 +1677,9 @@ async function searchCorrections(terms) {
         matches.push({ ...row, score: 100 });
         continue;
       }
+
       const sim = similarityRatio(normInput, wrongNorm);
-      if (sim >= 65) {
-        matches.push({ ...row, score: sim });
-        continue;
-      }
+      if (sim >= 65) matches.push({ ...row, score: sim });
     }
 
     matches.sort((a, b) => b.score - a.score);
@@ -1321,9 +1689,6 @@ async function searchCorrections(terms) {
   }
 }
 
-/* ══════════════════════════════════════════════════════════
-   Priority Title Search
-   ══════════════════════════════════════════════════════════ */
 async function priorityTitleSearch(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
 
@@ -1355,28 +1720,34 @@ async function priorityTitleSearch(searchTerms) {
 
     if (error || !data) return [];
 
-    const result = data.map((c) => {
-      let score = 0;
-      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-      const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
-      const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
-      const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
+    const result = data
+      .map((c) => {
+        let score = 0;
+        const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+        const subtitleNorm = normalizeArabic(
+          (c.subtitle || "").toLowerCase()
+        );
+        const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
+        const keywordsNorm = normalizeArabic(
+          (c.keywords || "").toLowerCase()
+        );
 
-      for (const term of meaningful) {
-        const nt = normalizeArabic(term.toLowerCase());
-        if (nt.length <= 2) continue;
-        if (titleNorm.includes(nt)) score += 500;
-        if (subtitleNorm.includes(nt)) score += 100;
-        if (domainNorm.includes(nt)) score += 80;
-        if (keywordsNorm.includes(nt)) score += 60;
-      }
-      return { ...c, relevanceScore: score };
-    }).filter((c) => c.relevanceScore > 0);
+        for (const term of meaningful) {
+          const nt = normalizeArabic(term.toLowerCase());
+          if (nt.length <= 2) continue;
+          if (titleNorm.includes(nt)) score += 500;
+          if (subtitleNorm.includes(nt)) score += 100;
+          if (domainNorm.includes(nt)) score += 80;
+          if (keywordsNorm.includes(nt)) score += 60;
+        }
+
+        return { ...c, relevanceScore: score };
+      })
+      .filter((c) => c.relevanceScore > 0);
 
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
-    console.error("priorityTitleSearch error:", e.message);
     return [];
   }
 }
@@ -1388,6 +1759,7 @@ function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
   const courseUrl = course.link || "https://easyt.online/courses";
+
   const rawPrice = course.price;
   let priceNum =
     typeof rawPrice === "string"
@@ -1406,9 +1778,7 @@ function formatCourseCard(course, instructors, index) {
       .replace(/[\r\n]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    if (desc.length > 200) {
-      desc = desc.substring(0, 200) + "...";
-    }
+    if (desc.length > 200) desc = desc.substring(0, 200) + "...";
   }
 
   const num = index !== undefined ? `${index}. ` : "";
@@ -1426,7 +1796,7 @@ function formatCourseCard(course, instructors, index) {
   if (course.matchedLessons && course.matchedLessons.length > 0) {
     card += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
     card += `<strong>📖 الدروس المرتبطة:</strong><br>`;
-    course.matchedLessons.forEach(l => {
+    course.matchedLessons.forEach((l) => {
       card += `• ${l.title}`;
       if (l.timestamp_start) {
         card += ` <span style="color:#e63946;font-weight:600">⏱️ ${l.timestamp_start}</span>`;
@@ -1438,12 +1808,12 @@ function formatCourseCard(course, instructors, index) {
 
   card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
   card += `</div>`;
-
   return card;
 }
 
 function formatDiplomaCard(diploma) {
   const url = diploma.link || "https://easyt.online/p/easyt-diplomas";
+
   const rawPrice = diploma.price;
   let priceNum =
     typeof rawPrice === "string"
@@ -1462,9 +1832,7 @@ function formatDiplomaCard(diploma) {
       .replace(/[\r\n]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    if (desc.length > 250) {
-      desc = desc.substring(0, 250) + "...";
-    }
+    if (desc.length > 250) desc = desc.substring(0, 250) + "...";
   }
 
   let card = `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1);padding:12px">`;
@@ -1475,7 +1843,6 @@ function formatDiplomaCard(diploma) {
   }
   card += `<a href="${url}" target="_blank" style="color:#e63946 !important;font-size:13px;font-weight:700;text-decoration:none !important">🖥 تفاصيل الدبلومة والاشتراك ←</a>`;
   card += `</div>`;
-
   return card;
 }
 
@@ -1499,16 +1866,11 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ██████████████████████████████████████████████████████████
-   ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.8                    ██
-   ██   Two-Phase RAG + Context Memory + Lesson Search     ██
-   ██                                                      ██
-   ██████████████████████████████████████████████████████████
+   SECTION 11: 🧠 THE BRAIN v10.9
    ══════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════
-   11-A: Session Memory System
+   11-A: Session Memory
    ═══════════════════════════════════ */
 const sessionMemory = new Map();
 const SESSION_MEMORY_TTL = 30 * 60 * 1000;
@@ -1535,6 +1897,7 @@ function getSessionMemory(sessionId) {
 function updateSessionMemory(sessionId, updates) {
   const mem = getSessionMemory(sessionId);
   mem.messageCount++;
+
   if (updates.searchTerms && updates.searchTerms.length > 0) {
     mem.lastSearchTerms = updates.searchTerms;
   }
@@ -1545,7 +1908,9 @@ function updateSessionMemory(sessionId, updates) {
     mem.topics = [...new Set([...mem.topics, ...updates.topics])].slice(-15);
   }
   if (updates.interests && updates.interests.length > 0) {
-    mem.interests = [...new Set([...mem.interests, ...updates.interests])].slice(-10);
+    mem.interests = [
+      ...new Set([...mem.interests, ...updates.interests]),
+    ].slice(-10);
   }
   if (updates.summary) {
     mem.summary = updates.summary;
@@ -1561,12 +1926,14 @@ function updateSessionMemory(sessionId, updates) {
 setInterval(() => {
   const now = Date.now();
   for (const [sid, mem] of sessionMemory) {
-    if (now - mem.lastActivity > SESSION_MEMORY_TTL) sessionMemory.delete(sid);
+    if (now - mem.lastActivity > SESSION_MEMORY_TTL) {
+      sessionMemory.delete(sid);
+    }
   }
 }, 10 * 60 * 1000);
 
 /* ═══════════════════════════════════
-   Follow-up Context Detection
+   11-B: Follow-up & Context Detection
    ═══════════════════════════════════ */
 function extractMainTopic(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
@@ -1579,19 +1946,46 @@ function extractMainTopic(searchTerms) {
 function isFollowUpMessage(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
   const followUpPatterns = [
-    "فيه حاجة", "في حاجة", "فى حاجة",
-    "عندكم حاجة", "عندكوا حاجة",
-    "للمبتدئين", "للمبتدأين", "مبتدئ", "للمبتدين",
-    "للمتقدمين", "متقدم", "محترف", "للمحترفين",
-    "ارخص", "اغلى", "اقل سعر", "اعلى",
-    "كام سعره", "سعرها كام", "بكام",
-    "غيره", "غيرها", "حاجة تانية", "حاجه تانيه",
-    "بديل", "كمان", "تاني", "زيه",
-    "اسهل", "اصعب", "ابسط",
-    "اقصر", "اطول",
-    "فيه كورس", "في كورسات",
-    "ايوه", "اه عايز", "طيب وايه",
-    "وايه كمان", "وايه تاني",
+    "فيه حاجة",
+    "في حاجة",
+    "فى حاجة",
+    "عندكم حاجة",
+    "عندكوا حاجة",
+    "للمبتدئين",
+    "للمبتدأين",
+    "مبتدئ",
+    "للمبتدين",
+    "للمتقدمين",
+    "متقدم",
+    "محترف",
+    "للمحترفين",
+    "ارخص",
+    "اغلى",
+    "اقل سعر",
+    "اعلى",
+    "كام سعره",
+    "سعرها كام",
+    "بكام",
+    "غيره",
+    "غيرها",
+    "حاجة تانية",
+    "حاجه تانيه",
+    "بديل",
+    "كمان",
+    "تاني",
+    "زيه",
+    "اسهل",
+    "اصعب",
+    "ابسط",
+    "اقصر",
+    "اطول",
+    "فيه كورس",
+    "في كورسات",
+    "ايوه",
+    "اه عايز",
+    "طيب وايه",
+    "وايه كمان",
+    "وايه تاني",
   ];
   return followUpPatterns.some((p) => norm.includes(normalizeArabic(p)));
 }
@@ -1599,31 +1993,25 @@ function isFollowUpMessage(message) {
 function hasNewExplicitTopic(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
   const explicitTopics = [
-    "فوتوشوب", "photoshop", "بايثون", "python",
-    "جافا", "java", "برمجة", "programming",
-    "جرافيك", "graphic", "ريفيت", "revit",
-    "اوتوكاد", "autocad", "اكسل", "excel",
-    "وورد", "word", "ذكاء اصطناعي", "ai",
-    "سباكة", "mep", "هندسة", "engineering",
+    "فوتوشوب", "photoshop", "بايثون", "python", "جافا", "java",
+    "برمجة", "programming", "جرافيك", "graphic", "ريفيت", "revit",
+    "اوتوكاد", "autocad", "اكسل", "excel", "وورد", "word",
+    "ذكاء اصطناعي", "ai", "سباكة", "mep", "هندسة", "engineering",
     "ووردبريس", "wordpress", "افتر افكت", "after effects",
     "بريمير", "premiere", "اليستريتور", "illustrator",
     "ثري دي ماكس", "3ds max", "بلندر", "blender",
     "سوليد ووركس", "solidworks", "لومين", "lumion",
     "سكتش اب", "sketchup", "انديزاين", "indesign",
     "بور بوينت", "powerpoint", "محاسبة", "accounting",
-    "تسويق", "marketing", "سيو", "seo",
-    "يوتيوب", "youtube", "موشن جرافيك", "motion",
-    "انجليزي", "english", "فرنسي", "french",
-    "حماية", "اختراق", "hacking", "cyber",
-    "تصوير", "مونتاج", "فيديو",
-    "كانفا", "canva", "فيجما", "figma",
-    "react", "angular", "flutter", "node",
-    "لارافيل", "laravel", "django",
+    "تسويق", "marketing", "سيو", "seo", "يوتيوب", "youtube",
+    "موشن جرافيك", "motion", "انجليزي", "english",
+    "فرنسي", "french", "حماية", "اختراق", "hacking", "cyber",
+    "تصوير", "مونتاج", "فيديو", "كانفا", "canva", "فيجما", "figma",
+    "react", "angular", "flutter", "node", "لارافيل", "laravel", "django",
   ];
+
   for (const topic of explicitTopics) {
-    if (norm.includes(normalizeArabic(topic))) {
-      return topic;
-    }
+    if (norm.includes(normalizeArabic(topic))) return topic;
   }
   return null;
 }
@@ -1631,15 +2019,15 @@ function hasNewExplicitTopic(message) {
 function enrichMessageWithContext(message, sessionMem) {
   const newTopic = hasNewExplicitTopic(message);
   if (newTopic) {
-    console.log(`🔵 New topic detected: "${newTopic}" — no context injection`);
-    return { enriched: message, isFollowUp: false, detectedTopic: newTopic };
+    return {
+      enriched: message,
+      isFollowUp: false,
+      detectedTopic: newTopic,
+    };
   }
 
   if (isFollowUpMessage(message) && sessionMem.lastSearchTopic) {
     const enriched = `${sessionMem.lastSearchTopic} ${message}`;
-    console.log(
-      `🔄 Follow-up detected! "${message}" → "${enriched}" (previous topic: ${sessionMem.lastSearchTopic})`
-    );
     return {
       enriched,
       isFollowUp: true,
@@ -1650,19 +2038,17 @@ function enrichMessageWithContext(message, sessionMem) {
   return { enriched: message, isFollowUp: false };
 }
 
-/* ═══════════════════════════════════
-   FIX #18: Ensure search_terms for educational topics
-   ═══════════════════════════════════ */
 function ensureSearchTermsForEducationalTopics(message, analysis) {
   if (analysis.action !== "CHAT") return analysis;
-  if (analysis.search_terms && analysis.search_terms.length > 0) return analysis;
+  if (analysis.search_terms && analysis.search_terms.length > 0)
+    return analysis;
 
   const corrected = applyArabicCorrections(message.toLowerCase());
   const norm = normalizeArabic(corrected);
-
-  const messageWords = corrected.split(/\s+/)
-    .filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w))
-    .map(w => ({ original: w, norm: normalizeArabic(w) }));
+  const messageWords = corrected
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w))
+    .map((w) => ({ original: w, norm: normalizeArabic(w) }));
 
   if (messageWords.length === 0) return analysis;
 
@@ -1673,7 +2059,10 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
       const normKw = normalizeArabic(kw.toLowerCase());
       if (normKw.length <= 2) continue;
 
-      if (norm.includes(normKw) || corrected.includes(kw.toLowerCase())) {
+      if (
+        norm.includes(normKw) ||
+        corrected.includes(kw.toLowerCase())
+      ) {
         foundTerms.add(kw);
         continue;
       }
@@ -1684,7 +2073,6 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
         if (sim >= 63) {
           foundTerms.add(kw);
           foundTerms.add(mw.original);
-          console.log(`🧠 FIX #18 fuzzy: "${mw.original}" ≈ "${kw}" (${sim}%)`);
           break;
         }
       }
@@ -1697,16 +2085,17 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
       const normC = normalizeArabic(canonical.toLowerCase());
       if (similarityRatio(mw.norm, normC) >= 63) {
         foundTerms.add(canonical);
-        synonyms.slice(0, 2).forEach(s => foundTerms.add(s));
-        console.log(`🧠 FIX #18 synonym: "${mw.original}" ≈ "${canonical}"`);
+        synonyms.slice(0, 2).forEach((s) => foundTerms.add(s));
         break;
       }
       for (const syn of synonyms) {
         const normS = normalizeArabic(syn.toLowerCase());
-        if (normS.length > 2 && similarityRatio(mw.norm, normS) >= 63) {
+        if (
+          normS.length > 2 &&
+          similarityRatio(mw.norm, normS) >= 63
+        ) {
           foundTerms.add(canonical);
           foundTerms.add(syn);
-          console.log(`🧠 FIX #18 synonym: "${mw.original}" ≈ "${syn}"`);
           break;
         }
       }
@@ -1716,18 +2105,15 @@ function ensureSearchTermsForEducationalTopics(message, analysis) {
   if (foundTerms.size > 0) {
     const unique = [...foundTerms].slice(0, 6);
     analysis.search_terms = unique;
-    console.log(`🧠 FIX #18: Smart-injected search_terms: [${unique.join(", ")}]`);
   }
 
   return analysis;
 }
 
-/* ═══════════════════════════════════
-   FIX #19: Extract domain from GPT's own response
-   ═══════════════════════════════════ */
 function enrichSearchTermsFromResponse(analysis) {
   if (analysis.action !== "CHAT") return analysis;
-  if (!analysis.response_message || analysis.response_message.length < 30) return analysis;
+  if (!analysis.response_message || analysis.response_message.length < 30)
+    return analysis;
 
   const currentTerms = analysis.search_terms || [];
 
@@ -1739,9 +2125,12 @@ function enrichSearchTermsFromResponse(analysis) {
         const normKw = normalizeArabic(kw.toLowerCase());
         if (normKw.length <= 2) continue;
         if (norm === normKw) return true;
-        if (norm.length > 3 && normKw.length > 3) {
-          if (norm.includes(normKw) || normKw.includes(norm)) return true;
-        }
+        if (
+          norm.length > 3 &&
+          normKw.length > 3 &&
+          (norm.includes(normKw) || normKw.includes(norm))
+        )
+          return true;
       }
     }
     return false;
@@ -1749,19 +2138,18 @@ function enrichSearchTermsFromResponse(analysis) {
 
   if (hasStrongTerm) return analysis;
 
-  const responseNorm = normalizeArabic(analysis.response_message.toLowerCase());
+  const responseNorm = normalizeArabic(
+    analysis.response_message.toLowerCase()
+  );
   const foundTerms = new Map();
 
   for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
-    let catHits = 0;
-
     for (const kw of catInfo.keywords) {
       const normKw = normalizeArabic(kw.toLowerCase());
       if (normKw.length <= 3) continue;
 
       if (responseNorm.includes(normKw)) {
         foundTerms.set(kw, catName);
-        catHits++;
         continue;
       }
 
@@ -1769,29 +2157,30 @@ function enrichSearchTermsFromResponse(analysis) {
         const root = normKw.substring(0, Math.min(normKw.length - 1, 5));
         if (root.length >= 4 && responseNorm.includes(root)) {
           foundTerms.set(kw, catName);
-          catHits++;
         }
       }
     }
 
     const normCatName = normalizeArabic(catName.toLowerCase());
     if (normCatName.length > 4 && responseNorm.includes(normCatName)) {
-      catInfo.keywords.slice(0, 3).forEach((kw) => foundTerms.set(kw, catName));
+      catInfo.keywords
+        .slice(0, 3)
+        .forEach((kw) => foundTerms.set(kw, catName));
     }
   }
 
   if (foundTerms.size > 0) {
     const newTerms = [...foundTerms.keys()].slice(0, 5);
-    analysis.search_terms = [...new Set([...currentTerms, ...newTerms])].slice(0, 6);
-    const cats = [...new Set(foundTerms.values())];
-    console.log(`🧠 FIX #19: Extracted domains from GPT response → [${newTerms.join(", ")}] (categories: ${cats.join(", ")})`);
+    analysis.search_terms = [
+      ...new Set([...currentTerms, ...newTerms]),
+    ].slice(0, 6);
   }
 
   return analysis;
 }
 
 /* ═══════════════════════════════════
-   11-B: Context Loaders
+   11-C: Bot Instructions & History
    ═══════════════════════════════════ */
 async function loadBotInstructions() {
   if (!supabase) return "";
@@ -1801,7 +2190,9 @@ async function loadBotInstructions() {
       .select("instruction, priority, category")
       .eq("is_active", true)
       .order("priority", { ascending: false });
+
     if (error || !data || data.length === 0) return "";
+
     return data
       .map((r) => {
         const p = r.priority || 10;
@@ -1811,7 +2202,6 @@ async function loadBotInstructions() {
       })
       .join("\n");
   } catch (e) {
-    console.error("loadBotInstructions error:", e.message);
     return "";
   }
 }
@@ -1825,6 +2215,7 @@ async function loadRecentHistory(sessionId, limit = 10) {
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false })
       .limit(limit);
+
     if (!data || data.length === 0) return [];
 
     return data.reverse().map((m) => {
@@ -1859,7 +2250,9 @@ async function loadCustomResponsesSummary() {
       .eq("is_active", true)
       .order("priority", { ascending: false })
       .limit(15);
+
     if (!data || data.length === 0) return "";
+
     return data
       .map((r) => {
         const kw = Array.isArray(r.keywords)
@@ -1877,9 +2270,13 @@ async function loadCustomResponsesSummary() {
 }
 
 /* ═══════════════════════════════════
-   11-C: Phase 1 — Smart Analyzer
+   11-D: Phase 1 — Smart Analyzer
    ═══════════════════════════════════ */
-function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
+function buildAnalyzerPrompt(
+  botInstructions,
+  customResponses,
+  sessionMem
+) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
@@ -1908,9 +2305,17 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
 شامي: بدي=عايز | شو=ايه | هلق=دلوقتي | كتير=كتير
 مغربي: بغيت=عايز | واش=هل | علاش=ليه
 
-${botInstructions ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n` : ""}
+${
+  botInstructions
+    ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n`
+    : ""
+}
 ${memoryContext}
-${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+${
+  customResponses
+    ? `═══ ردود مرجعية ═══\n${customResponses}\n`
+    : ""
+}
 
 ═══ التصنيفات المتاحة ═══
 ${categoriesList}
@@ -1930,134 +2335,36 @@ ${categoriesList}
   "language": "ar" | "en"
 }
 
-═══ 🔴 قواعد التصنيف الأساسية ═══
-
-💰 SUBSCRIPTION — أي سؤال عن الدفع/الأسعار/الاشتراك بأي لهجة:
-  - "ازاي ادفع" / "شلون ادفع" / "كيف ادفع" ← SUBSCRIPTION ✅
-  - "كام سعر الاشتراك" / "طرق الدفع" ← SUBSCRIPTION ✅
-  - أي كلمة فيها: دفع/سعر/اشتراك/فلوس/تكلفة/pay/price ← SUBSCRIPTION ✅
-
-🎓 DIPLOMAS — لما يسأل عن الدبلومات بصفة عامة (مش كورس معين):
-  - "الدبلومات" ← DIPLOMAS ✅
-  - "عاوز اعرف الدبلومات" ← DIPLOMAS ✅
-  - "ايه الدبلومات اللى عندكم" ← DIPLOMAS ✅
-  - "عندكم دبلومات" ← DIPLOMAS ✅
-  - "كل الدبلومات" ← DIPLOMAS ✅
-  - "عاوز اعرف كل الدبلومات" ← DIPLOMAS ✅
-  - أي رسالة فيها كلمة "دبلوم/دبلومات/دبلومة" بدون تحديد مجال معين ← DIPLOMAS ✅
-  - ⚠️ لو سأل عن دبلومة في مجال معين (مثلاً "دبلومة جرافيك" أو "دبلومة برمجة") ← SEARCH مش DIPLOMAS
-  - ⚠️ لـ DIPLOMAS: response_message = "" (القائمة هتتجاب تلقائي من الداتابيز)
-  - ❌ ممنوع تخترع أسماء دبلومات — القائمة هتتعرض تلقائي من الداتابيز
-  - ❌ ممنوع تعرض التصنيفات مع الدبلومات
-
-🔍 SEARCH — لما يدور على كورس/دبلومة محددة/مهارة:
-  - search_terms: كلمات بالعربي + الإنجليزي (3-6 كلمات مفيدة فقط)
-  - ❌ لا تضع كلمات عامة مثل "كورس" أو "تعلم" — ضع اسم الموضوع فقط
-  - "عايز فوتوشوب" → ["فوتوشوب","photoshop"]
-  - "ابي ريفيت" → ["ريفيت","revit","برامج هندسية"]
-  - "شلون اتعلم بايثون" → ["بايثون","python"]
-  - "دبلومة جرافيك" → ["جرافيك","graphic","تصميم","دبلومة"] ← SEARCH ✅ (مجال محدد)
-  - "التأثير النفسي للألوان" → ["التأثير النفسي للألوان","سيكولوجية الألوان","نظرية الألوان","visual content"] ← SEARCH ✅
-  - "نظرية سكامبر" → ["سكامبر","scamper","ابداع","تفكير ابداعي"] ← SEARCH ✅
-  - لو متابعة لموضوع سابق: ادمج السياق مع الموضوع السابق
-
-📂 CATEGORIES — لما يسأل عن المجالات/التصنيفات المتاحة فقط (مش الدبلومات):
-  - "ايه المجالات عندكم" ← CATEGORIES ✅
-  - "ايه التصنيفات" ← CATEGORIES ✅
-  - ⚠️ لو قال "دبلومات" ← DIPLOMAS مش CATEGORIES
-  - ⚠️ لو قال "كورسات" بصفة عامة بدون موضوع ← CATEGORIES ✅
-
-🛠️ SUPPORT — مشاكل تقنية/شكاوي
-💬 CHAT — ترحيب/أسئلة عامة (آخر اختيار)
-  - ⚠️ حتى لو الأكشن CHAT — لو الموضوع له علاقة بكورسات على المنصة، ضع search_terms بالكلمات المرتبطة
-  - مثال: "سمات المدير الناجح" → action: "CHAT", search_terms: ["قيادة","ادارة","management","leadership"]
-  - مثال: "الفرق بين UI و UX" → action: "CHAT", search_terms: ["ui","ux","تصميم واجهات"]
-  - مثال: "ازاي اكون مبرمج" → action: "CHAT", search_terms: ["برمجة","programming","اساسيات برمجة"]
-  - مثال: "يعني ايه مونتير" → action: "CHAT", search_terms: ["مونتير","مونتاج","montage","video editing"]
-  - مثال: "ايه هو الجرافيك ديزاين" → action: "CHAT", search_terms: ["جرافيك","graphic","تصميم"]
-  - ⚠️ أي سؤال "يعني ايه X" أو "ما معنى X" أو "ايه هو X" → دايماً حط search_terms بالكلمة + مرادفاتها
-  
-- ⚠️ أي سؤال عن مصطلح تقني أو اختصار (ROAS, CTR, API, OOP, BIM, إلخ):
-    - action: "CHAT"
-    - response_message = اشرح المصطلح بوضوح
-    - search_terms = اسم المجال/التخصص الأوسع بالعربي + الإنجليزي (مش المصطلح نفسه!)
-    - لأن الكورسات بأسماء المجالات مش بأسماء المصطلحات
-    - مثال: "ايه هي ROAS" → search_terms: ["تسويق رقمي", "اعلانات", "ماركيتنج", "digital marketing"]
-    - مثال: "يعني ايه BIM" → search_terms: ["هندسة", "ريفيت", "برامج هندسية", "revit"]
-    - مثال: "ايه هي API" → search_terms: ["برمجة", "تطوير مواقع", "programming"]
-    - ❌ ممنوع: search_terms: ["roas"] ← مفيش كورس اسمه "roas"
-    - ✅ صح: search_terms: ["تسويق رقمي", "اعلانات"] ← فيه كورسات تسويق
-    - أنت تعرف كل المصطلحات — استخدم معرفتك لتحديد المجال الصحيح
-
-
-- مثال: "الحمد لله بخير" → action: "CHAT", search_terms: [] (مفيش موضوع تعليمي)
-
-═══ قاعدة المتابعة (Follow-up) ═══
-لو المستخدم قال "فيه حاجة للمبتدئين" أو "عندكم حاجة أسهل" بدون ذكر موضوع جديد:
-- is_follow_up = true
-- search_terms = الموضوع السابق + الطلب الجديد
-- مثال: لو سأل قبل كده عن "فوتوشوب" ودلوقتي قال "فيه حاجة للمبتدئين":
-  → search_terms: ["فوتوشوب","photoshop","مبتدئين"]
-  → audience_filter: "مبتدئ"
+═══ 🔴 قواعد التصنيف ═══
+💰 SUBSCRIPTION — أي سؤال عن الدفع/الأسعار/الاشتراك
+🎓 DIPLOMAS — لما يسأل عن الدبلومات بصفة عامة (مش مجال محدد)
+🔍 SEARCH — لما يدور على كورس/دبلومة محددة/مهارة
+📂 CATEGORIES — لما يسأل عن المجالات/التصنيفات
+🛠️ SUPPORT — مشاكل تقنية
+💬 CHAT — ترحيب/أسئلة عامة
 
 ═══ قاعدة ذهبية ═══
-لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION حتى لو فيها كلمات تانية!
-لو الرسالة فيها كلمة دبلوم/دبلومات/دبلومة بدون مجال محدد = DIPLOMAS حتى لو فيها كلمات تانية!
+لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION
+لو الرسالة فيها كلمة دبلوم/دبلومات بدون مجال محدد = DIPLOMAS
+لو تقدر تتخيل نتائج بحث للكلمة = SEARCH
+لو مينفعش تبحث من غير ما تعرف الموضوع = CHAT
 
-═══ ⚠️ متى CHAT ومتى SEARCH؟ ═══
-
-🔍 SEARCH = لما الرسالة فيها أي موضوع/مجال/أداة/لغة/مهارة — حتى لو عام:
-- "عايز اتعلم انجليزي" ← SEARCH ✅ (انجليزي = موضوع واضح)
-- "ابي اتعلم تصميم" ← SEARCH ✅ (تصميم = مجال واضح)
-- "كورسات هندسية" ← SEARCH ✅ (هندسة = مجال واضح)
-- "ماركتنج" ← SEARCH ✅ (ماركتنج = مجال واضح)
-- "برمجة" ← SEARCH ✅
-- "اكسل" ← SEARCH ✅
-- "حماية" ← SEARCH ✅
-- "ابغى ريفيت" ← SEARCH ✅
-- "بدي فوتوشوب" ← SEARCH ✅
-- "ذكاء اصطناعي" ← SEARCH ✅
-- "دبلومة جرافيك" ← SEARCH ✅ (دبلومة + مجال محدد)
-- "التأثير النفسي للألوان الاقيها في اي كورس" ← SEARCH ✅ (موضوع محدد)
-- "في كورس بيتكلم عن نظرية سكامبر" ← SEARCH ✅ (موضوع محدد)
-
-💬 CHAT = فقط لما الرسالة مفيهاش أي موضوع خالص:
-- "عايز اتعلم" ← CHAT (اتعلم ايه؟ مفيش موضوع)
-- "عايز دورة" ← CHAT (دورة في ايه؟ مفيش موضوع)
-- "عايز شرح" ← CHAT (شرح لإيه؟ مفيش موضوع)
-- "فيه حاجة كويسة" ← CHAT (كويسة في ايه؟ مفيش موضوع)
-- "عايز تمرين" ← CHAT (تمرين في ايه؟ مفيش موضوع)
-
-═══ القاعدة الواضحة ═══
-لو تقدر تتخيل نتائج بحث للكلمة دي = SEARCH ✅
-لو مينفعش تبحث من غير ما تعرف الموضوع = CHAT 💬
-لو شكيت = SEARCH (الأفضل نبحث ونعرض نتائج من إننا نسأل سؤال زيادة)
-
-لـ CHAT/SUBSCRIPTION/SUPPORT/CATEGORIES: response_message = الرد الكامل (ودود وطبيعي بلهجة المستخدم)
-لـ SEARCH: response_message = "" (المرحلة التانية هتولد الرد)
-لـ DIPLOMAS: response_message = "" (القائمة هتتجاب تلقائي من الداتابيز)
+لـ SEARCH: response_message = ""
+لـ DIPLOMAS: response_message = ""
 
 ═══ معلومات المنصة ═══
 - +600 دورة، +27 دبلومة، +750,000 طالب
 - الاشتراك السنوي: 49$ عرض رمضان (بدل 59$)
-- كل الدورات + الدبلومات + شهادات + مجتمع + مساعد AI
 - رابط الاشتراك: https://easyt.online/p/subscriptions
 - رابط طرق الدفع: https://easyt.online/p/Payments
 - طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
 
 ═══ للردود ═══
 - اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
-- استخدم <br> بدل \\n لأسطر جديدة
-- لو المستخدم بالإنجليزي رد بالإنجليزي
-- لو عراقي رد عراقي، لو خليجي رد خليجي (أو على الأقل فصحى بسيطة)
-- ❌ ممنوع تخترع كورسات
-- ❌ ممنوع تخترع أسماء دبلومات
-- لو في الردود المرجعية فيه رد مناسب، استخدمه`;
+- استخدم <br> بدل \\n
+- ❌ ممنوع تخترع كورسات أو دبلومات`;
 }
 
-/* ═══════════════════════════════════
-   Smart Fallback
-   ═══════════════════════════════════ */
 const FALLBACK_MESSAGES = [
   "ممكن توضحلي أكتر؟ 🤔 مثلاً قولي اسم المجال أو المهارة اللي عايز تتعلمها",
   "مش متأكد فهمتك 😅 ممكن تقولي الموضوع اللي عايز تتعلمه بشكل أوضح؟",
@@ -2068,8 +2375,7 @@ const FALLBACK_MESSAGES = [
 
 function getSmartFallback(sessionId) {
   const mem = getSessionMemory(sessionId);
-  const idx = (mem.messageCount || 0) % FALLBACK_MESSAGES.length;
-  return FALLBACK_MESSAGES[idx];
+  return FALLBACK_MESSAGES[(mem.messageCount || 0) % FALLBACK_MESSAGES.length];
 }
 
 async function analyzeMessage(
@@ -2094,7 +2400,6 @@ async function analyzeMessage(
   ) {
     filteredHistory.pop();
   }
-
   filteredHistory = filteredHistory.slice(-6);
 
   const messages = [
@@ -2168,7 +2473,7 @@ async function analyzeMessage(
 }
 
 /* ═══════════════════════════════════
-   11-D: Phase 2 — RAG Recommender
+   11-E: Phase 2 — RAG Recommender
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -2184,6 +2489,7 @@ function prepareCourseForRAG(course, instructors) {
   const cleanSubtitle = (course.subtitle || "")
     .replace(/<[^>]*>/g, "")
     .substring(0, 150);
+
   const rawPrice = course.price;
   const priceNum =
     typeof rawPrice === "string"
@@ -2204,7 +2510,7 @@ function prepareCourseForRAG(course, instructors) {
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
     relevanceScore: course.relevanceScore || 0,
-    matchedLessons: (course.matchedLessons || []).map(l => ({
+    matchedLessons: (course.matchedLessons || []).map((l) => ({
       title: l.title,
       timestamp: l.timestamp_start || null,
     })),
@@ -2216,6 +2522,7 @@ function prepareDiplomaForRAG(diploma) {
   const cleanDesc = (diploma.description || "")
     .replace(/<[^>]*>/g, "")
     .substring(0, 300);
+
   const rawPrice = diploma.price;
   const priceNum =
     typeof rawPrice === "string"
@@ -2241,73 +2548,34 @@ async function generateSmartRecommendation(
   instructors,
   model = "gpt-4o"
 ) {
-  const courseData = courses.slice(0, 8).map((c, i) => ({
-    index: i,
-    ...prepareCourseForRAG(c, instructors),
-    type: "course",
-  }));
-  const diplomaData = diplomas.slice(0, 3).map((d, i) => ({
-    index: i,
-    ...prepareDiplomaForRAG(d),
-    type: "diploma",
-  }));
+  const courseData = courses
+    .slice(0, 8)
+    .map((c, i) => ({
+      index: i,
+      ...prepareCourseForRAG(c, instructors),
+      type: "course",
+    }));
+
+  const diplomaData = diplomas
+    .slice(0, 3)
+    .map((d, i) => ({
+      index: i,
+      ...prepareDiplomaForRAG(d),
+      type: "diploma",
+    }));
 
   const allItems = [...diplomaData, ...courseData];
-
   const lang = analysis.language === "en" ? "English" : "ودود وطبيعي";
-  const levelInfo =
-    analysis.user_level || sessionMem.userLevel || "غير محدد";
-  const interestsInfo =
-    sessionMem.interests.length > 0
-      ? sessionMem.interests.join(", ")
-      : "غير محدد";
-  const isFollowUp = analysis.is_follow_up;
-  const prevTopic =
-    analysis.previous_topic_reference ||
-    sessionMem.lastSearchTopic ||
-    sessionMem.topics.slice(-3).join(", ");
 
   const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي في منصة easyT.
 
-⚠️⚠️⚠️ أهم قاعدة: لا تُظهر أي كورس إلا إذا كان مرتبط **مباشرة** بطلب المستخدم ⚠️⚠️⚠️
+⚠️ أهم قاعدة: لا تُظهر أي كورس إلا إذا كان مرتبط مباشرة بطلب المستخدم
 
-═══ الكورسات والدبلومات المتاحة (مرتبة بالـ relevanceScore) ═══
+═══ الكورسات والدبلومات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
 
-═══ 🎓 قواعد الدروس (matchedLessons) — مهم جداً! ═══
-
-بعض الكورسات فيها حقل "matchedLessons" — دي أسماء دروس جوه الكورس بتتكلم عن الموضوع المطلوب!
-
-1. لو كورس عنده matchedLessons مش فاضية:
-   - الموضوع موجود كدرس جوه الكورس ده!
-   - اذكر اسم الكورس + اسم الدرس في ردك
-   - لو فيه timestamp: اذكر الدقيقة كمان
-   - مثال: "هتلاقي الموضوع ده في كورس **فيجوال كونتنت**، في درس **التأثير النفسي للألوان** ⏱️"
-   - مثال: "موجود في كورس **فيجوال كونتنت** — ارجع لدرس **نظرية سكامبر** عند الدقيقة 5:30"
-
-2. لو matchType = "lesson_title":
-   - الأولوية القصوى! الطالب بيدور على حاجة موجودة جوه الكورس ده بالظبط
-   - has_exact_match = true حتى لو عنوان الكورس مش فيه الكلمة المطلوبة
-
-3. لو فيه أكتر من درس في نفس الكورس:
-   - اذكرهم كلهم
-
-4. ❌ ممنوع تقول "مفيش كورس" لو فيه matchedLessons — الموضوع موجود بس جوه درس مش كورس مستقل!
-
-═══ معلومات المستخدم ═══
-- مستواه: ${levelInfo}
-- اهتماماته: ${interestsInfo}
-- متابعة لموضوع سابق: ${isFollowUp ? "أيوا — " + prevTopic : "لا"}
-
-═══ ملاحظة عن الـ relevanceScore ═══
-- الكورسات مرتبة بنقاط المطابقة (relevanceScore)
-- كورس بنقاط عالية (100+) = عنوانه يحتوي على كلمة البحث → الأكثر ملاءمة
-- كورس بنقاط منخفضة (<10) = المطابقة في الوصف فقط → غالباً مش مناسب
-- ⚠️ فضّل الكورسات ذات النقاط العالية!
-- 🆕 كل كورس فيه "domain" (المجال) و"keywords" (كلمات مفتاحية) — استخدمهم للحكم على الملاءمة
-
 ═══ مطلوب منك ═══
-ارجع JSON بهذا الشكل بالظبط:
+ارجع JSON:
 {
   "message": "ردك للمستخدم (${lang})",
   "relevant_course_indices": [],
@@ -2316,44 +2584,11 @@ ${JSON.stringify(allItems, null, 1)}
   "suggestion": ""
 }
 
-═══ 🔴🔴🔴 قواعد الفلترة الصارمة 🔴🔴🔴 ═══
-
-1. ✅ مرتبط = الكورس بيعلّم **نفس** الأداة/المهارة/البرنامج اللي المستخدم طلبه
-   ✅ مرتبط أيضاً = الكورس عنده matchedLessons فيها الموضوع المطلوب
-2. ❌ مش مرتبط = الكورس في مجال مختلف حتى لو في نفس التصنيف العام
-
-أمثلة على كورسات مش مرتبطة (❌ ممنوع تعرضها):
-- المستخدم طلب "ريفيت/سباكة" → كورس "Angular JS" = ❌❌❌
-- المستخدم طلب "فوتوشوب" → كورس "ووردبريس" = ❌
-- المستخدم طلب "بايثون" → كورس "جافاسكريبت" = ❌
-- المستخدم طلب "اكسل" → كورس "بوربوينت" = ❌
-
-أمثلة على كورسات مرتبطة (✅):
-- المستخدم طلب "فوتوشوب" → كورس "فوتوشوب Adobe Photoshop" = ✅✅✅
-- المستخدم طلب "فوتوشوب" → كورس "قوة الذكاء الاصطناعي داخل فوتوشوب" = ✅✅
-- المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅
-- المستخدم طلب "ريفيت" → كورس "ريفيت AutoDesk Revit" = ✅✅✅
-- المستخدم طلب "التأثير النفسي للألوان" → كورس عنده matchedLessons فيها "التأثير النفسي للألوان" = ✅✅✅
-
-3. قاعدة العنوان: لو فيه كورس **عنوانه** فيه اسم البرنامج/المهارة المطلوبة → ده الأولوية الأولى!
-   قاعدة الدروس: لو فيه كورس عنده **matchedLessons** فيها الموضوع → ده أولوية عالية كمان!
-
-4. لو مفيش ولا كورس مرتبط فعلاً ولا عنده matchedLessons:
-   - relevant_course_indices = [] (فاضية!)
-   - has_exact_match = false
-   - ❌❌❌ ممنوع تحط أي index لكورس مش مرتبط
-
-5. لو فيه كورس واحد بس مرتبط: اعرض كورس واحد بس!
-
-═══ قواعد الرد ═══
-- لو has_exact_match = true: رد بحماس واشرح ليه الكورس مناسب
-- لو كورس عنده matchedLessons: اذكر اسم الدرس في ردك
-- لو has_exact_match = false: ابدأ بـ "للأسف مفيش كورس مخصص لـ [الموضوع] حالياً..."
-- اذكر اسم الكورس بالظبط زي ما في البيانات
-- ❌ ممنوع تذكر أسعار
-- ❌ ممنوع تخترع معلومات
-- ❌ ممنوع قوائم نقطية — اكتب بشكل طبيعي
-- ❌❌❌ ممنوع تعرض كورس في مجال مختلف تماماً`;
+═══ قواعد الفلترة ═══
+- ✅ مرتبط = الكورس بيعلّم نفس الأداة/المهارة أو عنده matchedLessons فيها الموضوع
+- ❌ مش مرتبط = مجال مختلف
+- لو مفيش ولا كورس مرتبط: relevant_course_indices = []
+- ❌ ممنوع تذكر أسعار أو تخترع معلومات`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -2378,7 +2613,7 @@ ${JSON.stringify(allItems, null, 1)}
 
     if (!result) {
       return {
-        message: "خلني أبحثلك عن أفضل النتايج 👇",
+        message: "خلني أبحثلك 👇",
         relevantCourseIndices: [],
         relevantDiplomaIndices: [],
         hasExactMatch: false,
@@ -2398,11 +2633,12 @@ ${JSON.stringify(allItems, null, 1)}
       suggestion: result.suggestion || "",
     };
   } catch (e) {
-    console.error(`❌ RAG Recommender error (${model}):`, e.message);
-    const fallbackModel = "gpt-4o-mini";
+    console.error(`❌ RAG error (${model}):`, e.message);
+
+    // Fallback to gpt-4o-mini
     try {
       const resp = await openai.chat.completions.create({
-        model: fallbackModel,
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: message },
@@ -2411,6 +2647,7 @@ ${JSON.stringify(allItems, null, 1)}
         temperature: 0.3,
         max_tokens: 600,
       });
+
       const raw = resp.choices[0].message.content;
       let result;
       try {
@@ -2420,19 +2657,21 @@ ${JSON.stringify(allItems, null, 1)}
         result = match ? JSON.parse(match[0]) : null;
       }
       if (!result) throw new Error("Parse failed");
+
       return {
         message: result.message || "",
         relevantCourseIndices: Array.isArray(result.relevant_course_indices)
           ? result.relevant_course_indices
           : [],
-        relevantDiplomaIndices: Array.isArray(result.relevant_diploma_indices)
+        relevantDiplomaIndices: Array.isArray(
+          result.relevant_diploma_indices
+        )
           ? result.relevant_diploma_indices
           : [],
         hasExactMatch: result.has_exact_match !== false,
         suggestion: result.suggestion || "",
       };
     } catch (e2) {
-      console.error("❌ RAG Fallback error:", e2.message);
       return {
         message: "خلني أبحثلك... 👇",
         relevantCourseIndices: [],
@@ -2444,14 +2683,14 @@ ${JSON.stringify(allItems, null, 1)}
   }
 }
 
-/* ═══════════════════════════════════
-   Safety Check — verify GPT's choices
-   ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
-  if (course.matchType === 'lesson_title' && course.matchedLessons && course.matchedLessons.length > 0) {
-    console.log(`   🛡️ FIX #32: "${course.title}" PASSED (lesson-matched: ${course.matchedLessons.map(l => l.title).join(', ')})`);
+  if (
+    course.matchType === "lesson_title" &&
+    course.matchedLessons &&
+    course.matchedLessons.length > 0
+  ) {
     return true;
   }
 
@@ -2459,12 +2698,11 @@ function verifyCourseRelevance(course, searchTerms) {
   if (searchCat) {
     const courseCats = getCourseCategories(course);
     if (courseCats.length > 0) {
-      const matchesSearchCat = courseCats.some(c => c.name === searchCat.name);
+      const matchesSearchCat = courseCats.some(
+        (c) => c.name === searchCat.name
+      );
       const primaryCat = courseCats[0].name;
-      if (!matchesSearchCat && primaryCat !== searchCat.name) {
-        console.log(`   🛡️ FIX #27 verify: "${course.title}" rejected (${primaryCat} ≠ ${searchCat.name})`);
-        return false;
-      }
+      if (!matchesSearchCat && primaryCat !== searchCat.name) return false;
     }
   }
 
@@ -2509,18 +2747,17 @@ function verifyCourseRelevance(course, searchTerms) {
   return matchCount >= requiredMatches;
 }
 
-/* ═══════════════════════════════════
-   11-E: Conversation Summary Generator
-   ═══════════════════════════════════ */
 async function generateConversationSummary(chatHistory, currentSummary) {
   if (!openai || chatHistory.length < 4) return currentSummary;
-
   try {
     const recentMsgs = chatHistory
       .slice(-6)
       .map(
         (m) =>
-          `${m.role === "user" ? "المستخدم" : "زيكو"}: ${m.content.substring(0, 200)}`
+          `${m.role === "user" ? "المستخدم" : "زيكو"}: ${m.content.substring(
+            0,
+            200
+          )}`
       )
       .join("\n");
 
@@ -2529,9 +2766,9 @@ async function generateConversationSummary(chatHistory, currentSummary) {
       messages: [
         {
           role: "system",
-          content: `لخّص المحادثة دي في 2-3 جمل قصيرة. ركّز على: ايه اهتمامات المستخدم، مستواه، ايه اللي دور عليه.
-${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
-رد بالملخص فقط.`,
+          content: `لخّص المحادثة دي في 2-3 جمل. ركّز على اهتمامات المستخدم ومستواه.\n${
+            currentSummary ? `الملخص السابق: ${currentSummary}` : ""
+          }`,
         },
         { role: "user", content: recentMsgs },
       ],
@@ -2546,43 +2783,35 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.8
+   11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
 
+  // Dialect normalization
   const dialectNormalized = normalizeDialect(message);
-  console.log(`🌍 Dialect: "${message}" → "${dialectNormalized}"`);
 
-  const contextResult = enrichMessageWithContext(dialectNormalized, sessionMem);
+  // Context enrichment
+  const contextResult = enrichMessageWithContext(
+    dialectNormalized,
+    sessionMem
+  );
   const enrichedMessage = contextResult.enriched;
   const isContextFollowUp = contextResult.isFollowUp;
   const previousTopic = contextResult.previousTopic || null;
 
-  if (isContextFollowUp) {
-    console.log(
-      `🔄 Context enriched: "${dialectNormalized}" → "${enrichedMessage}"`
-    );
-  }
-
+  // Load bot instructions, history, and custom responses
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
     loadBotInstructions(),
     loadRecentHistory(sessionId, 10),
     loadCustomResponsesSummary(),
   ]);
 
-  console.log(
-    `📦 Context: instructions=${botInstructions ? "yes" : "no"}, history=${chatHistory.length}msgs, memory=${sessionMem.messageCount}msgs`
-  );
-
+  // Quick intent check
   const quickCheck = quickIntentCheck(enrichedMessage);
-  if (quickCheck) {
-    console.log(
-      `⚡ Quick intent: ${quickCheck.intent} (confidence: ${quickCheck.confidence})`
-    );
-  }
 
+  // Phase 1: Analyze
   const analysis = await analyzeMessage(
     enrichedMessage,
     chatHistory,
@@ -2591,68 +2820,35 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-  if (quickCheck && quickCheck.confidence >= 0.9) {
-    if (analysis.action !== quickCheck.intent) {
-      console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
-      analysis.action = quickCheck.intent;
-    }
+  // Override if quick check is confident
+  if (
+    quickCheck &&
+    quickCheck.confidence >= 0.9 &&
+    analysis.action !== quickCheck.intent
+  ) {
+    analysis.action = quickCheck.intent;
   }
 
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
     analysis.search_terms = [];
     skipUpsell = true;
-    console.log(`🛡️ FIX #22: Casual/Greeting detected — clearing search_terms, skipping upsell`);
   }
 
+  // Follow-up handling
   if (isContextFollowUp && !analysis.is_follow_up) {
     analysis.is_follow_up = true;
     analysis.previous_topic_reference = previousTopic;
-    if (sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
-      const merged = [
-        ...new Set([...analysis.search_terms, ...sessionMem.lastSearchTerms]),
+    if (
+      sessionMem.lastSearchTerms &&
+      sessionMem.lastSearchTerms.length > 0
+    ) {
+      analysis.search_terms = [
+        ...new Set([
+          ...analysis.search_terms,
+          ...sessionMem.lastSearchTerms,
+        ]),
       ];
-      analysis.search_terms = merged;
-      console.log(`🔄 Merged follow-up terms: ${merged.join(", ")}`);
-    }
-  }
-
-  if (
-    analysis.is_follow_up &&
-    !isContextFollowUp &&
-    sessionMem.lastSearchTopic &&
-    analysis.action === "SEARCH"
-  ) {
-    const msgNorm = normalizeArabic(dialectNormalized.toLowerCase());
-    const prevNorm = normalizeArabic(
-      sessionMem.lastSearchTopic.toLowerCase()
-    );
-
-    if (!msgNorm.includes(prevNorm)) {
-      console.log(
-        `🚫 False follow-up! "${dialectNormalized}" ≠ "${sessionMem.lastSearchTopic}"`
-      );
-      analysis.is_follow_up = false;
-
-      const oldTermsSet = new Set(
-        (sessionMem.lastSearchTerms || []).map((t) =>
-          normalizeArabic(t.toLowerCase())
-        )
-      );
-      analysis.search_terms = analysis.search_terms.filter(
-        (t) => !oldTermsSet.has(normalizeArabic(t.toLowerCase()))
-      );
-
-      if (analysis.search_terms.length === 0) {
-        analysis.search_terms = dialectNormalized
-          .split(/\s+/)
-          .filter(
-            (w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
-          );
-      }
-      console.log(
-        `   Clean terms: [${analysis.search_terms.join(", ")}]`
-      );
     }
   }
 
@@ -2664,31 +2860,34 @@ async function smartChat(message, sessionId) {
   let reply = "";
   let intent = analysis.intent || analysis.action;
 
+  /* ═══════════════════════════════════
+     ACTION: SEARCH
+     ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
     const termsToSearch = analysis.search_terms;
 
+    // Priority title search
     const priorityCourses = await priorityTitleSearch(termsToSearch);
-    console.log(`🏆 Priority title search: ${priorityCourses.length} results`);
-    priorityCourses.slice(0, 3).forEach((c) => {
-      console.log(`   🏆 [score=${c.relevanceScore}] ${c.title}`);
-    });
 
+    // Main search
     let [courses, diplomas, lessonResults] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
       searchLessonsInCourses(termsToSearch),
     ]);
 
+    // Merge lesson results
     if (lessonResults && lessonResults.length > 0) {
-      console.log(`🎓 Merging ${lessonResults.length} lesson-matched courses`);
-      const seenCourseIds = new Set(courses.map(c => c.id));
-
+      const seenCourseIds = new Set(courses.map((c) => c.id));
       for (const lr of lessonResults) {
-        const existing = courses.find(c => c.id === lr.id);
+        const existing = courses.find((c) => c.id === lr.id);
         if (existing) {
           existing.matchedLessons = lr.matchedLessons;
-          existing.matchType = 'lesson_title';
-          existing.relevanceScore = Math.max(existing.relevanceScore || 0, lr.relevanceScore);
+          existing.matchType = "lesson_title";
+          existing.relevanceScore = Math.max(
+            existing.relevanceScore || 0,
+            lr.relevanceScore
+          );
         } else {
           courses.push(lr);
           seenCourseIds.add(lr.id);
@@ -2697,6 +2896,7 @@ async function smartChat(message, sessionId) {
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
+    // Merge priority courses
     const seenIds = new Set(courses.map((c) => c.id));
     for (const pc of priorityCourses) {
       if (!seenIds.has(pc.id)) {
@@ -2712,25 +2912,37 @@ async function smartChat(message, sessionId) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-    const hasLessonMatchedCourses = courses.some(c => c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0);
+    // Boost lesson-matched courses
+    const hasLessonMatchedCourses = courses.some(
+      (c) =>
+        c.matchType === "lesson_title" &&
+        c.matchedLessons &&
+        c.matchedLessons.length > 0
+    );
+
     if (hasLessonMatchedCourses) {
       for (const c of courses) {
-        if (c.matchType !== 'lesson_title' || !c.matchedLessons || c.matchedLessons.length === 0) {
-          const titleNormCheck = normalizeArabic((c.title || '').toLowerCase());
-          const hasDirectTitleMatch = termsToSearch.some(t => {
+        if (
+          c.matchType !== "lesson_title" ||
+          !c.matchedLessons ||
+          c.matchedLessons.length === 0
+        ) {
+          const titleNormCheck = normalizeArabic(
+            (c.title || "").toLowerCase()
+          );
+          const hasDirectTitleMatch = termsToSearch.some((t) => {
             const nt = normalizeArabic(t.toLowerCase());
             return nt.length > 3 && titleNormCheck.includes(nt);
           });
           if (!hasDirectTitleMatch) {
-            const oldScore = c.relevanceScore;
             c.relevanceScore = Math.round(c.relevanceScore * 0.2);
-            console.log(`   📉 FIX #33: "${c.title}" penalized (no lesson/title match) ${oldScore} → ${c.relevanceScore}`);
           }
         }
       }
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
+    // Corrections fallback
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
       if (corrections.length > 0) {
@@ -2744,151 +2956,86 @@ async function smartChat(message, sessionId) {
             .in("id", corrIds);
           if (corrCourses?.length > 0) courses = corrCourses;
         }
-        if (courses.length === 0) {
-          const corrTerms = corrections
-            .flatMap((c) => {
-              const reply = c.corrected_reply || "";
-              if (!reply) return [];
-              return reply.split(/\s+/).filter((w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
-            })
-            .filter(Boolean);
-          if (corrTerms.length > 0) courses = await searchCourses(corrTerms);
-        }
       }
     }
 
+    // Score threshold filtering
     if (courses.length > 3) {
       const maxScore = Math.max(
         ...courses.map((c) => c.relevanceScore || 0)
       );
       const threshold =
-        maxScore > 100
-          ? maxScore * 0.1
-          : Math.max(maxScore * 0.3, 5);
+        maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
       const preFiltered = courses.filter(
         (c) => (c.relevanceScore || 0) >= threshold
       );
-      if (preFiltered.length >= 1) {
-        console.log(
-          `🧹 Pre-filter: ${courses.length} → ${preFiltered.length} courses (threshold=${Math.round(threshold)}, max=${maxScore})`
-        );
-        courses = preFiltered;
-      }
+      if (preFiltered.length >= 1) courses = preFiltered;
     }
 
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
+      // Must-show courses
       const mustShowCourses = courses.filter((c) => {
         const titleNorm = normalizeArabic((c.title || "").toLowerCase());
         const hasTitleMatch = termsToSearch.some((t) => {
           const termNorm = normalizeArabic(t.toLowerCase());
           return termNorm.length > 3 && titleNorm.includes(termNorm);
         });
-        const hasLessonMatch = c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0;
+        const hasLessonMatch =
+          c.matchType === "lesson_title" &&
+          c.matchedLessons &&
+          c.matchedLessons.length > 0;
         return hasTitleMatch || hasLessonMatch;
       });
 
-      console.log(`📌 Must-show courses: ${mustShowCourses.length}`);
-      mustShowCourses.forEach((c) => {
-        const lessonInfo = c.matchedLessons && c.matchedLessons.length > 0
-          ? ` [lessons: ${c.matchedLessons.map(l => l.title).join(', ')}]`
-          : '';
-        console.log(`   📌 ${c.title}${lessonInfo}`);
-      });
+      const phase2Model =
+        mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
 
-      const phase2Model = mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
-      console.log(`🤖 Phase 2 model: ${phase2Model} (must-show=${mustShowCourses.length})`);
+      // Phase 2: Smart Recommendation
+      const recommendation = await generateSmartRecommendation(
+        message,
+        courses,
+        diplomas,
+        sessionMem,
+        analysis,
+        instructors,
+        phase2Model
+      );
 
-      let relevantCourses = [];
-      let relevantDiplomas = [];
-      let recommendationMessage = "";
+      let recommendationMessage = recommendation.message || "";
 
+      let relevantCourses = recommendation.relevantCourseIndices
+        .filter((i) => i >= 0 && i < courses.length)
+        .map((i) => courses[i]);
+
+      let relevantDiplomas = recommendation.relevantDiplomaIndices
+        .filter((i) => i >= 0 && i < diplomas.length)
+        .map((i) => diplomas[i]);
+
+      // Verify relevance
+      relevantCourses = relevantCourses.filter((c) =>
+        verifyCourseRelevance(c, termsToSearch)
+      );
+
+      // Ensure must-show courses are included
       if (mustShowCourses.length > 0) {
-        const recommendation = await generateSmartRecommendation(
-          message,
-          courses,
-          diplomas,
-          sessionMem,
-          analysis,
-          instructors,
-          phase2Model
-        );
-
-        recommendationMessage = recommendation.message || "";
-
-        let gptCourses = recommendation.relevantCourseIndices
-          .filter((i) => i >= 0 && i < courses.length)
-          .map((i) => courses[i]);
-
-        relevantDiplomas = recommendation.relevantDiplomaIndices
-          .filter((i) => i >= 0 && i < diplomas.length)
-          .map((i) => diplomas[i]);
-
-        gptCourses = gptCourses.filter((c) =>
-          verifyCourseRelevance(c, termsToSearch)
-        );
-
-        relevantCourses = [...gptCourses];
         for (const mc of mustShowCourses) {
           if (!relevantCourses.find((rc) => rc.id === mc.id)) {
             relevantCourses.unshift(mc);
-            console.log(
-              `🔥 Force-included: "${mc.title}" (GPT missed it!)`
-            );
           }
         }
-
-        if (!recommendation.hasExactMatch && mustShowCourses.length > 0) {
-          console.log(
-            `🔄 Overriding GPT's "no match" — we have title/lesson matches!`
-          );
-          const hasLessonMatches = mustShowCourses.some(c => c.matchedLessons && c.matchedLessons.length > 0);
-          if (hasLessonMatches) {
-            recommendationMessage = `🎯 الموضوع ده موجود كدرس جوه كورس عندنا! 👇`;
-          } else {
-            recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
-          }
-          if (mustShowCourses.length > 1) {
-            recommendationMessage += ` وكمان فيه ${mustShowCourses.length - 1} كورسات تانية ممكن تفيدك 👇`;
-          }
+        if (!recommendation.hasExactMatch) {
+          recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
         }
-      } else {
-        const recommendation = await generateSmartRecommendation(
-          message,
-          courses,
-          diplomas,
-          sessionMem,
-          analysis,
-          instructors,
-          phase2Model
-        );
-
-        recommendationMessage = recommendation.message || "";
-
-        relevantCourses = recommendation.relevantCourseIndices
-          .filter((i) => i >= 0 && i < courses.length)
-          .map((i) => courses[i]);
-
-        relevantDiplomas = recommendation.relevantDiplomaIndices
-          .filter((i) => i >= 0 && i < diplomas.length)
-          .map((i) => diplomas[i]);
-
-        relevantCourses = relevantCourses.filter((c) =>
-          verifyCourseRelevance(c, termsToSearch)
-        );
       }
 
       relevantCourses.sort(
         (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
 
-      console.log(
-        `🎯 Final: ${relevantDiplomas.length} diplomas, ${relevantCourses.length} courses`
-      );
-
-      reply = recommendationMessage;
-      reply += "<br><br>";
+      // Build reply
+      reply = recommendationMessage + "<br><br>";
 
       if (relevantDiplomas.length > 0) {
         relevantDiplomas.slice(0, 3).forEach((d) => {
@@ -2905,67 +3052,51 @@ async function smartChat(message, sessionId) {
       if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
         const cat = getSmartCategoryFromCourses([], termsToSearch);
         if (cat) {
-          reply += `<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
-📂 تصفح كل كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a> — ممكن تلاقي اللي يناسبك!
-</div>`;
+          reply += `<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">📂 تصفح كل كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a></div>`;
         }
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       } else {
-        const cat = getSmartCategoryFromCourses(relevantCourses, termsToSearch);
+        const cat = getSmartCategoryFromCourses(
+          relevantCourses,
+          termsToSearch
+        );
         if (cat) {
-          reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
-<a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
+          reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
         }
-
         reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
 
       const mainTopic = extractMainTopic(termsToSearch);
-      const detectedCat = detectRelevantCategory(termsToSearch);
       updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: contextResult.detectedTopic || mainTopic,
-        lastSearchCategory: detectedCat ? detectedCat.name : null,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
       });
     } else {
+      // No results
       const cat = getSmartCategoryFromCourses([], termsToSearch);
-      reply = analysis.is_follow_up
-        ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅`
-        : `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.`;
-
+      reply = `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.`;
       if (cat) {
-        reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a> — ممكن تلاقي حاجة تفيدك!`;
+        reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
 
-      const mainTopic = extractMainTopic(termsToSearch);
       updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
-        lastSearchTopic: mainTopic,
+        lastSearchTopic: extractMainTopic(termsToSearch),
         userLevel: analysis.user_level,
         topics: analysis.topics,
       });
     }
+  }
 
-    console.log(
-      `🔍 Search complete: ${courses.length} courses, ${diplomas.length} diplomas`
-    );
-
-  } else if (analysis.action === "SUBSCRIPTION") {
-    const gptMsg = (analysis.response_message || "").trim();
-
-    let intro = "أهلاً بيك! 🎉";
-    if (gptMsg.length > 5 && gptMsg.length <= 120) {
-      intro = gptMsg.replace(/\n/g, "<br>");
-    } else if (gptMsg.length > 120) {
-      const firstLine = gptMsg.split(/[\n<]/).find((l) => l.trim().length > 5);
-      if (firstLine) intro = firstLine.trim();
-    }
-
-    reply = `${intro}<br><br>`;
+  /* ═══════════════════════════════════
+     ACTION: SUBSCRIPTION
+     ═══════════════════════════════════ */
+  else if (analysis.action === "SUBSCRIPTION") {
+    reply = `أهلاً بيك! 🎉<br><br>`;
     reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
     reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
     reply += `2. 🅿️ <strong>PayPal</strong><br>`;
@@ -2977,43 +3108,46 @@ async function smartChat(message, sessionId) {
     reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
     reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
     reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-
     intent = "SUBSCRIPTION";
+  }
 
-  } else if (analysis.action === "DIPLOMAS") {
-    console.log("🎓 DIPLOMAS action — loading all diplomas from DB...");
+  /* ═══════════════════════════════════
+     ACTION: DIPLOMAS
+     ═══════════════════════════════════ */
+  else if (analysis.action === "DIPLOMAS") {
     const allDiplomas = await loadAllDiplomas();
-    console.log(`🎓 Loaded ${allDiplomas.length} diplomas`);
     reply = formatDiplomasList(allDiplomas);
     intent = "DIPLOMAS";
+  }
 
-    updateSessionMemory(sessionId, {
-      topics: ["دبلومات"],
-      interests: ["دبلومات"],
-    });
+  /* ═══════════════════════════════════
+     ACTION: CATEGORIES
+     ═══════════════════════════════════ */
+  else if (analysis.action === "CATEGORIES") {
+    reply = formatCategoriesList();
+  }
 
-  } else if (analysis.action === "CATEGORIES") {
-    const respNorm = normalizeArabic((analysis.response_message || "").toLowerCase());
-    if (/دبلوم/.test(respNorm) && !/تصنيف|مجال|قسم/.test(respNorm)) {
-      console.log("🔀 CATEGORIES contained diploma content → redirecting to DIPLOMAS");
-      const allDiplomas = await loadAllDiplomas();
-      reply = formatDiplomasList(allDiplomas);
-      intent = "DIPLOMAS";
-    } else {
-      reply = formatCategoriesList();
-    }
-
-  } else if (analysis.action === "SUPPORT") {
+  /* ═══════════════════════════════════
+     ACTION: SUPPORT
+     ═══════════════════════════════════ */
+  else if (analysis.action === "SUPPORT") {
     reply =
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
+  }
 
-  } else {
-    reply =
-      analysis.response_message ||
-      getSmartFallback(sessionId);
+  /* ═══════════════════════════════════
+     ACTION: CHAT (default)
+     ═══════════════════════════════════ */
+  else {
+    reply = analysis.response_message || getSmartFallback(sessionId);
 
-    if (analysis.search_terms && analysis.search_terms.length > 0 && !skipUpsell) {
+    // Upsell if has search terms
+    if (
+      analysis.search_terms &&
+      analysis.search_terms.length > 0 &&
+      !skipUpsell
+    ) {
       try {
         const [upsellCourses, upsellDiplomas] = await Promise.all([
           searchCourses(analysis.search_terms, [], null),
@@ -3022,8 +3156,7 @@ async function smartChat(message, sessionId) {
 
         if (upsellCourses.length > 0 || upsellDiplomas.length > 0) {
           const instructors = await getInstructors();
-
-          reply += `<br><br>💡 <strong>بالمناسبة، عندنا كورسات ممكن تفيدك في الموضوع ده:</strong>`;
+          reply += `<br><br>💡 <strong>بالمناسبة، عندنا كورسات ممكن تفيدك:</strong>`;
 
           if (upsellDiplomas.length > 0) {
             upsellDiplomas.slice(0, 1).forEach((d) => {
@@ -3037,23 +3170,19 @@ async function smartChat(message, sessionId) {
             });
           }
 
-          const cat = detectRelevantCategory(analysis.search_terms);
-          if (cat) {
-            reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
-<a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
-          }
-
           reply += `<br>✨ كل الكورسات دي متاحة مع الاشتراك السنوي (49$ عرض رمضان) 🎓`;
         }
       } catch (e) {
-        console.error("Smart upsell error:", e.message);
+        // Silent fail
       }
     }
   }
 
+  // Final processing
   reply = markdownToHtml(reply);
   reply = finalizeReply(reply);
 
+  // Update session memory
   if (analysis.action !== "SEARCH") {
     updateSessionMemory(sessionId, {
       searchTerms: analysis.search_terms,
@@ -3066,7 +3195,11 @@ async function smartChat(message, sessionId) {
     });
   }
 
-  if (sessionMem.messageCount > 0 && sessionMem.messageCount % 4 === 0) {
+  // Periodic summary
+  if (
+    sessionMem.messageCount > 0 &&
+    sessionMem.messageCount % 4 === 0
+  ) {
     generateConversationSummary(chatHistory, sessionMem.summary)
       .then((summary) => {
         if (summary) updateSessionMemory(sessionId, { summary });
@@ -3074,9 +3207,9 @@ async function smartChat(message, sessionId) {
       .catch(() => {});
   }
 
-  const elapsed = Date.now() - startTime;
-  console.log(`✅ Done | action=${analysis.action} | ⏱️ ${elapsed}ms`);
-
+  console.log(
+    `✅ Done | action=${analysis.action} | ⏱️ ${Date.now() - startTime}ms`
+  );
   return { reply, intent };
 }
 
@@ -3086,7 +3219,6 @@ async function smartChat(message, sessionId) {
 app.post("/chat", limiter, async (req, res) => {
   try {
     const { message, session_id } = req.body;
-
     if (
       !message ||
       typeof message !== "string" ||
@@ -3099,19 +3231,18 @@ app.post("/chat", limiter, async (req, res) => {
     const sessionId = session_id || "anon_" + Date.now();
 
     console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
-
     await logChat(sessionId, "user", cleanMessage, null);
 
     if (!openai) {
       const fallback =
-        "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏 جرب تاني بعد شوية.";
+        "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏";
       await logChat(sessionId, "bot", fallback, "ERROR");
       return res.json({ reply: fallback });
     }
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.8" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.9" });
 
     return res.json({ reply });
   } catch (error) {
@@ -3126,470 +3257,968 @@ app.post("/chat", limiter, async (req, res) => {
    SECTION 13: Admin Endpoints
    ══════════════════════════════════════════════════════════ */
 
+// === Admin Login ===
 app.post("/admin/login", (req, res) => {
   const { password } = req.body;
-  if (!password)
+  if (!password) {
     return res.status(400).json({ success: false, error: "كلمة السر مطلوبة" });
+  }
   if (password === ADMIN_PASSWORD) {
     const token = generateAdminToken();
-    console.log("🔐 Admin logged in");
     return res.json({ success: true, token });
   }
   return res.status(401).json({ success: false, error: "كلمة السر غلط" });
 });
 
+// === Admin Stats ===
 app.get("/admin/stats", async (req, res) => {
-  if (!supabase)
+  if (!supabase) {
     return res.status(500).json({ success: false, error: "Database not connected" });
+  }
   try {
-    let totalChats = 0, todayChats = 0, uniqueSessions = 0, intentCounts = {},
-      totalCourses = 0, totalDiplomas = 0, totalCorrections = 0, totalCustom = 0;
+    let totalChats = 0;
+    let todayChats = 0;
+    let uniqueSessions = 0;
+    let intentCounts = {};
+    let totalCourses = 0;
+    let totalDiplomas = 0;
+    let totalCorrections = 0;
+    let totalCustom = 0;
 
     try {
-      const { count } = await supabase.from("chat_logs").select("*", { count: "exact", head: true });
+      const { count } = await supabase
+        .from("chat_logs")
+        .select("*", { count: "exact", head: true });
       totalChats = count || 0;
     } catch (e) {}
+
     try {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { count } = await supabase.from("chat_logs").select("*", { count: "exact", head: true })
-        .gte("created_at", todayStart.toISOString()).eq("role", "user");
+      const { count } = await supabase
+        .from("chat_logs")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", todayStart.toISOString())
+        .eq("role", "user");
       todayChats = count || 0;
     } catch (e) {}
+
     try {
-      const { data } = await supabase.from("chat_logs").select("session_id").eq("role", "user");
+      const { data } = await supabase
+        .from("chat_logs")
+        .select("session_id")
+        .eq("role", "user");
       uniqueSessions = data ? new Set(data.map((s) => s.session_id)).size : 0;
     } catch (e) {}
-    try {
-      const { data } = await supabase.from("chat_logs").select("intent").eq("role", "bot").not("intent", "is", null);
-      if (data) data.forEach((r) => { const i = r.intent || "UNKNOWN"; intentCounts[i] = (intentCounts[i] || 0) + 1; });
-    } catch (e) {}
-    try { const { count } = await supabase.from("courses").select("*", { count: "exact", head: true }); totalCourses = count || 0; } catch (e) {}
-    try { const { count } = await supabase.from("diplomas").select("*", { count: "exact", head: true }); totalDiplomas = count || 0; } catch (e) {}
-    try { const { count } = await supabase.from("corrections").select("*", { count: "exact", head: true }); totalCorrections = count || 0; } catch (e) {}
-    try { const { count } = await supabase.from("custom_responses").select("*", { count: "exact", head: true }); totalCustom = count || 0; } catch (e) {}
 
-    let recentChats = [], noResultSearches = [], hourlyDist = new Array(24).fill(0);
     try {
-      const { data } = await supabase.from("chat_logs").select("*").order("created_at", { ascending: false }).limit(20);
+      const { data } = await supabase
+        .from("chat_logs")
+        .select("intent")
+        .eq("role", "bot")
+        .not("intent", "is", null);
+      if (data) {
+        data.forEach((r) => {
+          const i = r.intent || "UNKNOWN";
+          intentCounts[i] = (intentCounts[i] || 0) + 1;
+        });
+      }
+    } catch (e) {}
+
+    try {
+      const { count } = await supabase
+        .from("courses")
+        .select("*", { count: "exact", head: true });
+      totalCourses = count || 0;
+    } catch (e) {}
+
+    try {
+      const { count } = await supabase
+        .from("diplomas")
+        .select("*", { count: "exact", head: true });
+      totalDiplomas = count || 0;
+    } catch (e) {}
+
+    try {
+      const { count } = await supabase
+        .from("corrections")
+        .select("*", { count: "exact", head: true });
+      totalCorrections = count || 0;
+    } catch (e) {}
+
+    try {
+      const { count } = await supabase
+        .from("custom_responses")
+        .select("*", { count: "exact", head: true });
+      totalCustom = count || 0;
+    } catch (e) {}
+
+    let recentChats = [];
+    let noResultSearches = [];
+    let hourlyDist = new Array(24).fill(0);
+
+    try {
+      const { data } = await supabase
+        .from("chat_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
       recentChats = data || [];
     } catch (e) {}
-    try {
-      const { data } = await supabase.from("chat_logs").select("message,created_at,metadata")
-        .eq("role", "bot").eq("intent", "SEARCH").order("created_at", { ascending: false }).limit(100);
-      noResultSearches = (data || []).filter((r) => {
-        try { const m = typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata; return m && m.results_count === 0; } catch { return false; }
-      }).slice(0, 20);
-    } catch (e) {}
+
     try {
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase.from("chat_logs").select("created_at").eq("role", "user").gte("created_at", last24h);
-      if (data) data.forEach((r) => { const h = new Date(r.created_at).getHours(); hourlyDist[h]++; });
+      const { data } = await supabase
+        .from("chat_logs")
+        .select("created_at")
+        .eq("role", "user")
+        .gte("created_at", last24h);
+      if (data) {
+        data.forEach((r) => {
+          const h = new Date(r.created_at).getHours();
+          hourlyDist[h]++;
+        });
+      }
     } catch (e) {}
 
     res.json({
       success: true,
       stats: {
-        totalChats, todayChats, uniqueSessions, intentCounts,
-        totalCourses, totalDiplomas, totalCorrections,
+        totalChats,
+        todayChats,
+        uniqueSessions,
+        intentCounts,
+        totalCourses,
+        totalDiplomas,
+        totalCorrections,
         totalCustomResponses: totalCustom,
-        recentChats, noResultSearches, hourlyDistribution: hourlyDist,
+        recentChats,
+        noResultSearches,
+        hourlyDistribution: hourlyDist,
       },
     });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
+// === Conversations ===
 app.get("/admin/conversations", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 50, search = req.query.search || "";
-    let query = supabase.from("chat_logs").select("session_id, message, intent, created_at, role").order("created_at", { ascending: false });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("chat_logs")
+      .select("session_id, message, intent, created_at, role")
+      .order("created_at", { ascending: false });
+
     if (search) query = query.ilike("message", `%${search}%`);
+
     const { data, error } = await query;
     if (error) throw error;
+
     const sessions = {};
     (data || []).forEach((row) => {
-      if (!sessions[row.session_id]) sessions[row.session_id] = { session_id: row.session_id, last_message: row.message, last_intent: row.intent, last_time: row.created_at, message_count: 0 };
+      if (!sessions[row.session_id]) {
+        sessions[row.session_id] = {
+          session_id: row.session_id,
+          last_message: row.message,
+          last_intent: row.intent,
+          last_time: row.created_at,
+          message_count: 0,
+        };
+      }
       sessions[row.session_id].message_count++;
     });
-    const sorted = Object.values(sessions).sort((a, b) => new Date(b.last_time) - new Date(a.last_time));
+
+    const sorted = Object.values(sessions).sort(
+      (a, b) => new Date(b.last_time) - new Date(a.last_time)
+    );
+
     const offset = (page - 1) * limit;
-    res.json({ success: true, conversations: sorted.slice(offset, offset + limit), total: sorted.length, page, pagination: { has_more: offset + limit < sorted.length } });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    res.json({
+      success: true,
+      conversations: sorted.slice(offset, offset + limit),
+      total: sorted.length,
+      page,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.get("/admin/conversations/:sessionId", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { data, error } = await supabase.from("chat_logs").select("*").eq("session_id", req.params.sessionId).order("created_at", { ascending: true });
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("*")
+      .eq("session_id", req.params.sessionId)
+      .order("created_at", { ascending: true });
     if (error) throw error;
-    res.json({ success: true, messages: (data || []).map((m) => ({ ...m, content: m.message })) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    res.json({
+      success: true,
+      messages: (data || []).map((m) => ({ ...m, content: m.message })),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Corrections CRUD ═══
+// === Corrections ===
 app.get("/admin/corrections", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { data, error } = await supabase.from("corrections").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("corrections")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, corrections: data || [] });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/corrections", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
     const insertData = {};
-    if (req.body.original_question) insertData.original_question = req.body.original_question;
-    insertData.user_message = req.body.user_message || req.body.original_question || null;
-    insertData.corrected_reply = req.body.corrected_reply || req.body.corrected_answer || null;
-    insertData.original_reply = req.body.original_reply || req.body.original_answer || null;
+    if (req.body.original_question) {
+      insertData.original_question = req.body.original_question;
+    }
+    insertData.user_message =
+      req.body.user_message || req.body.original_question || null;
+    insertData.corrected_reply =
+      req.body.corrected_reply || req.body.corrected_answer || null;
+    insertData.original_reply =
+      req.body.original_reply || req.body.original_answer || null;
     insertData.correct_course_ids = req.body.correct_course_ids || [];
     if (req.body.chat_log_id) insertData.chat_log_id = req.body.chat_log_id;
     if (req.body.session_id) insertData.session_id = req.body.session_id;
     if (req.body.note) insertData.note = req.body.note;
-    const { data, error } = await supabase.from("corrections").insert(insertData).select().single();
+
+    const { data, error } = await supabase
+      .from("corrections")
+      .insert(insertData)
+      .select()
+      .single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { error } = await supabase.from("corrections").delete().eq("id", req.params.id);
+    const { error } = await supabase
+      .from("corrections")
+      .delete()
+      .eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Bot Instructions CRUD ═══
+// === Bot Instructions ===
 app.get("/admin/bot-instructions", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { data, error } = await supabase.from("bot_instructions").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("bot_instructions")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, instructions: data || [] });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
     const { instruction, label, category, priority, is_active } = req.body;
-    if (!instruction) return res.status(400).json({ success: false, error: "instruction required" });
-    const { data, error } = await supabase.from("bot_instructions").insert({
-      instruction, label: label || category || "custom", category: category || label || "GENERAL",
-      priority: priority != null ? priority : 10, is_active: is_active !== false,
-    }).select().single();
+    if (!instruction) {
+      return res
+        .status(400)
+        .json({ success: false, error: "instruction required" });
+    }
+
+    const { data, error } = await supabase
+      .from("bot_instructions")
+      .insert({
+        instruction,
+        label: label || category || "custom",
+        category: category || label || "GENERAL",
+        priority: priority != null ? priority : 10,
+        is_active: is_active !== false,
+      })
+      .select()
+      .single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
     const u = {};
     if (req.body.instruction !== undefined) u.instruction = req.body.instruction;
     if (req.body.label !== undefined) u.label = req.body.label;
-    if (req.body.category !== undefined) { u.category = req.body.category; if (!u.label) u.label = req.body.category; }
+    if (req.body.category !== undefined) {
+      u.category = req.body.category;
+      if (!u.label) u.label = req.body.category;
+    }
     if (req.body.priority !== undefined) u.priority = req.body.priority;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
-    const { data, error } = await supabase.from("bot_instructions").update(u).eq("id", req.params.id).select().single();
+
+    const { data, error } = await supabase
+      .from("bot_instructions")
+      .update(u)
+      .eq("id", req.params.id)
+      .select()
+      .single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { error } = await supabase.from("bot_instructions").delete().eq("id", req.params.id);
+    const { error } = await supabase
+      .from("bot_instructions")
+      .delete()
+      .eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Custom Responses CRUD ═══
+// === Custom Responses ===
 app.get("/admin/custom-responses", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { data, error } = await supabase.from("custom_responses").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("custom_responses")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ success: true, responses: data || [] });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { title, keywords, response, match_type, is_active, category, priority } = req.body;
-    if (!keywords || !response) return res.status(400).json({ success: false, error: "keywords and response required" });
-    const { data, error } = await supabase.from("custom_responses").insert({
-      title: title || "بدون عنوان",
-      keywords: Array.isArray(keywords) ? keywords : keywords.split(",").map((k) => k.trim()),
-      response,
-      match_type: match_type || "any",
-      is_active: is_active !== false,
-      category: category || "SUPPORT",
-      priority: priority != null ? priority : 10,
-    }).select().single();
+    const { title, keywords, response, match_type, is_active, category, priority } =
+      req.body;
+    if (!keywords || !response) {
+      return res
+        .status(400)
+        .json({ success: false, error: "keywords and response required" });
+    }
+
+    const { data, error } = await supabase
+      .from("custom_responses")
+      .insert({
+        title: title || "بدون عنوان",
+        keywords: Array.isArray(keywords)
+          ? keywords
+          : keywords.split(",").map((k) => k.trim()),
+        response,
+        match_type: match_type || "any",
+        is_active: is_active !== false,
+        category: category || "SUPPORT",
+        priority: priority != null ? priority : 10,
+      })
+      .select()
+      .single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
     const u = {};
     if (req.body.title !== undefined) u.title = req.body.title;
-    if (req.body.keywords !== undefined) u.keywords = Array.isArray(req.body.keywords) ? req.body.keywords : req.body.keywords.split(",").map((k) => k.trim());
+    if (req.body.keywords !== undefined) {
+      u.keywords = Array.isArray(req.body.keywords)
+        ? req.body.keywords
+        : req.body.keywords.split(",").map((k) => k.trim());
+    }
     if (req.body.response !== undefined) u.response = req.body.response;
     if (req.body.match_type !== undefined) u.match_type = req.body.match_type;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
     if (req.body.category !== undefined) u.category = req.body.category;
     if (req.body.priority !== undefined) u.priority = req.body.priority;
-    const { data, error } = await supabase.from("custom_responses").update(u).eq("id", req.params.id).select().single();
+
+    const { data, error } = await supabase
+      .from("custom_responses")
+      .update(u)
+      .eq("id", req.params.id)
+      .select()
+      .single();
     if (error) throw error;
     res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { error } = await supabase.from("custom_responses").delete().eq("id", req.params.id);
+    const { error } = await supabase
+      .from("custom_responses")
+      .delete()
+      .eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Courses CRUD ═══
+// === Courses Admin ===
 app.get("/admin/courses", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 30, offset = (page - 1) * limit, search = req.query.search || "";
-    let query = supabase.from("courses").select("id, title, price, instructor_id, image", { count: "exact" }).order("title", { ascending: true }).range(offset, offset + limit - 1);
-    if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("courses")
+      .select("id, title, price, instructor_id, image", { count: "exact" })
+      .order("title", { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+
     const { data, count, error } = await query;
     if (error) throw error;
+
     const instructors = await getInstructors();
-    const enriched = (data || []).map((c) => { const inst = instructors.find((i) => i.id === c.instructor_id); return { ...c, instructor_name: inst ? inst.name : "" }; });
-    res.json({ success: true, courses: enriched, total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    const enriched = (data || []).map((c) => {
+      const inst = instructors.find((i) => i.id === c.instructor_id);
+      return { ...c, instructor_name: inst ? inst.name : "" };
+    });
+
+    res.json({
+      success: true,
+      courses: enriched,
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/courses", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("courses").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .insert(req.body)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/courses/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("courses").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/courses/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { error } = await supabase.from("courses").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("courses")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Diplomas CRUD ═══
+// === Diplomas Admin ===
 app.get("/admin/diplomas", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 30, offset = (page - 1) * limit, search = req.query.search || "";
-    let query = supabase.from("diplomas").select("id, title, link, description, price", { count: "exact" }).order("title", { ascending: true }).range(offset, offset + limit - 1);
-    if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("diplomas")
+      .select("id, title, link, description, price", { count: "exact" })
+      .order("title", { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+
     const { data, count, error } = await query;
     if (error) throw error;
-    res.json({ success: true, diplomas: data || [], total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+
+    res.json({
+      success: true,
+      diplomas: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/diplomas", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("diplomas").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("diplomas")
+      .insert(req.body)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/diplomas/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("diplomas").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("diplomas")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/diplomas/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { error } = await supabase.from("diplomas").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("diplomas")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Instructors CRUD ═══
+// === Instructors Admin ===
 app.get("/admin/instructors", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("instructors").select("*").order("name", { ascending: true }); if (error) throw error; res.json({ success: true, instructors: data || [] }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("instructors")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) throw error;
+    res.json({ success: true, instructors: data || [] });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/admin/instructors", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("instructors").insert(req.body).select().single(); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("instructors")
+      .insert(req.body)
+      .select()
+      .single();
+    if (error) throw error;
+    instructorCache = { data: null, ts: 0 };
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/instructors/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("instructors").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("instructors")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    instructorCache = { data: null, ts: 0 };
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { error } = await supabase.from("instructors").delete().eq("id", req.params.id); if (error) throw error; instructorCache = { data: null, ts: 0 }; res.json({ success: true }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("instructors")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    instructorCache = { data: null, ts: 0 };
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ FAQ CRUD ═══
+// === FAQ Admin ===
 app.get("/admin/faq", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("faq").select("*").order("created_at", { ascending: false }); if (error) return res.json({ success: true, faqs: [] }); res.json({ success: true, faqs: data || [] }); }
-  catch (e) { res.json({ success: true, faqs: [] }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) return res.json({ success: true, faqs: [] });
+    res.json({ success: true, faqs: data || [] });
+  } catch (e) {
+    res.json({ success: true, faqs: [] });
+  }
 });
 
 app.post("/admin/faq", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("faq").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .insert(req.body)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/faq/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("faq").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/faq/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { error } = await supabase.from("faq").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("faq")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Site Pages CRUD ═══
+// === Site Pages Admin ===
 app.get("/admin/site-pages", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("site_pages").select("*").order("created_at", { ascending: false }); if (error) return res.json({ success: true, pages: [] }); res.json({ success: true, pages: data || [] }); }
-  catch (e) { res.json({ success: true, pages: [] }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("site_pages")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) return res.json({ success: true, pages: [] });
+    res.json({ success: true, pages: data || [] });
+  } catch (e) {
+    res.json({ success: true, pages: [] });
+  }
 });
 
 app.post("/admin/site-pages", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("site_pages").insert(req.body).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("site_pages")
+      .insert(req.body)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.put("/admin/site-pages/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { data, error } = await supabase.from("site_pages").update(req.body).eq("id", req.params.id).select().single(); if (error) throw error; res.json({ success: true, data }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("site_pages")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete("/admin/site-pages/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
-  try { const { error } = await supabase.from("site_pages").delete().eq("id", req.params.id); if (error) throw error; res.json({ success: true }); }
-  catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("site_pages")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// ═══ Admin Logs ═══
+// === Logs Admin ===
 app.get("/admin/logs", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const page = parseInt(req.query.page) || 1, limit = parseInt(req.query.limit) || 50, offset = (page - 1) * limit;
-    let query = supabase.from("chat_logs").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
-    if (req.query.search) query = query.ilike("message", `%${req.query.search}%`);
-    if (req.query.intent) query = query.eq("intent", req.query.intent);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from("chat_logs")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (req.query.search) {
+      query = query.ilike("message", `%${req.query.search}%`);
+    }
+    if (req.query.intent) {
+      query = query.eq("intent", req.query.intent);
+    }
+
     const { data, count, error } = await query;
     if (error) throw error;
-    res.json({ success: true, logs: data || [], total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+
+    res.json({
+      success: true,
+      logs: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.get("/admin/sessions/:sessionId", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { data, error } = await supabase.from("chat_logs").select("*").eq("session_id", req.params.sessionId).order("created_at", { ascending: true });
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("*")
+      .eq("session_id", req.params.sessionId)
+      .order("created_at", { ascending: true });
     if (error) throw error;
-    res.json({ success: true, session_id: req.params.sessionId, messages: data || [], message_count: (data || []).length });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+
+    res.json({
+      success: true,
+      session_id: req.params.sessionId,
+      messages: data || [],
+      message_count: (data || []).length,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.get("/admin/export-logs", async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false });
   try {
     const days = parseInt(req.query.days) || 7;
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await supabase.from("chat_logs").select("*").gte("created_at", since).order("created_at", { ascending: true });
+    const since = new Date(
+      Date.now() - days * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("*")
+      .gte("created_at", since)
+      .order("created_at", { ascending: true });
+
     if (error) throw error;
+
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Content-Disposition", `attachment; filename=chat_logs_${days}days.json`);
-    res.json({ exported_at: new Date().toISOString(), days, total: (data || []).length, logs: data || [] });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=chat_logs_${days}days.json`
+    );
+    res.json({
+      exported_at: new Date().toISOString(),
+      days,
+      total: (data || []).length,
+      logs: data || [],
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html")); });
+// === Admin HTML ===
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "admin.html"));
+});
 
 /* ══════════════════════════════════════════════════════════
    SECTION 14: Health, Debug, Root
    ══════════════════════════════════════════════════════════ */
-
 app.get("/admin/debug", adminAuth, async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.8",
-    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords + LessonSearch + GuideFix",
+    version: "10.9",
+    engine: "Guide RAG Overhaul",
     environment: {
-      SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
-      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "✅ SET" : "❌ NOT SET",
-      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? "✅ Custom" : "⚠️ Default",
+      SUPABASE_URL: process.env.SUPABASE_URL ? "✅" : "❌",
+      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅" : "❌",
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "✅" : "❌",
     },
-    clients: { supabase: supabase ? "✅" : "❌", openai: openai ? "✅" : "❌" },
+    clients: {
+      supabase: supabase ? "✅" : "❌",
+      openai: openai ? "✅" : "❌",
+    },
     supabase_connection: supabaseConnected ? "✅" : "❌",
     admin_sessions: adminTokens.size,
     active_chat_sessions: sessionMemory.size,
     search_cache_entries: searchCache.size,
-    dialect_support: Object.keys(DIALECT_MAP).length + " words",
     tables: {},
   };
+
   if (supabase) {
-    for (const table of ["courses","diplomas","chat_logs","corrections","custom_responses","bot_instructions","instructors","faq","site_pages","lessons","chunks"]) {
-      try { const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }); diag.tables[table] = error ? `❌ ${error.message}` : `✅ ${count} rows`; }
-      catch (e) { diag.tables[table] = `❌ ${e.message}`; }
+    for (const table of [
+      "courses",
+      "diplomas",
+      "chat_logs",
+      "corrections",
+      "custom_responses",
+      "bot_instructions",
+      "instructors",
+      "faq",
+      "site_pages",
+      "lessons",
+      "chunks",
+    ]) {
+      try {
+        const { count, error } = await supabase
+          .from(table)
+          .select("*", { count: "exact", head: true });
+        diag.tables[table] = error
+          ? `❌ ${error.message}`
+          : `✅ ${count} rows`;
+      } catch (e) {
+        diag.tables[table] = `❌ ${e.message}`;
+      }
     }
   }
+
   res.json(diag);
 });
 
 app.get("/health", async (req, res) => {
   let dbStatus = "unknown";
   if (supabase) {
-    try { const { error } = await supabase.from("courses").select("id").limit(1); dbStatus = error ? `error: ${error.message}` : "connected"; }
-    catch (e) { dbStatus = `exception: ${e.message}`; }
-  } else dbStatus = "not initialized";
+    try {
+      const { error } = await supabase.from("courses").select("id").limit(1);
+      dbStatus = error ? `error: ${error.message}` : "connected";
+    } catch (e) {
+      dbStatus = `exception: ${e.message}`;
+    }
+  } else {
+    dbStatus = "not initialized";
+  }
+
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.8",
+    version: "10.9",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch + GuideFix",
+    engine: "Guide RAG Overhaul v10.9",
     active_sessions: sessionMemory.size,
-    search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
   });
 });
@@ -3597,158 +4226,141 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.8",
+    version: "10.9",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch + GuideFix",
-    features: [
-      "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
-      "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
-      "🆕 FIX #35: findLessonByTitle() for Guide RAG",
-      "🆕 FIX #36: searchChunksByText() text-based fallback",
-      "🆕 FIX #37: Lower semantic threshold (0.70→0.60)",
-      "🆕 FIX #38: Anti-denial rule in Guide system prompt",
-      "🆕 FIX #39: Dual RAG (semantic + text) in Guide endpoint",
-      "FIX #33: Penalize non-lesson courses when lesson matches exist",
-      "FIX #34: Category link uses actual course category, not search terms",
-      "Lesson-level search — finds topics inside courses (lessons + chunks)",
-      "Course cards show matched lessons with timestamps",
-      "Phase 2 GPT sees matchedLessons for smarter recommendations",
-      "Title-priority scoring (50x weight, +200 exact match)",
-      "Domain scoring (30x weight) + Keywords scoring (20x weight)",
-      "Richer embeddings (page_content + domain + keywords)",
-      "RAG Phase 2 sees domain + keywords per course",
-      "verifyCourseRelevance checks domain + keywords + lesson matches",
-      "Follow-up context memory (remembers last topic)",
-      "Card images with onerror fallback",
-      "Phase 2 sees relevance scores",
-      "Stricter pre-filtering before GPT",
-      "Quick Intent Check (safety net for payment/greeting)",
-      "Dialect normalization (Iraqi/Gulf/Levantine/Moroccan)",
-      "Safety check: verifies GPT's course choices",
-      "\\n → <br> formatting fix",
-      "Session Memory + Auto Summary",
-      "Search cache (5 min TTL) — reduces DB queries",
-      "Dynamic Phase 2 model — saves cost with must-show courses",
-      "Smarter verifyCourseRelevance — multi-term awareness",
-    ],
-    endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health" },
+    engine: "Guide RAG Overhaul",
+    endpoints: {
+      chat: "POST /chat",
+      guide: "POST /api/guide",
+      admin: "GET /admin",
+      health: "GET /health",
+    },
   });
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 15: Embedding Generation Helper
+   SECTION 15: Embedding Generation
    ══════════════════════════════════════════════════════════ */
 async function generateSingleEmbedding(text) {
   const cleanText = text.substring(0, 8000);
   const response = await openai.embeddings.create({
-    model: 'text-embedding-ada-002',
+    model: "text-embedding-ada-002",
     input: cleanText,
   });
   return response.data[0].embedding;
 }
 
-app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
+app.get("/api/admin/generate-embeddings", adminAuth, async (req, res) => {
   if (!supabase || !openai) {
-    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
+    return res.status(500).json({ error: "Not initialized" });
   }
 
   try {
-    console.log('🚀 Starting embedding generation (v10.8 — richer content)...');
-    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
+    const results = {
+      courses: { processed: 0, total: 0, errors: 0 },
+      diplomas: { processed: 0, total: 0, errors: 0 },
+    };
 
-    const { data: courses, error: cErr } = await supabase
-      .from('courses')
-      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain')
-      .is('embedding', null);
+    // Courses
+    const { data: courses } = await supabase
+      .from("courses")
+      .select(
+        "id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain"
+      )
+      .is("embedding", null);
 
-    if (cErr) {
-      console.error('Error fetching courses:', cErr);
-    } else {
+    if (courses) {
       results.courses.total = courses.length;
-      console.log(`📚 Found ${courses.length} courses without embeddings`);
-
       for (const course of courses) {
         try {
           const text = [
-            course.title, course.subtitle, course.domain, course.keywords,
-            course.description, course.page_content, course.syllabus, course.objectives,
-          ].filter(Boolean).join(' ');
-
-          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
+            course.title,
+            course.subtitle,
+            course.domain,
+            course.keywords,
+            course.description,
+            course.page_content,
+            course.syllabus,
+            course.objectives,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          if (!text.trim()) continue;
 
           const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
+          const { error } = await supabase
+            .from("courses")
+            .update({ embedding })
+            .eq("id", course.id);
 
-          if (upErr) {
-            console.error(`❌ Course "${course.title}":`, upErr.message);
-            results.courses.errors++;
-          } else {
-            results.courses.processed++;
-            console.log(`✅ ${results.courses.processed}/${courses.length} Course: ${course.title}`);
-          }
-          await new Promise(r => setTimeout(r, 250));
+          if (error) results.courses.errors++;
+          else results.courses.processed++;
+
+          await new Promise((r) => setTimeout(r, 250));
         } catch (err) {
-          console.error(`❌ Course "${course.title}":`, err.message);
           results.courses.errors++;
         }
       }
     }
 
-    const { data: diplomas, error: dErr } = await supabase
-      .from('diplomas')
-      .select('id, title, description, keywords, search_text')
-      .is('embedding', null);
+    // Diplomas
+    const { data: diplomas } = await supabase
+      .from("diplomas")
+      .select("id, title, description, keywords, search_text")
+      .is("embedding", null);
 
-    if (dErr) {
-      console.error('Error fetching diplomas:', dErr);
-    } else {
+    if (diplomas) {
       results.diplomas.total = diplomas.length;
-      console.log(`🎓 Found ${diplomas.length} diplomas without embeddings`);
-
       for (const diploma of diplomas) {
         try {
-          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
-            .filter(Boolean).join(' ');
-          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
+          const text = [
+            diploma.title,
+            diploma.description,
+            diploma.keywords,
+            diploma.search_text,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          if (!text.trim()) continue;
 
           const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
+          const { error } = await supabase
+            .from("diplomas")
+            .update({ embedding })
+            .eq("id", diploma.id);
 
-          if (upErr) {
-            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
-            results.diplomas.errors++;
-          } else {
-            results.diplomas.processed++;
-            console.log(`✅ ${results.diplomas.processed}/${diplomas.length} Diploma: ${diploma.title}`);
-          }
-          await new Promise(r => setTimeout(r, 250));
+          if (error) results.diplomas.errors++;
+          else results.diplomas.processed++;
+
+          await new Promise((r) => setTimeout(r, 250));
         } catch (err) {
-          console.error(`❌ Diploma "${diploma.title}":`, err.message);
           results.diplomas.errors++;
         }
       }
     }
 
-    console.log('🎉 Embedding generation complete!', results);
-    res.json({ message: 'Embeddings generated!', results });
-
+    res.json({ message: "Done!", results });
   } catch (error) {
-    console.error('❌ Generate embeddings error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 16: 🧩 Course Chunks — RAG Helpers for Guide Bot
+   ██████████████████████████████████████████████████████████
+   ██                                                      ██
+   ██   SECTION 16: 🧩 Guide Bot RAG Helpers v2.0         ██
+   ██   🆕 COMPLETELY REWRITTEN for v10.9                  ██
+   ██                                                      ██
+   ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
 
 async function findCourseByName(courseName) {
   if (!supabase || !courseName) return null;
   try {
     const { data: matches } = await supabase
-      .from('courses')
-      .select('id, title')
-      .ilike('title', `%${courseName}%`)
+      .from("courses")
+      .select("id, title")
+      .ilike("title", `%${courseName}%`)
       .limit(5);
 
     if (matches && matches.length > 0) {
@@ -3756,167 +4368,295 @@ async function findCourseByName(courseName) {
       let best = matches[0];
       let bestSim = 0;
       for (const m of matches) {
-        const sim = similarityRatio(normName, normalizeArabic((m.title || '').toLowerCase()));
-        if (sim > bestSim) { bestSim = sim; best = m; }
+        const sim = similarityRatio(
+          normName,
+          normalizeArabic((m.title || "").toLowerCase())
+        );
+        if (sim > bestSim) {
+          bestSim = sim;
+          best = m;
+        }
       }
       return best;
     }
 
-    const { data: all } = await supabase.from('courses').select('id, title').limit(500);
+    // Fuzzy fallback
+    const { data: all } = await supabase
+      .from("courses")
+      .select("id, title")
+      .limit(500);
     if (!all) return null;
 
     const normName = normalizeArabic(courseName.toLowerCase());
-    let bestMatch = null, bestScore = 0;
+    let bestMatch = null;
+    let bestScore = 0;
     for (const course of all) {
-      const sim = similarityRatio(normName, normalizeArabic((course.title || '').toLowerCase()));
-      if (sim > bestScore && sim >= 55) { bestScore = sim; bestMatch = course; }
+      const sim = similarityRatio(
+        normName,
+        normalizeArabic((course.title || "").toLowerCase())
+      );
+      if (sim > bestScore && sim >= 50) {
+        bestScore = sim;
+        bestMatch = course;
+      }
     }
     return bestMatch;
   } catch (e) {
-    console.error('findCourseByName error:', e.message);
+    console.error("findCourseByName error:", e.message);
     return null;
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIX #35: findLessonByTitle — finds specific lesson in DB
+   🆕 FIX #44: Improved findLessonByTitle — partial word matching
    ══════════════════════════════════════════════════════════ */
 async function findLessonByTitle(lessonTitle, courseId = null) {
   if (!supabase || !lessonTitle) return null;
   try {
+    // Step 1: Direct ilike
     let query = supabase
-      .from('lessons')
-      .select('id, title, course_id, duration')
-      .ilike('title', `%${lessonTitle}%`)
+      .from("lessons")
+      .select("id, title, course_id, duration")
+      .ilike("title", `%${lessonTitle}%`)
       .limit(5);
-    if (courseId) query = query.eq('course_id', courseId);
-    const { data } = await query;
+    if (courseId) query = query.eq("course_id", courseId);
+    let { data } = await query;
+
+    // Step 2: Partial word search if no results
+    if (!data || data.length === 0) {
+      const words = lessonTitle.split(/\s+/).filter((w) => w.length > 3);
+      if (words.length > 0) {
+        const partialFilter = words
+          .slice(0, 3)
+          .map((w) => `title.ilike.%${w}%`)
+          .join(",");
+        let q2 = supabase
+          .from("lessons")
+          .select("id, title, course_id, duration")
+          .or(partialFilter)
+          .limit(10);
+        if (courseId) q2 = q2.eq("course_id", courseId);
+        const { data: d2 } = await q2;
+        data = d2;
+      }
+    }
+
+    // Step 3: Get ALL lessons for this course if still nothing
+    if ((!data || data.length === 0) && courseId) {
+      const { data: allLessons } = await supabase
+        .from("lessons")
+        .select("id, title, course_id, duration")
+        .eq("course_id", courseId);
+      data = allLessons;
+    }
+
     if (!data || data.length === 0) return null;
 
+    // Fuzzy match
     const normTitle = normalizeArabic(lessonTitle.toLowerCase());
-    let best = data[0], bestSim = 0;
+    let best = data[0];
+    let bestSim = 0;
     for (const d of data) {
-      const sim = similarityRatio(normTitle, normalizeArabic((d.title || '').toLowerCase()));
-      if (sim > bestSim) { bestSim = sim; best = d; }
+      const sim = similarityRatio(
+        normTitle,
+        normalizeArabic((d.title || "").toLowerCase())
+      );
+      if (sim > bestSim) {
+        bestSim = sim;
+        best = d;
+      }
     }
-    console.log(`🎓 FIX #35 findLessonByTitle: "${lessonTitle}" → "${best.title}" (${bestSim}%)`);
-    return best;
+
+    console.log(
+      `🎓 FIX #44 findLessonByTitle: "${lessonTitle}" → "${best.title}" (${bestSim}%)`
+    );
+    return bestSim >= 35 ? best : data.length > 0 ? data[0] : null;
   } catch (e) {
-    console.error('findLessonByTitle error:', e.message);
+    console.error("findLessonByTitle error:", e.message);
     return null;
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIX #36: searchChunksByText — text-based fallback for Guide RAG
+   🆕 FIX #40: getAllLessonChunks — gets ALL chunks for a lesson
    ══════════════════════════════════════════════════════════ */
-async function searchChunksByText(terms, courseId = null, lessonId = null, limit = 5) {
-  if (!supabase || !terms || terms.length === 0) return [];
+async function getAllLessonChunks(lessonId, limit = 50) {
+  if (!supabase || !lessonId) return [];
   try {
-    const meaningful = terms.filter(t => t.length > 2);
-    if (meaningful.length === 0) return [];
-
-    const orFilters = meaningful.map(t => `content.ilike.%${t}%`).join(',');
-
-    let query = supabase
-      .from('chunks')
-      .select('id, content, lesson_id, chunk_order, timestamp_start')
-      .or(orFilters)
+    const { data, error } = await supabase
+      .from("chunks")
+      .select("id, content, lesson_id, chunk_order, timestamp_start")
+      .eq("lesson_id", lessonId)
+      .order("chunk_order", { ascending: true })
       .limit(limit);
 
-    if (lessonId) {
-      query = query.eq('lesson_id', lessonId);
-    }
-
-    const { data, error } = await query;
     if (error) {
-      console.error('searchChunksByText error:', error.message);
+      console.error("getAllLessonChunks error:", error.message);
       return [];
     }
 
-    if (data && data.length > 0) {
-      const lessonIds = [...new Set(data.map(c => c.lesson_id).filter(Boolean))];
-      if (lessonIds.length > 0) {
-        const { data: lessons } = await supabase
-          .from('lessons')
-          .select('id, title')
-          .in('id', lessonIds);
-        const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
-        data.forEach(c => {
-          c.lesson_title = lessonMap.get(c.lesson_id) || '';
-        });
-      }
-    }
-
-    console.log(`🔍 FIX #36 Text chunk search: ${(data || []).length} results for [${meaningful.join(', ')}]${lessonId ? ` (lesson=${lessonId})` : ''}`);
+    console.log(
+      `📖 FIX #40: Got ${(data || []).length} chunks for lesson ${lessonId}`
+    );
     return data || [];
   } catch (e) {
-    console.error('searchChunksByText error:', e.message);
+    console.error("getAllLessonChunks error:", e.message);
     return [];
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIX #37: getRelevantChunks — lower threshold (0.60)
+   🆕 Helper: getCourseLessonIds — gets all lesson IDs for a course
    ══════════════════════════════════════════════════════════ */
-async function getRelevantChunks(query, courseId = null, limit = 5) {
+async function getCourseLessonIds(courseId) {
+  if (!supabase || !courseId) return [];
+  try {
+    const { data } = await supabase
+      .from("lessons")
+      .select("id")
+      .eq("course_id", courseId);
+    return (data || []).map((l) => l.id);
+  } catch (e) {
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   🆕 FIX #41: searchChunksByText — now filters by courseId
+   ══════════════════════════════════════════════════════════ */
+async function searchChunksByText(
+  terms,
+  courseId = null,
+  lessonId = null,
+  limit = 10
+) {
+  if (!supabase || !terms || terms.length === 0) return [];
+  try {
+    const meaningful = terms.filter((t) => t.length > 2);
+    if (meaningful.length === 0) return [];
+
+    const orFilters = meaningful
+      .map((t) => `content.ilike.%${t}%`)
+      .join(",");
+
+    let query = supabase
+      .from("chunks")
+      .select("id, content, lesson_id, chunk_order, timestamp_start")
+      .or(orFilters)
+      .limit(limit);
+
+    if (lessonId) {
+      query = query.eq("lesson_id", lessonId);
+    } else if (courseId) {
+      // 🆕 FIX #41: Filter by courseId through lesson IDs
+      const lessonIds = await getCourseLessonIds(courseId);
+      if (lessonIds.length > 0) {
+        query = query.in("lesson_id", lessonIds);
+      }
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("searchChunksByText error:", error.message);
+      return [];
+    }
+
+    // Enrich with lesson titles
+    if (data && data.length > 0) {
+      const lessonIds = [
+        ...new Set(data.map((c) => c.lesson_id).filter(Boolean)),
+      ];
+      if (lessonIds.length > 0) {
+        const { data: lessons } = await supabase
+          .from("lessons")
+          .select("id, title")
+          .in("id", lessonIds);
+        const lessonMap = new Map(
+          (lessons || []).map((l) => [l.id, l.title])
+        );
+        data.forEach((c) => {
+          c.lesson_title = lessonMap.get(c.lesson_id) || "";
+        });
+      }
+    }
+
+    console.log(
+      `🔍 FIX #41 Text search: ${(data || []).length} results for [${meaningful.join(
+        ", "
+      )}]${courseId ? ` (course filtered)` : ""}`
+    );
+    return data || [];
+  } catch (e) {
+    console.error("searchChunksByText error:", e.message);
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   🆕 FIX #42: getRelevantChunks — semantic with higher limits
+   ══════════════════════════════════════════════════════════ */
+async function getRelevantChunks(query, courseId = null, limit = 8) {
   if (!supabase || !openai || !query) return [];
   try {
     const embResponse = await openai.embeddings.create({
-      model: 'text-embedding-ada-002',
+      model: "text-embedding-ada-002",
       input: query.substring(0, 2000),
     });
     const queryEmbedding = embResponse.data[0].embedding;
 
-    const { data, error } = await supabase.rpc('match_lesson_chunks', {
+    const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: queryEmbedding,
-      match_threshold: 0.60,
+      match_threshold: 0.55, // 🆕 lowered from 0.60 for better recall
       match_count: limit,
       filter_course_id: courseId || null,
     });
 
     if (error) {
-      console.error('match_lesson_chunks RPC error:', error.message);
+      console.error("match_lesson_chunks RPC error:", error.message);
       return [];
     }
 
-    return (data || []).map(chunk => ({
+    return (data || []).map((chunk) => ({
       ...chunk,
       chunk_title: chunk.lesson_title
-        ? `${chunk.lesson_title}${chunk.timestamp_start ? ' (⏱️ ' + chunk.timestamp_start + ')' : ''}`
-        : 'محتوى',
+        ? `${chunk.lesson_title}${
+            chunk.timestamp_start
+              ? " [⏱️ " + chunk.timestamp_start + "]"
+              : ""
+          }`
+        : "محتوى",
     }));
   } catch (e) {
-    console.error('getRelevantChunks error:', e.message);
+    console.error("getRelevantChunks error:", e.message);
     return [];
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 17: Start Server
+   SECTION 17: Start Server + 🎓 Guide Bot v2.0
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.8...\n");
-  if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
+  console.log("\n🚀 Starting Ziko Chatbot v10.9...\n");
   supabaseConnected = await testSupabaseConnection();
-  if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
-  /* ═══════════════════════════════════════════════════════════════
-     🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.6
-     ═══════════════════════════════════════════════════════════════ */
-
+  /* ═══════════════════════════════════
+     Guide Bot State
+     ═══════════════════════════════════ */
   const guideConversations = {};
   const guideRateLimits = {};
   const GUIDE_DAILY_LIMIT = 20;
   const GUIDE_MAX_HISTORY = 20;
 
   function getToday() {
-    return new Date().toISOString().split('T')[0];
+    return new Date().toISOString().split("T")[0];
   }
 
   function getGuideRemaining(sessionId) {
     const today = getToday();
-    if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
+    if (
+      !guideRateLimits[sessionId] ||
+      guideRateLimits[sessionId].date !== today
+    ) {
       return GUIDE_DAILY_LIMIT;
     }
     return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
@@ -3924,72 +4664,48 @@ async function startServer() {
 
   function consumeGuideMsg(sessionId) {
     const today = getToday();
-    if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
+    if (
+      !guideRateLimits[sessionId] ||
+      guideRateLimits[sessionId].date !== today
+    ) {
       guideRateLimits[sessionId] = { date: today, count: 0 };
     }
     guideRateLimits[sessionId].count++;
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     FIX #38: buildGuideSystemPrompt — with anti-denial rule
+     🆕 FIX #45: buildGuideSystemPrompt v2.0 — content-first
      ═══════════════════════════════════════════════════════════════ */
-  function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkContext) {
+  function buildGuideSystemPrompt(
+    courseName,
+    lectureTitle,
+    clientPrompt,
+    currentLessonContext,
+    otherLessonsContext
+  ) {
     let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
 
 ## دورك:
-- تساعد الطلاب يفهموا أي مفهوم أو موضوع تعليمي
+- تساعد الطلاب يفهموا محتوى الدروس اللي بيذاكروها
 - تشرح بأسلوب بسيط وعملي بالعامية المصرية
-- تدي أمثلة عملية وأكواد لو لزم الأمر
+- تدي أمثلة عملية من المحتوى الفعلي للدرس
 
 ## أسلوبك:
-- ودود ومشجع وبتحفّز الطالب
-- بتتكلم بالعامية المصرية البسيطة
-- بتستخدم إيموجي مناسبة بدون إفراط
-- بتنظم الرد بنقاط وعناوين لو الموضوع طويل
-- لو في كود بتكتبه منظم وبتشرح كل جزء
-- ردودك مختصرة ومفيدة — مش طويلة بدون فايدة
+- ودود ومشجع ومختصر
+- بالعامية المصرية البسيطة
+- إيموجي مناسبة بدون إفراط
+- تنظم الرد بنقاط وعناوين لو الموضوع طويل
 
 ## ممنوع:
-- ما تحلش امتحانات أو assignments كاملة — ساعد الطالب يفهم بس
-- ما تقولش "أنا ChatGPT" أو "أنا AI" — أنت اسمك "زيكو المرشد التعليمي"
-- ما تتكلمش عن أسعار أو كورسات أو اشتراكات — ده مش دورك
-- لو حد سألك عن أسعار أو كورسات قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية وهيساعدك"`;
+- ما تحلش امتحانات أو assignments كاملة
+- ما تقولش "أنا ChatGPT" أو "أنا AI" — أنت "زيكو المرشد التعليمي"
+- ما تتكلمش عن أسعار أو اشتراكات — لو حد سأل قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية"`;
 
     if (courseName || lectureTitle) {
       p += `\n\n═══════════════════════════════════`;
       p += `\n📍 سياق الطالب الحالي:`;
       if (courseName) p += `\n📚 الكورس: "${courseName}"`;
       if (lectureTitle) p += `\n📖 الدرس: "${lectureTitle}"`;
-
-      p += `\n\n⚡ تعليمات التعامل مع السياق (مهمة جداً):`;
-
-      p += `\n\n1️⃣ لو الطالب سأل سؤال عام زي "مش فاهم" أو "اشرحلي" أو "مش فاهم الدرس" أو "ممكن تساعدني":`;
-      p += `\n   - أأكدله إنك عارف هو في أنهي درس بالظبط (اذكر اسم الدرس)`;
-      p += `\n   - اشرحله الدرس ده بيتكلم عن إيه في 2-3 سطور بشكل مبسط`;
-      p += `\n   - بعد كده اسأله: "إيه بالظبط اللي محتاج أوضحهولك؟"`;
-      p += `\n   - أو اديله اختيارات يختار منها`;
-
-      p += `\n\n2️⃣ لو الطالب سأل سؤال محدد:`;
-      p += `\n   - جاوبه مباشرة وادّيله أمثلة عملية`;
-      p += `\n   - حاول تربط الإجابة بسياق الدرس الحالي`;
-
-      p += `\n\n3️⃣ لو الدرس عن كود أو برمجة:`;
-      p += `\n   - اكتب أكواد توضيحية واشرح كل سطر`;
-      p += `\n   - استخدم أمثلة بسيطة الأول وبعدين عقّد شوية`;
-
-      p += `\n\n4️⃣ لو مش عارف محتوى الدرس بالظبط:`;
-      p += `\n   - اشرح الموضوع العام بناءً على اسم الدرس`;
-      p += `\n   - اسأل الطالب يحددلك أكتر`;
-
-      p += `\n\n5️⃣ دايماً:`;
-      p += `\n   - خليك مشجع وإيجابي`;
-      p += `\n   - استخدم أمثلة من الواقع عشان يفهم`;
-      p += `\n   - لو الطالب قال "فهمت" — شجعه واسأله لو عنده حاجة تانية`;
-
-    } else {
-      p += `\n\n⚠️ ملاحظة: مش قادر أحدد الدرس الحالي للطالب.`;
-      p += `\nلو الطالب سأل سؤال عام — اسأله هو في أنهي كورس وأنهي درس عشان تساعده أحسن.`;
-      p += `\nلو سأل سؤال محدد — جاوبه عادي.`;
     }
 
     if (clientPrompt && clientPrompt.trim()) {
@@ -3997,273 +4713,428 @@ async function startServer() {
       p += `\n${clientPrompt.trim().substring(0, 500)}`;
     }
 
-    if (chunkContext && chunkContext.trim()) {
-      p += `\n\n═══════════════════════════════════`;
-      p += `\n📖 محتوى فعلي من الكورس (من قاعدة البيانات):`;
-      p += `\n═══════════════════════════════════`;
-      p += `\n${chunkContext}`;
-      p += `\n═══════════════════════════════════`;
-      p += `\n\n⚠️ مهم جداً:`;
-      p += `\n- استخدم المحتوى اللي فوق ده كمرجع أساسي في إجابتك!`;
-      p += `\n- لو الطالب سأل عن حاجة موجودة في المحتوى — جاوبه منه مباشرة`;
-      p += `\n- لو المحتوى مش بيغطي سؤاله — استخدم معرفتك العامة بس وضّح إنك بتشرح من خبرتك`;
-      p += `\n- لو قدرت تذكر اسم درس معين من المحتوى — اذكره عشان الطالب يرجعله`;
+    /* ═══════════════════════════════════════════
+       🆕 FIX #45+#47+#48: Content sections
+       ═══════════════════════════════════════════ */
+    if (currentLessonContext && currentLessonContext.trim()) {
+      p += `\n\n╔══════════════════════════════════════════╗`;
+      p += `\n║  📖 محتوى الدرس الحالي (من قاعدة البيانات)  ║`;
+      p += `\n╚══════════════════════════════════════════╝`;
+      p += `\n${currentLessonContext}`;
+      p += `\n═══════════════════════════════════════════`;
     }
 
+    if (otherLessonsContext && otherLessonsContext.trim()) {
+      p += `\n\n╔══════════════════════════════════════════╗`;
+      p += `\n║  📚 محتوى من دروس أخرى في نفس الكورس      ║`;
+      p += `\n╚══════════════════════════════════════════╝`;
+      p += `\n${otherLessonsContext}`;
+      p += `\n═══════════════════════════════════════════`;
+    }
+
+    const hasCurrentContent =
+      currentLessonContext && currentLessonContext.trim();
+    const hasOtherContent =
+      otherLessonsContext && otherLessonsContext.trim();
+
     /* ═══════════════════════════════════════════
-       FIX #38: Anti-denial rule — CRITICAL
+       🆕 FIX #45: Strict answering rules
        ═══════════════════════════════════════════ */
-    p += `\n\n═══════════════════════════════════`;
-    p += `\n⚠️⚠️⚠️ قاعدة حرجة — ممنوع الإنكار بدون دليل ⚠️⚠️⚠️`;
-    p += `\n`;
-    p += `\n❌❌❌ ممنوع تقول "الدرس ده مش بيتكلم عن X" أو "مش بيتناول X" إلا لو:`;
-    p += `\n   1. قرأت محتوى الدرس الفعلي (اللي بين ═══ محتوى فعلي من الكورس ═══) وأكدت إن الموضوع مش موجود`;
-    p += `\n   2. لو مفيش محتوى فعلي متوفر → قول "مش متأكد لو الموضوع ده متغطي في الدرس ده بالظبط، بس خليني أشرحلك الموضوع"`;
-    p += `\n`;
-    p += `\n✅ لو المحتوى الفعلي فيه أي ذكر للموضوع اللي الطالب بيسأل عنه:`;
-    p += `\n   - قول "أيوه! الموضوع ده موجود في الدرس 🎯"`;
-    p += `\n   - لو فيه timestamp → "هتلاقيه من الدقيقة X تقريباً ⏱️"`;
-    p += `\n   - اشرح الجزء المتعلق من المحتوى`;
-    p += `\n`;
-    p += `\n❌ ممنوع تفترض إن الدرس مش فيه حاجة بناءً على اسم الدرس بس!`;
-    p += `\n❌ ممنوع تقترح مواقع خارجية لو الموضوع متشرح في الدرس نفسه!`;
-    p += `\n✅ الأولوية دايماً: محتوى الدرس الفعلي > معرفتك العامة > اقتراحات خارجية`;
+    p += `\n\n╔══════════════════════════════════════════╗`;
+    p += `\n║  ⚠️⚠️⚠️ قواعد الإجابة (حرجة جداً!) ⚠️⚠️⚠️   ║`;
+    p += `\n╚══════════════════════════════════════════╝`;
+
+    p += `\n\n🔴 الأولوية رقم 1: المحتوى الفعلي أولاً!`;
+    p += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+    if (hasCurrentContent) {
+      p += `\n\n✅ عندك محتوى فعلي من الدرس الحالي — استخدمه كمرجع أساسي!`;
+      p += `\n`;
+      p += `\n📌 لو الإجابة موجودة في "محتوى الدرس الحالي":`;
+      p += `\n   - جاوب منه مباشرة`;
+      p += `\n   - اذكر الـ timestamp لو موجود: "هتلاقي الكلام ده في الدقيقة X تقريباً ⏱️"`;
+      p += `\n   - استخدم نفس الأمثلة اللي المحاضر ذكرها — ما تخترعش أمثلة من عندك`;
+      p += `\n   - لو المحاضر ذكر اسم عالم أو تاريخ أو رقم — اذكره زي ما هو بالظبط`;
+      p += `\n`;
+      p += `\n   مثال صح ✅: "المحاضر شرح الموضوع ده في الدقيقة 5:35 تقريباً ⏱️ — وقال إن..."`;
+      p += `\n   مثال غلط ❌: "الموضوع ده عموماً يعني..." (بدون ما ترجع للمحتوى)`;
+    }
+
+    if (hasOtherContent) {
+      p += `\n\n📌 لو الإجابة موجودة في "محتوى من دروس أخرى":`;
+      p += `\n   - قول: "هتلاقي المحاضر شارح الجزء ده في درس [اسم الدرس] من الدقيقة [X] تقريباً ⏱️"`;
+      p += `\n   - لو عايز تشرح باختصار: اشرح من المحتوى الفعلي + وجّه الطالب للدرس`;
+      p += `\n`;
+      p += `\n   مثال صح ✅: "الموضوع ده المحاضر شرحه بالتفصيل في درس 'البساطة في التصميم' من الدقيقة 3:20 ⏱️ — باختصار كده..."`;
+    }
+
+    p += `\n\n📌 لو الإجابة مش موجودة في أي محتوى:`;
+    p += `\n   - قول بوضوح: "الموضوع ده مش متغطي في المحتوى اللي عندي من الكورس، بس خليني أشرحلك من خبرتي 💡"`;
+    p += `\n   - بعد كده اشرح من معرفتك العامة`;
+
+    p += `\n\n🔴🔴🔴 ممنوعات صارمة:`;
+    p += `\n❌ ممنوع تجاوب من معرفتك العامة لو الإجابة موجودة في المحتوى الفعلي!`;
+    p += `\n❌ ممنوع تخترع أمثلة أو أسماء أو أرقام مش موجودة في المحتوى!`;
+    p += `\n❌ ممنوع تقول "الدرس مش بيتكلم عن X" إلا لو فعلاً قرأت كل المحتوى وأكدت!`;
+    p += `\n❌ ممنوع تقترح مواقع خارجية لو الموضوع متشرح في الدرس!`;
+    p += `\n❌ لو المحاضر ذكر موقع معين (مثلاً FreePik) — اذكر نفس الموقع بالظبط، ما تحطش موقع تاني!`;
+
+    p += `\n\n✅ مسموح:`;
+    p += `\n✅ لو الطالب سأل سؤال عام "مش فاهم" → اعمل ملخص سريع للدرس من المحتوى`;
+    p += `\n✅ لو المحتوى فيه جزء بيجاوب على السؤال → اقتبس منه واشرح`;
+    p += `\n✅ لو المحتوى مش كافي → كمّل من معرفتك بس وضّح إنك بتكمّل`;
+
+    p += `\n\n═══ قاعدة الـ Timestamps ═══`;
+    p += `\n- كل جزء من المحتوى الفعلي معاه timestamp (وقت في الفيديو)`;
+    p += `\n- دايماً اذكر الوقت في إجابتك: "من الدقيقة X ⏱️"`;
+    p += `\n- ده بيساعد الطالب يرجع للمكان ده في الفيديو`;
 
     return p;
   }
 
   /* ═══════════════════════════════════
-     Guide Bot Endpoints
+     Guide Bot Status Endpoint
      ═══════════════════════════════════ */
-
-  app.get('/api/guide/status', (req, res) => {
-    try {
-      const sessionId = req.query.session_id;
-
-      if (!sessionId) {
-        return res.json({
-          remaining_messages: GUIDE_DAILY_LIMIT,
-          daily_limit: GUIDE_DAILY_LIMIT,
-          date: getToday()
-        });
-      }
-
-      const remaining = getGuideRemaining(sessionId);
-
-      console.log(`📊 Guide Status | Session: ${sessionId.slice(0, 15)}... | Remaining: ${remaining}/${GUIDE_DAILY_LIMIT}`);
-
-      res.json({
-        remaining_messages: remaining,
-        daily_limit: GUIDE_DAILY_LIMIT,
-        date: getToday(),
-        session_id: sessionId
-      });
-
-    } catch (error) {
-      console.error('❌ Guide Status Error:', error.message);
-      res.json({
-        remaining_messages: GUIDE_DAILY_LIMIT,
-        daily_limit: GUIDE_DAILY_LIMIT,
-        date: getToday()
-      });
-    }
+  app.get("/api/guide/status", (req, res) => {
+    const sessionId = req.query.session_id;
+    const remaining = sessionId
+      ? getGuideRemaining(sessionId)
+      : GUIDE_DAILY_LIMIT;
+    res.json({
+      remaining_messages: remaining,
+      daily_limit: GUIDE_DAILY_LIMIT,
+      date: getToday(),
+    });
   });
 
   /* ═══════════════════════════════════════════════════════════════
-     FIX #39: /api/guide — Dual RAG (semantic + text search)
+     🆕 FIX #46+#48: /api/guide — Full lesson context + cross-lesson
      ═══════════════════════════════════════════════════════════════ */
-  app.post('/api/guide', async (req, res) => {
+  app.post("/api/guide", async (req, res) => {
     try {
-      const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
+      const {
+        message,
+        session_id,
+        course_name,
+        lecture_title,
+        system_prompt,
+      } = req.body;
 
       if (!message || !session_id) {
-        return res.status(400).json({ error: 'Missing message or session_id' });
+        return res
+          .status(400)
+          .json({ error: "Missing message or session_id" });
       }
 
       const remaining = getGuideRemaining(session_id);
       if (remaining <= 0) {
         return res.json({
-          reply: '⚠️ خلصت رسائلك النهارده (20 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪',
-          remaining_messages: 0
+          reply:
+            "⚠️ خلصت رسائلك النهارده (20 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪",
+          remaining_messages: 0,
         });
       }
 
       consumeGuideMsg(session_id);
 
-      /* ═══ FIX #39: Dual RAG — semantic + text-based ═══ */
-      let chunkContext = '';
+      let currentLessonContext = "";
+      let otherLessonsContext = "";
+      let ragStats = {
+        currentLesson: 0,
+        semantic: 0,
+        text: 0,
+        otherLessons: 0,
+        total: 0,
+      };
+
       if (course_name || lecture_title) {
         try {
-          // 1. Find the course
-          const courseMatch = await findCourseByName(course_name || lecture_title);
+          // ═══ Step 1: Find Course ═══
+          const courseMatch = await findCourseByName(
+            course_name || lecture_title
+          );
           const courseId = courseMatch ? courseMatch.id : null;
+          console.log(
+            `📚 Guide: course="${course_name}" → ${
+              courseId ? courseMatch.title : "NOT FOUND"
+            }`
+          );
 
-          // 2. FIX #35: Find the specific lesson
+          // ═══ Step 2: Find Lesson (FIX #44 improved) ═══
           let lessonMatch = null;
           if (lecture_title) {
             lessonMatch = await findLessonByTitle(lecture_title, courseId);
+            console.log(
+              `📖 Guide: lesson="${lecture_title}" → ${
+                lessonMatch
+                  ? lessonMatch.title + " (id=" + lessonMatch.id + ")"
+                  : "NOT FOUND"
+              }`
+            );
           }
 
-          const searchQuery = message + (lecture_title ? ' ' + lecture_title : '');
+          // ═══ Step 3: 🆕 FIX #40 — Get ALL chunks of current lesson ═══
+          let currentChunks = [];
+          if (lessonMatch) {
+            currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
+            ragStats.currentLesson = currentChunks.length;
 
-          // 3. Semantic search (primary) — FIX #37: threshold 0.60
-          const semanticChunks = await getRelevantChunks(searchQuery, courseId, 5);
-
-          // 4. FIX #36: Text-based search (fallback) — searches INSIDE the specific lesson
-          const textTerms = message
-            .split(/\s+/)
-            .filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
-
-          const textChunks = await searchChunksByText(
-            textTerms,
-            courseId,
-            lessonMatch ? lessonMatch.id : null,
-            5
-          );
-
-          // 5. Merge & deduplicate
-          const allChunks = [...semanticChunks];
-          const seenChunkIds = new Set(semanticChunks.map(c => c.id));
-
-          for (const tc of textChunks) {
-            if (!seenChunkIds.has(tc.id)) {
-              allChunks.push({
-                ...tc,
-                chunk_title: tc.lesson_title
-                  ? `${tc.lesson_title}${tc.timestamp_start ? ' (⏱️ ' + tc.timestamp_start + ')' : ''}`
-                  : 'محتوى',
-              });
-              seenChunkIds.add(tc.id);
+            if (currentChunks.length > 0) {
+              // 🆕 FIX #43: 1200 chars per chunk
+              currentLessonContext = currentChunks
+                .map((c) => {
+                  const ts = c.timestamp_start
+                    ? `[⏱️ ${c.timestamp_start}]`
+                    : "";
+                  return `${ts} ${(c.content || "").substring(0, 1200)}`;
+                })
+                .join("\n\n");
             }
           }
 
-          if (allChunks.length > 0) {
-            chunkContext = allChunks.map(c =>
-              `📎 ${c.chunk_title || 'محتوى'}:\n${(c.content || '').substring(0, 600)}`
-            ).join('\n\n---\n\n');
+          // ═══ Step 4: 🆕 FIX #46 — Search OTHER lessons in same course ═══
+          const currentLessonId = lessonMatch ? lessonMatch.id : null;
+          const otherChunksMap = new Map(); // lesson_title → chunks[]
 
-            console.log(`📚 Guide RAG v1.6: ${allChunks.length} chunks (${semanticChunks.length} semantic + ${textChunks.length} text) | course="${course_name}" | lesson="${lecture_title}"`);
-          } else {
-            console.log(`📚 Guide RAG v1.6: No chunks found for "${course_name}" + "${message.substring(0, 40)}..."`);
+          // 4a. Semantic search across entire course
+          const searchQuery =
+            message + (lecture_title ? " " + lecture_title : "");
+          const semanticChunks = await getRelevantChunks(
+            searchQuery,
+            courseId,
+            8
+          );
+          ragStats.semantic = semanticChunks.length;
+
+          for (const sc of semanticChunks) {
+            // Skip if it's from the current lesson (we already have full content)
+            if (currentLessonId && sc.lesson_id === currentLessonId) continue;
+
+            const lessonName = sc.lesson_title || "درس آخر";
+            if (!otherChunksMap.has(lessonName)) {
+              otherChunksMap.set(lessonName, []);
+            }
+            otherChunksMap.get(lessonName).push(sc);
           }
+
+          // 4b. Text search across course (excluding current lesson)
+          const textTerms = message
+            .split(/\s+/)
+            .filter(
+              (w) =>
+                w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+            );
+
+          if (textTerms.length > 0) {
+            const textChunks = await searchChunksByText(
+              textTerms,
+              courseId,
+              null,
+              10
+            );
+            ragStats.text = textChunks.length;
+
+            for (const tc of textChunks) {
+              if (currentLessonId && tc.lesson_id === currentLessonId)
+                continue;
+
+              const lessonName = tc.lesson_title || "درس آخر";
+              if (!otherChunksMap.has(lessonName)) {
+                otherChunksMap.set(lessonName, []);
+              }
+
+              // Avoid duplicates
+              const existing = otherChunksMap.get(lessonName);
+              if (!existing.find((e) => e.id === tc.id)) {
+                existing.push(tc);
+              }
+            }
+          }
+
+          // Build other lessons context
+          if (otherChunksMap.size > 0) {
+            const parts = [];
+            for (const [lessonName, chunks] of otherChunksMap) {
+              ragStats.otherLessons += chunks.length;
+              // 🆕 FIX #43: 1200 chars
+              const chunkTexts = chunks
+                .slice(0, 4)
+                .map((c) => {
+                  const ts = c.timestamp_start
+                    ? `[⏱️ ${c.timestamp_start}]`
+                    : "";
+                  return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
+                })
+                .join("\n");
+              parts.push(`📎 درس: "${lessonName}"\n${chunkTexts}`);
+            }
+            otherLessonsContext = parts.join("\n\n---\n\n");
+          }
+
+          ragStats.total = ragStats.currentLesson + ragStats.otherLessons;
+
+          // Safety: limit total context
+          if (currentLessonContext.length > 40000) {
+            currentLessonContext =
+              currentLessonContext.substring(0, 40000) +
+              "\n\n[... بقية محتوى الدرس]";
+          }
+          if (otherLessonsContext.length > 10000) {
+            otherLessonsContext =
+              otherLessonsContext.substring(0, 10000) +
+              "\n\n[... بقية المحتوى]";
+          }
+
+          console.log(
+            `📚 Guide RAG v2.0: currentLesson=${ragStats.currentLesson} chunks | semantic=${ragStats.semantic} | text=${ragStats.text} | otherLessons=${ragStats.otherLessons} | total=${ragStats.total}`
+          );
         } catch (ragErr) {
-          console.error('Guide RAG error (non-fatal):', ragErr.message);
+          console.error("Guide RAG error (non-fatal):", ragErr.message);
         }
       }
 
+      // ═══ Build System Prompt (FIX #45) ═══
       const finalSystemPrompt = buildGuideSystemPrompt(
-        course_name || '',
-        lecture_title || '',
-        system_prompt || '',
-        chunkContext
+        course_name || "",
+        lecture_title || "",
+        system_prompt || "",
+        currentLessonContext,
+        otherLessonsContext
       );
 
+      // ═══ Conversation Management ═══
       if (!guideConversations[session_id]) {
         guideConversations[session_id] = {
-          messages: [{ role: 'system', content: finalSystemPrompt }],
-          lastActivity: Date.now()
+          messages: [{ role: "system", content: finalSystemPrompt }],
+          lastActivity: Date.now(),
         };
       }
 
       const conv = guideConversations[session_id];
-
-      conv.messages[0] = { role: 'system', content: finalSystemPrompt };
+      // Always update system prompt (context may have changed)
+      conv.messages[0] = { role: "system", content: finalSystemPrompt };
       conv.lastActivity = Date.now();
-      conv.messages.push({ role: 'user', content: message });
+      conv.messages.push({ role: "user", content: message });
 
+      // Trim history
       if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
-        conv.messages = [conv.messages[0], ...conv.messages.slice(-GUIDE_MAX_HISTORY)];
+        conv.messages = [
+          conv.messages[0],
+          ...conv.messages.slice(-GUIDE_MAX_HISTORY),
+        ];
       }
 
+      // ═══ Call GPT ═══
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: "gpt-4o-mini",
         messages: conv.messages,
-        max_tokens: 1000,
-        temperature: 0.7
+        max_tokens: 1200,
+        temperature: 0.6,
       });
 
       const reply = completion.choices[0].message.content;
-      conv.messages.push({ role: 'assistant', content: reply });
+      conv.messages.push({ role: "assistant", content: reply });
 
       const newRemaining = getGuideRemaining(session_id);
-      console.log(`🎓 Guide | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || 'N/A'} | Lecture: ${lecture_title || 'N/A'} | RAG: ${chunkContext ? 'YES' : 'NO'} | Remaining: ${newRemaining}`);
 
-      res.json({ reply, remaining_messages: newRemaining });
+      console.log(
+        `🎓 Guide v2.0 | Session: ${session_id.slice(
+          0,
+          12
+        )}... | Course: ${course_name || "N/A"} | Lecture: ${
+          lecture_title || "N/A"
+        } | RAG: ${
+          ragStats.total > 0
+            ? `YES (${ragStats.total} chunks)`
+            : "NO"
+        } | Remaining: ${newRemaining}`
+      );
 
+      res.json({
+        reply,
+        remaining_messages: newRemaining,
+      });
     } catch (error) {
-      console.error('❌ Guide Error:', error.message);
+      console.error("❌ Guide Error:", error.message);
       res.status(500).json({
-        reply: 'عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏',
-        remaining_messages: getGuideRemaining(req.body?.session_id || ''),
-        error: true
+        reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
+        remaining_messages: getGuideRemaining(req.body?.session_id || ""),
+        error: true,
       });
     }
   });
 
-  app.get('/api/guide/health', (req, res) => {
+  /* ═══════════════════════════════════
+     Guide Bot Health
+     ═══════════════════════════════════ */
+  app.get("/api/guide/health", (req, res) => {
     res.json({
-      status: 'ok',
-      service: 'Ziko Guide v1.6',
-      model: 'gpt-4o-mini',
+      status: "ok",
+      service: "Ziko Guide v2.0",
+      model: "gpt-4o-mini",
       daily_limit: GUIDE_DAILY_LIMIT,
       active_sessions: Object.keys(guideConversations).length,
-      active_rate_limits: Object.keys(guideRateLimits).length,
-      fixes: ['FIX #35: findLessonByTitle', 'FIX #36: searchChunksByText', 'FIX #37: threshold 0.60', 'FIX #38: anti-denial', 'FIX #39: dual RAG'],
+      fixes: [
+        "FIX #40: getAllLessonChunks",
+        "FIX #41: courseId filter",
+        "FIX #42: higher limits",
+        "FIX #43: 1200 chars",
+        "FIX #44: better findLesson",
+        "FIX #45: content-first prompt",
+        "FIX #46: cross-lesson refs",
+        "FIX #47: timestamps mandatory",
+        "FIX #48: split context",
+      ],
     });
   });
 
-  // Guide cleanup interval
+  /* ═══════════════════════════════════
+     Guide Cleanup
+     ═══════════════════════════════════ */
   setInterval(() => {
     const now = Date.now();
     const today = getToday();
-    let cleanedConv = 0;
-    let cleanedRate = 0;
-
     for (const sid in guideConversations) {
       if (now - guideConversations[sid].lastActivity > 2 * 60 * 60 * 1000) {
         delete guideConversations[sid];
-        cleanedConv++;
       }
     }
-
     for (const sid in guideRateLimits) {
       if (guideRateLimits[sid].date !== today) {
         delete guideRateLimits[sid];
-        cleanedRate++;
       }
-    }
-
-    if (cleanedConv > 0 || cleanedRate > 0) {
-      console.log(`🧹 Guide Cleanup: ${cleanedConv} conversations, ${cleanedRate} rate limits removed`);
     }
   }, 60 * 60 * 1000);
 
-  console.log('🎓 Guide Bot v1.6 (with FIX #35-#39) endpoints ready:');
-  console.log('   POST /api/guide        — Chat (Dual RAG)');
-  console.log('   GET  /api/guide/status  — Counter Sync');
-  console.log('   GET  /api/guide/health  — Health Check');
+  console.log("🎓 Guide Bot v2.0 (FIX #40-#48) ready");
 
-  // ═══ 🧩 Chunk Embeddings Admin ═══
-
-  app.get('/api/admin/chunks-status', adminAuth, async (req, res) => {
-    if (!supabase) return res.status(500).json({ success: false, error: 'DB not connected' });
+  /* ═══════════════════════════════════
+     Chunk Embeddings Admin
+     ═══════════════════════════════════ */
+  app.get("/api/admin/chunks-status", adminAuth, async (req, res) => {
+    if (!supabase) return res.status(500).json({ success: false });
     try {
       const { count: totalChunks } = await supabase
-        .from('chunks').select('*', { count: 'exact', head: true });
+        .from("chunks")
+        .select("*", { count: "exact", head: true });
 
       const { count: withEmbedding } = await supabase
-        .from('chunks').select('*', { count: 'exact', head: true })
-        .not('embedding', 'is', null);
+        .from("chunks")
+        .select("*", { count: "exact", head: true })
+        .not("embedding", "is", null);
 
       const { count: withoutEmbedding } = await supabase
-        .from('chunks').select('*', { count: 'exact', head: true })
-        .is('embedding', null);
+        .from("chunks")
+        .select("*", { count: "exact", head: true })
+        .is("embedding", null);
 
       const { count: totalLessons } = await supabase
-        .from('lessons').select('*', { count: 'exact', head: true });
+        .from("lessons")
+        .select("*", { count: "exact", head: true });
 
       const { count: totalCourses } = await supabase
-        .from('courses').select('*', { count: 'exact', head: true });
+        .from("courses")
+        .select("*", { count: "exact", head: true });
 
       res.json({
         success: true,
@@ -4273,104 +5144,84 @@ async function startServer() {
           without_embedding: withoutEmbedding || 0,
           total_lessons: totalLessons || 0,
           total_courses: totalCourses || 0,
-          coverage: totalChunks > 0
-            ? `${Math.round(((withEmbedding || 0) / (totalChunks || 1)) * 100)}%`
-            : '0%',
-        }
+          coverage:
+            totalChunks > 0
+              ? `${Math.round(
+                  ((withEmbedding || 0) / (totalChunks || 1)) * 100
+                )}%`
+              : "0%",
+        },
       });
     } catch (e) {
       res.status(500).json({ success: false, error: e.message });
     }
   });
 
-  app.post('/api/admin/generate-chunk-embeddings', adminAuth, async (req, res) => {
-    if (!supabase || !openai) {
-      return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
-    }
-
-    try {
-      const batchSize = parseInt(req.body?.batch_size) || 100;
-      console.log(`🧩 Starting chunk embedding generation (batch=${batchSize})...`);
-
-      const results = { processed: 0, errors: 0, total: 0 };
-
-      const { data: chunks, error: fetchErr } = await supabase
-        .from('chunks')
-        .select(`
-          id,
-          content,
-          lesson_id,
-          chunk_order,
-          lessons!inner(title, course_id, courses!inner(title))
-        `)
-        .is('embedding', null)
-        .limit(batchSize);
-
-      if (fetchErr) {
-        console.error('Fetch chunks error:', fetchErr.message);
-        return res.status(500).json({ error: fetchErr.message });
+  app.post(
+    "/api/admin/generate-chunk-embeddings",
+    adminAuth,
+    async (req, res) => {
+      if (!supabase || !openai) {
+        return res.status(500).json({ error: "Not initialized" });
       }
+      try {
+        const batchSize = parseInt(req.body?.batch_size) || 100;
+        const results = { processed: 0, errors: 0, total: 0 };
 
-      if (!chunks || chunks.length === 0) {
-        return res.json({ message: 'All chunks already have embeddings! ✅', results });
-      }
+        const { data: chunks, error: fetchErr } = await supabase
+          .from("chunks")
+          .select(
+            `id, content, lesson_id, chunk_order, 
+           lessons!inner(title, course_id, courses!inner(title))`
+          )
+          .is("embedding", null)
+          .limit(batchSize);
 
-      results.total = chunks.length;
-      console.log(`📝 Found ${chunks.length} chunks without embeddings`);
-
-      for (let idx = 0; idx < chunks.length; idx++) {
-        const chunk = chunks[idx];
-        try {
-          const lessonTitle = chunk.lessons?.title || '';
-          const courseTitle = chunk.lessons?.courses?.title || '';
-
-          const text = [courseTitle, lessonTitle, chunk.content]
-            .filter(Boolean)
-            .join(' - ');
-
-          if (!text.trim()) {
-            console.log(`⏭️ Skip chunk ${chunk.id} (empty)`);
-            continue;
-          }
-
-          const embedding = await generateSingleEmbedding(text);
-
-          const { error: upErr } = await supabase
-            .from('chunks')
-            .update({ embedding })
-            .eq('id', chunk.id);
-
-          if (upErr) {
-            console.error(`❌ Chunk ${chunk.id}:`, upErr.message);
-            results.errors++;
-          } else {
-            results.processed++;
-            if ((idx + 1) % 20 === 0 || idx === chunks.length - 1) {
-              console.log(`   🧠 Progress: ${idx + 1}/${chunks.length} | ✅ ${results.processed} | ❌ ${results.errors}`);
-            }
-          }
-
-          await new Promise(r => setTimeout(r, 250));
-        } catch (err) {
-          console.error(`❌ Chunk ${chunk.id}:`, err.message);
-          results.errors++;
+        if (fetchErr) {
+          return res.status(500).json({ error: fetchErr.message });
         }
+        if (!chunks || chunks.length === 0) {
+          return res.json({ message: "All done! ✅", results });
+        }
+
+        results.total = chunks.length;
+
+        for (let idx = 0; idx < chunks.length; idx++) {
+          const chunk = chunks[idx];
+          try {
+            const text = [
+              chunk.lessons?.courses?.title,
+              chunk.lessons?.title,
+              chunk.content,
+            ]
+              .filter(Boolean)
+              .join(" - ");
+            if (!text.trim()) continue;
+
+            const embedding = await generateSingleEmbedding(text);
+            const { error: upErr } = await supabase
+              .from("chunks")
+              .update({ embedding })
+              .eq("id", chunk.id);
+
+            if (upErr) results.errors++;
+            else results.processed++;
+
+            await new Promise((r) => setTimeout(r, 250));
+          } catch (err) {
+            results.errors++;
+          }
+        }
+
+        res.json({
+          message: `Done! ${results.processed} embeddings generated.`,
+          results,
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
       }
-
-      console.log('🎉 Chunk embedding generation complete!', results);
-      res.json({
-        message: `Done! ${results.processed} embeddings generated.`,
-        results,
-        note: results.total === batchSize
-          ? `Processed ${batchSize} chunks. Run again to process more!`
-          : 'All done!'
-      });
-
-    } catch (error) {
-      console.error('❌ Generate chunk embeddings error:', error);
-      res.status(500).json({ error: error.message });
     }
-  });
+  );
 
   /* ═══════════════════════════════════
      Start Listening
@@ -4378,23 +5229,24 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.8                              ║
-║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
-║  🔍 Search: Title 50x + Domain 30x + Keywords 20x     ║
-║  🆕 FIX #35: findLessonByTitle for Guide RAG           ║
-║  🆕 FIX #36: searchChunksByText fallback               ║
-║  🆕 FIX #37: Semantic threshold 0.70→0.60              ║
-║  🆕 FIX #38: Anti-denial rule in Guide prompt          ║
-║  🆕 FIX #39: Dual RAG (semantic + text) in Guide       ║
-║  🔄 Follow-up: Remembers last topic for context        ║
-║  📦 Cache: 5min TTL search cache                       ║
-║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
-║  ⚡ Quick Intent: Payment/Greeting safety net           ║
-║  🛡️  Safety Check: Verifies GPT course choices         ║
-║  🤖 Phase 2: Dynamic model (gpt-4o / gpt-4o-mini)     ║
+║  🤖 زيكو Chatbot — v10.9                              ║
+║  🧠 Engine: Guide RAG Overhaul                         ║
+║  🆕 FIX #40: getAllLessonChunks (full lesson content)   ║
+║  🆕 FIX #41: courseId filter in text search             ║
+║  🆕 FIX #42: Higher chunk limits (50/8/10)              ║
+║  🆕 FIX #43: Chunk content 600→1200 chars               ║
+║  🆕 FIX #44: Better findLessonByTitle                   ║
+║  🆕 FIX #45: Content-first system prompt                ║
+║  🆕 FIX #46: Cross-lesson references                    ║
+║  🆕 FIX #47: Mandatory timestamps                       ║
+║  🆕 FIX #48: Split context (current vs other lessons)   ║
 ║  ✅ Server: port ${PORT}                                  ║
-║  🗄️  Supabase: ${supabaseConnected ? "✅ Connected     " : "❌ NOT connected"}                    ║
-║  🤖 OpenAI: ${openai ? "✅ Ready        " : "❌ NOT ready     "}                       ║
+║  🗄️  Supabase: ${
+      supabaseConnected ? "✅ Connected" : "❌ NOT connected"
+    }                           ║
+║  🤖 OpenAI: ${
+      openai ? "✅ Ready" : "❌ NOT ready"
+    }                              ║
 ╚════════════════════════════════════════════════════════╝
     `);
   });
