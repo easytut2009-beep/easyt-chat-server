@@ -4270,6 +4270,63 @@ app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
   }
 });
 
+
+
+// --- Get existing lessons for a course (from chunks table) ---
+app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const { courseId } = req.params;
+    const { data, error } = await supabase
+      .from("chunks")
+      .select("lesson_number, lesson_name")
+      .eq("course_id", courseId);
+    if (error) throw error;
+
+    const lessonsMap = {};
+    (data || []).forEach(chunk => {
+      const key = chunk.lesson_number;
+      if (!lessonsMap[key]) {
+        lessonsMap[key] = {
+          lesson_number: chunk.lesson_number,
+          lesson_name: chunk.lesson_name || "درس " + chunk.lesson_number,
+          chunk_count: 0
+        };
+      }
+      lessonsMap[key].chunk_count++;
+    });
+
+    const lessons = Object.values(lessonsMap).sort((a, b) => a.lesson_number - b.lesson_number);
+    res.json({ success: true, lessons });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Delete chunks for a specific lesson ---
+app.delete("/api/admin/courses/:courseId/lessons/:lessonNumber/chunks", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { courseId, lessonNumber } = req.params;
+    const { count } = await supabase
+      .from("chunks")
+      .select("*", { count: "exact", head: true })
+      .eq("course_id", courseId)
+      .eq("lesson_number", parseInt(lessonNumber));
+
+    const { error } = await supabase
+      .from("chunks")
+      .delete()
+      .eq("course_id", courseId)
+      .eq("lesson_number", parseInt(lessonNumber));
+    if (error) throw error;
+    res.json({ success: true, deleted: count || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // --- Serve upload page ---
 app.get("/upload", (req, res) => {
   res.sendFile(path.join(__dirname, "upload.html"));
