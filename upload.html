@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>easyT Admin - رفع الدروس</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+
+        .container { max-width: 950px; margin: 0 auto; }
+
+        /* ===== Header ===== */
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 {
+            font-size: 2.2em;
+            background: linear-gradient(90deg, #7c3aed, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header p { color: #888; margin-top: 6px; }
+
+        /* ===== Cards ===== */
+        .card {
+            background: #1e1e2e;
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 24px;
+            border: 1px solid #2a2a3e;
+        }
+
+        .card-title {
+            font-size: 1.25em;
+            color: #a78bfa;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step-num {
+            background: #7c3aed;
+            color: #fff;
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        /* ===== Inputs ===== */
+        select, input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            background: #16162a;
+            border: 1px solid #333;
+            border-radius: 10px;
+            color: #e0e0e0;
+            font-family: 'Cairo', sans-serif;
+            font-size: 1em;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, input[type="text"]:focus { border-color: #7c3aed; }
+
+        /* ===== New Course Row ===== */
+        .new-course-row {
+            display: none;
+            gap: 12px;
+            margin-top: 16px;
+            align-items: end;
+        }
+        .new-course-row.show { display: flex; }
+        .new-course-row input { flex: 1; }
+
+        /* ===== Lesson Rows ===== */
+        .lesson-row {
+            display: grid;
+            grid-template-columns: 46px 1fr 1fr 40px;
+            gap: 12px;
+            align-items: center;
+            padding: 14px;
+            background: #16162a;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid #2a2a3e;
+            transition: border-color 0.3s;
+        }
+        .lesson-row:hover { border-color: #333; }
+
+        .lesson-num {
+            background: #7c3aed22;
+            color: #a78bfa;
+            width: 42px; height: 42px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .lesson-row input[type="text"] { background: #1e1e2e; }
+
+        /* ===== File Label ===== */
+        .file-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 16px;
+            background: #1e1e2e;
+            border: 1px dashed #444;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9em;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-label:hover { border-color: #7c3aed; color: #a78bfa; }
+        .file-label.has-file { border-color: #22c55e; color: #22c55e; border-style: solid; }
+        .file-label input[type="file"] { display: none; }
+
+        /* ===== Buttons ===== */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Cairo', sans-serif;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: #fff;
+            width: 100%;
+            padding: 16px;
+            font-size: 1.15em;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: #2a2a3e;
+            color: #a78bfa;
+        }
+        .btn-secondary:hover { background: #333350; }
+
+        .btn-add {
+            background: transparent;
+            border: 1px dashed #444;
+            color: #888;
+            width: 100%;
+            padding: 14px;
+        }
+        .btn-add:hover { border-color: #7c3aed; color: #a78bfa; }
+
+        .btn-remove {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 1.4em;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+            padding: 0;
+        }
+        .btn-remove:hover { opacity: 1; }
+
+        /* ===== Checkbox ===== */
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: #2a1a1a;
+            border: 1px solid #4a2a2a;
+            border-radius: 10px;
+        }
+        .checkbox-row input[type="checkbox"] {
+            width: 18px; height: 18px;
+            accent-color: #ef4444;
+        }
+        .checkbox-row label { color: #ef9999; cursor: pointer; }
+
+        /* ===== Progress ===== */
+        .progress-section { display: none; }
+        .progress-section.show { display: block; }
+
+        .progress-bar-bg {
+            background: #16162a;
+            border-radius: 10px;
+            overflow: hidden;
+            height: 10px;
+            margin: 16px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #7c3aed, #a78bfa);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .log {
+            background: #0a0a15;
+            border-radius: 10px;
+            padding: 16px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            direction: ltr;
+            text-align: left;
+        }
+        .log-entry { padding: 3px 0; }
+        .log-entry.success { color: #22c55e; }
+        .log-entry.error { color: #ef4444; }
+        .log-entry.info { color: #60a5fa; }
+        .log-entry.warning { color: #fbbf24; }
+
+        /* ===== Stats ===== */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: #16162a;
+            border-radius: 12px;
+            padding: 18px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #a78bfa;
+        }
+        .stat-label { color: #666; font-size: 0.85em; margin-top: 4px; }
+
+        /* ===== Empty State ===== */
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #555;
+        }
+        .empty-state span { font-size: 2.5em; display: block; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <h1>📚 easyT - رفع دروس الكورسات</h1>
+        <p>ارفع ملفات النصوص وهنعملها تقطيع و embeddings تلقائياً</p>
+    </div>
+
+    <!-- Step 1: Course Selection -->
+    <div class="card">
+        <div class="card-title">
+            <div class="step-num">١</div>
+            اختيار الكورس
+        </div>
+
+        <select id="courseSelect" onchange="onCourseChange(this.value)">
+            <option value="">-- اختر الكورس --</option>
+        </select>
+
+        <div class="new-course-row" id="newCourseRow">
+            <input type="text" id="newCourseName" placeholder="اسم الكورس الجديد" />
+            <button class="btn btn-secondary" onclick="createCourse()" id="createCourseBtn">
+                إنشاء
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Lessons -->
+    <div class="card">
+        <div class="card-title">
+            <div class="step-num">٢</div>
+            إضافة الدروس
+        </div>
+
+        <div id="lessonsContainer">
+            <div class="empty-state" id="emptyState">
+                <span>📝</span>
+                اضغط "إضافة درس" لبدء إضافة الدروس
+            </div>
+        </div>
+
+        <button class="btn btn-add" onclick="addLesson()">
+            ➕ إضافة درس
+        </button>
+    </div>
+
+    <!-- Step 3: Upload -->
+    <div class="card">
+        <div class="card-title">
+            <div class="step-num">٣</div>
+            رفع ومعالجة
+        </div>
+
+        <div class="checkbox-row">
+            <input type="checkbox" id="deleteOld" />
+            <label for="deleteOld">حذف البيانات القديمة للكورس قبل الرفع</label>
+        </div>
+
+        <button class="btn btn-primary" id="submitBtn" onclick="startProcessing()">
+            🚀 ابدأ المعالجة
+        </button>
+
+        <!-- Progress -->
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar-bg">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="log" id="logContainer"></div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="statLessons">0</div>
+                    <div class="stat-label">دروس</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statChunks">0</div>
+                    <div class="stat-label">أجزاء</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statStatus">⏳</div>
+                    <div class="stat-label">الحالة</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ============================================================
+// ⚙️  CONFIG
+// ============================================================
+const API_BASE = ''; // same origin — عدّله لو السيرفر على دومين مختلف
+
+// ============================================================
+// 🔄  STATE
+// ============================================================
+let selectedCourseId = null;
+let lessonCounter = 0;
+
+// ============================================================
+// 🚀  ON PAGE LOAD
+// ============================================================
+document.addEventListener('DOMContentLoaded', loadCourses);
+
+async function loadCourses() {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/courses`);
+        if (!res.ok) throw new Error('Failed to fetch courses');
+        const courses = await res.json();
+
+        const select = document.getElementById('courseSelect');
+        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
+        select.innerHTML += '<option value="new">➕ إنشاء كورس جديد</option>';
+
+        courses.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            select.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('Error loading courses:', err);
+    }
+}
+
+// ============================================================
+// 📚  COURSE MANAGEMENT
+// ============================================================
+function onCourseChange(value) {
+    const newRow = document.getElementById('newCourseRow');
+    if (value === 'new') {
+        newRow.classList.add('show');
+        selectedCourseId = null;
+    } else {
+        newRow.classList.remove('show');
+        selectedCourseId = value || null;
+    }
+}
+
+async function createCourse() {
+    const nameInput = document.getElementById('newCourseName');
+    const name = nameInput.value.trim();
+    if (!name) { alert('من فضلك أدخل اسم الكورس'); return; }
+
+    const btn = document.getElementById('createCourseBtn');
+    btn.disabled = true;
+    btn.textContent = 'جاري الإنشاء...';
+
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/courses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+
+        if (!res.ok) throw new Error('Failed to create course');
+        const course = await res.json();
+
+        // Reload dropdown and select new course
+        await loadCourses();
+        document.getElementById('courseSelect').value = course.id;
+        selectedCourseId = course.id;
+        document.getElementById('newCourseRow').classList.remove('show');
+        nameInput.value = '';
+
+        alert(`✅ تم إنشاء الكورس: ${course.name}`);
+    } catch (err) {
+        alert('❌ خطأ في إنشاء الكورس: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'إنشاء';
+    }
+}
+
+// ============================================================
+// 📝  LESSON MANAGEMENT
+// ============================================================
+function addLesson() {
+    document.getElementById('emptyState')?.remove();
+
+    lessonCounter++;
+    const num = document.querySelectorAll('.lesson-row').length + 1;
+    const container = document.getElementById('lessonsContainer');
+
+    const row = document.createElement('div');
+    row.className = 'lesson-row';
+    row.dataset.id = lessonCounter;
+    row.innerHTML = `
+        <div class="lesson-num">${num}</div>
+        <input type="text" placeholder="اسم الدرس" class="lesson-name" />
+        <label class="file-label" id="fileLabel-${lessonCounter}">
+            📄 اختر ملف النص
+            <input type="file" accept=".txt" onchange="onFileSelect(this)" />
+        </label>
+        <button class="btn-remove" onclick="removeLesson(this)">✕</button>
+    `;
+
+    container.appendChild(row);
+}
+
+function removeLesson(btn) {
+    btn.closest('.lesson-row').remove();
+    renumberLessons();
+
+    if (document.querySelectorAll('.lesson-row').length === 0) {
+        document.getElementById('lessonsContainer').innerHTML = `
+            <div class="empty-state" id="emptyState">
+                <span>📝</span>
+                اضغط "إضافة درس" لبدء إضافة الدروس
+            </div>
+        `;
+    }
+}
+
+function renumberLessons() {
+    document.querySelectorAll('.lesson-row').forEach((row, i) => {
+        row.querySelector('.lesson-num').textContent = i + 1;
+    });
+}
+
+function onFileSelect(input) {
+    const label = input.closest('.file-label');
+    if (input.files.length > 0) {
+        const fileName = input.files[0].name;
+        // Clear label text but keep the input
+        label.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) node.textContent = '';
+        });
+        const span = document.createElement('span');
+        span.textContent = `✅ ${fileName}`;
+        label.insertBefore(span, label.firstChild);
+        label.classList.add('has-file');
+    }
+}
+
+// ============================================================
+// 📤  PROCESSING
+// ============================================================
+async function startProcessing() {
+    // ---------- Validate course ----------
+    const courseSelect = document.getElementById('courseSelect');
+
+    if (courseSelect.value === 'new') {
+        alert('من فضلك أنشئ الكورس أولاً بالضغط على زر "إنشاء"');
+        return;
+    }
+    if (!courseSelect.value) {
+        alert('من فضلك اختر كورس');
+        return;
+    }
+    selectedCourseId = courseSelect.value;
+
+    // ---------- Collect lessons ----------
+    const rows = document.querySelectorAll('.lesson-row');
+    if (rows.length === 0) {
+        alert('من فضلك أضف درس واحد على الأقل');
+        return;
+    }
+
+    const lessons = [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = row.querySelector('.lesson-name').value.trim();
+        const fileInput = row.querySelector('input[type="file"]');
+
+        if (!name) {
+            alert(`من فضلك أدخل اسم الدرس رقم ${i + 1}`);
+            return;
+        }
+        if (!fileInput.files.length) {
+            alert(`من فضلك ارفع ملف النص للدرس: ${name}`);
+            return;
+        }
+
+        const content = await readFileAsText(fileInput.files[0]);
+        lessons.push({ number: i + 1, name, content });
+    }
+
+    // ---------- Confirm ----------
+    if (!confirm(`هيتم معالجة ${lessons.length} درس.\nمتأكد؟`)) return;
+
+    // ---------- UI: show progress ----------
+    const submitBtn = document.getElementById('submitBtn');
+    const progressSection = document.getElementById('progressSection');
+    const progressBar = document.getElementById('progressBar');
+    const logContainer = document.getElementById('logContainer');
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ جاري المعالجة...';
+    progressSection.classList.add('show');
+    progressBar.style.width = '0%';
+    logContainer.innerHTML = '';
+
+    document.getElementById('statLessons').textContent = lessons.length;
+    document.getElementById('statChunks').textContent = '0';
+    document.getElementById('statStatus').textContent = '⏳';
+
+    let totalChunks = 0;
+
+    try {
+        // ---------- Delete old? ----------
+        if (document.getElementById('deleteOld').checked) {
+            addLog('🗑️  حذف البيانات القديمة للكورس...', 'warning');
+            const delRes = await fetch(
+                `${API_BASE}/api/admin/courses/${selectedCourseId}/chunks`,
+                { method: 'DELETE' }
+            );
+            if (!delRes.ok) throw new Error('Failed to delete old chunks');
+            const delData = await delRes.json();
+            addLog(`✅  تم حذف ${delData.deleted || 0} جزء قديم`, 'success');
+        }
+
+        // ---------- Process each lesson ----------
+        for (let i = 0; i < lessons.length; i++) {
+            const lesson = lessons[i];
+            const pct = Math.round((i / lessons.length) * 100);
+            progressBar.style.width = `${pct}%`;
+
+            addLog(`📖  معالجة الدرس ${i + 1}/${lessons.length}: ${lesson.name}...`, 'info');
+
+            const res = await fetch(`${API_BASE}/api/admin/process-lesson`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    courseId: selectedCourseId,
+                    lessonNumber: lesson.number,
+                    lessonName: lesson.name,
+                    transcript: lesson.content
+                })
+            });
+
+            const result = await res.json();
+
+            if (!res.ok || result.error) {
+                addLog(`❌  خطأ في الدرس "${lesson.name}": ${result.error}`, 'error');
+            } else {
+                totalChunks += result.chunksCreated;
+                addLog(
+                    `✅  الدرس "${lesson.name}": ${result.chunksCreated} جزء تم إنشاؤه`,
+                    'success'
+                );
+                document.getElementById('statChunks').textContent = totalChunks;
+            }
+        }
+
+        progressBar.style.width = '100%';
+        addLog(`🎉  تم الانتهاء! إجمالي الأجزاء: ${totalChunks}`, 'success');
+        document.getElementById('statStatus').textContent = '✅';
+
+    } catch (err) {
+        addLog(`❌  خطأ عام: ${err.message}`, 'error');
+        document.getElementById('statStatus').textContent = '❌';
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🚀 ابدأ المعالجة';
+    }
+}
+
+// ============================================================
+// 🔧  UTILITIES
+// ============================================================
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsText(file, 'UTF-8');
+    });
+}
+
+function addLog(message, type = 'info') {
+    const log = document.getElementById('logContainer');
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    entry.textContent = `[${new Date().toLocaleTimeString('en-US', {hour12: false})}] ${message}`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+</script>
+
+</body>
+</html>
