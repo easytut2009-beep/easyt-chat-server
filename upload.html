@@ -3,660 +3,432 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>easyT Admin - رفع الدروس</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>📤 easyT - رفع دروس الكورسات</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            font-family: 'Cairo', sans-serif;
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
-            color: #e0e0e0;
-            min-height: 100vh;
-            padding: 30px 20px;
-        }
-
-        .container { max-width: 950px; margin: 0 auto; }
-
-        /* ===== Header ===== */
-        .header { text-align: center; margin-bottom: 40px; }
-        .header h1 {
-            font-size: 2.2em;
-            background: linear-gradient(90deg, #7c3aed, #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .header p { color: #888; margin-top: 6px; }
-
-        /* ===== Cards ===== */
-        .card {
-            background: #1e1e2e;
-            border-radius: 16px;
-            padding: 28px;
-            margin-bottom: 24px;
-            border: 1px solid #2a2a3e;
-        }
-
-        .card-title {
-            font-size: 1.25em;
-            color: #a78bfa;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .step-num {
-            background: #7c3aed;
-            color: #fff;
-            width: 30px; height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.85em;
-            font-weight: bold;
-            flex-shrink: 0;
-        }
-
-        /* ===== Inputs ===== */
-        select, input[type="text"] {
-            width: 100%;
-            padding: 12px 16px;
-            background: #16162a;
-            border: 1px solid #333;
-            border-radius: 10px;
-            color: #e0e0e0;
-            font-family: 'Cairo', sans-serif;
-            font-size: 1em;
-            outline: none;
-            transition: border-color 0.3s;
-        }
-
-        select:focus, input[type="text"]:focus { border-color: #7c3aed; }
-
-        /* ===== New Course Row ===== */
-        .new-course-row {
-            display: none;
-            gap: 12px;
-            margin-top: 16px;
-            align-items: end;
-        }
-        .new-course-row.show { display: flex; }
-        .new-course-row input { flex: 1; }
-
-        /* ===== Lesson Rows ===== */
-        .lesson-row {
-            display: grid;
-            grid-template-columns: 46px 1fr 1fr 40px;
-            gap: 12px;
-            align-items: center;
-            padding: 14px;
-            background: #16162a;
-            border-radius: 12px;
-            margin-bottom: 12px;
-            border: 1px solid #2a2a3e;
-            transition: border-color 0.3s;
-        }
-        .lesson-row:hover { border-color: #333; }
-
-        .lesson-num {
-            background: #7c3aed22;
-            color: #a78bfa;
-            width: 42px; height: 42px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 1.1em;
-        }
-
-        .lesson-row input[type="text"] { background: #1e1e2e; }
-
-        /* ===== File Label ===== */
-        .file-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 11px 16px;
-            background: #1e1e2e;
-            border: 1px dashed #444;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-size: 0.9em;
-            color: #888;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .file-label:hover { border-color: #7c3aed; color: #a78bfa; }
-        .file-label.has-file { border-color: #22c55e; color: #22c55e; border-style: solid; }
-        .file-label input[type="file"] { display: none; }
-
-        /* ===== Buttons ===== */
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-family: 'Cairo', sans-serif;
-            font-size: 1em;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #7c3aed, #6d28d9);
-            color: #fff;
-            width: 100%;
-            padding: 16px;
-            font-size: 1.15em;
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
-        }
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .btn-secondary {
-            background: #2a2a3e;
-            color: #a78bfa;
-        }
-        .btn-secondary:hover { background: #333350; }
-
-        .btn-add {
-            background: transparent;
-            border: 1px dashed #444;
-            color: #888;
-            width: 100%;
-            padding: 14px;
-        }
-        .btn-add:hover { border-color: #7c3aed; color: #a78bfa; }
-
-        .btn-remove {
-            background: none;
-            border: none;
-            color: #ef4444;
-            cursor: pointer;
-            font-size: 1.4em;
-            opacity: 0.5;
-            transition: opacity 0.3s;
-            padding: 0;
-        }
-        .btn-remove:hover { opacity: 1; }
-
-        /* ===== Checkbox ===== */
-        .checkbox-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            padding: 12px 16px;
-            background: #2a1a1a;
-            border: 1px solid #4a2a2a;
-            border-radius: 10px;
-        }
-        .checkbox-row input[type="checkbox"] {
-            width: 18px; height: 18px;
-            accent-color: #ef4444;
-        }
-        .checkbox-row label { color: #ef9999; cursor: pointer; }
-
-        /* ===== Progress ===== */
-        .progress-section { display: none; }
-        .progress-section.show { display: block; }
-
-        .progress-bar-bg {
-            background: #16162a;
-            border-radius: 10px;
-            overflow: hidden;
-            height: 10px;
-            margin: 16px 0;
-        }
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #7c3aed, #a78bfa);
-            border-radius: 10px;
-            transition: width 0.5s ease;
-            width: 0%;
-        }
-
-        .log {
-            background: #0a0a15;
-            border-radius: 10px;
-            padding: 16px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85em;
-            direction: ltr;
-            text-align: left;
-        }
-        .log-entry { padding: 3px 0; }
-        .log-entry.success { color: #22c55e; }
-        .log-entry.error { color: #ef4444; }
-        .log-entry.info { color: #60a5fa; }
-        .log-entry.warning { color: #fbbf24; }
-
-        /* ===== Stats ===== */
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-top: 20px;
-        }
-        .stat-card {
-            background: #16162a;
-            border-radius: 12px;
-            padding: 18px;
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #a78bfa;
-        }
-        .stat-label { color: #666; font-size: 0.85em; margin-top: 4px; }
-
-        /* ===== Empty State ===== */
-        .empty-state {
-            text-align: center;
-            padding: 30px;
-            color: #555;
-        }
-        .empty-state span { font-size: 2.5em; display: block; margin-bottom: 10px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; color: #fff; margin: 20px 0; font-size: 24px; }
+        h1 span { color: #e63946; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 30px; font-size: 14px; }
+        .card { background: #1a1a2e; border-radius: 16px; padding: 24px; margin-bottom: 20px; border: 1px solid #2a2a4a; }
+        .card h2 { color: #e63946; margin-bottom: 16px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+        .card h2 .num { background: #e63946; color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; color: #ccc; font-size: 13px; }
+        select, input[type="number"], input[type="text"] { width: 100%; padding: 12px 16px; border: 2px solid #2a2a4a; border-radius: 10px; font-size: 14px; background: #0d0d20; color: #fff; margin-bottom: 12px; outline: none; transition: border-color 0.3s; }
+        select:focus, input:focus { border-color: #e63946; }
+        select option { background: #1a1a2e; color: #fff; }
+        button { padding: 12px 24px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.3s; }
+        .btn-primary { background: linear-gradient(135deg, #e63946, #c62828); color: #fff; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(230,57,70,0.4); }
+        .btn-primary:disabled { background: #333; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-danger { background: linear-gradient(135deg, #ff5252, #d32f2f); color: #fff; }
+        .btn-danger:hover { transform: translateY(-2px); }
+        .btn-success { background: linear-gradient(135deg, #4caf50, #2e7d32); color: #fff; }
+        .btn-outline { background: transparent; border: 2px solid #e63946; color: #e63946; }
+        .btn-outline:hover { background: #e63946; color: #fff; }
+        .stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+        .stat-badge { background: #0d0d20; padding: 8px 16px; border-radius: 8px; font-size: 13px; border: 1px solid #2a2a4a; }
+        .stat-badge b { color: #e63946; }
+        .lessons-list { margin: 16px 0; }
+        .lesson-item { background: #0d0d20; border: 1px solid #2a2a4a; border-radius: 10px; padding: 16px; margin: 8px 0; }
+        .lesson-item .lesson-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .lesson-item .lesson-name { font-weight: 600; color: #fff; font-size: 14px; }
+        .lesson-item .lesson-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+        .status-pending { background: #ff980020; color: #ff9800; }
+        .status-processing { background: #2196f320; color: #2196f3; }
+        .status-done { background: #4caf5020; color: #4caf50; }
+        .status-error { background: #f4433620; color: #f44336; }
+        .lesson-item textarea { width: 100%; min-height: 120px; padding: 10px; border: 1px solid #2a2a4a; border-radius: 8px; background: #12122a; color: #ccc; font-family: monospace; font-size: 12px; resize: vertical; margin-top: 8px; }
+        .lesson-item .lesson-info { font-size: 12px; color: #888; margin-top: 4px; }
+        .remove-btn { background: none; border: none; color: #f44336; cursor: pointer; font-size: 18px; padding: 4px 8px; }
+        .remove-btn:hover { color: #ff5252; }
+        .add-lesson-btn { width: 100%; padding: 14px; border: 2px dashed #2a2a4a; border-radius: 10px; background: transparent; color: #888; cursor: pointer; font-size: 14px; transition: all 0.3s; }
+        .add-lesson-btn:hover { border-color: #e63946; color: #e63946; }
+        .progress-bar { width: 100%; height: 28px; background: #0d0d20; border-radius: 14px; overflow: hidden; margin: 12px 0; border: 1px solid #2a2a4a; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #e63946, #ff6b6b); transition: width 0.5s; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; min-width: 40px; }
+        #log { background: #0d0d20; color: #4caf50; padding: 16px; border-radius: 10px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 300px; overflow-y: auto; direction: ltr; text-align: left; border: 1px solid #2a2a4a; line-height: 1.6; }
+        .log-error { color: #f44336 !important; }
+        .log-success { color: #4caf50 !important; }
+        .log-info { color: #2196f3 !important; }
+        .log-warn { color: #ff9800 !important; }
+        .hidden { display: none !important; }
+        .empty-state { text-align: center; padding: 40px; color: #555; }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .delete-status { margin-right: 8px; font-size: 13px; }
+        @media (max-width: 600px) { .container { padding: 12px; } .card { padding: 16px; } .stats-row { flex-direction: column; } }
     </style>
 </head>
 <body>
 
 <div class="container">
+    <h1>📤 <span>easyT</span> - رفع دروس الكورسات</h1>
+    <p class="subtitle">ارفع ملفات النصوص وهنعملها تقطيع و embeddings تلقائياً</p>
 
-    <!-- Header -->
-    <div class="header">
-        <h1>📚 easyT - رفع دروس الكورسات</h1>
-        <p>ارفع ملفات النصوص وهنعملها تقطيع و embeddings تلقائياً</p>
-    </div>
-
-    <!-- Step 1: Course Selection -->
+    <!-- Step 1: Select Course -->
     <div class="card">
-        <div class="card-title">
-            <div class="step-num">١</div>
-            اختيار الكورس
-        </div>
-
-        <select id="courseSelect" onchange="onCourseChange(this.value)">
+        <h2><span class="num">١</span> اختيار الكورس</h2>
+        <select id="courseSelect" onchange="onCourseChange()">
             <option value="">-- اختر الكورس --</option>
         </select>
-
-        <div class="new-course-row" id="newCourseRow">
-            <input type="text" id="newCourseName" placeholder="اسم الكورس الجديد" />
-            <button class="btn btn-secondary" onclick="createCourse()" id="createCourseBtn">
-                إنشاء
-            </button>
+        <div id="courseInfo" class="hidden">
+            <div class="stats-row">
+                <div class="stat-badge">📚 الكورس: <b id="selectedCourseName"></b></div>
+                <div class="stat-badge">📦 Chunks موجودة: <b id="existingChunks">0</b></div>
+            </div>
+            <div style="margin-top:12px">
+                <button class="btn-danger" onclick="deleteChunks()" id="deleteBtn">🗑️ مسح chunks القديمة لهذا الكورس</button>
+                <span class="delete-status" id="deleteStatus"></span>
+            </div>
         </div>
     </div>
 
-    <!-- Step 2: Lessons -->
+    <!-- Step 2: Add Lessons -->
     <div class="card">
-        <div class="card-title">
-            <div class="step-num">٢</div>
-            إضافة الدروس
-        </div>
-
-        <div id="lessonsContainer">
+        <h2><span class="num">٢</span> إضافة الدروس</h2>
+        <div id="lessonsList" class="lessons-list">
             <div class="empty-state" id="emptyState">
-                <span>📝</span>
-                اضغط "إضافة درس" لبدء إضافة الدروس
+                <div class="icon">📝</div>
+                <p>اضغط "إضافة درس" لبدء إضافة الدروس</p>
             </div>
         </div>
-
-        <button class="btn btn-add" onclick="addLesson()">
-            ➕ إضافة درس
-        </button>
+        <button class="add-lesson-btn" onclick="addLesson()">➕ إضافة درس</button>
     </div>
 
-    <!-- Step 3: Upload -->
+    <!-- Step 3: Process -->
     <div class="card">
-        <div class="card-title">
-            <div class="step-num">٣</div>
-            رفع ومعالجة
+        <h2><span class="num">٣</span> رفع ومعالجة</h2>
+        <div class="flex-between" style="margin-bottom:12px">
+            <div>
+                <label>رقم أول درس:</label>
+                <input type="number" id="startLessonNum" value="1" min="1" style="width:100px">
+            </div>
+            <div class="stats-row" id="processStats" style="display:none">
+                <div class="stat-badge">✅ نجح: <b id="statSuccess">0</b></div>
+                <div class="stat-badge">❌ فشل: <b id="statFailed">0</b></div>
+                <div class="stat-badge">📦 Chunks: <b id="statChunks">0</b></div>
+            </div>
         </div>
 
-        <div class="checkbox-row">
-            <input type="checkbox" id="deleteOld" />
-            <label for="deleteOld">حذف البيانات القديمة للكورس قبل الرفع</label>
-        </div>
+        <button class="btn-primary" id="processBtn" onclick="startProcessing()" disabled>🚀 ابدأ المعالجة</button>
+        <button class="btn-success hidden" id="resetBtn" onclick="location.reload()">🔄 ابدأ من جديد</button>
 
-        <button class="btn btn-primary" id="submitBtn" onclick="startProcessing()">
-            🚀 ابدأ المعالجة
-        </button>
-
-        <!-- Progress -->
-        <div class="progress-section" id="progressSection">
-            <div class="progress-bar-bg">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
-            <div class="log" id="logContainer"></div>
-
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-value" id="statLessons">0</div>
-                    <div class="stat-label">دروس</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="statChunks">0</div>
-                    <div class="stat-label">أجزاء</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="statStatus">⏳</div>
-                    <div class="stat-label">الحالة</div>
-                </div>
-            </div>
+        <div class="progress-bar hidden" id="progressBar">
+            <div class="progress-fill" id="progressFill" style="width:0%">0%</div>
         </div>
     </div>
 
+    <!-- Log -->
+    <div class="card">
+        <h2>📋 سجل العمليات</h2>
+        <div id="log"><span class="log-success">🟢 جاهز...</span></div>
+    </div>
 </div>
 
 <script>
-// ============================================================
-// ⚙️  CONFIG
-// ============================================================
-const API_BASE = ''; // same origin — عدّله لو السيرفر على دومين مختلف
-
-// ============================================================
-// 🔄  STATE
-// ============================================================
-let selectedCourseId = null;
+let lessons = [];
 let lessonCounter = 0;
+let selectedCourseId = '';
+let selectedCourseName = '';
+let adminToken = '';
 
-// ============================================================
-// 🚀  ON PAGE LOAD
-// ============================================================
-document.addEventListener('DOMContentLoaded', loadCourses);
-
-async function loadCourses() {
-    try {
-        const res = await fetch(`${API_BASE}/api/admin/courses`);
-        if (!res.ok) throw new Error('Failed to fetch courses');
-        const courses = await res.json();
-
-        const select = document.getElementById('courseSelect');
-        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
-        select.innerHTML += '<option value="new">➕ إنشاء كورس جديد</option>';
-
-        courses.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = c.name;
-            select.appendChild(opt);
-        });
-    } catch (err) {
-        console.error('Error loading courses:', err);
+// ═══ Login (auto - get token) ═══
+async function getAdminToken() {
+    // Try to get token - for now use prompt
+    const saved = localStorage.getItem('easyt_admin_token');
+    if (saved) {
+        adminToken = saved;
+        return;
     }
-}
-
-// ============================================================
-// 📚  COURSE MANAGEMENT
-// ============================================================
-function onCourseChange(value) {
-    const newRow = document.getElementById('newCourseRow');
-    if (value === 'new') {
-        newRow.classList.add('show');
-        selectedCourseId = null;
-    } else {
-        newRow.classList.remove('show');
-        selectedCourseId = value || null;
-    }
-}
-
-async function createCourse() {
-    const nameInput = document.getElementById('newCourseName');
-    const name = nameInput.value.trim();
-    if (!name) { alert('من فضلك أدخل اسم الكورس'); return; }
-
-    const btn = document.getElementById('createCourseBtn');
-    btn.disabled = true;
-    btn.textContent = 'جاري الإنشاء...';
-
+    
+    const password = prompt('🔐 ادخل كلمة سر الأدمن:');
+    if (!password) return;
+    
     try {
-        const res = await fetch(`${API_BASE}/api/admin/courses`, {
+        const res = await fetch('/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
+            body: JSON.stringify({ password })
         });
-
-        if (!res.ok) throw new Error('Failed to create course');
-        const course = await res.json();
-
-        // Reload dropdown and select new course
-        await loadCourses();
-        document.getElementById('courseSelect').value = course.id;
-        selectedCourseId = course.id;
-        document.getElementById('newCourseRow').classList.remove('show');
-        nameInput.value = '';
-
-        alert(`✅ تم إنشاء الكورس: ${course.name}`);
+        const data = await res.json();
+        if (data.success && data.token) {
+            adminToken = data.token;
+            localStorage.setItem('easyt_admin_token', data.token);
+            log('🔓 تم تسجيل الدخول بنجاح', 'success');
+        } else {
+            alert('❌ كلمة السر غلط!');
+        }
     } catch (err) {
-        alert('❌ خطأ في إنشاء الكورس: ' + err.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'إنشاء';
+        log('❌ خطأ في تسجيل الدخول: ' + err.message, 'error');
     }
 }
 
-// ============================================================
-// 📝  LESSON MANAGEMENT
-// ============================================================
-function addLesson() {
-    document.getElementById('emptyState')?.remove();
-
-    lessonCounter++;
-    const num = document.querySelectorAll('.lesson-row').length + 1;
-    const container = document.getElementById('lessonsContainer');
-
-    const row = document.createElement('div');
-    row.className = 'lesson-row';
-    row.dataset.id = lessonCounter;
-    row.innerHTML = `
-        <div class="lesson-num">${num}</div>
-        <input type="text" placeholder="اسم الدرس" class="lesson-name" />
-        <label class="file-label" id="fileLabel-${lessonCounter}">
-            📄 اختر ملف النص
-            <input type="file" accept=".txt" onchange="onFileSelect(this)" />
-        </label>
-        <button class="btn-remove" onclick="removeLesson(this)">✕</button>
-    `;
-
-    container.appendChild(row);
-}
-
-function removeLesson(btn) {
-    btn.closest('.lesson-row').remove();
-    renumberLessons();
-
-    if (document.querySelectorAll('.lesson-row').length === 0) {
-        document.getElementById('lessonsContainer').innerHTML = `
-            <div class="empty-state" id="emptyState">
-                <span>📝</span>
-                اضغط "إضافة درس" لبدء إضافة الدروس
-            </div>
-        `;
-    }
-}
-
-function renumberLessons() {
-    document.querySelectorAll('.lesson-row').forEach((row, i) => {
-        row.querySelector('.lesson-num').textContent = i + 1;
-    });
-}
-
-function onFileSelect(input) {
-    const label = input.closest('.file-label');
-    if (input.files.length > 0) {
-        const fileName = input.files[0].name;
-        // Clear label text but keep the input
-        label.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) node.textContent = '';
-        });
-        const span = document.createElement('span');
-        span.textContent = `✅ ${fileName}`;
-        label.insertBefore(span, label.firstChild);
-        label.classList.add('has-file');
-    }
-}
-
-// ============================================================
-// 📤  PROCESSING
-// ============================================================
-async function startProcessing() {
-    // ---------- Validate course ----------
-    const courseSelect = document.getElementById('courseSelect');
-
-    if (courseSelect.value === 'new') {
-        alert('من فضلك أنشئ الكورس أولاً بالضغط على زر "إنشاء"');
-        return;
-    }
-    if (!courseSelect.value) {
-        alert('من فضلك اختر كورس');
-        return;
-    }
-    selectedCourseId = courseSelect.value;
-
-    // ---------- Collect lessons ----------
-    const rows = document.querySelectorAll('.lesson-row');
-    if (rows.length === 0) {
-        alert('من فضلك أضف درس واحد على الأقل');
-        return;
-    }
-
-    const lessons = [];
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const name = row.querySelector('.lesson-name').value.trim();
-        const fileInput = row.querySelector('input[type="file"]');
-
-        if (!name) {
-            alert(`من فضلك أدخل اسم الدرس رقم ${i + 1}`);
-            return;
-        }
-        if (!fileInput.files.length) {
-            alert(`من فضلك ارفع ملف النص للدرس: ${name}`);
-            return;
-        }
-
-        const content = await readFileAsText(fileInput.files[0]);
-        lessons.push({ number: i + 1, name, content });
-    }
-
-    // ---------- Confirm ----------
-    if (!confirm(`هيتم معالجة ${lessons.length} درس.\nمتأكد؟`)) return;
-
-    // ---------- UI: show progress ----------
-    const submitBtn = document.getElementById('submitBtn');
-    const progressSection = document.getElementById('progressSection');
-    const progressBar = document.getElementById('progressBar');
-    const logContainer = document.getElementById('logContainer');
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = '⏳ جاري المعالجة...';
-    progressSection.classList.add('show');
-    progressBar.style.width = '0%';
-    logContainer.innerHTML = '';
-
-    document.getElementById('statLessons').textContent = lessons.length;
-    document.getElementById('statChunks').textContent = '0';
-    document.getElementById('statStatus').textContent = '⏳';
-
-    let totalChunks = 0;
-
+// ═══ Load Courses ═══
+async function loadCourses() {
     try {
-        // ---------- Delete old? ----------
-        if (document.getElementById('deleteOld').checked) {
-            addLog('🗑️  حذف البيانات القديمة للكورس...', 'warning');
-            const delRes = await fetch(
-                `${API_BASE}/api/admin/courses/${selectedCourseId}/chunks`,
-                { method: 'DELETE' }
-            );
-            if (!delRes.ok) throw new Error('Failed to delete old chunks');
-            const delData = await delRes.json();
-            addLog(`✅  تم حذف ${delData.deleted || 0} جزء قديم`, 'success');
+        const res = await fetch('/api/upload/courses');
+        const data = await res.json();
+        
+        if (!data.success || !data.courses) {
+            log('❌ فشل تحميل الكورسات', 'error');
+            return;
         }
+        
+        const select = document.getElementById('courseSelect');
+        data.courses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course.id;
+            option.textContent = course.name;
+            select.appendChild(option);
+        });
+        
+        log(`📚 تم تحميل ${data.courses.length} كورس`, 'info');
+    } catch (err) {
+        log('❌ خطأ في تحميل الكورسات: ' + err.message, 'error');
+    }
+}
 
-        // ---------- Process each lesson ----------
-        for (let i = 0; i < lessons.length; i++) {
-            const lesson = lessons[i];
-            const pct = Math.round((i / lessons.length) * 100);
-            progressBar.style.width = `${pct}%`;
+// ═══ Course Change ═══
+async function onCourseChange() {
+    const select = document.getElementById('courseSelect');
+    selectedCourseId = select.value;
+    selectedCourseName = select.options[select.selectedIndex].text;
+    
+    const info = document.getElementById('courseInfo');
+    
+    if (!selectedCourseId) {
+        info.classList.add('hidden');
+        updateProcessBtn();
+        return;
+    }
+    
+    info.classList.remove('hidden');
+    document.getElementById('selectedCourseName').textContent = selectedCourseName;
+    
+    // Get chunk count
+    try {
+        const res = await fetch(`/api/upload/courses/${selectedCourseId}/chunks-count`);
+        const data = await res.json();
+        document.getElementById('existingChunks').textContent = data.count || 0;
+    } catch (err) {
+        document.getElementById('existingChunks').textContent = '?';
+    }
+    
+    updateProcessBtn();
+    log(`📚 تم اختيار كورس: ${selectedCourseName}`, 'info');
+}
 
-            addLog(`📖  معالجة الدرس ${i + 1}/${lessons.length}: ${lesson.name}...`, 'info');
+// ═══ Delete Chunks ═══
+async function deleteChunks() {
+    if (!selectedCourseId) return;
+    if (!confirm(`⚠️ هتمسح كل الـ chunks القديمة لكورس "${selectedCourseName}"؟`)) return;
+    
+    if (!adminToken) await getAdminToken();
+    if (!adminToken) return;
+    
+    const statusEl = document.getElementById('deleteStatus');
+    statusEl.textContent = '⏳ جاري المسح...';
+    statusEl.style.color = '#ff9800';
+    
+    try {
+        const res = await fetch(`/api/admin/courses/${selectedCourseId}/chunks`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            statusEl.textContent = `✅ تم مسح ${data.deleted} chunk`;
+            statusEl.style.color = '#4caf50';
+            document.getElementById('existingChunks').textContent = '0';
+            log(`🗑️ تم مسح ${data.deleted} chunk لكورس "${selectedCourseName}"`, 'warn');
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    } catch (err) {
+        statusEl.textContent = '❌ فشل المسح';
+        statusEl.style.color = '#f44336';
+        log('❌ خطأ في مسح الـ chunks: ' + err.message, 'error');
+    }
+}
 
-            const res = await fetch(`${API_BASE}/api/admin/process-lesson`, {
+// ═══ Add/Remove Lessons ═══
+function addLesson() {
+    lessonCounter++;
+    const id = `lesson_${lessonCounter}`;
+    
+    document.getElementById('emptyState')?.classList.add('hidden');
+    
+    const div = document.createElement('div');
+    div.className = 'lesson-item';
+    div.id = id;
+    div.innerHTML = `
+        <div class="lesson-header">
+            <input type="text" placeholder="اسم الدرس (مثل: مقدمة في التصميم)" 
+                   class="lesson-name-input" style="flex:1;margin:0 8px 0 0" 
+                   oninput="updateProcessBtn()">
+            <span class="lesson-status status-pending" id="${id}_status">جاهز</span>
+            <button class="remove-btn" onclick="removeLesson('${id}')" title="حذف">✕</button>
+        </div>
+        <textarea placeholder="الصق محتوى الترانسكريبت هنا...&#10;&#10;مثال:&#10;[00:00 - 00:15] النهارده هنتكلم عن التصميم&#10;[00:15 - 00:30] أول حاجة هنشرح الألوان&#10;&#10;أو ممكن نص عادي بدون timestamps" 
+                  class="lesson-transcript" oninput="updateLessonInfo('${id}')"></textarea>
+        <div class="lesson-info" id="${id}_info">0 حرف | 0 سطر</div>
+    `;
+    
+    document.getElementById('lessonsList').appendChild(div);
+    lessons.push(id);
+    updateProcessBtn();
+}
+
+function removeLesson(id) {
+    document.getElementById(id)?.remove();
+    lessons = lessons.filter(l => l !== id);
+    if (lessons.length === 0) {
+        document.getElementById('emptyState')?.classList.remove('hidden');
+    }
+    updateProcessBtn();
+}
+
+function updateLessonInfo(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const textarea = el.querySelector('.lesson-transcript');
+    const info = document.getElementById(`${id}_info`);
+    const text = textarea.value;
+    const lines = text.split('\n').filter(l => l.trim()).length;
+    const timestampLines = (text.match(/\[\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\]/g) || []).length;
+    info.textContent = `${text.length} حرف | ${lines} سطر | ${timestampLines} timestamps`;
+    updateProcessBtn();
+}
+
+// ═══ Process Button State ═══
+function updateProcessBtn() {
+    const btn = document.getElementById('processBtn');
+    const hasValidLesson = lessons.some(id => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const name = el.querySelector('.lesson-name-input').value.trim();
+        const transcript = el.querySelector('.lesson-transcript').value.trim();
+        return name && transcript;
+    });
+    btn.disabled = !selectedCourseId || !hasValidLesson;
+}
+
+// ═══ Start Processing ═══
+async function startProcessing() {
+    if (!selectedCourseId) return alert('اختار كورس الأول!');
+    if (!adminToken) await getAdminToken();
+    if (!adminToken) return;
+    
+    const validLessons = [];
+    for (const id of lessons) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const name = el.querySelector('.lesson-name-input').value.trim();
+        const transcript = el.querySelector('.lesson-transcript').value.trim();
+        if (name && transcript) {
+            validLessons.push({ id, name, transcript });
+        }
+    }
+    
+    if (validLessons.length === 0) return alert('أضف درس واحد على الأقل!');
+    
+    const startNum = parseInt(document.getElementById('startLessonNum').value) || 1;
+    
+    // UI updates
+    document.getElementById('processBtn').disabled = true;
+    document.getElementById('processBtn').textContent = '⏳ جاري المعالجة...';
+    document.getElementById('progressBar').classList.remove('hidden');
+    document.getElementById('processStats').style.display = 'flex';
+    
+    let success = 0, failed = 0, totalChunks = 0;
+    
+    log(`\n🚀 بدء معالجة ${validLessons.length} درس لكورس "${selectedCourseName}"`, 'info');
+    
+    for (let i = 0; i < validLessons.length; i++) {
+        const lesson = validLessons[i];
+        const lessonNum = startNum + i;
+        const statusEl = document.getElementById(`${lesson.id}_status`);
+        
+        // Update progress
+        const pct = Math.round(((i) / validLessons.length) * 100);
+        document.getElementById('progressFill').style.width = pct + '%';
+        document.getElementById('progressFill').textContent = pct + '%';
+        
+        // Set processing status
+        statusEl.className = 'lesson-status status-processing';
+        statusEl.textContent = '⏳ جاري...';
+        
+        log(`\n📖 [${i+1}/${validLessons.length}] معالجة: "${lesson.name}" (درس #${lessonNum})`, 'info');
+        
+        try {
+            const res = await fetch('/api/admin/process-lesson', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminToken}`
+                },
                 body: JSON.stringify({
                     courseId: selectedCourseId,
-                    lessonNumber: lesson.number,
+                    lessonNumber: lessonNum,
                     lessonName: lesson.name,
-                    transcript: lesson.content
+                    transcript: lesson.transcript
                 })
             });
-
-            const result = await res.json();
-
-            if (!res.ok || result.error) {
-                addLog(`❌  خطأ في الدرس "${lesson.name}": ${result.error}`, 'error');
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                success++;
+                totalChunks += data.chunksCreated || 0;
+                statusEl.className = 'lesson-status status-done';
+                statusEl.textContent = `✅ ${data.chunksCreated} chunks`;
+                log(`   ✅ نجح! ${data.chunksCreated} chunks تم إنشاؤها`, 'success');
             } else {
-                totalChunks += result.chunksCreated;
-                addLog(
-                    `✅  الدرس "${lesson.name}": ${result.chunksCreated} جزء تم إنشاؤه`,
-                    'success'
-                );
-                document.getElementById('statChunks').textContent = totalChunks;
+                throw new Error(data.error || 'Unknown error');
             }
+        } catch (err) {
+            failed++;
+            statusEl.className = 'lesson-status status-error';
+            statusEl.textContent = '❌ فشل';
+            log(`   ❌ فشل: ${err.message}`, 'error');
         }
-
-        progressBar.style.width = '100%';
-        addLog(`🎉  تم الانتهاء! إجمالي الأجزاء: ${totalChunks}`, 'success');
-        document.getElementById('statStatus').textContent = '✅';
-
-    } catch (err) {
-        addLog(`❌  خطأ عام: ${err.message}`, 'error');
-        document.getElementById('statStatus').textContent = '❌';
-    } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = '🚀 ابدأ المعالجة';
+        
+        // Update stats
+        document.getElementById('statSuccess').textContent = success;
+        document.getElementById('statFailed').textContent = failed;
+        document.getElementById('statChunks').textContent = totalChunks;
     }
+    
+    // Done!
+    document.getElementById('progressFill').style.width = '100%';
+    document.getElementById('progressFill').textContent = '100%';
+    document.getElementById('processBtn').classList.add('hidden');
+    document.getElementById('resetBtn').classList.remove('hidden');
+    
+    log(`\n${'═'.repeat(50)}`, 'info');
+    log(`🎉 انتهى! نجح: ${success} | فشل: ${failed} | إجمالي chunks: ${totalChunks}`, success > 0 ? 'success' : 'error');
+    
+    // Refresh chunk count
+    onCourseChange();
 }
 
-// ============================================================
-// 🔧  UTILITIES
-// ============================================================
-function readFileAsText(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsText(file, 'UTF-8');
-    });
+// ═══ Logger ═══
+function log(msg, type = '') {
+    const el = document.getElementById('log');
+    const span = document.createElement('span');
+    span.className = type ? `log-${type}` : '';
+    span.textContent = msg + '\n';
+    el.appendChild(span);
+    el.scrollTop = el.scrollHeight;
 }
 
-function addLog(message, type = 'info') {
-    const log = document.getElementById('logContainer');
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${type}`;
-    entry.textContent = `[${new Date().toLocaleTimeString('en-US', {hour12: false})}] ${message}`;
-    log.appendChild(entry);
-    log.scrollTop = log.scrollHeight;
-}
+// ═══ Init ═══
+window.addEventListener('DOMContentLoaded', () => {
+    loadCourses();
+    getAdminToken();
+});
 </script>
-
 </body>
 </html>
