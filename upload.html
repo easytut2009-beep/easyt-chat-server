@@ -7,6 +7,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f5;color:#1a1a2e;direction:rtl;min-height:100vh}
+
 .header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,.2)}
 .header h1{font-size:22px;display:flex;align-items:center;gap:10px}
 .header .logout-btn{background:rgba(255,255,255,.15);color:#fff;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:14px;transition:.2s}
@@ -18,14 +19,12 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f5;color:#1a
 .login-box p{color:#666;margin-bottom:24px;font-size:14px}
 .login-box input{width:100%;padding:14px;border:2px solid #e0e0e0;border-radius:10px;font-size:16px;text-align:center;transition:.2s;direction:ltr}
 .login-box input:focus{border-color:#e63946;outline:none}
-.login-box .btn{margin-top:16px;width:100%}
 .login-error{color:#e63946;font-size:13px;margin-top:10px;display:none}
 
 .container{max-width:1000px;margin:0 auto;padding:20px}
 
 .card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.06);padding:24px;margin-bottom:20px}
 .card h2{font-size:18px;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#1a1a2e}
-.card h3{font-size:16px;margin-bottom:12px;color:#333}
 
 select,input[type="text"],input[type="number"],textarea{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:10px;font-size:15px;transition:.2s;font-family:inherit}
 select:focus,input:focus,textarea:focus{border-color:#e63946;outline:none}
@@ -44,29 +43,37 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .btn-success{background:#28a745;color:#fff}
 .btn-success:hover:not(:disabled){background:#1e7e34}
 .btn-sm{padding:8px 14px;font-size:13px;border-radius:8px}
-.btn-icon{width:36px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px}
+.btn-warn{background:#ffc107;color:#333}
+.btn-warn:hover:not(:disabled){background:#e0a800}
 
 .stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
 .stat-item{background:linear-gradient(135deg,#fff5f5,#fff);border:1px solid #fde2e4;border-radius:12px;padding:16px;text-align:center}
 .stat-item .num{font-size:28px;font-weight:700;color:#e63946}
 .stat-item .label{font-size:12px;color:#888;margin-top:4px}
 
-.lessons-table{width:100%;border-collapse:collapse}
-.lessons-table th{background:#f8f9fa;padding:12px;text-align:right;font-size:13px;color:#666;border-bottom:2px solid #e0e0e0}
-.lessons-table td{padding:12px;border-bottom:1px solid #f0f0f0;font-size:14px}
-.lessons-table tr:hover td{background:#fafafa}
-.lessons-table .actions{display:flex;gap:6px;justify-content:center}
+.lessons-list{display:flex;flex-direction:column;gap:10px}
+.lesson-row{background:#f8f9fa;border:1px solid #e8e8e8;border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:.2s}
+.lesson-row:hover{border-color:#e63946;box-shadow:0 2px 8px rgba(230,57,70,.1)}
+.lesson-info{flex:1;min-width:200px}
+.lesson-info .lesson-num{font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px}
+.lesson-info .lesson-title{font-size:16px;font-weight:600;color:#1a1a2e}
+.lesson-info .lesson-meta{font-size:12px;color:#888;margin-top:4px}
+.lesson-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* Inline edit */
+.inline-edit{display:flex;gap:8px;align-items:center;flex:1;min-width:200px}
+.inline-edit input{flex:1;padding:8px 12px;font-size:14px;border:2px solid #e63946;border-radius:8px}
 
 .empty-state{text-align:center;padding:40px 20px;color:#999}
 .empty-state .icon{font-size:48px;margin-bottom:12px}
-.empty-state p{font-size:15px}
+.empty-state p{font-size:15px;line-height:1.8}
 
 .log-section{max-height:300px;overflow-y:auto;background:#1a1a2e;border-radius:12px;padding:16px;font-family:'Courier New',monospace;font-size:13px;color:#ccc;direction:ltr;text-align:left}
-.log-section .log-entry{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)}
-.log-section .log-entry.success{color:#28a745}
-.log-section .log-entry.error{color:#e63946}
-.log-section .log-entry.info{color:#17a2b8}
-.log-section .log-entry.warn{color:#ffc107}
+.log-entry{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.log-entry.success{color:#28a745}
+.log-entry.error{color:#e63946}
+.log-entry.info{color:#17a2b8}
+.log-entry.warn{color:#ffc107}
 
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;justify-content:center;align-items:center;z-index:1000;padding:20px}
 .modal-overlay.show{display:flex}
@@ -86,9 +93,7 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .progress-bar .fill{height:100%;background:linear-gradient(90deg,#e63946,#ff6b6b);border-radius:4px;transition:width .3s;width:0}
 
 .badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600}
-.badge-green{background:#d4edda;color:#155724}
 .badge-blue{background:#d1ecf1;color:#0c5460}
-.badge-red{background:#f8d7da;color:#721c24}
 
 .format-hint{background:#f8f9fa;border:1px solid #e0e0e0;border-radius:10px;padding:14px;margin-bottom:12px;font-size:13px;color:#555;direction:ltr;text-align:left;line-height:1.8}
 .format-hint code{background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #ddd;font-size:12px}
@@ -98,14 +103,20 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 
 .hidden{display:none!important}
 
+.flow-diagram{background:#f8f9fa;border:1px solid #e0e0e0;border-radius:12px;padding:16px;margin:16px 0;text-align:center}
+.flow-diagram .steps{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.flow-diagram .step{background:#fff;border:1px solid #ddd;padding:8px 14px;border-radius:8px}
+.flow-diagram .step.active{background:#e63946;color:#fff;border-color:#e63946}
+.flow-diagram .arrow{color:#999;font-size:18px}
+
 @media(max-width:600px){
   .header{padding:14px 16px;flex-direction:column;gap:10px}
   .header h1{font-size:18px}
   .container{padding:12px}
   .card{padding:16px}
   .stats-bar{grid-template-columns:1fr 1fr}
-  .lessons-table{font-size:12px}
-  .lessons-table th,.lessons-table td{padding:8px 6px}
+  .lesson-row{flex-direction:column;align-items:flex-start}
+  .lesson-actions{width:100%;justify-content:flex-end}
 }
 </style>
 </head>
@@ -152,11 +163,11 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
       </select>
     </div>
 
-    <!-- Course Content (shown after selecting a course) -->
+    <!-- Course Content -->
     <div id="course-content" class="hidden">
 
       <!-- Stats -->
-      <div class="stats-bar" id="stats-bar">
+      <div class="stats-bar">
         <div class="stat-item">
           <div class="num" id="stat-lessons">0</div>
           <div class="label">دروس مرفوعة</div>
@@ -165,20 +176,37 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
           <div class="num" id="stat-chunks">0</div>
           <div class="label">قطع محتوى (Chunks)</div>
         </div>
+        <div class="stat-item">
+          <div class="num" id="stat-status">—</div>
+          <div class="label">الحالة</div>
+        </div>
       </div>
 
       <!-- Existing Lessons -->
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <h2 style="margin:0">📖 الدروس الموجودة</h2>
-          <button class="btn btn-danger btn-sm" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل المحتوى</button>
+          <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل المحتوى</button>
         </div>
         <div id="lessons-container"></div>
       </div>
 
-      <!-- Add/Edit Lesson -->
+      <!-- Add/Edit Lesson Form -->
       <div class="card" id="lesson-form-card">
         <h2 id="form-title">➕ إضافة درس جديد</h2>
+
+        <!-- Flow diagram -->
+        <div class="flow-diagram" id="flow-diagram">
+          <div class="steps">
+            <div class="step active" id="step1">1️⃣ بيانات الدرس</div>
+            <div class="arrow">→</div>
+            <div class="step" id="step2">2️⃣ تقسيم (Chunking)</div>
+            <div class="arrow">→</div>
+            <div class="step" id="step3">3️⃣ تحويل (Embedding)</div>
+            <div class="arrow">→</div>
+            <div class="step" id="step4">4️⃣ حفظ في DB</div>
+          </div>
+        </div>
 
         <div class="form-group">
           <label>رقم الدرس</label>
@@ -191,28 +219,28 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
         </div>
 
         <div class="form-group">
-          <label>الـ Transcript</label>
+          <label>الـ Transcript (النص)</label>
           <div class="file-upload" id="file-drop">
             <div class="icon">📁</div>
             <p>اسحب ملف .txt هنا أو اضغط لاختيار ملف</p>
             <div class="file-name hidden" id="file-name"></div>
-            <input type="file" accept=".txt,.srt,.vtt" onchange="onFileSelect(event)">
+            <input type="file" accept=".txt,.srt,.vtt" onchange="onFileSelect(event)" id="file-input">
           </div>
           <div class="format-hint">
-            <strong>📝 الصيغة المطلوبة:</strong><br>
+            <strong>📝 الصيغة المطلوبة (كل سطر):</strong><br>
             <code>[00:00 - 00:30] نص الكلام هنا</code><br>
             <code>[00:30 - 01:15] نص كلام تاني هنا</code><br>
-            كل سطر = timestamp + النص
+            أو نص عادي من غير timestamps — هيتقسم أوتوماتيك
           </div>
           <textarea id="inp-transcript" placeholder="الصق الـ transcript هنا أو ارفع ملف..."></textarea>
         </div>
 
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn btn-primary" id="btn-process" onclick="onProcessLesson()">
-            🚀 معالجة الدرس
+            🚀 معالجة ورفع الدرس
           </button>
           <button class="btn btn-outline hidden" id="btn-cancel-edit" onclick="cancelEdit()">
-            ❌ إلغاء التعديل
+            ❌ إلغاء
           </button>
         </div>
 
@@ -224,7 +252,7 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 
     <!-- Processing Log -->
     <div class="card">
-      <h2>📋 سجل المعالجة</h2>
+      <h2>📋 سجل العمليات</h2>
       <div class="log-section" id="log-section">
         <div class="log-entry info">🟢 Ready — waiting for action...</div>
       </div>
@@ -245,8 +273,9 @@ let selectedCourseName = '';
 let existingLessons = [];
 let totalChunks = 0;
 let processing = false;
-let editMode = false; // true when editing existing lesson
+let editMode = false;
 let editLessonNumber = null;
+let renamingLesson = null; // lesson number being renamed
 
 // ═══════════════════════════════════
 //  DOM Refs
@@ -263,19 +292,11 @@ function showModal(title, text, confirmText = 'تأكيد') {
   $('modal-text').textContent = text;
   $('modal-confirm').textContent = confirmText;
   $('modal').classList.add('show');
-  return new Promise(resolve => {
-    modalResolve = resolve;
-  });
+  return new Promise(resolve => { modalResolve = resolve; });
 }
 
-$('modal-confirm').onclick = () => {
-  $('modal').classList.remove('show');
-  if (modalResolve) modalResolve(true);
-};
-$('modal-cancel').onclick = () => {
-  $('modal').classList.remove('show');
-  if (modalResolve) modalResolve(false);
-};
+$('modal-confirm').onclick = () => { $('modal').classList.remove('show'); if (modalResolve) modalResolve(true); };
+$('modal-cancel').onclick = () => { $('modal').classList.remove('show'); if (modalResolve) modalResolve(false); };
 
 // ═══════════════════════════════════
 //  Logging
@@ -286,7 +307,7 @@ function addLog(msg, type = 'info') {
   entry.className = 'log-entry ' + type;
   const time = new Date().toLocaleTimeString('en-US', { hour12: false });
   const icons = { info: 'ℹ️', success: '✅', error: '❌', warn: '⚠️' };
-  entry.textContent = `[${time}] ${icons[type] || ''} ${msg}`;
+  entry.textContent = '[' + time + '] ' + (icons[type] || '') + ' ' + msg;
   log.appendChild(entry);
   log.scrollTop = log.scrollHeight;
 }
@@ -295,10 +316,7 @@ function addLog(msg, type = 'info') {
 //  API Helpers
 // ═══════════════════════════════════
 async function api(method, url, body = null) {
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json' }
-  };
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (token) opts.headers['Authorization'] = 'Bearer ' + token;
   if (body) opts.body = JSON.stringify(body);
 
@@ -310,9 +328,7 @@ async function api(method, url, body = null) {
     doLogout();
     throw new Error('Unauthorized');
   }
-  if (!resp.ok && !data.success) {
-    throw new Error(data.error || 'API Error ' + resp.status);
-  }
+  if (!resp.ok && !data.success) throw new Error(data.error || 'API Error ' + resp.status);
   return data;
 }
 
@@ -322,7 +338,6 @@ async function api(method, url, body = null) {
 async function doLogin() {
   const pw = $('login-password').value.trim();
   if (!pw) return;
-
   try {
     const data = await api('POST', '/admin/login', { password: pw });
     if (data.success && data.token) {
@@ -389,9 +404,7 @@ async function onCourseChange() {
 
 async function refreshCourseData() {
   if (!selectedCourseId) return;
-
   try {
-    // Fetch lessons + chunk count in parallel
     const [lessonsData, chunksData] = await Promise.all([
       api('GET', '/api/upload/courses/' + selectedCourseId + '/lessons'),
       api('GET', '/api/upload/courses/' + selectedCourseId + '/chunks-count')
@@ -400,19 +413,17 @@ async function refreshCourseData() {
     existingLessons = lessonsData.lessons || [];
     totalChunks = chunksData.count || 0;
 
-    // Update stats
     $('stat-lessons').textContent = existingLessons.length;
     $('stat-chunks').textContent = totalChunks;
+    $('stat-status').textContent = existingLessons.length > 0 ? '✅ جاهز' : '⏳ فاضي';
+    $('stat-status').style.fontSize = '16px';
 
-    // Auto-set next lesson number
     if (!editMode) {
       const maxNum = existingLessons.reduce((max, l) => Math.max(max, l.lesson_number), 0);
       $('inp-lesson-num').value = maxNum + 1;
     }
 
-    // Render lessons
     renderLessons();
-
   } catch (e) {
     addLog('Error loading course data: ' + e.message, 'error');
   }
@@ -425,81 +436,130 @@ function renderLessons() {
   const container = $('lessons-container');
 
   if (existingLessons.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📭</div>
-        <p>مفيش دروس مرفوعة لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p>
-      </div>
-    `;
+    container.innerHTML =
+      '<div class="empty-state">' +
+        '<div class="icon">📭</div>' +
+        '<p>مفيش دروس مرفوعة لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p>' +
+      '</div>';
     $('btn-delete-all').classList.add('hidden');
     return;
   }
 
   $('btn-delete-all').classList.remove('hidden');
 
-  let html = `<table class="lessons-table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>اسم الدرس</th>
-        <th>القطع</th>
-        <th>إجراءات</th>
-      </tr>
-    </thead>
-    <tbody>`;
+  let html = '<div class="lessons-list">';
 
   existingLessons.forEach(l => {
-    html += `<tr>
-      <td><strong>${l.lesson_number}</strong></td>
-      <td>${escHtml(l.lesson_name)}</td>
-      <td><span class="badge badge-blue">${l.chunk_count} قطعة</span></td>
-      <td class="actions">
-        <button class="btn btn-outline btn-sm" onclick="onEditLesson(${l.lesson_number}, '${escAttr(l.lesson_name)}')" title="إعادة رفع">✏️ تعديل</button>
-        <button class="btn btn-danger btn-sm" onclick="onDeleteLesson(${l.lesson_number}, '${escAttr(l.lesson_name)}')" title="حذف">🗑️</button>
-      </td>
-    </tr>`;
+    const isRenaming = renamingLesson === l.lesson_number;
+
+    html += '<div class="lesson-row" id="lesson-row-' + l.lesson_number + '">';
+
+    if (isRenaming) {
+      // Inline rename mode
+      html += '<div class="inline-edit">' +
+        '<span class="lesson-num">درس ' + l.lesson_number + '</span>' +
+        '<input type="text" id="rename-input-' + l.lesson_number + '" value="' + escAttr(l.lesson_name) + '" onkeypress="if(event.key===\'Enter\')saveRename(' + l.lesson_number + ')">' +
+        '</div>' +
+        '<div class="lesson-actions">' +
+          '<button class="btn btn-success btn-sm" onclick="saveRename(' + l.lesson_number + ')">💾 حفظ</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="cancelRename()">❌</button>' +
+        '</div>';
+    } else {
+      // Normal display mode
+      html += '<div class="lesson-info">' +
+        '<div class="lesson-num">درس ' + l.lesson_number + '</div>' +
+        '<div class="lesson-title">' + escHtml(l.lesson_name) + '</div>' +
+        '<div class="lesson-meta"><span class="badge badge-blue">' + l.chunk_count + ' قطعة</span></div>' +
+        '</div>' +
+        '<div class="lesson-actions">' +
+          '<button class="btn btn-warn btn-sm" onclick="startRename(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="تعديل الاسم">✏️ تعديل الاسم</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="onReuploadLesson(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="إعادة رفع الملف">📁 إعادة رفع</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="onDeleteLesson(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="حذف الدرس">🗑️</button>' +
+        '</div>';
+    }
+
+    html += '</div>';
   });
 
-  html += '</tbody></table>';
+  html += '</div>';
   container.innerHTML = html;
+
+  // Focus rename input if renaming
+  if (renamingLesson !== null) {
+    const inp = document.getElementById('rename-input-' + renamingLesson);
+    if (inp) { inp.focus(); inp.select(); }
+  }
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s || '';
-  return d.innerHTML;
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escAttr(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+// ═══════════════════════════════════
+//  Rename Lesson (inline)
+// ═══════════════════════════════════
+function startRename(num, name) {
+  renamingLesson = num;
+  renderLessons();
+  addLog('Renaming lesson #' + num + '...', 'info');
 }
-function escAttr(s) {
-  return (s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+function cancelRename() {
+  renamingLesson = null;
+  renderLessons();
+}
+
+async function saveRename(num) {
+  const inp = document.getElementById('rename-input-' + num);
+  const newName = inp ? inp.value.trim() : '';
+  if (!newName) {
+    addLog('Error: Lesson name cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    addLog('Updating lesson #' + num + ' name to: ' + newName, 'info');
+    const result = await api('PATCH', '/api/admin/courses/' + selectedCourseId + '/lessons/' + num, {
+      lessonName: newName
+    });
+    addLog('Updated ' + (result.updated || 0) + ' chunks with new name ✅', 'success');
+    renamingLesson = null;
+    await refreshCourseData();
+  } catch (e) {
+    addLog('Error renaming: ' + e.message, 'error');
+  }
 }
 
 // ═══════════════════════════════════
-//  Edit Lesson
+//  Reupload Lesson
 // ═══════════════════════════════════
-function onEditLesson(num, name) {
+function onReuploadLesson(num, name) {
   editMode = true;
   editLessonNumber = num;
-  $('form-title').textContent = '✏️ تعديل درس رقم ' + num + ': ' + name;
+  $('form-title').textContent = '📁 إعادة رفع درس رقم ' + num + ': ' + name;
   $('inp-lesson-num').value = num;
   $('inp-lesson-name').value = name;
   $('inp-transcript').value = '';
+  $('file-input').value = '';
+  $('file-name').classList.add('hidden');
   $('btn-cancel-edit').classList.remove('hidden');
-  $('btn-process').innerHTML = '🔄 إعادة رفع الدرس';
+  $('btn-process').innerHTML = '🔄 حذف القديم ورفع الجديد';
   $('lesson-form-card').scrollIntoView({ behavior: 'smooth' });
-  addLog('Editing lesson #' + num + ': ' + name, 'info');
+  addLog('Re-uploading lesson #' + num + ': ' + name + ' — paste new transcript below', 'info');
 }
 
 function cancelEdit() {
   editMode = false;
   editLessonNumber = null;
+  renamingLesson = null;
   $('form-title').textContent = '➕ إضافة درس جديد';
   $('inp-lesson-name').value = '';
   $('inp-transcript').value = '';
-  $('btn-cancel-edit').classList.add('hidden');
-  $('btn-process').innerHTML = '🚀 معالجة الدرس';
+  $('file-input').value = '';
   $('file-name').classList.add('hidden');
+  $('btn-cancel-edit').classList.add('hidden');
+  $('btn-process').innerHTML = '🚀 معالجة ورفع الدرس';
+  resetSteps();
 
-  // Auto next number
   const maxNum = existingLessons.reduce((max, l) => Math.max(max, l.lesson_number), 0);
   $('inp-lesson-num').value = maxNum + 1;
 }
@@ -510,7 +570,6 @@ function cancelEdit() {
 function onFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
-
   $('file-name').textContent = '📄 ' + file.name;
   $('file-name').classList.remove('hidden');
 
@@ -523,6 +582,18 @@ function onFileSelect(event) {
 }
 
 // ═══════════════════════════════════
+//  Steps Indicator
+// ═══════════════════════════════════
+function setActiveStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = $('step' + i);
+    if (i <= n) el.classList.add('active');
+    else el.classList.remove('active');
+  }
+}
+function resetSteps() { setActiveStep(1); }
+
+// ═══════════════════════════════════
 //  Process Lesson
 // ═══════════════════════════════════
 async function onProcessLesson() {
@@ -533,29 +604,17 @@ async function onProcessLesson() {
   const transcript = $('inp-transcript').value.trim();
 
   // Validation
-  if (!lessonNum || lessonNum < 1) {
-    addLog('Error: Invalid lesson number', 'error');
-    return;
-  }
-  if (!lessonName) {
-    addLog('Error: Lesson name is required', 'error');
-    return;
-  }
-  if (!transcript) {
-    addLog('Error: Transcript is required', 'error');
-    return;
-  }
-  if (transcript.length < 50) {
-    addLog('Error: Transcript too short (min 50 chars)', 'error');
-    return;
-  }
+  if (!lessonNum || lessonNum < 1) { addLog('Error: Invalid lesson number', 'error'); return; }
+  if (!lessonName) { addLog('Error: Lesson name is required', 'error'); return; }
+  if (!transcript) { addLog('Error: Transcript is required', 'error'); return; }
+  if (transcript.length < 50) { addLog('Error: Transcript too short (min 50 chars)', 'error'); return; }
 
-  // Check if lesson exists and we're not in edit mode
+  // Check existing
   const existing = existingLessons.find(l => l.lesson_number === lessonNum);
   if (existing && !editMode) {
     const ok = await showModal(
-      '⚠️ درس موجود',
-      'الدرس رقم ' + lessonNum + ' (' + existing.lesson_name + ') موجود بالفعل فيه ' + existing.chunk_count + ' قطعة. هل تريد حذف القديم واستبداله؟',
+      '⚠️ درس موجود بالفعل',
+      'الدرس رقم ' + lessonNum + ' (' + existing.lesson_name + ') موجود فيه ' + existing.chunk_count + ' قطعة.\n\nهل تريد حذف المحتوى القديم واستبداله بالجديد؟',
       '🔄 استبدال'
     );
     if (!ok) return;
@@ -565,22 +624,29 @@ async function onProcessLesson() {
   $('btn-process').disabled = true;
   $('btn-process').innerHTML = '<span class="spinner"></span> جاري المعالجة...';
   $('progress-bar').classList.remove('hidden');
-  $('progress-fill').style.width = '10%';
+  $('progress-fill').style.width = '5%';
 
   try {
-    // Step 1: Delete old chunks if exists
+    // Step 1: Delete old if exists
     if (existing || editMode) {
-      addLog('Deleting old chunks for lesson #' + lessonNum + '...', 'warn');
-      $('progress-fill').style.width = '20%';
+      setActiveStep(1);
+      addLog('Step 1: Deleting old chunks for lesson #' + lessonNum + '...', 'warn');
+      $('progress-fill').style.width = '15%';
       await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/lessons/' + lessonNum + '/chunks');
-      addLog('Old chunks deleted', 'success');
+      addLog('Old chunks deleted ✓', 'success');
     }
 
-    // Step 2: Process new content
-    $('progress-fill').style.width = '40%';
-    addLog('Processing lesson #' + lessonNum + ': ' + lessonName + '...', 'info');
-    addLog('Transcript length: ' + transcript.length + ' chars', 'info');
+    // Step 2: Send for processing (chunking)
+    setActiveStep(2);
+    $('progress-fill').style.width = '30%';
+    addLog('Step 2: Chunking transcript (' + transcript.length + ' chars)...', 'info');
 
+    // Step 3: Embedding
+    setActiveStep(3);
+    $('progress-fill').style.width = '50%';
+    addLog('Step 3: Generating embeddings...', 'info');
+
+    // The API does chunking + embedding + saving
     const result = await api('POST', '/api/admin/process-lesson', {
       courseId: selectedCourseId,
       lessonNumber: lessonNum,
@@ -588,28 +654,32 @@ async function onProcessLesson() {
       transcript: transcript
     });
 
+    // Step 4: Done
+    setActiveStep(4);
     $('progress-fill').style.width = '100%';
 
     if (result.success) {
-      addLog('✅ Done! Created ' + result.chunksCreated + ' chunks for "' + lessonName + '"', 'success');
+      addLog('Step 4: Saved to DB ✅', 'success');
+      addLog('🎉 Done! Created ' + result.chunksCreated + ' chunks for "' + lessonName + '"', 'success');
     } else {
       addLog('Processing completed with warnings', 'warn');
     }
 
-    // Refresh data
+    // Refresh
     cancelEdit();
     await refreshCourseData();
 
   } catch (e) {
-    addLog('Error processing lesson: ' + e.message, 'error');
+    addLog('Error: ' + e.message, 'error');
   } finally {
     processing = false;
     $('btn-process').disabled = false;
-    $('btn-process').innerHTML = editMode ? '🔄 إعادة رفع الدرس' : '🚀 معالجة الدرس';
+    $('btn-process').innerHTML = editMode ? '🔄 حذف القديم ورفع الجديد' : '🚀 معالجة ورفع الدرس';
     setTimeout(() => {
       $('progress-bar').classList.add('hidden');
       $('progress-fill').style.width = '0%';
-    }, 2000);
+      resetSteps();
+    }, 3000);
   }
 }
 
@@ -619,18 +689,18 @@ async function onProcessLesson() {
 async function onDeleteLesson(num, name) {
   const ok = await showModal(
     '🗑️ حذف درس',
-    'هل أنت متأكد من حذف الدرس رقم ' + num + ' (' + name + ')؟ سيتم حذف كل القطع الخاصة بيه.',
-    '🗑️ حذف'
+    'هل أنت متأكد من حذف الدرس رقم ' + num + ' (' + name + ')?\n\nسيتم حذف كل القطع (chunks) الخاصة بيه نهائياً.',
+    '🗑️ أيوا احذف'
   );
   if (!ok) return;
 
   try {
     addLog('Deleting lesson #' + num + ': ' + name + '...', 'warn');
     const result = await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/lessons/' + num + '/chunks');
-    addLog('Deleted ' + (result.deleted || 0) + ' chunks for lesson #' + num, 'success');
+    addLog('Deleted ' + (result.deleted || 0) + ' chunks ✅', 'success');
     await refreshCourseData();
   } catch (e) {
-    addLog('Error deleting lesson: ' + e.message, 'error');
+    addLog('Error deleting: ' + e.message, 'error');
   }
 }
 
@@ -639,19 +709,19 @@ async function onDeleteLesson(num, name) {
 // ═══════════════════════════════════
 async function onDeleteAll() {
   const ok = await showModal(
-    '⚠️ مسح كل المحتوى',
-    'هل أنت متأكد؟ سيتم حذف كل الـ chunks (' + totalChunks + ' قطعة) لكورس "' + selectedCourseName + '". العملية دي مش ممكن التراجع عنها!',
-    '🗑️ مسح الكل'
+    '⚠️ مسح كل المحتوى!',
+    'هل أنت متأكد؟ سيتم حذف كل الدروس (' + existingLessons.length + ' درس) وكل القطع (' + totalChunks + ' قطعة) لكورس "' + selectedCourseName + '".\n\nالعملية دي مش ممكن التراجع عنها!',
+    '🗑️ مسح الكل نهائياً'
   );
   if (!ok) return;
 
   try {
-    addLog('Deleting ALL chunks for course: ' + selectedCourseName + '...', 'warn');
+    addLog('Deleting ALL content for: ' + selectedCourseName + '...', 'warn');
     const result = await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/chunks');
-    addLog('Deleted ' + (result.deleted || 0) + ' chunks', 'success');
+    addLog('Deleted ' + (result.deleted || 0) + ' chunks ✅', 'success');
     await refreshCourseData();
   } catch (e) {
-    addLog('Error deleting all chunks: ' + e.message, 'error');
+    addLog('Error: ' + e.message, 'error');
   }
 }
 
