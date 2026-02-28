@@ -3866,5 +3866,66 @@ app.get('/api/admin/regenerate-all-embeddings', async (req, res) => {
   }
 });
 
+/* ══════════════════════════════════════════════════════════
+   🔍 Audit: Check all domain values in courses table
+   ══════════════════════════════════════════════════════════ */
+app.get('/api/admin/audit-domains', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'DB not connected' });
+  try {
+    const { data, error } = await supabase
+      .from('courses')
+      .select('id, title, domain, keywords');
+
+    if (error) throw error;
+
+    const domainMap = {};
+    let emptyCount = 0;
+    const emptyCourses = [];
+
+    for (const course of (data || [])) {
+      const d = (course.domain || '').trim();
+      if (!d) {
+        emptyCount++;
+        emptyCourses.push({ id: course.id, title: course.title });
+        continue;
+      }
+      if (!domainMap[d]) domainMap[d] = { count: 0, courses: [] };
+      domainMap[d].count++;
+      domainMap[d].courses.push({ id: course.id, title: course.title });
+    }
+
+    // Check each domain against CATEGORIES
+    const domainAnalysis = {};
+    for (const [domain, info] of Object.entries(domainMap)) {
+      const fakeCourse = { title: '', domain, keywords: '', subtitle: '' };
+      const matchedCats = getCourseCategories(fakeCourse);
+      domainAnalysis[domain] = {
+        count: info.count,
+        matched_category: matchedCats.length > 0 ? matchedCats[0].name : '❌ NO MATCH',
+        match_score: matchedCats.length > 0 ? matchedCats[0].score : 0,
+        sample_courses: info.courses.slice(0, 5).map(c => c.title),
+      };
+    }
+
+    // Sort: unmatched first, then by count
+    const sorted = Object.entries(domainAnalysis)
+      .sort((a, b) => {
+        if (a[1].match_score === 0 && b[1].match_score > 0) return -1;
+        if (b[1].match_score === 0 && a[1].match_score > 0) return 1;
+        return b[1].count - a[1].count;
+      });
+
+    res.json({
+      total_courses: (data || []).length,
+      empty_domain_count: emptyCount,
+      empty_domain_courses: emptyCourses.slice(0, 20),
+      unique_domains: Object.keys(domainMap).length,
+      domains: Object.fromEntries(sorted),
+    });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 startServer();
