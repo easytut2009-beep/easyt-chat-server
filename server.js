@@ -4231,6 +4231,45 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
   }
 });
 
+
+// --- Get all courses for upload page (simple list) ---
+app.get("/api/upload/courses", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("id, title")
+      .order("title", { ascending: true });
+    
+    if (error) throw error;
+    
+    res.json({ 
+      success: true, 
+      courses: (data || []).map(c => ({ id: c.id, name: c.title }))
+    });
+  } catch (err) {
+    console.error("Error fetching courses for upload:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// --- Get chunk count for a course ---
+app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const { count, error } = await supabase
+      .from("chunks")
+      .select("*", { count: "exact", head: true })
+      .eq("course_id", req.params.courseId);
+    
+    if (error) throw error;
+    res.json({ success: true, count: count || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Serve upload page ---
 app.get("/upload", (req, res) => {
   res.sendFile(path.join(__dirname, "upload.html"));
