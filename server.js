@@ -3928,4 +3928,26 @@ app.get('/api/admin/audit-domains', async (req, res) => {
   }
 });
 
+
+
+{
+  "summary": {
+    "total": 360,
+    "correct": 250,
+    "mismatched": 45,
+    "uncertain": 65
+  },
+  "mismatched": [
+    {
+      "id": 123,
+      "title": "تصميم وبرمجة الألعاب باستخدام GoDot Engine",
+      "current_domain": "design",
+      "current_domain_score": 0,
+      "suggested_domain": "game",
+      "suggested_domain_score": 6,
+      "status": "❌ WRONG DOMAIN"
+    }
+  ]
+}
+
 startServer();
