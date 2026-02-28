@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.5 — Two-Phase RAG + Context Memory
+   🤖 Ziko Chatbot v10.6 — Two-Phase RAG + Context Memory + Lesson Search
    
    🔧 FIXES from v10.2:
    ✅ FIX #1: \n → <br> everywhere
@@ -31,6 +31,13 @@
    ✅ FIX #24: Embedding generation uses richer content (page_content + domain + keywords)
    ✅ FIX #25: RAG Phase 2 sees domain + keywords for better recommendations
    ✅ FIX #26: verifyCourseRelevance includes domain + keywords
+
+   🆕 NEW in v10.6:
+   ✅ FIX #28: Lesson-level search — finds topics INSIDE courses (lessons table)
+   ✅ FIX #29: Semantic chunk search for lesson discovery
+   ✅ FIX #30: Phase 2 prompt includes matchedLessons rules
+   ✅ FIX #31: Course cards show matched lessons with timestamps
+   ✅ FIX #32: verifyCourseRelevance allows lesson-matched courses
 
    🧹 CLEANUP:
    ✅ Removed /test endpoint
@@ -1097,6 +1104,165 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
+   FIX #28: Lesson-Level Search — finds topics INSIDE courses
+   ══════════════════════════════════════════════════════════ */
+async function searchLessonsInCourses(searchTerms) {
+  if (!supabase || !searchTerms || searchTerms.length === 0) return [];
+
+  const cacheKey = "sl:" + searchTerms.slice().sort().join("|");
+  const cached = getCachedSearch(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const corrected = searchTerms.map(t => applyArabicCorrections(t));
+    const expanded = expandSynonyms(corrected);
+    const allTerms = splitIntoSearchableTerms(expanded);
+    if (allTerms.length === 0) return [];
+
+    console.log('🎓 Lesson search terms:', allTerms);
+
+    // 1) Text search on lesson titles
+    const orFilters = allTerms
+      .map(t => `title.ilike.%${t}%`)
+      .join(',');
+
+    let allLessons = [];
+
+    try {
+      const { data: lessons, error } = await supabase
+        .from('lessons')
+        .select('id, title, course_id')
+        .or(orFilters)
+        .limit(20);
+
+      if (error) {
+        console.error('Lesson title search error:', error.message);
+      } else {
+        allLessons = (lessons || []).map(l => ({
+          ...l,
+          matchSource: 'title_search'
+        }));
+      }
+    } catch (lessonErr) {
+      console.error('Lesson table query error:', lessonErr.message);
+    }
+
+    // 2) Semantic search on chunks (if OpenAI available)
+    if (openai) {
+      try {
+        const queryText = searchTerms.join(' ');
+        const embResp = await openai.embeddings.create({
+          model: 'text-embedding-ada-002',
+          input: queryText.substring(0, 2000),
+        });
+
+        const { data: chunkMatches, error: chunkErr } = await supabase.rpc('match_lesson_chunks', {
+          query_embedding: embResp.data[0].embedding,
+          match_threshold: 0.75,
+          match_count: 8,
+          filter_course_id: null,
+        });
+
+        if (!chunkErr && chunkMatches && chunkMatches.length > 0) {
+          console.log(`🧠 Semantic lesson chunks: ${chunkMatches.length} matches`);
+
+          const existingLessonIds = new Set(allLessons.map(l => l.id));
+          for (const chunk of chunkMatches) {
+            if (chunk.lesson_id && !existingLessonIds.has(chunk.lesson_id)) {
+              allLessons.push({
+                id: chunk.lesson_id,
+                title: chunk.lesson_title || '',
+                course_id: chunk.course_id,
+                timestamp_start: chunk.timestamp_start,
+                similarity: chunk.similarity,
+                matchSource: 'semantic_chunk',
+              });
+              existingLessonIds.add(chunk.lesson_id);
+            }
+
+            // Attach timestamps to existing lessons that don't have them
+            const existing = allLessons.find(l => l.id === chunk.lesson_id);
+            if (existing && !existing.timestamp_start && chunk.timestamp_start) {
+              existing.timestamp_start = chunk.timestamp_start;
+              existing.similarity = chunk.similarity;
+            }
+          }
+        }
+      } catch (semErr) {
+        console.error('Semantic lesson search error:', semErr.message);
+      }
+    }
+
+    if (allLessons.length === 0) {
+      setCachedSearch(cacheKey, []);
+      return [];
+    }
+
+    // Get unique course IDs
+    const courseIds = [...new Set(allLessons.filter(l => l.course_id).map(l => l.course_id))];
+    if (courseIds.length === 0) {
+      setCachedSearch(cacheKey, []);
+      return [];
+    }
+
+    // Fetch parent courses
+    const { data: courses, error: cErr } = await supabase
+      .from('courses')
+      .select(COURSE_SELECT_COLS)
+      .in('id', courseIds);
+
+    if (cErr || !courses || courses.length === 0) {
+      setCachedSearch(cacheKey, []);
+      return [];
+    }
+
+    // Attach matched lessons to each course and score
+    const results = courses.map(course => {
+      const matched = allLessons
+        .filter(l => l.course_id === course.id)
+        .map(l => ({
+          title: l.title,
+          timestamp_start: l.timestamp_start || null,
+          similarity: l.similarity || null,
+        }));
+
+      let score = 0;
+      for (const lesson of matched) {
+        const titleNorm = normalizeArabic((lesson.title || '').toLowerCase());
+        for (const term of allTerms) {
+          const nt = normalizeArabic(term.toLowerCase());
+          if (nt.length <= 1) continue;
+          if (titleNorm.includes(nt)) score += 100;
+        }
+        if (lesson.similarity) {
+          score += Math.round(lesson.similarity * 80);
+        }
+      }
+
+      return {
+        ...course,
+        matchedLessons: matched,
+        relevanceScore: score,
+        matchType: 'lesson_title',
+      };
+    });
+
+    results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    console.log(`🎓 Lesson search: ${results.length} courses with ${allLessons.length} matching lessons`);
+    results.forEach(r => {
+      console.log(`   🎓 "${r.title}" — lessons: [${r.matchedLessons.map(l => l.title).join(', ')}]`);
+    });
+
+    setCachedSearch(cacheKey, results);
+    return results;
+  } catch (e) {
+    console.error('searchLessonsInCourses error:', e.message);
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
    FIX #20: searchCorrections — uses correct column names
    ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
@@ -1234,6 +1400,21 @@ function formatCourseCard(course, instructors, index) {
   if (desc) {
     card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>`;
   }
+
+  /* ══ FIX #31: Show matched lessons inside the card ══ */
+  if (course.matchedLessons && course.matchedLessons.length > 0) {
+    card += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
+    card += `<strong>📖 الدروس المرتبطة:</strong><br>`;
+    course.matchedLessons.forEach(l => {
+      card += `• ${l.title}`;
+      if (l.timestamp_start) {
+        card += ` <span style="color:#e63946;font-weight:600">⏱️ ${l.timestamp_start}</span>`;
+      }
+      card += `<br>`;
+    });
+    card += `</div>`;
+  }
+
   card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
   card += `</div>`;
 
@@ -1299,8 +1480,8 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.5                    ██
-   ██   Two-Phase RAG + Context Memory + Smart Filtering   ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.6                    ██
+   ██   Two-Phase RAG + Context Memory + Lesson Search     ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
    ══════════════════════════════════════════════════════════ */
@@ -1755,6 +1936,8 @@ ${categoriesList}
   - "ابي ريفيت" → ["ريفيت","revit","برامج هندسية"]
   - "شلون اتعلم بايثون" → ["بايثون","python"]
   - "دبلومة جرافيك" → ["جرافيك","graphic","تصميم","دبلومة"] ← SEARCH ✅ (مجال محدد)
+  - "التأثير النفسي للألوان" → ["التأثير النفسي للألوان","سيكولوجية الألوان","نظرية الألوان","visual content"] ← SEARCH ✅
+  - "نظرية سكامبر" → ["سكامبر","scamper","ابداع","تفكير ابداعي"] ← SEARCH ✅
   - لو متابعة لموضوع سابق: ادمج السياق مع الموضوع السابق
 
 📂 CATEGORIES — لما يسأل عن المجالات/التصنيفات المتاحة فقط (مش الدبلومات):
@@ -1814,6 +1997,8 @@ ${categoriesList}
 - "بدي فوتوشوب" ← SEARCH ✅
 - "ذكاء اصطناعي" ← SEARCH ✅
 - "دبلومة جرافيك" ← SEARCH ✅ (دبلومة + مجال محدد)
+- "التأثير النفسي للألوان الاقيها في اي كورس" ← SEARCH ✅ (موضوع محدد)
+- "في كورس بيتكلم عن نظرية سكامبر" ← SEARCH ✅ (موضوع محدد)
 
 💬 CHAT = فقط لما الرسالة مفيهاش أي موضوع خالص:
 - "عايز اتعلم" ← CHAT (اتعلم ايه؟ مفيش موضوع)
@@ -1998,6 +2183,12 @@ function prepareCourseForRAG(course, instructors) {
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
     relevanceScore: course.relevanceScore || 0,
+    /* FIX #28: Lesson-level matches */
+    matchedLessons: (course.matchedLessons || []).map(l => ({
+      title: l.title,
+      timestamp: l.timestamp_start || null,
+    })),
+    matchType: course.matchType || "course_title",
   };
 }
 
@@ -2063,6 +2254,26 @@ async function generateSmartRecommendation(
 ═══ الكورسات والدبلومات المتاحة (مرتبة بالـ relevanceScore) ═══
 ${JSON.stringify(allItems, null, 1)}
 
+═══ 🎓 قواعد الدروس (matchedLessons) — مهم جداً! ═══
+
+بعض الكورسات فيها حقل "matchedLessons" — دي أسماء دروس جوه الكورس بتتكلم عن الموضوع المطلوب!
+
+1. لو كورس عنده matchedLessons مش فاضية:
+   - الموضوع موجود كدرس جوه الكورس ده!
+   - اذكر اسم الكورس + اسم الدرس في ردك
+   - لو فيه timestamp: اذكر الدقيقة كمان
+   - مثال: "هتلاقي الموضوع ده في كورس **فيجوال كونتنت**، في درس **التأثير النفسي للألوان** ⏱️"
+   - مثال: "موجود في كورس **فيجوال كونتنت** — ارجع لدرس **نظرية سكامبر** عند الدقيقة 5:30"
+
+2. لو matchType = "lesson_title":
+   - الأولوية القصوى! الطالب بيدور على حاجة موجودة جوه الكورس ده بالظبط
+   - has_exact_match = true حتى لو عنوان الكورس مش فيه الكلمة المطلوبة
+
+3. لو فيه أكتر من درس في نفس الكورس:
+   - اذكرهم كلهم
+
+4. ❌ ممنوع تقول "مفيش كورس" لو فيه matchedLessons — الموضوع موجود بس جوه درس مش كورس مستقل!
+
 ═══ معلومات المستخدم ═══
 - مستواه: ${levelInfo}
 - اهتماماته: ${interestsInfo}
@@ -2088,6 +2299,7 @@ ${JSON.stringify(allItems, null, 1)}
 ═══ 🔴🔴🔴 قواعد الفلترة الصارمة 🔴🔴🔴 ═══
 
 1. ✅ مرتبط = الكورس بيعلّم **نفس** الأداة/المهارة/البرنامج اللي المستخدم طلبه
+   ✅ مرتبط أيضاً = الكورس عنده matchedLessons فيها الموضوع المطلوب
 2. ❌ مش مرتبط = الكورس في مجال مختلف حتى لو في نفس التصنيف العام
 
 أمثلة على كورسات مش مرتبطة (❌ ممنوع تعرضها):
@@ -2101,10 +2313,12 @@ ${JSON.stringify(allItems, null, 1)}
 - المستخدم طلب "فوتوشوب" → كورس "قوة الذكاء الاصطناعي داخل فوتوشوب" = ✅✅
 - المستخدم طلب "فوتوشوب" → دبلومة "جرافيك ديزاين" = ✅
 - المستخدم طلب "ريفيت" → كورس "ريفيت AutoDesk Revit" = ✅✅✅
+- المستخدم طلب "التأثير النفسي للألوان" → كورس عنده matchedLessons فيها "التأثير النفسي للألوان" = ✅✅✅
 
 3. قاعدة العنوان: لو فيه كورس **عنوانه** فيه اسم البرنامج/المهارة المطلوبة → ده الأولوية الأولى!
+   قاعدة الدروس: لو فيه كورس عنده **matchedLessons** فيها الموضوع → ده أولوية عالية كمان!
 
-4. لو مفيش ولا كورس مرتبط فعلاً:
+4. لو مفيش ولا كورس مرتبط فعلاً ولا عنده matchedLessons:
    - relevant_course_indices = [] (فاضية!)
    - has_exact_match = false
    - ❌❌❌ ممنوع تحط أي index لكورس مش مرتبط
@@ -2113,6 +2327,7 @@ ${JSON.stringify(allItems, null, 1)}
 
 ═══ قواعد الرد ═══
 - لو has_exact_match = true: رد بحماس واشرح ليه الكورس مناسب
+- لو كورس عنده matchedLessons: اذكر اسم الدرس في ردك
 - لو has_exact_match = false: ابدأ بـ "للأسف مفيش كورس مخصص لـ [الموضوع] حالياً..."
 - اذكر اسم الكورس بالظبط زي ما في البيانات
 - ❌ ممنوع تذكر أسعار
@@ -2215,6 +2430,12 @@ ${JSON.stringify(allItems, null, 1)}
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
+  /* FIX #32: Lesson-matched courses always pass verification */
+  if (course.matchType === 'lesson_title' && course.matchedLessons && course.matchedLessons.length > 0) {
+    console.log(`   🛡️ FIX #32: "${course.title}" PASSED (lesson-matched: ${course.matchedLessons.map(l => l.title).join(', ')})`);
+    return true;
+  }
+
   const searchCat = detectRelevantCategory(searchTerms);
   if (searchCat) {
     const courseCats = getCourseCategories(course);
@@ -2306,7 +2527,7 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.5
+   11-F: 🧠 Master Orchestrator v10.6
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
@@ -2433,10 +2654,33 @@ async function smartChat(message, sessionId) {
       console.log(`   🏆 [score=${c.relevanceScore}] ${c.title}`);
     });
 
-    let [courses, diplomas] = await Promise.all([
+    /* FIX #28: Search courses, diplomas, AND lessons in parallel */
+    let [courses, diplomas, lessonResults] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
+      searchLessonsInCourses(termsToSearch),
     ]);
+
+    /* FIX #28: Merge lesson-matched courses into main results */
+    if (lessonResults && lessonResults.length > 0) {
+      console.log(`🎓 Merging ${lessonResults.length} lesson-matched courses`);
+      const seenCourseIds = new Set(courses.map(c => c.id));
+
+      for (const lr of lessonResults) {
+        const existing = courses.find(c => c.id === lr.id);
+        if (existing) {
+          // Course already in results — attach lessons and boost score
+          existing.matchedLessons = lr.matchedLessons;
+          existing.matchType = 'lesson_title';
+          existing.relevanceScore = Math.max(existing.relevanceScore || 0, lr.relevanceScore);
+        } else {
+          // Course not in results yet — add it
+          courses.push(lr);
+          seenCourseIds.add(lr.id);
+        }
+      }
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+    }
 
     const seenIds = new Set(courses.map((c) => c.id));
     for (const pc of priorityCourses) {
@@ -2501,16 +2745,26 @@ async function smartChat(message, sessionId) {
     if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
+      /* Must-show: courses with title match OR lesson match */
       const mustShowCourses = courses.filter((c) => {
+        // Title match
         const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-        return termsToSearch.some((t) => {
+        const hasTitleMatch = termsToSearch.some((t) => {
           const termNorm = normalizeArabic(t.toLowerCase());
           return termNorm.length > 3 && titleNorm.includes(termNorm);
         });
+        // Lesson match
+        const hasLessonMatch = c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0;
+        return hasTitleMatch || hasLessonMatch;
       });
 
       console.log(`📌 Must-show courses: ${mustShowCourses.length}`);
-      mustShowCourses.forEach((c) => console.log(`   📌 ${c.title}`));
+      mustShowCourses.forEach((c) => {
+        const lessonInfo = c.matchedLessons && c.matchedLessons.length > 0
+          ? ` [lessons: ${c.matchedLessons.map(l => l.title).join(', ')}]`
+          : '';
+        console.log(`   📌 ${c.title}${lessonInfo}`);
+      });
 
       const phase2Model = mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
       console.log(`🤖 Phase 2 model: ${phase2Model} (must-show=${mustShowCourses.length})`);
@@ -2556,9 +2810,14 @@ async function smartChat(message, sessionId) {
 
         if (!recommendation.hasExactMatch && mustShowCourses.length > 0) {
           console.log(
-            `🔄 Overriding GPT's "no match" — we have title matches!`
+            `🔄 Overriding GPT's "no match" — we have title/lesson matches!`
           );
-          recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
+          const hasLessonMatches = mustShowCourses.some(c => c.matchedLessons && c.matchedLessons.length > 0);
+          if (hasLessonMatches) {
+            recommendationMessage = `🎯 الموضوع ده موجود كدرس جوه كورس عندنا! 👇`;
+          } else {
+            recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
+          }
           if (mustShowCourses.length > 1) {
             recommendationMessage += ` وكمان فيه ${mustShowCourses.length - 1} كورسات تانية ممكن تفيدك 👇`;
           }
@@ -2821,7 +3080,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.5" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.6" });
 
     return res.json({ reply });
   } catch (error) {
@@ -3258,12 +3517,11 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
    SECTION 14: Health, Debug, Root
    ══════════════════════════════════════════════════════════ */
 
-/* 🔒 CLEANUP: Added adminAuth protection */
 app.get("/admin/debug", adminAuth, async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.5",
-    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords",
+    version: "10.6",
+    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords + LessonSearch",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -3279,7 +3537,7 @@ app.get("/admin/debug", adminAuth, async (req, res) => {
     tables: {},
   };
   if (supabase) {
-    for (const table of ["courses","diplomas","chat_logs","corrections","custom_responses","bot_instructions","instructors","faq","site_pages"]) {
+    for (const table of ["courses","diplomas","chat_logs","corrections","custom_responses","bot_instructions","instructors","faq","site_pages","lessons","chunks"]) {
       try { const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }); diag.tables[table] = error ? `❌ ${error.message}` : `✅ ${count} rows`; }
       catch (e) { diag.tables[table] = `❌ ${e.message}`; }
     }
@@ -3295,10 +3553,10 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.5",
+    version: "10.6",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
     active_sessions: sessionMemory.size,
     search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
@@ -3308,17 +3566,20 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.5",
+    version: "10.6",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
+      "🆕 Lesson-level search — finds topics inside courses (lessons + chunks)",
+      "🆕 Course cards show matched lessons with timestamps",
+      "🆕 Phase 2 GPT sees matchedLessons for smarter recommendations",
       "Title-priority scoring (50x weight, +200 exact match)",
       "Domain scoring (30x weight) + Keywords scoring (20x weight)",
       "Richer embeddings (page_content + domain + keywords)",
       "RAG Phase 2 sees domain + keywords per course",
-      "verifyCourseRelevance checks domain + keywords",
+      "verifyCourseRelevance checks domain + keywords + lesson matches",
       "Follow-up context memory (remembers last topic)",
       "Card images with onerror fallback",
       "Phase 2 sees relevance scores",
@@ -3340,7 +3601,7 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.5...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.6...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
@@ -3374,7 +3635,7 @@ async function startServer() {
     guideRateLimits[sessionId].count++;
   }
 
-function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkContext) {
+  function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkContext) {
     let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
 
 ## دورك:
@@ -3438,7 +3699,6 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
       p += `\n${clientPrompt.trim().substring(0, 500)}`;
     }
 
-    // 🆕 RAG: محتوى فعلي من قاعدة البيانات
     if (chunkContext && chunkContext.trim()) {
       p += `\n\n═══════════════════════════════════`;
       p += `\n📖 محتوى فعلي من الكورس (من قاعدة البيانات):`;
@@ -3506,7 +3766,6 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
 
       consumeGuideMsg(session_id);
 
-      // 🆕 RAG: جلب chunks مرتبطة بسؤال الطالب
       let chunkContext = '';
       if (course_name || lecture_title) {
         try {
@@ -3535,7 +3794,7 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
         course_name || '',
         lecture_title || '',
         system_prompt || '',
-        chunkContext   // 🆕 RAG context
+        chunkContext
       );
 
       if (!guideConversations[session_id]) {
@@ -3580,7 +3839,6 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
     }
   });
 
-
   app.get('/api/guide/health', (req, res) => {
     res.json({
       status: 'ok',
@@ -3622,8 +3880,7 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
   console.log('   GET  /api/guide/status  — Counter Sync');
   console.log('   GET  /api/guide/health  — Health Check');
 
-
-// ═══ 🧩 Chunk Embeddings Admin ═══
+  // ═══ 🧩 Chunk Embeddings Admin ═══
 
   app.get('/api/admin/chunks-status', adminAuth, async (req, res) => {
     if (!supabase) return res.status(500).json({ success: false, error: 'DB not connected' });
@@ -3752,14 +4009,13 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
     }
   });
 
-
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.5                              ║
+║  🤖 زيكو Chatbot — v10.6                              ║
 ║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
 ║  🔍 Search: Title 50x + Domain 30x + Keywords 20x     ║
-║  🆕 Richer embeddings: page_content + domain + kw      ║
+║  🆕 Lesson-Level Search: finds topics inside courses   ║
 ║  🔄 Follow-up: Remembers last topic for context        ║
 ║  📦 Cache: 5min TTL search cache                       ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
@@ -3786,14 +4042,13 @@ async function generateSingleEmbedding(text) {
   return response.data[0].embedding;
 }
 
-/* 🔒 CLEANUP: Added adminAuth protection */
 app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
   if (!supabase || !openai) {
     return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
   }
 
   try {
-    console.log('🚀 Starting embedding generation (v10.5 — richer content)...');
+    console.log('🚀 Starting embedding generation (v10.6 — richer content)...');
     const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
 
     // ====== COURSES ======
@@ -3886,14 +4141,10 @@ app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
   }
 });
 
-
 /* ══════════════════════════════════════════════════════════
    🧩 Course Chunks — RAG Helpers for Guide Bot
    ══════════════════════════════════════════════════════════ */
 
-/**
- * البحث عن كورس بالاسم (fuzzy match)
- */
 async function findCourseByName(courseName) {
   if (!supabase || !courseName) return null;
   try {
@@ -3914,7 +4165,6 @@ async function findCourseByName(courseName) {
       return best;
     }
 
-    // Fuzzy fallback
     const { data: all } = await supabase.from('courses').select('id, title').limit(500);
     if (!all) return null;
 
@@ -3930,10 +4180,6 @@ async function findCourseByName(courseName) {
     return null;
   }
 }
-
-/**
- * جلب chunks مرتبطة بسؤال الطالب (Semantic Search)
- */
 
 async function getRelevantChunks(query, courseId = null, limit = 3) {
   if (!supabase || !openai || !query) return [];
@@ -3969,5 +4215,3 @@ async function getRelevantChunks(query, courseId = null, limit = 3) {
 }
 
 startServer();
-
-
