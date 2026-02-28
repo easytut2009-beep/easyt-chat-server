@@ -5003,19 +5003,6 @@ async function startServer() {
       );
 
 
- // 🔍 ===== حط الـ DEBUG هنا بالظبط =====
-      console.log(`\n🔍 ========== DEBUG GUIDE ==========`);
-      console.log(`  📚 Course lookup: "${course_name}" → ${courseId || 'NOT FOUND'}`);
-      console.log(`  📖 Lesson lookup: "${lecture_title}" → ${lessonMatch ? lessonMatch.title : 'NOT FOUND'}`);
-      console.log(`  📄 Current lesson chunks: ${currentChunks.length}`);
-      console.log(`  📄 First chunk preview: ${currentChunks[0]?.content?.substring(0, 100) || 'EMPTY'}`);
-      console.log(`  🔍 Semantic chunks: ${ragStats.semantic}`);
-      console.log(`  📝 Current lesson context length: ${currentLessonContext.length} chars`);
-      console.log(`  📝 Other lessons context length: ${otherLessonsContext.length} chars`);
-      console.log(`  📝 System prompt length: ${finalSystemPrompt.length} chars`);
-      console.log(`🔍 ===================================\n`);
-
-
 
       // ═══ Conversation Management ═══
       if (!guideConversations[session_id]) {
