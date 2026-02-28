@@ -3629,25 +3629,21 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
     if (!supabase) return res.status(500).json({ success: false, error: 'DB not connected' });
     try {
       const { count: totalChunks } = await supabase
-        .from('course_chunks').select('*', { count: 'exact', head: true });
+        .from('chunks').select('*', { count: 'exact', head: true });
 
       const { count: withEmbedding } = await supabase
-        .from('course_chunks').select('*', { count: 'exact', head: true })
+        .from('chunks').select('*', { count: 'exact', head: true })
         .not('embedding', 'is', null);
 
       const { count: withoutEmbedding } = await supabase
-        .from('course_chunks').select('*', { count: 'exact', head: true })
+        .from('chunks').select('*', { count: 'exact', head: true })
         .is('embedding', null);
+
+      const { count: totalLessons } = await supabase
+        .from('lessons').select('*', { count: 'exact', head: true });
 
       const { count: totalCourses } = await supabase
         .from('courses').select('*', { count: 'exact', head: true });
-
-      const { data: chunkedRows } = await supabase
-        .from('course_chunks').select('course_id').limit(5000);
-
-      const uniqueChunkedCourses = chunkedRows
-        ? new Set(chunkedRows.map(c => c.course_id)).size
-        : 0;
 
       res.json({
         success: true,
@@ -3655,9 +3651,8 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
           total_chunks: totalChunks || 0,
           with_embedding: withEmbedding || 0,
           without_embedding: withoutEmbedding || 0,
+          total_lessons: totalLessons || 0,
           total_courses: totalCourses || 0,
-          chunked_courses: uniqueChunkedCourses,
-          unchunked_courses: (totalCourses || 0) - uniqueChunkedCourses,
           coverage: totalChunks > 0
             ? `${Math.round(((withEmbedding || 0) / (totalChunks || 1)) * 100)}%`
             : '0%',
@@ -3674,121 +3669,88 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkCon
     }
 
     try {
-      const force = req.body?.force === true;
-      console.log(`🧩 Starting chunk embedding generation... (force=${force})`);
+      const batchSize = parseInt(req.body?.batch_size) || 100;
+      console.log(`🧩 Starting chunk embedding generation (batch=${batchSize})...`);
 
-      const results = {
-        courses_chunked: 0,
-        chunks_created: 0,
-        embeddings_generated: 0,
-        errors: 0,
-      };
+      const results = { processed: 0, errors: 0, total: 0 };
 
-      // Step 1: Get all courses
-      const { data: allCourses } = await supabase
-        .from('courses')
-        .select('id, title, description, subtitle, syllabus, objectives, page_content, full_content');
+      const { data: chunks, error: fetchErr } = await supabase
+        .from('chunks')
+        .select(`
+          id,
+          content,
+          lesson_id,
+          chunk_order,
+          lessons!inner(title, course_id, courses!inner(title))
+        `)
+        .is('embedding', null)
+        .limit(batchSize);
 
-      if (!allCourses || allCourses.length === 0) {
-        return res.json({ message: 'No courses found', results });
+      if (fetchErr) {
+        console.error('Fetch chunks error:', fetchErr.message);
+        return res.status(500).json({ error: fetchErr.message });
       }
 
-      // Get already-chunked course IDs
-      const { data: existingRows } = await supabase
-        .from('course_chunks').select('course_id').limit(10000);
-      const chunkedIds = new Set((existingRows || []).map(c => c.course_id));
+      if (!chunks || chunks.length === 0) {
+        return res.json({ message: 'All chunks already have embeddings! ✅', results });
+      }
 
-      const coursesToChunk = force
-        ? allCourses
-        : allCourses.filter(c => !chunkedIds.has(c.id));
+      results.total = chunks.length;
+      console.log(`📝 Found ${chunks.length} chunks without embeddings`);
 
-      console.log(`📚 Courses to chunk: ${coursesToChunk.length}/${allCourses.length} (already chunked: ${chunkedIds.size})`);
-
-      // Step 2: Chunk each course
-      for (const course of coursesToChunk) {
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunk = chunks[idx];
         try {
-          if (force && chunkedIds.has(course.id)) {
-            await supabase.from('course_chunks').delete().eq('course_id', course.id);
-          }
+          const lessonTitle = chunk.lessons?.title || '';
+          const courseTitle = chunk.lessons?.courses?.title || '';
 
-          const chunks = chunkCourseContent(course);
-          if (chunks.length === 0) {
-            console.log(`⏭️ Skip "${course.title}" (no content to chunk)`);
+          const text = [courseTitle, lessonTitle, chunk.content]
+            .filter(Boolean)
+            .join(' - ');
+
+          if (!text.trim()) {
+            console.log(`⏭️ Skip chunk ${chunk.id} (empty)`);
             continue;
           }
 
-          for (let i = 0; i < chunks.length; i += 20) {
-            const batch = chunks.slice(i, i + 20);
-            const { error: insertErr } = await supabase
-              .from('course_chunks').insert(batch);
+          const embedding = await generateSingleEmbedding(text);
 
-            if (insertErr) {
-              console.error(`❌ Insert chunks "${course.title}":`, insertErr.message);
-              results.errors++;
-            } else {
-              results.chunks_created += batch.length;
+          const { error: upErr } = await supabase
+            .from('chunks')
+            .update({ embedding })
+            .eq('id', chunk.id);
+
+          if (upErr) {
+            console.error(`❌ Chunk ${chunk.id}:`, upErr.message);
+            results.errors++;
+          } else {
+            results.processed++;
+            if ((idx + 1) % 20 === 0 || idx === chunks.length - 1) {
+              console.log(`   🧠 Progress: ${idx + 1}/${chunks.length} | ✅ ${results.processed} | ❌ ${results.errors}`);
             }
           }
 
-          results.courses_chunked++;
-          console.log(`✅ Chunked: "${course.title}" → ${chunks.length} chunks`);
+          await new Promise(r => setTimeout(r, 250));
         } catch (err) {
-          console.error(`❌ Chunk "${course.title}":`, err.message);
+          console.error(`❌ Chunk ${chunk.id}:`, err.message);
           results.errors++;
         }
       }
 
-      // Step 3: Generate embeddings for chunks without them
-      const { data: noEmbChunks, error: fetchErr } = await supabase
-        .from('course_chunks')
-        .select('id, content, chunk_title, course_title')
-        .is('embedding', null)
-        .limit(500);
-
-      if (fetchErr) {
-        console.error('Fetch chunks error:', fetchErr.message);
-      } else if (noEmbChunks && noEmbChunks.length > 0) {
-        console.log(`🧠 Generating embeddings for ${noEmbChunks.length} chunks...`);
-
-        for (let idx = 0; idx < noEmbChunks.length; idx++) {
-          const chunk = noEmbChunks[idx];
-          try {
-            const text = `${chunk.course_title || ''} - ${chunk.chunk_title || ''}\n${chunk.content}`;
-            const embedding = await generateSingleEmbedding(text);
-
-            const { error: upErr } = await supabase
-              .from('course_chunks').update({ embedding }).eq('id', chunk.id);
-
-            if (upErr) {
-              console.error(`❌ Embed chunk ${chunk.id}:`, upErr.message);
-              results.errors++;
-            } else {
-              results.embeddings_generated++;
-              if ((idx + 1) % 50 === 0) {
-                console.log(`   🧠 Progress: ${idx + 1}/${noEmbChunks.length} embeddings`);
-              }
-            }
-
-            await new Promise(r => setTimeout(r, 250));
-          } catch (err) {
-            console.error(`❌ Embed chunk ${chunk.id}:`, err.message);
-            results.errors++;
-          }
-        }
-      }
-
       console.log('🎉 Chunk embedding generation complete!', results);
-      res.json({ message: 'Chunk embeddings generated!', results });
+      res.json({
+        message: `Done! ${results.processed} embeddings generated.`,
+        results,
+        note: results.total === batchSize
+          ? `Processed ${batchSize} chunks. Run again to process more!`
+          : 'All done!'
+      });
 
     } catch (error) {
       console.error('❌ Generate chunk embeddings error:', error);
       res.status(500).json({ error: error.message });
     }
   });
-
-  console.log('🧩 Chunk RAG endpoints ready:');
-  console.log('   GET  /api/admin/chunks-status              — Status');
-  console.log('   POST /api/admin/generate-chunk-embeddings  — Generate');
 
 
   app.listen(PORT, () => {
@@ -3930,122 +3892,6 @@ app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
    ══════════════════════════════════════════════════════════ */
 
 /**
- * تقسيم محتوى الكورس لـ chunks صغيرة
- */
-function chunkCourseContent(course) {
-  const chunks = [];
-  const courseId = course.id;
-  const courseTitle = course.title || '';
-
-  function cleanHtml(text) {
-    return (text || '')
-      .replace(/<[^>]*>/g, '\n')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&[a-z]+;/gi, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
-
-  function splitText(text, maxLen = 800) {
-    const clean = cleanHtml(text);
-    if (!clean || clean.length < 10) return [];
-    if (clean.length <= maxLen) return [clean];
-
-    const paragraphs = clean.split(/\n\n+/);
-    const result = [];
-    let current = '';
-
-    for (const p of paragraphs) {
-      if (current.length > 0 && (current + '\n\n' + p).length > maxLen) {
-        result.push(current.trim());
-        current = p;
-      } else {
-        current = current ? current + '\n\n' + p : p;
-      }
-    }
-    if (current.trim().length >= 10) result.push(current.trim());
-    return result;
-  }
-
-  // Syllabus
-  if (course.syllabus) {
-    const parts = splitText(course.syllabus, 800);
-    parts.forEach((content, i) => {
-      chunks.push({
-        course_id: courseId,
-        course_title: courseTitle,
-        chunk_title: `${courseTitle} - المنهج${parts.length > 1 ? ` (${i + 1})` : ''}`,
-        content,
-        chunk_type: 'syllabus',
-        chunk_index: chunks.length,
-      });
-    });
-  }
-
-  // Page content
-  if (course.page_content) {
-    const parts = splitText(course.page_content, 800);
-    parts.forEach((content, i) => {
-      chunks.push({
-        course_id: courseId,
-        course_title: courseTitle,
-        chunk_title: `${courseTitle} - محتوى الصفحة${parts.length > 1 ? ` (${i + 1})` : ''}`,
-        content,
-        chunk_type: 'page_content',
-        chunk_index: chunks.length,
-      });
-    });
-  }
-
-  // Objectives
-  if (course.objectives) {
-    const parts = splitText(course.objectives, 800);
-    parts.forEach((content, i) => {
-      chunks.push({
-        course_id: courseId,
-        course_title: courseTitle,
-        chunk_title: `${courseTitle} - الأهداف`,
-        content,
-        chunk_type: 'objectives',
-        chunk_index: chunks.length,
-      });
-    });
-  }
-
-  // Full content (smaller chunks)
-  if (course.full_content) {
-    const parts = splitText(course.full_content, 600);
-    parts.forEach((content, i) => {
-      chunks.push({
-        course_id: courseId,
-        course_title: courseTitle,
-        chunk_title: `${courseTitle} - المحتوى التفصيلي (${i + 1})`,
-        content,
-        chunk_type: 'full_content',
-        chunk_index: chunks.length,
-      });
-    });
-  }
-
-  // Description
-  if (course.description) {
-    const clean = cleanHtml(course.description);
-    if (clean.length >= 20) {
-      chunks.push({
-        course_id: courseId,
-        course_title: courseTitle,
-        chunk_title: `${courseTitle} - الوصف`,
-        content: clean.substring(0, 1000),
-        chunk_type: 'description',
-        chunk_index: chunks.length,
-      });
-    }
-  }
-
-  return chunks;
-}
-
-/**
  * البحث عن كورس بالاسم (fuzzy match)
  */
 async function findCourseByName(courseName) {
@@ -4088,6 +3934,7 @@ async function findCourseByName(courseName) {
 /**
  * جلب chunks مرتبطة بسؤال الطالب (Semantic Search)
  */
+
 async function getRelevantChunks(query, courseId = null, limit = 3) {
   if (!supabase || !openai || !query) return [];
   try {
@@ -4097,7 +3944,7 @@ async function getRelevantChunks(query, courseId = null, limit = 3) {
     });
     const queryEmbedding = embResponse.data[0].embedding;
 
-    const { data, error } = await supabase.rpc('match_course_chunks', {
+    const { data, error } = await supabase.rpc('match_lesson_chunks', {
       query_embedding: queryEmbedding,
       match_threshold: 0.70,
       match_count: limit,
@@ -4105,16 +3952,21 @@ async function getRelevantChunks(query, courseId = null, limit = 3) {
     });
 
     if (error) {
-      console.error('match_course_chunks RPC error:', error.message);
+      console.error('match_lesson_chunks RPC error:', error.message);
       return [];
     }
-    return data || [];
+
+    return (data || []).map(chunk => ({
+      ...chunk,
+      chunk_title: chunk.lesson_title
+        ? `${chunk.lesson_title}${chunk.timestamp_start ? ' (' + chunk.timestamp_start + ')' : ''}`
+        : 'محتوى',
+    }));
   } catch (e) {
     console.error('getRelevantChunks error:', e.message);
     return [];
   }
 }
-
 
 startServer();
 
