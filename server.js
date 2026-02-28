@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.7 — Two-Phase RAG + Context Memory + Lesson Search
+   🤖 Ziko Chatbot v10.8 — Two-Phase RAG + Context Memory + Lesson Search + Guide Fix
    
    🔧 FIXES from v10.2:
    ✅ FIX #1: \n → <br> everywhere
@@ -42,6 +42,13 @@
    🆕 NEW in v10.7:
    ✅ FIX #33: Penalize non-lesson courses when lesson matches exist
    ✅ FIX #34: Category link uses actual course category, not search terms
+
+   🆕 NEW in v10.8 — Guide Bot Fixes:
+   ✅ FIX #35: findLessonByTitle() — finds specific lesson in DB for Guide RAG
+   ✅ FIX #36: searchChunksByText() — text-based fallback when semantic misses
+   ✅ FIX #37: Lower semantic threshold (0.70→0.60) for Guide RAG
+   ✅ FIX #38: Anti-denial rule — Guide Bot can't say "lesson doesn't cover X" without proof
+   ✅ FIX #39: Dual RAG (semantic + text search) in Guide endpoint
 
    🧹 CLEANUP:
    ✅ Removed /test endpoint
@@ -1142,7 +1149,6 @@ async function searchLessonsInCourses(searchTerms) {
 
     console.log('🎓 Lesson search terms:', allTerms);
 
-    // 1) Text search on lesson titles
     const orFilters = allTerms
       .map(t => `title.ilike.%${t}%`)
       .join(',');
@@ -1168,7 +1174,6 @@ async function searchLessonsInCourses(searchTerms) {
       console.error('Lesson table query error:', lessonErr.message);
     }
 
-    // 2) Semantic search on chunks (if OpenAI available)
     if (openai) {
       try {
         const queryText = searchTerms.join(' ');
@@ -1496,7 +1501,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.7                    ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.8                    ██
    ██   Two-Phase RAG + Context Memory + Lesson Search     ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
@@ -2541,7 +2546,7 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.7
+   11-F: 🧠 Master Orchestrator v10.8
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
@@ -2707,7 +2712,6 @@ async function smartChat(message, sessionId) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-    /* FIX #33: When lesson-matched courses exist, penalize non-lesson courses without title match */
     const hasLessonMatchedCourses = courses.some(c => c.matchType === 'lesson_title' && c.matchedLessons && c.matchedLessons.length > 0);
     if (hasLessonMatchedCourses) {
       for (const c of courses) {
@@ -2899,7 +2903,6 @@ async function smartChat(message, sessionId) {
       }
 
       if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-        /* FIX #34 */
         const cat = getSmartCategoryFromCourses([], termsToSearch);
         if (cat) {
           reply += `<div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
@@ -2908,7 +2911,6 @@ async function smartChat(message, sessionId) {
         }
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       } else {
-        /* FIX #34: Use actual course category */
         const cat = getSmartCategoryFromCourses(relevantCourses, termsToSearch);
         if (cat) {
           reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">
@@ -2929,7 +2931,6 @@ async function smartChat(message, sessionId) {
         interests: termsToSearch.slice(0, 3),
       });
     } else {
-      /* FIX #34 */
       const cat = getSmartCategoryFromCourses([], termsToSearch);
       reply = analysis.is_follow_up
         ? `مفيش نتائج إضافية عن الموضوع ده للأسف 😅`
@@ -3110,7 +3111,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.7" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.8" });
 
     return res.json({ reply });
   } catch (error) {
@@ -3550,8 +3551,8 @@ app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html"
 app.get("/admin/debug", adminAuth, async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.7",
-    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords + LessonSearch",
+    version: "10.8",
+    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords + LessonSearch + GuideFix",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -3583,10 +3584,10 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.7",
+    version: "10.8",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch + GuideFix",
     active_sessions: sessionMemory.size,
     search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
@@ -3596,14 +3597,19 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.7",
+    version: "10.8",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + LessonSearch + GuideFix",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
-      "🆕 FIX #33: Penalize non-lesson courses when lesson matches exist",
-      "🆕 FIX #34: Category link uses actual course category, not search terms",
+      "🆕 FIX #35: findLessonByTitle() for Guide RAG",
+      "🆕 FIX #36: searchChunksByText() text-based fallback",
+      "🆕 FIX #37: Lower semantic threshold (0.70→0.60)",
+      "🆕 FIX #38: Anti-denial rule in Guide system prompt",
+      "🆕 FIX #39: Dual RAG (semantic + text) in Guide endpoint",
+      "FIX #33: Penalize non-lesson courses when lesson matches exist",
+      "FIX #34: Category link uses actual course category, not search terms",
       "Lesson-level search — finds topics inside courses (lessons + chunks)",
       "Course cards show matched lessons with timestamps",
       "Phase 2 GPT sees matchedLessons for smarter recommendations",
@@ -3630,16 +3636,273 @@ app.get("/", (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   SECTION 15: Start Server
+   SECTION 15: Embedding Generation Helper
+   ══════════════════════════════════════════════════════════ */
+async function generateSingleEmbedding(text) {
+  const cleanText = text.substring(0, 8000);
+  const response = await openai.embeddings.create({
+    model: 'text-embedding-ada-002',
+    input: cleanText,
+  });
+  return response.data[0].embedding;
+}
+
+app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
+  if (!supabase || !openai) {
+    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
+  }
+
+  try {
+    console.log('🚀 Starting embedding generation (v10.8 — richer content)...');
+    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
+
+    const { data: courses, error: cErr } = await supabase
+      .from('courses')
+      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain')
+      .is('embedding', null);
+
+    if (cErr) {
+      console.error('Error fetching courses:', cErr);
+    } else {
+      results.courses.total = courses.length;
+      console.log(`📚 Found ${courses.length} courses without embeddings`);
+
+      for (const course of courses) {
+        try {
+          const text = [
+            course.title, course.subtitle, course.domain, course.keywords,
+            course.description, course.page_content, course.syllabus, course.objectives,
+          ].filter(Boolean).join(' ');
+
+          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
+
+          if (upErr) {
+            console.error(`❌ Course "${course.title}":`, upErr.message);
+            results.courses.errors++;
+          } else {
+            results.courses.processed++;
+            console.log(`✅ ${results.courses.processed}/${courses.length} Course: ${course.title}`);
+          }
+          await new Promise(r => setTimeout(r, 250));
+        } catch (err) {
+          console.error(`❌ Course "${course.title}":`, err.message);
+          results.courses.errors++;
+        }
+      }
+    }
+
+    const { data: diplomas, error: dErr } = await supabase
+      .from('diplomas')
+      .select('id, title, description, keywords, search_text')
+      .is('embedding', null);
+
+    if (dErr) {
+      console.error('Error fetching diplomas:', dErr);
+    } else {
+      results.diplomas.total = diplomas.length;
+      console.log(`🎓 Found ${diplomas.length} diplomas without embeddings`);
+
+      for (const diploma of diplomas) {
+        try {
+          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
+            .filter(Boolean).join(' ');
+          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
+
+          if (upErr) {
+            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
+            results.diplomas.errors++;
+          } else {
+            results.diplomas.processed++;
+            console.log(`✅ ${results.diplomas.processed}/${diplomas.length} Diploma: ${diploma.title}`);
+          }
+          await new Promise(r => setTimeout(r, 250));
+        } catch (err) {
+          console.error(`❌ Diploma "${diploma.title}":`, err.message);
+          results.diplomas.errors++;
+        }
+      }
+    }
+
+    console.log('🎉 Embedding generation complete!', results);
+    res.json({ message: 'Embeddings generated!', results });
+
+  } catch (error) {
+    console.error('❌ Generate embeddings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════
+   SECTION 16: 🧩 Course Chunks — RAG Helpers for Guide Bot
+   ══════════════════════════════════════════════════════════ */
+
+async function findCourseByName(courseName) {
+  if (!supabase || !courseName) return null;
+  try {
+    const { data: matches } = await supabase
+      .from('courses')
+      .select('id, title')
+      .ilike('title', `%${courseName}%`)
+      .limit(5);
+
+    if (matches && matches.length > 0) {
+      const normName = normalizeArabic(courseName.toLowerCase());
+      let best = matches[0];
+      let bestSim = 0;
+      for (const m of matches) {
+        const sim = similarityRatio(normName, normalizeArabic((m.title || '').toLowerCase()));
+        if (sim > bestSim) { bestSim = sim; best = m; }
+      }
+      return best;
+    }
+
+    const { data: all } = await supabase.from('courses').select('id, title').limit(500);
+    if (!all) return null;
+
+    const normName = normalizeArabic(courseName.toLowerCase());
+    let bestMatch = null, bestScore = 0;
+    for (const course of all) {
+      const sim = similarityRatio(normName, normalizeArabic((course.title || '').toLowerCase()));
+      if (sim > bestScore && sim >= 55) { bestScore = sim; bestMatch = course; }
+    }
+    return bestMatch;
+  } catch (e) {
+    console.error('findCourseByName error:', e.message);
+    return null;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FIX #35: findLessonByTitle — finds specific lesson in DB
+   ══════════════════════════════════════════════════════════ */
+async function findLessonByTitle(lessonTitle, courseId = null) {
+  if (!supabase || !lessonTitle) return null;
+  try {
+    let query = supabase
+      .from('lessons')
+      .select('id, title, course_id, duration')
+      .ilike('title', `%${lessonTitle}%`)
+      .limit(5);
+    if (courseId) query = query.eq('course_id', courseId);
+    const { data } = await query;
+    if (!data || data.length === 0) return null;
+
+    const normTitle = normalizeArabic(lessonTitle.toLowerCase());
+    let best = data[0], bestSim = 0;
+    for (const d of data) {
+      const sim = similarityRatio(normTitle, normalizeArabic((d.title || '').toLowerCase()));
+      if (sim > bestSim) { bestSim = sim; best = d; }
+    }
+    console.log(`🎓 FIX #35 findLessonByTitle: "${lessonTitle}" → "${best.title}" (${bestSim}%)`);
+    return best;
+  } catch (e) {
+    console.error('findLessonByTitle error:', e.message);
+    return null;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FIX #36: searchChunksByText — text-based fallback for Guide RAG
+   ══════════════════════════════════════════════════════════ */
+async function searchChunksByText(terms, courseId = null, lessonId = null, limit = 5) {
+  if (!supabase || !terms || terms.length === 0) return [];
+  try {
+    const meaningful = terms.filter(t => t.length > 2);
+    if (meaningful.length === 0) return [];
+
+    const orFilters = meaningful.map(t => `content.ilike.%${t}%`).join(',');
+
+    let query = supabase
+      .from('chunks')
+      .select('id, content, lesson_id, chunk_order, timestamp_start')
+      .or(orFilters)
+      .limit(limit);
+
+    if (lessonId) {
+      query = query.eq('lesson_id', lessonId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('searchChunksByText error:', error.message);
+      return [];
+    }
+
+    if (data && data.length > 0) {
+      const lessonIds = [...new Set(data.map(c => c.lesson_id).filter(Boolean))];
+      if (lessonIds.length > 0) {
+        const { data: lessons } = await supabase
+          .from('lessons')
+          .select('id, title')
+          .in('id', lessonIds);
+        const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
+        data.forEach(c => {
+          c.lesson_title = lessonMap.get(c.lesson_id) || '';
+        });
+      }
+    }
+
+    console.log(`🔍 FIX #36 Text chunk search: ${(data || []).length} results for [${meaningful.join(', ')}]${lessonId ? ` (lesson=${lessonId})` : ''}`);
+    return data || [];
+  } catch (e) {
+    console.error('searchChunksByText error:', e.message);
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FIX #37: getRelevantChunks — lower threshold (0.60)
+   ══════════════════════════════════════════════════════════ */
+async function getRelevantChunks(query, courseId = null, limit = 5) {
+  if (!supabase || !openai || !query) return [];
+  try {
+    const embResponse = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: query.substring(0, 2000),
+    });
+    const queryEmbedding = embResponse.data[0].embedding;
+
+    const { data, error } = await supabase.rpc('match_lesson_chunks', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.60,
+      match_count: limit,
+      filter_course_id: courseId || null,
+    });
+
+    if (error) {
+      console.error('match_lesson_chunks RPC error:', error.message);
+      return [];
+    }
+
+    return (data || []).map(chunk => ({
+      ...chunk,
+      chunk_title: chunk.lesson_title
+        ? `${chunk.lesson_title}${chunk.timestamp_start ? ' (⏱️ ' + chunk.timestamp_start + ')' : ''}`
+        : 'محتوى',
+    }));
+  } catch (e) {
+    console.error('getRelevantChunks error:', e.message);
+    return [];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION 17: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.7...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.8...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
   /* ═══════════════════════════════════════════════════════════════
-     🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.5
+     🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.6
      ═══════════════════════════════════════════════════════════════ */
 
   const guideConversations = {};
@@ -3667,6 +3930,9 @@ async function startServer() {
     guideRateLimits[sessionId].count++;
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     FIX #38: buildGuideSystemPrompt — with anti-denial rule
+     ═══════════════════════════════════════════════════════════════ */
   function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt, chunkContext) {
     let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
 
@@ -3744,8 +4010,31 @@ async function startServer() {
       p += `\n- لو قدرت تذكر اسم درس معين من المحتوى — اذكره عشان الطالب يرجعله`;
     }
 
+    /* ═══════════════════════════════════════════
+       FIX #38: Anti-denial rule — CRITICAL
+       ═══════════════════════════════════════════ */
+    p += `\n\n═══════════════════════════════════`;
+    p += `\n⚠️⚠️⚠️ قاعدة حرجة — ممنوع الإنكار بدون دليل ⚠️⚠️⚠️`;
+    p += `\n`;
+    p += `\n❌❌❌ ممنوع تقول "الدرس ده مش بيتكلم عن X" أو "مش بيتناول X" إلا لو:`;
+    p += `\n   1. قرأت محتوى الدرس الفعلي (اللي بين ═══ محتوى فعلي من الكورس ═══) وأكدت إن الموضوع مش موجود`;
+    p += `\n   2. لو مفيش محتوى فعلي متوفر → قول "مش متأكد لو الموضوع ده متغطي في الدرس ده بالظبط، بس خليني أشرحلك الموضوع"`;
+    p += `\n`;
+    p += `\n✅ لو المحتوى الفعلي فيه أي ذكر للموضوع اللي الطالب بيسأل عنه:`;
+    p += `\n   - قول "أيوه! الموضوع ده موجود في الدرس 🎯"`;
+    p += `\n   - لو فيه timestamp → "هتلاقيه من الدقيقة X تقريباً ⏱️"`;
+    p += `\n   - اشرح الجزء المتعلق من المحتوى`;
+    p += `\n`;
+    p += `\n❌ ممنوع تفترض إن الدرس مش فيه حاجة بناءً على اسم الدرس بس!`;
+    p += `\n❌ ممنوع تقترح مواقع خارجية لو الموضوع متشرح في الدرس نفسه!`;
+    p += `\n✅ الأولوية دايماً: محتوى الدرس الفعلي > معرفتك العامة > اقتراحات خارجية`;
+
     return p;
   }
+
+  /* ═══════════════════════════════════
+     Guide Bot Endpoints
+     ═══════════════════════════════════ */
 
   app.get('/api/guide/status', (req, res) => {
     try {
@@ -3780,6 +4069,9 @@ async function startServer() {
     }
   });
 
+  /* ═══════════════════════════════════════════════════════════════
+     FIX #39: /api/guide — Dual RAG (semantic + text search)
+     ═══════════════════════════════════════════════════════════════ */
   app.post('/api/guide', async (req, res) => {
     try {
       const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
@@ -3798,24 +4090,61 @@ async function startServer() {
 
       consumeGuideMsg(session_id);
 
+      /* ═══ FIX #39: Dual RAG — semantic + text-based ═══ */
       let chunkContext = '';
       if (course_name || lecture_title) {
         try {
+          // 1. Find the course
           const courseMatch = await findCourseByName(course_name || lecture_title);
+          const courseId = courseMatch ? courseMatch.id : null;
+
+          // 2. FIX #35: Find the specific lesson
+          let lessonMatch = null;
+          if (lecture_title) {
+            lessonMatch = await findLessonByTitle(lecture_title, courseId);
+          }
+
           const searchQuery = message + (lecture_title ? ' ' + lecture_title : '');
-          const chunks = await getRelevantChunks(
-            searchQuery,
-            courseMatch ? courseMatch.id : null,
-            3
+
+          // 3. Semantic search (primary) — FIX #37: threshold 0.60
+          const semanticChunks = await getRelevantChunks(searchQuery, courseId, 5);
+
+          // 4. FIX #36: Text-based search (fallback) — searches INSIDE the specific lesson
+          const textTerms = message
+            .split(/\s+/)
+            .filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
+
+          const textChunks = await searchChunksByText(
+            textTerms,
+            courseId,
+            lessonMatch ? lessonMatch.id : null,
+            5
           );
 
-          if (chunks.length > 0) {
-            chunkContext = chunks.map(c =>
+          // 5. Merge & deduplicate
+          const allChunks = [...semanticChunks];
+          const seenChunkIds = new Set(semanticChunks.map(c => c.id));
+
+          for (const tc of textChunks) {
+            if (!seenChunkIds.has(tc.id)) {
+              allChunks.push({
+                ...tc,
+                chunk_title: tc.lesson_title
+                  ? `${tc.lesson_title}${tc.timestamp_start ? ' (⏱️ ' + tc.timestamp_start + ')' : ''}`
+                  : 'محتوى',
+              });
+              seenChunkIds.add(tc.id);
+            }
+          }
+
+          if (allChunks.length > 0) {
+            chunkContext = allChunks.map(c =>
               `📎 ${c.chunk_title || 'محتوى'}:\n${(c.content || '').substring(0, 600)}`
             ).join('\n\n---\n\n');
-            console.log(`📚 Guide RAG: ${chunks.length} chunks | course="${course_name}" | sims=[${chunks.map(c => (c.similarity * 100).toFixed(0) + '%').join(', ')}]`);
+
+            console.log(`📚 Guide RAG v1.6: ${allChunks.length} chunks (${semanticChunks.length} semantic + ${textChunks.length} text) | course="${course_name}" | lesson="${lecture_title}"`);
           } else {
-            console.log(`📚 Guide RAG: No chunks found for "${course_name}" + "${message.substring(0, 40)}..."`);
+            console.log(`📚 Guide RAG v1.6: No chunks found for "${course_name}" + "${message.substring(0, 40)}..."`);
           }
         } catch (ragErr) {
           console.error('Guide RAG error (non-fatal):', ragErr.message);
@@ -3874,14 +4203,16 @@ async function startServer() {
   app.get('/api/guide/health', (req, res) => {
     res.json({
       status: 'ok',
-      service: 'Ziko Guide v1.5',
+      service: 'Ziko Guide v1.6',
       model: 'gpt-4o-mini',
       daily_limit: GUIDE_DAILY_LIMIT,
       active_sessions: Object.keys(guideConversations).length,
-      active_rate_limits: Object.keys(guideRateLimits).length
+      active_rate_limits: Object.keys(guideRateLimits).length,
+      fixes: ['FIX #35: findLessonByTitle', 'FIX #36: searchChunksByText', 'FIX #37: threshold 0.60', 'FIX #38: anti-denial', 'FIX #39: dual RAG'],
     });
   });
 
+  // Guide cleanup interval
   setInterval(() => {
     const now = Date.now();
     const today = getToday();
@@ -3907,8 +4238,8 @@ async function startServer() {
     }
   }, 60 * 60 * 1000);
 
-  console.log('🎓 Guide Bot v1.5 (Persistent Counter) endpoints ready:');
-  console.log('   POST /api/guide        — Chat');
+  console.log('🎓 Guide Bot v1.6 (with FIX #35-#39) endpoints ready:');
+  console.log('   POST /api/guide        — Chat (Dual RAG)');
   console.log('   GET  /api/guide/status  — Counter Sync');
   console.log('   GET  /api/guide/health  — Health Check');
 
@@ -4041,14 +4372,20 @@ async function startServer() {
     }
   });
 
+  /* ═══════════════════════════════════
+     Start Listening
+     ═══════════════════════════════════ */
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.7                              ║
+║  🤖 زيكو Chatbot — v10.8                              ║
 ║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
 ║  🔍 Search: Title 50x + Domain 30x + Keywords 20x     ║
-║  🆕 FIX #33: Penalize non-lesson when lessons exist    ║
-║  🆕 FIX #34: Smart category from actual courses        ║
+║  🆕 FIX #35: findLessonByTitle for Guide RAG           ║
+║  🆕 FIX #36: searchChunksByText fallback               ║
+║  🆕 FIX #37: Semantic threshold 0.70→0.60              ║
+║  🆕 FIX #38: Anti-denial rule in Guide prompt          ║
+║  🆕 FIX #39: Dual RAG (semantic + text) in Guide       ║
 ║  🔄 Follow-up: Remembers last topic for context        ║
 ║  📦 Cache: 5min TTL search cache                       ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
@@ -4061,190 +4398,6 @@ async function startServer() {
 ╚════════════════════════════════════════════════════════╝
     `);
   });
-}
-
-/* ══════════════════════════════════════════════════════════
-   🧬 Generate Embeddings Route (Protected)
-   ══════════════════════════════════════════════════════════ */
-async function generateSingleEmbedding(text) {
-  const cleanText = text.substring(0, 8000);
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-ada-002',
-    input: cleanText,
-  });
-  return response.data[0].embedding;
-}
-
-app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
-  if (!supabase || !openai) {
-    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
-  }
-
-  try {
-    console.log('🚀 Starting embedding generation (v10.7 — richer content)...');
-    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
-
-    // ====== COURSES ======
-    const { data: courses, error: cErr } = await supabase
-      .from('courses')
-      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain')
-      .is('embedding', null);
-
-    if (cErr) {
-      console.error('Error fetching courses:', cErr);
-    } else {
-      results.courses.total = courses.length;
-      console.log(`📚 Found ${courses.length} courses without embeddings`);
-
-      for (const course of courses) {
-        try {
-          const text = [
-            course.title,
-            course.subtitle,
-            course.domain,
-            course.keywords,
-            course.description,
-            course.page_content,
-            course.syllabus,
-            course.objectives,
-          ].filter(Boolean).join(' ');
-
-          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
-
-          const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
-
-          if (upErr) {
-            console.error(`❌ Course "${course.title}":`, upErr.message);
-            results.courses.errors++;
-          } else {
-            results.courses.processed++;
-            console.log(`✅ ${results.courses.processed}/${courses.length} Course: ${course.title}`);
-          }
-          await new Promise(r => setTimeout(r, 250));
-        } catch (err) {
-          console.error(`❌ Course "${course.title}":`, err.message);
-          results.courses.errors++;
-        }
-      }
-    }
-
-    // ====== DIPLOMAS ======
-    const { data: diplomas, error: dErr } = await supabase
-      .from('diplomas')
-      .select('id, title, description, keywords, search_text')
-      .is('embedding', null);
-
-    if (dErr) {
-      console.error('Error fetching diplomas:', dErr);
-    } else {
-      results.diplomas.total = diplomas.length;
-      console.log(`🎓 Found ${diplomas.length} diplomas without embeddings`);
-
-      for (const diploma of diplomas) {
-        try {
-          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
-            .filter(Boolean).join(' ');
-          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
-
-          const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
-
-          if (upErr) {
-            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
-            results.diplomas.errors++;
-          } else {
-            results.diplomas.processed++;
-            console.log(`✅ ${results.diplomas.processed}/${diplomas.length} Diploma: ${diploma.title}`);
-          }
-          await new Promise(r => setTimeout(r, 250));
-        } catch (err) {
-          console.error(`❌ Diploma "${diploma.title}":`, err.message);
-          results.diplomas.errors++;
-        }
-      }
-    }
-
-    console.log('🎉 Embedding generation complete!', results);
-    res.json({ message: 'Embeddings generated!', results });
-
-  } catch (error) {
-    console.error('❌ Generate embeddings error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/* ══════════════════════════════════════════════════════════
-   🧩 Course Chunks — RAG Helpers for Guide Bot
-   ══════════════════════════════════════════════════════════ */
-
-async function findCourseByName(courseName) {
-  if (!supabase || !courseName) return null;
-  try {
-    const { data: matches } = await supabase
-      .from('courses')
-      .select('id, title')
-      .ilike('title', `%${courseName}%`)
-      .limit(5);
-
-    if (matches && matches.length > 0) {
-      const normName = normalizeArabic(courseName.toLowerCase());
-      let best = matches[0];
-      let bestSim = 0;
-      for (const m of matches) {
-        const sim = similarityRatio(normName, normalizeArabic((m.title || '').toLowerCase()));
-        if (sim > bestSim) { bestSim = sim; best = m; }
-      }
-      return best;
-    }
-
-    const { data: all } = await supabase.from('courses').select('id, title').limit(500);
-    if (!all) return null;
-
-    const normName = normalizeArabic(courseName.toLowerCase());
-    let bestMatch = null, bestScore = 0;
-    for (const course of all) {
-      const sim = similarityRatio(normName, normalizeArabic((course.title || '').toLowerCase()));
-      if (sim > bestScore && sim >= 55) { bestScore = sim; bestMatch = course; }
-    }
-    return bestMatch;
-  } catch (e) {
-    console.error('findCourseByName error:', e.message);
-    return null;
-  }
-}
-
-async function getRelevantChunks(query, courseId = null, limit = 3) {
-  if (!supabase || !openai || !query) return [];
-  try {
-    const embResponse = await openai.embeddings.create({
-      model: 'text-embedding-ada-002',
-      input: query.substring(0, 2000),
-    });
-    const queryEmbedding = embResponse.data[0].embedding;
-
-    const { data, error } = await supabase.rpc('match_lesson_chunks', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.70,
-      match_count: limit,
-      filter_course_id: courseId || null,
-    });
-
-    if (error) {
-      console.error('match_lesson_chunks RPC error:', error.message);
-      return [];
-    }
-
-    return (data || []).map(chunk => ({
-      ...chunk,
-      chunk_title: chunk.lesson_title
-        ? `${chunk.lesson_title}${chunk.timestamp_start ? ' (' + chunk.timestamp_start + ')' : ''}`
-        : 'محتوى',
-    }));
-  } catch (e) {
-    console.error('getRelevantChunks error:', e.message);
-    return [];
-  }
 }
 
 startServer();
