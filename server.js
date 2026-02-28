@@ -132,7 +132,7 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "50kb" }));
+app.use(express.json({ limit: "50mb" }));
 
 const limiter = rateLimit({
   windowMs: 60000,
@@ -4140,6 +4140,103 @@ app.get("/admin/export-logs", async (req, res) => {
   }
 });
 
+
+
+// ============================================================
+// 🆕 Upload & Process Lessons
+// ============================================================
+
+// --- Delete all chunks for a course ---
+app.delete("/api/admin/courses/:courseId/chunks", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { courseId } = req.params;
+
+    const { count } = await supabase
+      .from("chunks")
+      .select("*", { count: "exact", head: true })
+      .eq("course_id", courseId);
+
+    const { error } = await supabase
+      .from("chunks")
+      .delete()
+      .eq("course_id", courseId);
+
+    if (error) throw error;
+    res.json({ success: true, deleted: count || 0 });
+  } catch (err) {
+    console.error("Error deleting chunks:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Process a single lesson (chunk + embed + store) ---
+app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
+  if (!supabase || !openai) return res.status(500).json({ error: "Not initialized" });
+  try {
+    const { courseId, lessonNumber, lessonName, transcript } = req.body;
+
+    if (!courseId || !lessonNumber || !lessonName || !transcript) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // 1️⃣ Parse & chunk the transcript
+    const chunks = parseAndChunkTranscript(transcript, 500);
+
+    if (chunks.length === 0) {
+      return res.json({ success: true, chunksCreated: 0, message: "No valid lines found" });
+    }
+
+    console.log(`📖 Processing lesson "${lessonName}": ${chunks.length} chunks`);
+
+    // 2️⃣ Generate embeddings & insert
+    let chunksCreated = 0;
+
+    for (const chunk of chunks) {
+      const embeddingRes = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: chunk.content,
+      });
+      const embedding = embeddingRes.data[0].embedding;
+
+      const { error } = await supabase.from("chunks").insert({
+        course_id: courseId,
+        lesson_number: lessonNumber,
+        lesson_name: lessonName,
+        content: chunk.content,
+        start_time: chunk.startTime,
+        end_time: chunk.endTime,
+        embedding: embedding,
+      });
+
+      if (error) {
+        console.error("❌ Insert error for chunk:", error);
+        throw error;
+      }
+
+      chunksCreated++;
+      await sleep(100);
+    }
+
+    console.log(`✅ Lesson "${lessonName}": ${chunksCreated} chunks created`);
+
+    res.json({
+      success: true,
+      chunksCreated,
+      lessonName,
+    });
+  } catch (err) {
+    console.error("❌ Error processing lesson:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Serve upload page ---
+app.get("/upload", (req, res) => {
+  res.sendFile(path.join(__dirname, "upload.html"));
+});
+
+
 // === Admin HTML ===
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
@@ -5253,5 +5350,63 @@ async function startServer() {
     `);
   });
 }
+
+
+// ============================================================
+// 🔧 Transcript Parsing Helpers
+// ============================================================
+
+function parseAndChunkTranscript(content, maxChunkChars = 500) {
+  const lines = content.split("\n").filter((l) => l.trim());
+  const segments = [];
+
+  for (const line of lines) {
+    const match = line.match(/\[(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})\]\s*(.*)/);
+    if (match) {
+      const text = match[3].trim();
+      if (text) {
+        segments.push({
+          startTime: match[1],
+          endTime: match[2],
+          text: text,
+        });
+      }
+    }
+  }
+
+  const chunks = [];
+  let currentSegments = [];
+  let currentLength = 0;
+
+  for (const seg of segments) {
+    if (currentLength + seg.text.length > maxChunkChars && currentSegments.length > 0) {
+      chunks.push({
+        content: currentSegments.map((s) => s.text).join(" "),
+        startTime: currentSegments[0].startTime,
+        endTime: currentSegments[currentSegments.length - 1].endTime,
+      });
+      currentSegments = [];
+      currentLength = 0;
+    }
+
+    currentSegments.push(seg);
+    currentLength += seg.text.length + 1;
+  }
+
+  if (currentSegments.length > 0) {
+    chunks.push({
+      content: currentSegments.map((s) => s.text).join(" "),
+      startTime: currentSegments[0].startTime,
+      endTime: currentSegments[currentSegments.length - 1].endTime,
+    });
+  }
+
+  return chunks;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 
 startServer();
