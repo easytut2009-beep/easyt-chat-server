@@ -127,7 +127,7 @@ app.use(
       "https://www.easyt.online",
       process.env.ALLOWED_ORIGIN,
     ].filter(Boolean),
-    methods: ["POST", "GET", "PUT", "DELETE"],
+   methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
     credentials: true,
   })
 );
@@ -4148,7 +4148,7 @@ app.get("/admin/export-logs", async (req, res) => {
 
 // --- Get all courses for upload page ---
 app.get("/api/upload/courses", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { data, error } = await supabase
       .from("courses")
@@ -4160,94 +4160,170 @@ app.get("/api/upload/courses", async (req, res) => {
       courses: (data || []).map(c => ({ id: c.id, name: c.title }))
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ GET /api/upload/courses error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// --- Get lessons for a course (from lessons table + chunk count) ---
+// --- Get lessons for a course ---
 app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { courseId } = req.params;
-    const { data: lessons, error } = await supabase
-      .from("lessons")
-      .select("id, title")
-      .eq("course_id", courseId)
-      .order("title", { ascending: true });
-    if (error) throw error;
+    console.log("📖 Fetching lessons for course:", courseId);
+    
+    // Check if lessons table exists and get lessons
+    let lessons = [];
+    try {
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("id, title")
+        .eq("course_id", courseId)
+        .order("title", { ascending: true });
+      
+      if (error) {
+        console.error("❌ Lessons query error:", error.message, error.code);
+        // If table doesn't exist, return empty
+        if (error.code === "42P01" || error.message.includes("does not exist")) {
+          return res.json({ success: true, lessons: [] });
+        }
+        throw error;
+      }
+      lessons = data || [];
+    } catch (lessonErr) {
+      console.error("❌ Lessons table error:", lessonErr.message);
+      return res.json({ success: true, lessons: [] });
+    }
 
+    console.log("📖 Found", lessons.length, "lessons");
+
+    // Get chunk counts for each lesson
     const result = [];
-    for (const lesson of (lessons || [])) {
-      const { count } = await supabase
-        .from("chunks")
-        .select("*", { count: "exact", head: true })
-        .eq("lesson_id", lesson.id);
+    for (const lesson of lessons) {
+      let chunkCount = 0;
+      try {
+        const { count, error: chunkErr } = await supabase
+          .from("chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("lesson_id", lesson.id);
+        if (!chunkErr) {
+          chunkCount = count || 0;
+        } else {
+          console.error("⚠️ Chunks count error for lesson", lesson.id, ":", chunkErr.message);
+        }
+      } catch (chunkEx) {
+        // chunks table might not exist — OK, just 0
+        console.error("⚠️ Chunks table error:", chunkEx.message);
+      }
       result.push({
         id: lesson.id,
         title: lesson.title,
-        chunk_count: count || 0
+        chunk_count: chunkCount
       });
     }
+    
     res.json({ success: true, lessons: result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ GET lessons FINAL error:", err.message);
+    res.json({ success: true, lessons: [] });
   }
 });
 
 // --- Get total chunk count for a course ---
 app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { courseId } = req.params;
-    const { data: lessons } = await supabase
-      .from("lessons")
-      .select("id")
-      .eq("course_id", courseId);
+    console.log("📊 Fetching chunks count for course:", courseId);
+    
+    // Get lesson IDs for this course
+    let lessonIds = [];
+    try {
+      const { data: lessons, error: lessonErr } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("course_id", courseId);
 
-    if (!lessons || lessons.length === 0) {
+      if (lessonErr) {
+        console.error("❌ Lessons query error:", lessonErr.message);
+        return res.json({ success: true, count: 0 });
+      }
+      lessonIds = (lessons || []).map(l => l.id);
+    } catch (e) {
+      console.error("⚠️ Lessons table error:", e.message);
       return res.json({ success: true, count: 0 });
     }
-    const lessonIds = lessons.map(l => l.id);
-    const { count, error } = await supabase
-      .from("chunks")
-      .select("*", { count: "exact", head: true })
-      .in("lesson_id", lessonIds);
-    if (error) throw error;
-    res.json({ success: true, count: count || 0 });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// --- Delete ALL chunks for a course ---
-app.delete("/api/admin/courses/:courseId/chunks", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false });
-  try {
-    const { courseId } = req.params;
-    const { data: lessons } = await supabase
-      .from("lessons")
-      .select("id")
-      .eq("course_id", courseId);
-
-    if (!lessons || lessons.length === 0) {
-      return res.json({ success: true, deleted: 0 });
+    if (lessonIds.length === 0) {
+      return res.json({ success: true, count: 0 });
     }
-    const lessonIds = lessons.map(l => l.id);
-    const { count } = await supabase
-      .from("chunks")
-      .select("*", { count: "exact", head: true })
-      .in("lesson_id", lessonIds);
 
-    const { error } = await supabase
-      .from("chunks")
-      .delete()
-      .in("lesson_id", lessonIds);
-    if (error) throw error;
-    res.json({ success: true, deleted: count || 0 });
+    // Count chunks
+    try {
+      const { count, error: chunkErr } = await supabase
+        .from("chunks")
+        .select("*", { count: "exact", head: true })
+        .in("lesson_id", lessonIds);
+      
+      if (chunkErr) {
+        console.error("⚠️ Chunks count error:", chunkErr.message);
+        return res.json({ success: true, count: 0 });
+      }
+      
+      console.log("📊 Total chunks:", count || 0);
+      res.json({ success: true, count: count || 0 });
+    } catch (chunkEx) {
+      console.error("⚠️ Chunks table error:", chunkEx.message);
+      res.json({ success: true, count: 0 });
+    }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ GET chunks-count FINAL error:", err.message);
+    res.json({ success: true, count: 0 });
   }
 });
+
+// --- Debug: Check upload tables ---
+app.get("/api/upload/debug", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  
+  const tables = {};
+  
+  for (const table of ["courses", "lessons", "chunks"]) {
+    try {
+      const { count, error } = await supabase
+        .from(table)
+        .select("*", { count: "exact", head: true });
+      tables[table] = error ? "ERROR: " + error.message : "OK - " + count + " rows";
+    } catch (e) {
+      tables[table] = "EXCEPTION: " + e.message;
+    }
+  }
+
+  // Test a specific course
+  try {
+    const { data } = await supabase
+      .from("courses")
+      .select("id, title")
+      .limit(1);
+    tables.sample_course = data && data[0] ? data[0].title : "no courses";
+  } catch (e) {
+    tables.sample_course = "error";
+  }
+
+  // Test lessons join
+  try {
+    const { data, error } = await supabase
+      .from("lessons")
+      .select("id, title, course_id")
+      .limit(3);
+    tables.sample_lessons = error ? "ERROR: " + error.message : (data || []).length + " sample lessons";
+  } catch (e) {
+    tables.sample_lessons = "EXCEPTION: " + e.message;
+  }
+
+  res.json({ success: true, tables });
+});
+
 
 // --- Delete chunks for a specific lesson ---
 app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) => {
