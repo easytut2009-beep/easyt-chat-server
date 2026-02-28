@@ -5577,7 +5577,7 @@ function parseAndChunkTranscript(content, maxChunkChars = 500) {
   const segments = [];
 
   for (const line of lines) {
-    const match = line.match(/\[(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})\]\s*(.*)/);
+    const match = line.match(/\[(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\]\s*(.*)/);
     if (match) {
       const text = match[3].trim();
       if (text) {
