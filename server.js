@@ -4853,7 +4853,7 @@ async function startServer() {
           const courseMatch = await findCourseByName(
             course_name || lecture_title
           );
-          const courseId = courseMatch ? courseMatch.id : null;
+          var courseId = courseMatch ? courseMatch.id : null;
           console.log(
             `📚 Guide: course="${course_name}" → ${
               courseId ? courseMatch.title : "NOT FOUND"
