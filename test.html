@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧪 Ziko Bot v10.4 — Ultimate Test Suite</title>
+    <title>🧪 Ziko Bot v10.5 — Ultimate Test Suite</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -255,8 +255,8 @@
 
 <div class="header">
     <h1>🧪 Ziko Bot — Ultimate Test Suite</h1>
-    <p>اختبار شامل: بحث ذكي + Semantic Search + لهجات + دبلومات + اشتراك + متابعة + مصطلحات + أداء</p>
-    <div class="version-badge">v10.4 + Semantic Embeddings</div>
+    <p>اختبار شامل: بحث ذكي + Semantic + Domain/Keywords + لهجات + دبلومات + اشتراك + متابعة + مصطلحات + أداء</p>
+    <div class="version-badge">v10.5 + Domain/Keywords + Semantic Embeddings</div>
 </div>
 
 <div class="server-input">
@@ -268,6 +268,7 @@
     <button class="btn-run-all" onclick="runAllTests()">🚀 تشغيل كل الاختبارات</button>
     <button class="btn-category" onclick="runCategory('health')">🏥 صحة</button>
     <button class="btn-category" onclick="runCategory('search')">🔍 بحث</button>
+    <button class="btn-category" onclick="runCategory('domain')">🏷️ Domain</button>
     <button class="btn-category" onclick="runCategory('semantic')">🧠 ذكي</button>
     <button class="btn-category" onclick="runCategory('dialect')">🌍 لهجات</button>
     <button class="btn-category" onclick="runCategory('subscription')">💰 اشتراك</button>
@@ -309,7 +310,7 @@ const API_BASE = () => {
         : window.location.origin);
 };
 
-const SESSION_PREFIX = 'test_v104_' + Date.now() + '_';
+const SESSION_PREFIX = 'test_v105_' + Date.now() + '_';
 let sessionCounter = 0;
 function newSession() { return SESSION_PREFIX + (++sessionCounter); }
 
@@ -348,22 +349,23 @@ const TEST_GROUPS = [
         tests: [
             {
                 msg: "__HEALTH__",
-                expect: "GET /health — السيرفر شغال",
+                expect: "GET /health — السيرفر شغال v10.5",
                 isSpecial: true,
                 run: async () => {
                     const resp = await fetch(API_BASE() + '/health');
                     const data = await resp.json();
                     const ok = data.status === 'ok' && data.database === 'connected' && data.openai === 'ready';
+                    const isV105 = (data.version || '').includes('10.5');
                     return {
                         reply: JSON.stringify(data, null, 2),
-                        pass: ok,
-                        detail: `status=${data.status}, db=${data.database}, openai=${data.openai}, version=${data.version}`
+                        pass: ok && isV105,
+                        detail: `status=${data.status}, db=${data.database}, openai=${data.openai}, version=${data.version} (v10.5:${isV105})`
                     };
                 }
             },
             {
                 msg: "__DEBUG__",
-                expect: "GET /admin/debug — جداول + embeddings",
+                expect: "GET /admin/debug — جداول + cache + version 10.5",
                 isSpecial: true,
                 run: async () => {
                     const resp = await fetch(API_BASE() + '/admin/debug');
@@ -371,10 +373,30 @@ const TEST_GROUPS = [
                     const hasTables = data.tables && Object.keys(data.tables).length > 0;
                     const coursesOk = data.tables?.courses?.includes('✅');
                     const diplomasOk = data.tables?.diplomas?.includes('✅');
+                    const isV105 = (data.version || '').includes('10.5');
+                    const hasDomainKw = (data.engine || '').toLowerCase().includes('domain');
                     return {
                         reply: JSON.stringify(data.tables, null, 2),
-                        pass: hasTables && coursesOk && diplomasOk,
-                        detail: `tables=${Object.keys(data.tables||{}).length}, courses=${data.tables?.courses}, diplomas=${data.tables?.diplomas}, cache=${data.search_cache_entries}`
+                        pass: hasTables && coursesOk && diplomasOk && isV105,
+                        detail: `tables=${Object.keys(data.tables||{}).length}, courses=${data.tables?.courses}, diplomas=${data.tables?.diplomas}, cache=${data.search_cache_entries}, v10.5:${isV105}, domain-engine:${hasDomainKw}`
+                    };
+                }
+            },
+            {
+                msg: "__ROOT__",
+                expect: "GET / — Feature list includes domain/keywords",
+                isSpecial: true,
+                run: async () => {
+                    const resp = await fetch(API_BASE() + '/');
+                    const data = await resp.json();
+                    const isV105 = (data.version || '').includes('10.5');
+                    const feats = (data.features || []).join(' ').toLowerCase();
+                    const hasDomain = feats.includes('domain');
+                    const hasKeywords = feats.includes('keyword');
+                    return {
+                        reply: JSON.stringify(data.features, null, 2),
+                        pass: isV105 && hasDomain,
+                        detail: `v10.5:${isV105}, domain-feature:${hasDomain}, keywords-feature:${hasKeywords}, features:${(data.features||[]).length}`
                     };
                 }
             },
@@ -391,6 +413,35 @@ const TEST_GROUPS = [
                         pass: ok,
                         detail: `status=${data.status}, model=${data.model}, daily_limit=${data.daily_limit}`
                     };
+                }
+            },
+            {
+                msg: "__EMBEDDING_ENDPOINT__",
+                expect: "GET /api/admin/regenerate-all-embeddings — الـ endpoint موجود",
+                isSpecial: true,
+                run: async () => {
+                    try {
+                        const resp = await fetch(API_BASE() + '/api/admin/regenerate-all-embeddings', {
+                            signal: AbortSignal.timeout(5000)
+                        });
+                        const isOk = resp.status === 200 || resp.status === 500;
+                        let detail = `status=${resp.status}`;
+                        try {
+                            const data = await resp.json();
+                            detail += `, response-keys=${Object.keys(data).join(',')}`;
+                        } catch {}
+                        return {
+                            reply: detail,
+                            pass: isOk,
+                            detail: `endpoint-exists:${isOk} (${detail})`
+                        };
+                    } catch (e) {
+                        return {
+                            reply: e.message,
+                            pass: false,
+                            detail: `error: ${e.message}`
+                        };
+                    }
                 }
             },
         ]
@@ -493,22 +544,119 @@ const TEST_GROUPS = [
                 }
             },
             {
- 
                 msg: "دبلومة جرافيك",
                 expect: "نتائج جرافيك (دبلومة أو كورسات — المهم محتوى مناسب)",
                 validate: r => {
                     const hasGraphic = V.wordIn(r, ['جرافيك','graphic','تصميم','design']);
                     const hasContent = V.hasCard(r) || V.hasLink(r);
-                    return { 
-                        pass: hasGraphic && hasContent, 
-                        detail: `جرافيك:${hasGraphic} محتوى:${hasContent}` 
+                    return {
+                        pass: hasGraphic && hasContent,
+                        detail: `جرافيك:${hasGraphic} محتوى:${hasContent}`
                     };
                 }
             },
         ]
     },
 
-    // ═══ 2. SEMANTIC SEARCH (NEW!) ═══
+    // ═══ 2. DOMAIN + KEYWORDS SEARCH (NEW v10.5!) ═══
+    {
+        name: "🏷️ بحث بالـ Domain + Keywords (جديد v10.5)",
+        category: "domain",
+        tests: [
+            {
+                msg: "عايز كورس في مجال التصميم",
+                expect: "🏷️ Domain match → كورسات تصميم/جرافيك",
+                validate: r => {
+                    const has = V.wordIn(r, ['تصميم','design','جرافيك','graphic','فوتوشوب','اليستريتر','كانفا']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `تصميم:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "كورسات مجال البرمجة",
+                expect: "🏷️ Domain match → كورسات برمجة",
+                validate: r => {
+                    const has = V.wordIn(r, ['برمج','programming','coding','بايثون','python','جافا','javascript','html']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `برمجة:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "كورسات في مجال الهندسة",
+                expect: "🏷️ Domain match → كورسات هندسية",
+                validate: r => {
+                    const has = V.wordIn(r, ['هندس','ريفيت','revit','اوتوكاد','autocad','3ds','solidworks','مدني','معمار']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `هندسة:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "محتاج كورس سيو",
+                expect: "🏷️ Keywords match → كورسات SEO/تسويق",
+                validate: r => {
+                    const has = V.wordIn(r, ['سيو','seo','تسويق','محرك','بحث','marketing']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `سيو:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "كورس تسويق الكتروني",
+                expect: "🏷️ Keywords/Domain → ديجيتال ماركيتنج",
+                validate: r => {
+                    const has = V.wordIn(r, ['تسويق','ماركيتنج','marketing','ديجيتال','digital','اعلان']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `تسويق:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "عايز اتعلم حاجة في الشبكات",
+                expect: "🏷️ Domain → شبكات/روبوت/الكترونيات",
+                validate: r => {
+                    const has = V.wordIn(r, ['شبك','network','سيسكو','cisco','روبوت','الكتروني']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `شبكات:${has} كاردات:${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "كورسات في مجال المحاسبة",
+                expect: "🏷️ Domain → محاسبة/اقتصاد",
+                validate: r => {
+                    const has = V.wordIn(r, ['محاسب','accounting','اقتصاد','ماليه','مالية','ضرائب','احصاء']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `محاسبة:${has} كاردات:${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "عايز اتعلم flutter",
+                expect: "🏷️ Keywords match → كورسات Flutter/تطبيقات",
+                validate: r => {
+                    const has = V.wordIn(r, ['flutter','فلاتر','تطبيق','موبايل','app','dart']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `flutter:${has} كاردات:${cards}` };
+                }
+            },
+            {
+                msg: "كورسات ادارة اعمال",
+                expect: "🏷️ Domain → ادارة/بيزنس",
+                validate: r => {
+                    const has = V.wordIn(r, ['ادار','اعمال','management','business','بيزنس','قياد','مشروع']);
+                    const cards = V.hasCard(r);
+                    return { pass: has, detail: `ادارة:${has} كاردات:${cards}`, warn: has && !cards };
+                }
+            },
+            {
+                msg: "كورس react",
+                expect: "🏷️ Keywords → React/تطوير مواقع",
+                validate: r => {
+                    const has = V.wordIn(r, ['react','ريأكت','ريآكت','javascript','جافاسكريبت','تطوير','مواقع']);
+                    const cards = V.hasCard(r);
+                    return { pass: has && cards, detail: `react:${has} كاردات:${cards}` };
+                }
+            },
+        ]
+    },
+
+    // ═══ 3. SEMANTIC SEARCH ═══
     {
         name: "🧠 بحث ذكي Semantic Search",
         category: "semantic",
@@ -606,7 +754,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 3. DIALECTS ═══
+    // ═══ 4. DIALECTS ═══
     {
         name: "🌍 لهجات مختلفة",
         category: "dialect",
@@ -673,7 +821,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 4. SUBSCRIPTION ═══
+    // ═══ 5. SUBSCRIPTION ═══
     {
         name: "💰 اشتراك ودفع",
         category: "subscription",
@@ -736,7 +884,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 5. DIPLOMAS ═══
+    // ═══ 6. DIPLOMAS ═══
     {
         name: "🎓 دبلومات",
         category: "diplomas",
@@ -789,7 +937,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 6. CATEGORIES ═══
+    // ═══ 7. CATEGORIES ═══
     {
         name: "📂 تصنيفات",
         category: "categories",
@@ -822,13 +970,12 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 7. CHAT ═══
+    // ═══ 8. CHAT ═══
     {
         name: "💬 دردشة عامة",
         category: "chat",
         tests: [
             {
- 
                 msg: "ازيك",
                 expect: "ترحيب بدون كورسات",
                 validate: r => {
@@ -839,8 +986,8 @@ const TEST_GROUPS = [
                         'الحمد','زيكو','عايز.*ايه','تتعلم','بتاع'
                     ]);
                     const noCards = !V.hasCard(r);
-                    return { 
-                        pass: greet, 
+                    return {
+                        pass: greet,
                         detail: `ترحيب:${greet} بدون كاردات:${noCards}`,
                         warn: !noCards
                     };
@@ -864,16 +1011,16 @@ const TEST_GROUPS = [
             },
             {
                 msg: "شكرا جدا",
-                expect: "رد ودود",
+                expect: "رد ودود — بدون كورسات (FIX #22)",
                 validate: r => {
                     const has = V.wordIn(r, ['عفو','اهلا','ده واجب','تسلم','العفو','نور','بالتوفيق']);
-                    return { pass: has, detail: `ودود: ${has}` };
+                    const noCards = !V.hasCard(r);
+                    return { pass: has && noCards, detail: `ودود:${has} بدون كاردات:${noCards}`, warn: !noCards };
                 }
             },
             {
-     
                 msg: "الحمد لله بخير",
-                expect: "رد طبيعي — تحذير لو عرض كورسات",
+                expect: "رد طبيعي — بدون كورسات (FIX #22 casual)",
                 validate: r => {
                     const len = V.responseLength(r);
                     const hasCards = V.hasCard(r);
@@ -882,9 +1029,35 @@ const TEST_GROUPS = [
                         'مساعد','ساعد','تحب','عايز','محتاج','بخير','ممكن',
                         'اتعلم','تتعلم','تقدر','زيكو'
                     ]);
-                    return { 
-                        pass: len > 10 && isCasual && !hasCards, 
+                    return {
+                        pass: len > 10 && isCasual && !hasCards,
                         detail: `طول:${len} دردشة:${isCasual} كاردات:${hasCards}`,
+                        warn: hasCards
+                    };
+                }
+            },
+            {
+                msg: "تمام",
+                expect: "رد casual بدون كورسات (FIX #22)",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    const hasCards = V.hasCard(r);
+                    return {
+                        pass: len > 5 && !hasCards,
+                        detail: `طول:${len} كاردات:${hasCards}`,
+                        warn: hasCards
+                    };
+                }
+            },
+            {
+                msg: "اوكي",
+                expect: "رد casual بدون كورسات (FIX #22)",
+                validate: r => {
+                    const len = V.responseLength(r);
+                    const hasCards = V.hasCard(r);
+                    return {
+                        pass: len > 5 && !hasCards,
+                        detail: `طول:${len} كاردات:${hasCards}`,
                         warn: hasCards
                     };
                 }
@@ -892,7 +1065,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 8. ACRONYMS ═══
+    // ═══ 9. ACRONYMS ═══
     {
         name: "🔤 مصطلحات تقنية واختصارات",
         category: "acronyms",
@@ -990,7 +1163,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 9. FOLLOW-UP ═══
+    // ═══ 10. FOLLOW-UP ═══
     {
         name: "🔄 متابعة محادثة (Context Memory)",
         category: "followup",
@@ -1040,7 +1213,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 10. RESPONSE FORMAT ═══
+    // ═══ 11. RESPONSE FORMAT ═══
     {
         name: "🎨 تنسيق الردود",
         category: "format",
@@ -1089,7 +1262,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 11. TYPO CORRECTION ═══
+    // ═══ 12. TYPO CORRECTION ═══
     {
         name: "✏️ تصحيح إملائي",
         category: "typo",
@@ -1162,7 +1335,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 12. ENGLISH ═══
+    // ═══ 13. ENGLISH ═══
     {
         name: "🌐 English Queries",
         category: "english",
@@ -1205,7 +1378,7 @@ const TEST_GROUPS = [
         ]
     },
 
-    // ═══ 13. EDGE CASES ═══
+    // ═══ 14. EDGE CASES ═══
     {
         name: "⚡ حالات خاصة وحدود",
         category: "edge",
@@ -1280,10 +1453,19 @@ const TEST_GROUPS = [
             },
             {
                 msg: "x".repeat(600),
-                expect: "رسالة طويلة جداً — لا يكرش",
+                expect: "رسالة طويلة جداً — لا يكرش (يقطع عند 500)",
                 validate: r => {
                     const len = V.responseLength(r);
                     return { pass: len > 5, detail: `رد: ${len} chars` };
+                }
+            },
+            {
+                msg: "عايز كورس فوتوشوب و بايثون و اكسل كلهم مع بعض",
+                expect: "بحث متعدد المواضيع — نتائج متنوعة",
+                validate: r => {
+                    const hasAny = V.wordIn(r, ['فوتوشوب','photoshop','بايثون','python','اكسل','excel']);
+                    const cards = V.hasCard(r);
+                    return { pass: hasAny && cards, detail: `متعدد:${hasAny} كاردات:${cards}` };
                 }
             },
         ]
@@ -1297,7 +1479,6 @@ const TEST_GROUPS = [
 
 let stats = { total: 0, pass: 0, fail: 0, warn: 0, running: 0 };
 let startTime = 0;
-let groupTimings = {};
 
 function updateStats() {
     document.getElementById('statTotal').textContent = stats.total;
@@ -1417,7 +1598,7 @@ async function runTest(gi, ti, test) {
             statusEl.className = 'test-status status-fail';
             statusEl.textContent = '❌ فشل';
             stats.fail++;
-            detailEl.classList.add('show'); // Auto-show failed tests
+            detailEl.classList.add('show');
         }
     } catch (err) {
         const elapsed = Date.now() - t0;
@@ -1480,6 +1661,8 @@ function showSummary() {
         <span>📈 أوقات الاستجابة</span><span>متوسط: ${avgMs}ms | أسرع: ${minMs}ms | أبطأ: ${maxMs}ms</span></div>`;
     const pct = stats.total > 0 ? Math.round((stats.pass/stats.total)*100) : 0;
     html += `<div class="summary-row"><span>📊 نسبة النجاح</span><span style="color:${pct>=80?'#66ff66':pct>=50?'#ffcc33':'#ff6666'};font-size:16px;font-weight:700">${pct}%</span></div>`;
+    const totalTests = stats.pass + stats.fail + stats.warn;
+    html += `<div class="summary-row"><span>📋 إجمالي الاختبارات</span><span>${totalTests} (✅${stats.pass} + ❌${stats.fail} + ⚠️${stats.warn})</span></div>`;
     content.innerHTML = html;
     box.classList.add('show');
 }
@@ -1500,11 +1683,9 @@ async function runAllTests() {
     updateStats();
     document.getElementById('summaryBox').classList.remove('show');
 
-    // Sequential for follow-up tests, parallel for others
     const followupTests = allTests.filter(t => t.test.session);
     const normalTests = allTests.filter(t => !t.test.session);
 
-    // Run normal tests with concurrency
     const CONCURRENCY = 3;
     let idx = 0;
     async function nextNormal() {
@@ -1517,7 +1698,6 @@ async function runAllTests() {
     for (let i = 0; i < Math.min(CONCURRENCY, normalTests.length); i++) workers.push(nextNormal());
     await Promise.all(workers);
 
-    // Run follow-up tests sequentially (grouped by session)
     const sessionGroups = {};
     followupTests.forEach(t => {
         if (!sessionGroups[t.test.session]) sessionGroups[t.test.session] = [];
@@ -1606,7 +1786,7 @@ window.addEventListener('load', async () => {
             if (resp.ok) {
                 const data = await resp.json();
                 document.getElementById('serverUrl').value = url;
-                statusEl.textContent = `✅ متصل بـ ${url} — v${data.version} | DB: ${data.database} | AI: ${data.openai}`;
+                statusEl.textContent = `✅ متصل بـ ${url} — v${data.version} | DB: ${data.database} | AI: ${data.openai} | Engine: ${(data.engine||'').substring(0,50)}`;
                 statusEl.className = 'server-status ok';
                 return;
             }
