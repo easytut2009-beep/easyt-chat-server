@@ -7,7 +7,6 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f5;color:#1a1a2e;direction:rtl;min-height:100vh}
-
 .header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,.2)}
 .header h1{font-size:22px;display:flex;align-items:center;gap:10px}
 .header .logout-btn{background:rgba(255,255,255,.15);color:#fff;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:14px;transition:.2s}
@@ -22,11 +21,10 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f5;color:#1a
 .login-error{color:#e63946;font-size:13px;margin-top:10px;display:none}
 
 .container{max-width:1000px;margin:0 auto;padding:20px}
-
 .card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.06);padding:24px;margin-bottom:20px}
 .card h2{font-size:18px;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#1a1a2e}
 
-select,input[type="text"],input[type="number"],textarea{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:10px;font-size:15px;transition:.2s;font-family:inherit}
+select,input[type="text"],textarea{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:10px;font-size:15px;transition:.2s;font-family:inherit}
 select:focus,input:focus,textarea:focus{border-color:#e63946;outline:none}
 textarea{min-height:200px;resize:vertical;font-family:'Courier New',monospace;font-size:13px;direction:ltr;text-align:left;line-height:1.6}
 label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
@@ -42,9 +40,9 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .btn-outline:hover:not(:disabled){background:#fff5f5}
 .btn-success{background:#28a745;color:#fff}
 .btn-success:hover:not(:disabled){background:#1e7e34}
-.btn-sm{padding:8px 14px;font-size:13px;border-radius:8px}
 .btn-warn{background:#ffc107;color:#333}
 .btn-warn:hover:not(:disabled){background:#e0a800}
+.btn-sm{padding:8px 14px;font-size:13px;border-radius:8px}
 
 .stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
 .stat-item{background:linear-gradient(135deg,#fff5f5,#fff);border:1px solid #fde2e4;border-radius:12px;padding:16px;text-align:center}
@@ -55,12 +53,10 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .lesson-row{background:#f8f9fa;border:1px solid #e8e8e8;border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:.2s}
 .lesson-row:hover{border-color:#e63946;box-shadow:0 2px 8px rgba(230,57,70,.1)}
 .lesson-info{flex:1;min-width:200px}
-.lesson-info .lesson-num{font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px}
 .lesson-info .lesson-title{font-size:16px;font-weight:600;color:#1a1a2e}
 .lesson-info .lesson-meta{font-size:12px;color:#888;margin-top:4px}
 .lesson-actions{display:flex;gap:6px;flex-wrap:wrap}
 
-/* Inline edit */
 .inline-edit{display:flex;gap:8px;align-items:center;flex:1;min-width:200px}
 .inline-edit input{flex:1;padding:8px 12px;font-size:14px;border:2px solid #e63946;border-radius:8px}
 
@@ -93,21 +89,36 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .progress-bar .fill{height:100%;background:linear-gradient(90deg,#e63946,#ff6b6b);border-radius:4px;transition:width .3s;width:0}
 
 .badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600}
-.badge-blue{background:#d1ecf1;color:#0c5460}
+.badge-green{background:#d4edda;color:#155724}
+.badge-gray{background:#e9ecef;color:#6c757d}
 
 .format-hint{background:#f8f9fa;border:1px solid #e0e0e0;border-radius:10px;padding:14px;margin-bottom:12px;font-size:13px;color:#555;direction:ltr;text-align:left;line-height:1.8}
 .format-hint code{background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #ddd;font-size:12px}
 
 .spinner{display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-radius:50%;border-top-color:#fff;animation:spin .8s ease-in-out infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
 .hidden{display:none!important}
 
-.flow-diagram{background:#f8f9fa;border:1px solid #e0e0e0;border-radius:12px;padding:16px;margin:16px 0;text-align:center}
-.flow-diagram .steps{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;font-size:13px}
-.flow-diagram .step{background:#fff;border:1px solid #ddd;padding:8px 14px;border-radius:8px}
-.flow-diagram .step.active{background:#e63946;color:#fff;border-color:#e63946}
-.flow-diagram .arrow{color:#999;font-size:18px}
+/* ═══ Searchable Dropdown ═══ */
+.search-dropdown{position:relative;width:100%}
+.search-dropdown .search-input{width:100%;padding:12px 16px;padding-left:40px;border:2px solid #e0e0e0;border-radius:10px;font-size:15px;transition:.2s;font-family:inherit;background:#fff;cursor:text}
+.search-dropdown .search-input:focus{border-color:#e63946;outline:none}
+.search-dropdown .search-input::placeholder{color:#aaa}
+.search-dropdown .search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px;color:#999;pointer-events:none;z-index:2}
+.search-dropdown .clear-btn{position:absolute;left:40px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:18px;color:#999;cursor:pointer;padding:4px;display:none;z-index:2}
+.search-dropdown .clear-btn:hover{color:#e63946}
+.search-dropdown .clear-btn.show{display:block}
+.search-dropdown .dropdown-list{position:absolute;top:calc(100% + 4px);right:0;left:0;background:#fff;border:2px solid #e0e0e0;border-radius:10px;max-height:280px;overflow-y:auto;z-index:100;display:none;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.search-dropdown .dropdown-list.open{display:block}
+.search-dropdown .dropdown-item{padding:12px 16px;cursor:pointer;font-size:14px;transition:.15s;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.search-dropdown .dropdown-item:last-child{border-bottom:none}
+.search-dropdown .dropdown-item:hover,.search-dropdown .dropdown-item.highlighted{background:#fff5f5;color:#e63946}
+.search-dropdown .dropdown-item.selected{background:#fde2e4;color:#e63946;font-weight:600}
+.search-dropdown .dropdown-empty{padding:20px;text-align:center;color:#999;font-size:14px}
+.search-dropdown .dropdown-count{padding:8px 16px;font-size:11px;color:#999;border-bottom:1px solid #f0f0f0;background:#fafafa;border-radius:10px 10px 0 0}
+.selected-course-badge{display:inline-flex;align-items:center;gap:8px;background:#fde2e4;color:#e63946;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:600;margin-top:10px}
+.selected-course-badge .remove{cursor:pointer;font-size:16px;opacity:.7;transition:.2s}
+.selected-course-badge .remove:hover{opacity:1}
 
 @media(max-width:600px){
   .header{padding:14px 16px;flex-direction:column;gap:10px}
@@ -122,7 +133,7 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 </head>
 <body>
 
-<!-- ═══ Modal ═══ -->
+<!-- Modal -->
 <div class="modal-overlay" id="modal">
   <div class="modal-box">
     <h3 id="modal-title">تأكيد</h3>
@@ -134,7 +145,7 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
   </div>
 </div>
 
-<!-- ═══ Login Screen ═══ -->
+<!-- Login -->
 <div id="view-login" class="login-screen">
   <div class="login-box">
     <div style="font-size:48px;margin-bottom:16px">📚</div>
@@ -146,81 +157,53 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
   </div>
 </div>
 
-<!-- ═══ Main Screen ═══ -->
+<!-- Main -->
 <div id="view-main" class="hidden">
   <div class="header">
     <h1>📚 رفع محتوى الدروس — easyT</h1>
     <button class="logout-btn" onclick="doLogout()">🚪 خروج</button>
   </div>
-
   <div class="container">
 
     <!-- Course Selector -->
     <div class="card">
       <h2>📘 اختار الكورس</h2>
-      <select id="course-select" onchange="onCourseChange()">
-        <option value="">— اختار كورس —</option>
-      </select>
+      <div class="search-dropdown" id="course-dropdown">
+        <span class="search-icon">🔍</span>
+        <button class="clear-btn" id="search-clear" onclick="clearSearch()">✕</button>
+        <input type="text" class="search-input" id="course-search" placeholder="ابحث عن كورس بالاسم..." autocomplete="off" oninput="onSearchInput()" onfocus="openDropdown()" onkeydown="onSearchKeydown(event)">
+        <div class="dropdown-list" id="dropdown-list"></div>
+      </div>
+      <div id="selected-course-display"></div>
     </div>
 
     <!-- Course Content -->
     <div id="course-content" class="hidden">
-
-      <!-- Stats -->
       <div class="stats-bar">
-        <div class="stat-item">
-          <div class="num" id="stat-lessons">0</div>
-          <div class="label">دروس مرفوعة</div>
-        </div>
-        <div class="stat-item">
-          <div class="num" id="stat-chunks">0</div>
-          <div class="label">قطع محتوى (Chunks)</div>
-        </div>
-        <div class="stat-item">
-          <div class="num" id="stat-status">—</div>
-          <div class="label">الحالة</div>
-        </div>
+        <div class="stat-item"><div class="num" id="stat-lessons">0</div><div class="label">دروس</div></div>
+        <div class="stat-item"><div class="num" id="stat-chunks">0</div><div class="label">قطع محتوى (Chunks)</div></div>
+        <div class="stat-item"><div class="num" id="stat-status">—</div><div class="label">الحالة</div></div>
       </div>
 
       <!-- Existing Lessons -->
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <h2 style="margin:0">📖 الدروس الموجودة</h2>
-          <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل المحتوى</button>
+          <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل الـ Chunks</button>
         </div>
         <div id="lessons-container"></div>
       </div>
 
-      <!-- Add/Edit Lesson Form -->
+      <!-- Add/Edit Lesson -->
       <div class="card" id="lesson-form-card">
         <h2 id="form-title">➕ إضافة درس جديد</h2>
-
-        <!-- Flow diagram -->
-        <div class="flow-diagram" id="flow-diagram">
-          <div class="steps">
-            <div class="step active" id="step1">1️⃣ بيانات الدرس</div>
-            <div class="arrow">→</div>
-            <div class="step" id="step2">2️⃣ تقسيم (Chunking)</div>
-            <div class="arrow">→</div>
-            <div class="step" id="step3">3️⃣ تحويل (Embedding)</div>
-            <div class="arrow">→</div>
-            <div class="step" id="step4">4️⃣ حفظ في DB</div>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>رقم الدرس</label>
-          <input type="number" id="inp-lesson-num" min="1" value="1">
-        </div>
-
         <div class="form-group">
           <label>اسم الدرس</label>
           <input type="text" id="inp-lesson-name" placeholder="مثال: مقدمة في التصميم">
         </div>
-
         <div class="form-group">
           <label>الـ Transcript (النص)</label>
-          <div class="file-upload" id="file-drop">
+          <div class="file-upload">
             <div class="icon">📁</div>
             <p>اسحب ملف .txt هنا أو اضغط لاختيار ملف</p>
             <div class="file-name hidden" id="file-name"></div>
@@ -229,42 +212,29 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
           <div class="format-hint">
             <strong>📝 الصيغة المطلوبة (كل سطر):</strong><br>
             <code>[00:00 - 00:30] نص الكلام هنا</code><br>
-            <code>[00:30 - 01:15] نص كلام تاني هنا</code><br>
-            أو نص عادي من غير timestamps — هيتقسم أوتوماتيك
+            <code>[00:30 - 01:15] نص كلام تاني هنا</code>
           </div>
           <textarea id="inp-transcript" placeholder="الصق الـ transcript هنا أو ارفع ملف..."></textarea>
         </div>
-
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="btn-process" onclick="onProcessLesson()">
-            🚀 معالجة ورفع الدرس
-          </button>
-          <button class="btn btn-outline hidden" id="btn-cancel-edit" onclick="cancelEdit()">
-            ❌ إلغاء
-          </button>
+          <button class="btn btn-primary" id="btn-process" onclick="onProcessLesson()">🚀 معالجة ورفع</button>
+          <button class="btn btn-outline hidden" id="btn-cancel-edit" onclick="cancelEdit()">❌ إلغاء</button>
         </div>
-
-        <div class="progress-bar hidden" id="progress-bar">
-          <div class="fill" id="progress-fill"></div>
-        </div>
+        <div class="progress-bar hidden" id="progress-bar"><div class="fill" id="progress-fill"></div></div>
       </div>
     </div>
 
-    <!-- Processing Log -->
+    <!-- Log -->
     <div class="card">
       <h2>📋 سجل العمليات</h2>
       <div class="log-section" id="log-section">
-        <div class="log-entry info">🟢 Ready — waiting for action...</div>
+        <div class="log-entry info">🟢 Ready</div>
       </div>
     </div>
-
   </div>
 </div>
 
 <script>
-// ═══════════════════════════════════
-//  State
-// ═══════════════════════════════════
 const API = window.location.origin;
 let token = '';
 let courses = [];
@@ -273,20 +243,143 @@ let selectedCourseName = '';
 let existingLessons = [];
 let totalChunks = 0;
 let processing = false;
-let editMode = false;
-let editLessonNumber = null;
-let renamingLesson = null; // lesson number being renamed
+let editLessonId = null;
+let renamingLessonId = null;
+let highlightedIndex = -1;
+let dropdownOpen = false;
 
-// ═══════════════════════════════════
-//  DOM Refs
-// ═══════════════════════════════════
 const $ = id => document.getElementById(id);
 
-// ═══════════════════════════════════
-//  Modal
-// ═══════════════════════════════════
-let modalResolve = null;
+// ═══════════════════════════════════════════
+// Searchable Dropdown
+// ═══════════════════════════════════════════
+function getFilteredCourses() {
+  const query = $('course-search').value.trim().toLowerCase();
+  if (!query) return courses;
+  return courses.filter(c => c.name.toLowerCase().includes(query));
+}
 
+function renderDropdown() {
+  const filtered = getFilteredCourses();
+  const list = $('dropdown-list');
+  const query = $('course-search').value.trim();
+
+  // Show/hide clear button
+  const clearBtn = $('search-clear');
+  if (query) clearBtn.classList.add('show');
+  else clearBtn.classList.remove('show');
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="dropdown-empty">😕 مفيش نتائج لـ "' + escHtml(query) + '"</div>';
+    list.classList.add('open');
+    dropdownOpen = true;
+    return;
+  }
+
+  let html = '<div class="dropdown-count">📚 ' + filtered.length + ' من ' + courses.length + ' كورس</div>';
+  filtered.forEach((c, idx) => {
+    const isSelected = c.id === selectedCourseId;
+    const isHighlighted = idx === highlightedIndex;
+    let cls = 'dropdown-item';
+    if (isSelected) cls += ' selected';
+    if (isHighlighted) cls += ' highlighted';
+    html += '<div class="' + cls + '" data-id="' + c.id + '" data-name="' + escAttr(c.name) + '" onclick="selectCourse(\'' + c.id + '\', \'' + escAttr(c.name) + '\')" onmouseenter="highlightedIndex=' + idx + '">';
+    html += (isSelected ? '✅ ' : '📘 ') + escHtml(c.name);
+    html += '</div>';
+  });
+  list.innerHTML = html;
+  list.classList.add('open');
+  dropdownOpen = true;
+
+  // Scroll highlighted into view
+  if (highlightedIndex >= 0) {
+    const items = list.querySelectorAll('.dropdown-item');
+    if (items[highlightedIndex]) items[highlightedIndex].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function openDropdown() {
+  highlightedIndex = -1;
+  renderDropdown();
+}
+
+function closeDropdown() {
+  $('dropdown-list').classList.remove('open');
+  dropdownOpen = false;
+  highlightedIndex = -1;
+}
+
+function onSearchInput() {
+  highlightedIndex = -1;
+  renderDropdown();
+}
+
+function onSearchKeydown(e) {
+  const filtered = getFilteredCourses();
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    highlightedIndex = Math.min(highlightedIndex + 1, filtered.length - 1);
+    renderDropdown();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    highlightedIndex = Math.max(highlightedIndex - 1, 0);
+    renderDropdown();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+      selectCourse(filtered[highlightedIndex].id, filtered[highlightedIndex].name);
+    }
+  } else if (e.key === 'Escape') {
+    closeDropdown();
+    $('course-search').blur();
+  }
+}
+
+function selectCourse(id, name) {
+  selectedCourseId = id;
+  selectedCourseName = name;
+  $('course-search').value = '';
+  closeDropdown();
+
+  // Show selected badge
+  $('selected-course-display').innerHTML =
+    '<div class="selected-course-badge">' +
+    '📘 ' + escHtml(name) +
+    '<span class="remove" onclick="deselectCourse()" title="إزالة">✕</span>' +
+    '</div>';
+
+  $('course-content').classList.remove('hidden');
+  cancelEdit();
+  addLog('Selected: ' + name, 'info');
+  refreshCourseData();
+}
+
+function deselectCourse() {
+  selectedCourseId = null;
+  selectedCourseName = '';
+  $('selected-course-display').innerHTML = '';
+  $('course-content').classList.add('hidden');
+  $('course-search').value = '';
+  $('course-search').focus();
+}
+
+function clearSearch() {
+  $('course-search').value = '';
+  $('search-clear').classList.remove('show');
+  $('course-search').focus();
+  renderDropdown();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const dropdown = $('course-dropdown');
+  if (!dropdown.contains(e.target)) closeDropdown();
+});
+
+// ═══════════════════════════════════════════
+// Modal
+// ═══════════════════════════════════════════
+let modalResolve = null;
 function showModal(title, text, confirmText = 'تأكيد') {
   $('modal-title').textContent = title;
   $('modal-text').textContent = text;
@@ -294,13 +387,12 @@ function showModal(title, text, confirmText = 'تأكيد') {
   $('modal').classList.add('show');
   return new Promise(resolve => { modalResolve = resolve; });
 }
-
 $('modal-confirm').onclick = () => { $('modal').classList.remove('show'); if (modalResolve) modalResolve(true); };
 $('modal-cancel').onclick = () => { $('modal').classList.remove('show'); if (modalResolve) modalResolve(false); };
 
-// ═══════════════════════════════════
-//  Logging
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Log
+// ═══════════════════════════════════════════
 function addLog(msg, type = 'info') {
   const log = $('log-section');
   const entry = document.createElement('div');
@@ -312,29 +404,23 @@ function addLog(msg, type = 'info') {
   log.scrollTop = log.scrollHeight;
 }
 
-// ═══════════════════════════════════
-//  API Helpers
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════
 async function api(method, url, body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (token) opts.headers['Authorization'] = 'Bearer ' + token;
   if (body) opts.body = JSON.stringify(body);
-
   const resp = await fetch(API + url, opts);
   const data = await resp.json();
-
-  if (resp.status === 401) {
-    addLog('Session expired — please login again', 'error');
-    doLogout();
-    throw new Error('Unauthorized');
-  }
-  if (!resp.ok && !data.success) throw new Error(data.error || 'API Error ' + resp.status);
+  if (resp.status === 401) { addLog('Session expired', 'error'); doLogout(); throw new Error('Unauthorized'); }
+  if (!resp.ok && !data.success) throw new Error(data.error || 'API Error');
   return data;
 }
 
-// ═══════════════════════════════════
-//  Login / Logout
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Login
+// ═══════════════════════════════════════════
 async function doLogin() {
   const pw = $('login-password').value.trim();
   if (!pw) return;
@@ -353,7 +439,6 @@ async function doLogin() {
     $('login-error').style.display = 'block';
   }
 }
-
 function doLogout() {
   token = '';
   selectedCourseId = null;
@@ -362,46 +447,20 @@ function doLogout() {
   $('login-password').value = '';
 }
 
-// ═══════════════════════════════════
-//  Load Courses
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Load Courses
+// ═══════════════════════════════════════════
 async function loadCourses() {
   try {
     const data = await api('GET', '/api/upload/courses');
     courses = data.courses || [];
-    const sel = $('course-select');
-    sel.innerHTML = '<option value="">— اختار كورس (' + courses.length + ' كورس) —</option>';
-    courses.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
-    });
     addLog('Loaded ' + courses.length + ' courses', 'success');
-  } catch (e) {
-    addLog('Error loading courses: ' + e.message, 'error');
-  }
+  } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════
-//  Course Change
-// ═══════════════════════════════════
-async function onCourseChange() {
-  const sel = $('course-select');
-  selectedCourseId = sel.value || null;
-  selectedCourseName = sel.options[sel.selectedIndex]?.textContent || '';
-
-  if (!selectedCourseId) {
-    $('course-content').classList.add('hidden');
-    return;
-  }
-
-  $('course-content').classList.remove('hidden');
-  cancelEdit();
-  addLog('Selected course: ' + selectedCourseName, 'info');
-  await refreshCourseData();
-}
-
+// ═══════════════════════════════════════════
+// Refresh Course Data
+// ═══════════════════════════════════════════
 async function refreshCourseData() {
   if (!selectedCourseId) return;
   try {
@@ -409,325 +468,211 @@ async function refreshCourseData() {
       api('GET', '/api/upload/courses/' + selectedCourseId + '/lessons'),
       api('GET', '/api/upload/courses/' + selectedCourseId + '/chunks-count')
     ]);
-
     existingLessons = lessonsData.lessons || [];
     totalChunks = chunksData.count || 0;
-
     $('stat-lessons').textContent = existingLessons.length;
     $('stat-chunks').textContent = totalChunks;
-    $('stat-status').textContent = existingLessons.length > 0 ? '✅ جاهز' : '⏳ فاضي';
+    $('stat-status').textContent = totalChunks > 0 ? '✅ جاهز' : '⏳ فاضي';
     $('stat-status').style.fontSize = '16px';
-
-    if (!editMode) {
-      const maxNum = existingLessons.reduce((max, l) => Math.max(max, l.lesson_number), 0);
-      $('inp-lesson-num').value = maxNum + 1;
-    }
-
     renderLessons();
-  } catch (e) {
-    addLog('Error loading course data: ' + e.message, 'error');
-  }
+  } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════
-//  Render Lessons
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Render Lessons
+// ═══════════════════════════════════════════
 function renderLessons() {
   const container = $('lessons-container');
-
   if (existingLessons.length === 0) {
-    container.innerHTML =
-      '<div class="empty-state">' +
-        '<div class="icon">📭</div>' +
-        '<p>مفيش دروس مرفوعة لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p>' +
-      '</div>';
+    container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>مفيش دروس لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p></div>';
     $('btn-delete-all').classList.add('hidden');
     return;
   }
-
   $('btn-delete-all').classList.remove('hidden');
-
   let html = '<div class="lessons-list">';
-
-  existingLessons.forEach(l => {
-    const isRenaming = renamingLesson === l.lesson_number;
-
-    html += '<div class="lesson-row" id="lesson-row-' + l.lesson_number + '">';
-
+  existingLessons.forEach((l, idx) => {
+    const isRenaming = renamingLessonId === l.id;
+    html += '<div class="lesson-row">';
     if (isRenaming) {
-      // Inline rename mode
       html += '<div class="inline-edit">' +
-        '<span class="lesson-num">درس ' + l.lesson_number + '</span>' +
-        '<input type="text" id="rename-input-' + l.lesson_number + '" value="' + escAttr(l.lesson_name) + '" onkeypress="if(event.key===\'Enter\')saveRename(' + l.lesson_number + ')">' +
+        '<input type="text" id="rename-input" value="' + escAttr(l.title) + '" onkeypress="if(event.key===\'Enter\')saveRename(\'' + l.id + '\')">' +
         '</div>' +
         '<div class="lesson-actions">' +
-          '<button class="btn btn-success btn-sm" onclick="saveRename(' + l.lesson_number + ')">💾 حفظ</button>' +
+          '<button class="btn btn-success btn-sm" onclick="saveRename(\'' + l.id + '\')">💾 حفظ</button>' +
           '<button class="btn btn-outline btn-sm" onclick="cancelRename()">❌</button>' +
         '</div>';
     } else {
-      // Normal display mode
+      const badge = l.chunk_count > 0
+        ? '<span class="badge badge-green">' + l.chunk_count + ' قطعة ✅</span>'
+        : '<span class="badge badge-gray">0 قطع — محتاج رفع</span>';
       html += '<div class="lesson-info">' +
-        '<div class="lesson-num">درس ' + l.lesson_number + '</div>' +
-        '<div class="lesson-title">' + escHtml(l.lesson_name) + '</div>' +
-        '<div class="lesson-meta"><span class="badge badge-blue">' + l.chunk_count + ' قطعة</span></div>' +
+        '<div class="lesson-title">' + (idx+1) + '. ' + escHtml(l.title) + '</div>' +
+        '<div class="lesson-meta">' + badge + '</div>' +
         '</div>' +
         '<div class="lesson-actions">' +
-          '<button class="btn btn-warn btn-sm" onclick="startRename(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="تعديل الاسم">✏️ تعديل الاسم</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="onReuploadLesson(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="إعادة رفع الملف">📁 إعادة رفع</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="onDeleteLesson(' + l.lesson_number + ', \'' + escAttr(l.lesson_name) + '\')" title="حذف الدرس">🗑️</button>' +
+          '<button class="btn btn-warn btn-sm" onclick="startRename(\'' + l.id + '\')">✏️ تعديل الاسم</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="onReupload(\'' + l.id + '\', \'' + escAttr(l.title) + '\')">' + (l.chunk_count > 0 ? '📁 إعادة رفع' : '📁 رفع ملف') + '</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="onDeleteLesson(\'' + l.id + '\', \'' + escAttr(l.title) + '\')">🗑️</button>' +
         '</div>';
     }
-
     html += '</div>';
   });
-
   html += '</div>';
   container.innerHTML = html;
-
-  // Focus rename input if renaming
-  if (renamingLesson !== null) {
-    const inp = document.getElementById('rename-input-' + renamingLesson);
+  if (renamingLessonId) {
+    const inp = document.getElementById('rename-input');
     if (inp) { inp.focus(); inp.select(); }
   }
 }
 
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-function escAttr(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function escAttr(s) { return (s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
-// ═══════════════════════════════════
-//  Rename Lesson (inline)
-// ═══════════════════════════════════
-function startRename(num, name) {
-  renamingLesson = num;
-  renderLessons();
-  addLog('Renaming lesson #' + num + '...', 'info');
-}
-
-function cancelRename() {
-  renamingLesson = null;
-  renderLessons();
-}
-
-async function saveRename(num) {
-  const inp = document.getElementById('rename-input-' + num);
-  const newName = inp ? inp.value.trim() : '';
-  if (!newName) {
-    addLog('Error: Lesson name cannot be empty', 'error');
-    return;
-  }
-
+// ═══════════════════════════════════════════
+// Rename
+// ═══════════════════════════════════════════
+function startRename(id) { renamingLessonId = id; renderLessons(); }
+function cancelRename() { renamingLessonId = null; renderLessons(); }
+async function saveRename(id) {
+  const inp = document.getElementById('rename-input');
+  const newTitle = inp ? inp.value.trim() : '';
+  if (!newTitle) { addLog('Error: name required', 'error'); return; }
   try {
-    addLog('Updating lesson #' + num + ' name to: ' + newName, 'info');
-    const result = await api('PATCH', '/api/admin/courses/' + selectedCourseId + '/lessons/' + num, {
-      lessonName: newName
-    });
-    addLog('Updated ' + (result.updated || 0) + ' chunks with new name ✅', 'success');
-    renamingLesson = null;
+    addLog('Renaming lesson...', 'info');
+    await api('PATCH', '/api/admin/lessons/' + id, { title: newTitle });
+    addLog('Renamed ✅', 'success');
+    renamingLessonId = null;
     await refreshCourseData();
-  } catch (e) {
-    addLog('Error renaming: ' + e.message, 'error');
-  }
+  } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════
-//  Reupload Lesson
-// ═══════════════════════════════════
-function onReuploadLesson(num, name) {
-  editMode = true;
-  editLessonNumber = num;
-  $('form-title').textContent = '📁 إعادة رفع درس رقم ' + num + ': ' + name;
-  $('inp-lesson-num').value = num;
-  $('inp-lesson-name').value = name;
+// ═══════════════════════════════════════════
+// Reupload
+// ═══════════════════════════════════════════
+function onReupload(id, title) {
+  editLessonId = id;
+  $('form-title').textContent = '📁 رفع ملف لدرس: ' + title;
+  $('inp-lesson-name').value = title;
   $('inp-transcript').value = '';
   $('file-input').value = '';
   $('file-name').classList.add('hidden');
   $('btn-cancel-edit').classList.remove('hidden');
   $('btn-process').innerHTML = '🔄 حذف القديم ورفع الجديد';
   $('lesson-form-card').scrollIntoView({ behavior: 'smooth' });
-  addLog('Re-uploading lesson #' + num + ': ' + name + ' — paste new transcript below', 'info');
+  addLog('Re-uploading: ' + title, 'info');
 }
 
 function cancelEdit() {
-  editMode = false;
-  editLessonNumber = null;
-  renamingLesson = null;
+  editLessonId = null;
+  renamingLessonId = null;
   $('form-title').textContent = '➕ إضافة درس جديد';
   $('inp-lesson-name').value = '';
   $('inp-transcript').value = '';
   $('file-input').value = '';
   $('file-name').classList.add('hidden');
   $('btn-cancel-edit').classList.add('hidden');
-  $('btn-process').innerHTML = '🚀 معالجة ورفع الدرس';
-  resetSteps();
-
-  const maxNum = existingLessons.reduce((max, l) => Math.max(max, l.lesson_number), 0);
-  $('inp-lesson-num').value = maxNum + 1;
+  $('btn-process').innerHTML = '🚀 معالجة ورفع';
 }
 
-// ═══════════════════════════════════
-//  File Upload
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// File
+// ═══════════════════════════════════════════
 function onFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
   $('file-name').textContent = '📄 ' + file.name;
   $('file-name').classList.remove('hidden');
-
   const reader = new FileReader();
   reader.onload = (e) => {
     $('inp-transcript').value = e.target.result;
-    addLog('File loaded: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)', 'success');
+    addLog('File loaded: ' + file.name + ' (' + Math.round(file.size/1024) + ' KB)', 'success');
   };
   reader.readAsText(file);
 }
 
-// ═══════════════════════════════════
-//  Steps Indicator
-// ═══════════════════════════════════
-function setActiveStep(n) {
-  for (let i = 1; i <= 4; i++) {
-    const el = $('step' + i);
-    if (i <= n) el.classList.add('active');
-    else el.classList.remove('active');
-  }
-}
-function resetSteps() { setActiveStep(1); }
-
-// ═══════════════════════════════════
-//  Process Lesson
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Process
+// ═══════════════════════════════════════════
 async function onProcessLesson() {
   if (processing) return;
-
-  const lessonNum = parseInt($('inp-lesson-num').value);
   const lessonName = $('inp-lesson-name').value.trim();
   const transcript = $('inp-transcript').value.trim();
+  if (!lessonName) { addLog('Error: lesson name required', 'error'); return; }
+  if (!transcript) { addLog('Error: transcript required', 'error'); return; }
+  if (transcript.length < 50) { addLog('Error: transcript too short', 'error'); return; }
 
-  // Validation
-  if (!lessonNum || lessonNum < 1) { addLog('Error: Invalid lesson number', 'error'); return; }
-  if (!lessonName) { addLog('Error: Lesson name is required', 'error'); return; }
-  if (!transcript) { addLog('Error: Transcript is required', 'error'); return; }
-  if (transcript.length < 50) { addLog('Error: Transcript too short (min 50 chars)', 'error'); return; }
-
-  // Check existing
-  const existing = existingLessons.find(l => l.lesson_number === lessonNum);
-  if (existing && !editMode) {
-    const ok = await showModal(
-      '⚠️ درس موجود بالفعل',
-      'الدرس رقم ' + lessonNum + ' (' + existing.lesson_name + ') موجود فيه ' + existing.chunk_count + ' قطعة.\n\nهل تريد حذف المحتوى القديم واستبداله بالجديد؟',
-      '🔄 استبدال'
-    );
-    if (!ok) return;
+  if (!editLessonId) {
+    const existing = existingLessons.find(l => l.title.trim() === lessonName);
+    if (existing) {
+      const ok = await showModal('⚠️ درس موجود', 'درس بنفس الاسم موجود (' + existing.chunk_count + ' قطعة). هتستبدل المحتوى القديم؟', '🔄 استبدال');
+      if (!ok) return;
+      editLessonId = existing.id;
+    }
   }
 
   processing = true;
   $('btn-process').disabled = true;
   $('btn-process').innerHTML = '<span class="spinner"></span> جاري المعالجة...';
   $('progress-bar').classList.remove('hidden');
-  $('progress-fill').style.width = '5%';
+  $('progress-fill').style.width = '10%';
 
   try {
-    // Step 1: Delete old if exists
-    if (existing || editMode) {
-      setActiveStep(1);
-      addLog('Step 1: Deleting old chunks for lesson #' + lessonNum + '...', 'warn');
-      $('progress-fill').style.width = '15%';
-      await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/lessons/' + lessonNum + '/chunks');
-      addLog('Old chunks deleted ✓', 'success');
-    }
-
-    // Step 2: Send for processing (chunking)
-    setActiveStep(2);
     $('progress-fill').style.width = '30%';
-    addLog('Step 2: Chunking transcript (' + transcript.length + ' chars)...', 'info');
+    addLog('Processing: ' + lessonName + ' (' + transcript.length + ' chars)...', 'info');
 
-    // Step 3: Embedding
-    setActiveStep(3);
-    $('progress-fill').style.width = '50%';
-    addLog('Step 3: Generating embeddings...', 'info');
-
-    // The API does chunking + embedding + saving
     const result = await api('POST', '/api/admin/process-lesson', {
       courseId: selectedCourseId,
-      lessonNumber: lessonNum,
+      lessonId: editLessonId || null,
       lessonName: lessonName,
       transcript: transcript
     });
 
-    // Step 4: Done
-    setActiveStep(4);
     $('progress-fill').style.width = '100%';
 
     if (result.success) {
-      addLog('Step 4: Saved to DB ✅', 'success');
-      addLog('🎉 Done! Created ' + result.chunksCreated + ' chunks for "' + lessonName + '"', 'success');
-    } else {
-      addLog('Processing completed with warnings', 'warn');
+      addLog('✅ Done! Created ' + result.chunksCreated + ' chunks for "' + lessonName + '"', 'success');
     }
 
-    // Refresh
     cancelEdit();
     await refreshCourseData();
-
   } catch (e) {
     addLog('Error: ' + e.message, 'error');
   } finally {
     processing = false;
     $('btn-process').disabled = false;
-    $('btn-process').innerHTML = editMode ? '🔄 حذف القديم ورفع الجديد' : '🚀 معالجة ورفع الدرس';
-    setTimeout(() => {
-      $('progress-bar').classList.add('hidden');
-      $('progress-fill').style.width = '0%';
-      resetSteps();
-    }, 3000);
+    $('btn-process').innerHTML = editLessonId ? '🔄 حذف القديم ورفع الجديد' : '🚀 معالجة ورفع';
+    setTimeout(() => { $('progress-bar').classList.add('hidden'); $('progress-fill').style.width = '0%'; }, 2000);
   }
 }
 
-// ═══════════════════════════════════
-//  Delete Lesson
-// ═══════════════════════════════════
-async function onDeleteLesson(num, name) {
-  const ok = await showModal(
-    '🗑️ حذف درس',
-    'هل أنت متأكد من حذف الدرس رقم ' + num + ' (' + name + ')?\n\nسيتم حذف كل القطع (chunks) الخاصة بيه نهائياً.',
-    '🗑️ أيوا احذف'
-  );
+// ═══════════════════════════════════════════
+// Delete Lesson
+// ═══════════════════════════════════════════
+async function onDeleteLesson(id, title) {
+  const ok = await showModal('🗑️ حذف chunks', 'حذف كل الـ chunks لدرس "' + title + '"؟', '🗑️ احذف');
   if (!ok) return;
-
   try {
-    addLog('Deleting lesson #' + num + ': ' + name + '...', 'warn');
-    const result = await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/lessons/' + num + '/chunks');
+    addLog('Deleting chunks for: ' + title, 'warn');
+    const result = await api('DELETE', '/api/admin/lessons/' + id + '/chunks');
     addLog('Deleted ' + (result.deleted || 0) + ' chunks ✅', 'success');
     await refreshCourseData();
-  } catch (e) {
-    addLog('Error deleting: ' + e.message, 'error');
-  }
+  } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════
-//  Delete All
-// ═══════════════════════════════════
+// ═══════════════════════════════════════════
+// Delete All
+// ═══════════════════════════════════════════
 async function onDeleteAll() {
-  const ok = await showModal(
-    '⚠️ مسح كل المحتوى!',
-    'هل أنت متأكد؟ سيتم حذف كل الدروس (' + existingLessons.length + ' درس) وكل القطع (' + totalChunks + ' قطعة) لكورس "' + selectedCourseName + '".\n\nالعملية دي مش ممكن التراجع عنها!',
-    '🗑️ مسح الكل نهائياً'
-  );
+  const ok = await showModal('⚠️ مسح كل الـ Chunks!', 'هتمسح ' + totalChunks + ' قطعة لكورس "' + selectedCourseName + '"؟ مش ممكن التراجع!', '🗑️ مسح الكل');
   if (!ok) return;
-
   try {
-    addLog('Deleting ALL content for: ' + selectedCourseName + '...', 'warn');
+    addLog('Deleting ALL chunks for: ' + selectedCourseName, 'warn');
     const result = await api('DELETE', '/api/admin/courses/' + selectedCourseId + '/chunks');
     addLog('Deleted ' + (result.deleted || 0) + ' chunks ✅', 'success');
     await refreshCourseData();
-  } catch (e) {
-    addLog('Error: ' + e.message, 'error');
-  }
+  } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-// ═══════════════════════════════════
-//  Init
-// ═══════════════════════════════════
 $('login-password').focus();
 </script>
 </body>
