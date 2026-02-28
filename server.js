@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.4 — Two-Phase RAG + Context Memory
+   🤖 Ziko Chatbot v10.5 — Two-Phase RAG + Context Memory
    
    🔧 FIXES from v10.2:
    ✅ FIX #1: \n → <br> everywhere
@@ -25,6 +25,12 @@
    ✅ FIX #17: Trimmed analyzer prompt — fewer redundant examples
    ✅ FIX #20: Fixed corrections table columns (wrong_terms → original_question)
    ✅ FIX #21: Fixed custom_responses insert (added title, category, priority)
+
+   🆕 NEW in v10.5:
+   ✅ FIX #23: Search uses domain + keywords columns for better matching
+   ✅ FIX #24: Embedding generation uses richer content (page_content + domain + keywords)
+   ✅ FIX #25: RAG Phase 2 sees domain + keywords for better recommendations
+   ✅ FIX #26: verifyCourseRelevance includes domain + keywords
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -152,6 +158,9 @@ const limiter = rateLimit({
    ═══════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
+
+/* 🆕 v10.5: Standard select columns for courses — includes domain + keywords */
+const COURSE_SELECT_COLS = "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
 
 const CATEGORIES = {
   "الجرافيكس والتصميم": {
@@ -518,7 +527,7 @@ function quickIntentCheck(message) {
     }
   }
 
-const greetingPatterns = [
+  const greetingPatterns = [
     /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم|ازيك|إزيك|ازيكم|عامل\s*ايه|كيفك|شلونك|يا\s*هلا)/,
   ];
   for (const p of greetingPatterns) {
@@ -529,7 +538,6 @@ const greetingPatterns = [
     }
   }
 
-  // 🆕 FIX #22: Casual chat — no courses/upsell needed
   const casualChatPatterns = [
     /^الحمد\s*(لله|الله)/,
     /^بخير/,
@@ -555,7 +563,6 @@ const greetingPatterns = [
       return { intent: "CHAT", confidence: 0.95, isCasual: true };
     }
   }
-
 
   const catPatterns = [
     /عندكم.*ايه/, /عندكم.*شو/, /عندكم.*وش/, /ايه.*المجالات/,
@@ -716,6 +723,7 @@ setInterval(() => {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
+   🆕 v10.5: Uses domain + keywords columns
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
@@ -732,19 +740,20 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     console.log("🔍 Search terms:", allTerms);
 
+    /* 🆕 v10.5: Added domain + keywords to search columns */
     const cols =
       allTerms.length > 8
-        ? ["title", "subtitle", "description"]
-        : ["title", "description", "subtitle", "full_content", "page_content", "syllabus", "objectives"];
+        ? ["title", "subtitle", "description", "domain", "keywords"]
+        : ["title", "description", "subtitle", "full_content", "page_content", "syllabus", "objectives", "domain", "keywords"];
 
     const orFilters = allTerms
       .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
 
-    // 🆕 Run ilike + semantic search in parallel
+    /* 🆕 v10.5: Uses COURSE_SELECT_COLS constant (includes domain, keywords) */
     const ilikePromise = supabase
       .from("courses")
-      .select("id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives")
+      .select(COURSE_SELECT_COLS)
       .or(orFilters)
       .limit(30);
 
@@ -777,7 +786,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     let allCourses = courses || [];
 
-    // 🆕 Merge semantic-only results
     const semanticMap = new Map();
     if (semanticResults.length > 0) {
       console.log(`🧠 Semantic course matches: ${semanticResults.length}`);
@@ -787,9 +795,10 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const semanticOnlyIds = [...semanticMap.keys()].filter(id => !ilikeIds.has(id));
 
       if (semanticOnlyIds.length > 0) {
+        /* 🆕 v10.5: Uses COURSE_SELECT_COLS */
         const { data: semCourses } = await supabase
           .from("courses")
-          .select("id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives")
+          .select(COURSE_SELECT_COLS)
           .in("id", semanticOnlyIds);
         if (semCourses) {
           console.log(`🧠 Semantic-only courses added: ${semCourses.length}`);
@@ -829,6 +838,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const objectivesNorm = normalizeArabic((c.objectives || "").toLowerCase());
       const descNorm = normalizeArabic((c.description || "").toLowerCase());
       const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
+      /* 🆕 v10.5: domain + keywords scoring */
+      const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
+      const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
       const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 200;
@@ -839,6 +851,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         if (nt.length <= 1) continue;
         if (titleNorm.includes(nt)) score += 50;
         if (subtitleNorm.includes(nt)) score += 15;
+        /* 🆕 v10.5: domain match = 30 pts, keywords match = 20 pts */
+        if (domainNorm.includes(nt)) score += 30;
+        if (keywordsNorm.includes(nt)) score += 20;
         if (pageNorm.includes(nt)) score += 5;
         if (syllabusNorm.includes(nt)) score += 4;
         if (objectivesNorm.includes(nt)) score += 4;
@@ -851,7 +866,9 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       ).length;
       if (titleHits >= 2) score += 40;
 
-      // 🆕 Semantic score boost
+      /* 🆕 v10.5: Bonus if domain matches the full query */
+      if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
+
       if (semanticMap.has(c.id)) {
         const semSim = semanticMap.get(c.id);
         score += Math.round(semSim * 100);
@@ -864,7 +881,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
     scored.slice(0, 5).forEach((c, i) => {
-      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}`);
+      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${c.domain ? ` (${c.domain})` : ""}`);
     });
 
     const result = scored.slice(0, 10);
@@ -875,14 +892,14 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     return [];
   }
 }
+
 async function fuzzySearchFallback(terms) {
   if (!supabase) return [];
   try {
+    /* 🆕 v10.5: Added domain, keywords to select */
     const { data: all, error } = await supabase
       .from("courses")
-      .select(
-        "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
-      )
+      .select(COURSE_SELECT_COLS)
       .limit(500);
     if (error || !all) return [];
 
@@ -894,6 +911,9 @@ async function fuzzySearchFallback(terms) {
       const titleN = normalizeArabic((course.title || "").toLowerCase());
       const subtitleN = normalizeArabic((course.subtitle || "").toLowerCase());
       const pageN = normalizeArabic((course.page_content || "").toLowerCase());
+      /* 🆕 v10.5: domain + keywords for fuzzy matching */
+      const domainN = normalizeArabic((course.domain || "").toLowerCase());
+      const keywordsN = normalizeArabic((course.keywords || "").toLowerCase());
       let matchCount = 0;
 
       for (const term of searchable) {
@@ -907,6 +927,15 @@ async function fuzzySearchFallback(terms) {
         }
         if (subtitleN.includes(nt)) {
           bestSim = Math.max(bestSim, 75);
+          matched = true;
+        }
+        /* 🆕 v10.5: domain match = 80, keywords match = 78 */
+        if (domainN.includes(nt)) {
+          bestSim = Math.max(bestSim, 80);
+          matched = true;
+        }
+        if (keywordsN.includes(nt)) {
+          bestSim = Math.max(bestSim, 78);
           matched = true;
         }
         if (pageN.includes(nt)) {
@@ -946,7 +975,6 @@ async function searchDiplomas(searchTerms) {
   if (cached) return cached;
 
   try {
-    // 1) Try semantic search first
     if (openai) {
       try {
         const queryText = searchTerms.join(" ");
@@ -978,7 +1006,6 @@ async function searchDiplomas(searchTerms) {
       }
     }
 
-    // 2) Fallback to ilike search
     const corrected = searchTerms.map((t) => applyArabicCorrections(t));
     const expanded = expandSynonyms(corrected);
     const allTerms = splitIntoSearchableTerms(expanded);
@@ -1041,6 +1068,7 @@ async function searchCorrections(terms) {
 
 /* ══════════════════════════════════════════════════════════
    Priority Title Search
+   🆕 v10.5: Also matches domain column
    ══════════════════════════════════════════════════════════ */
 async function priorityTitleSearch(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
@@ -1056,18 +1084,19 @@ async function priorityTitleSearch(searchTerms) {
     );
     if (meaningful.length === 0) return [];
 
+    /* 🆕 v10.5: Added domain + keywords to priority filters */
     const titleFilters = meaningful
       .flatMap((t) => [
         `title.ilike.%${t}%`,
         `subtitle.ilike.%${t}%`,
+        `domain.ilike.%${t}%`,
+        `keywords.ilike.%${t}%`,
       ])
       .join(",");
 
     const { data, error } = await supabase
       .from("courses")
-      .select(
-        "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
-      )
+      .select(COURSE_SELECT_COLS)
       .or(titleFilters)
       .limit(10);
 
@@ -1077,12 +1106,17 @@ async function priorityTitleSearch(searchTerms) {
       let score = 0;
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
+      const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
+      const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
       for (const term of meaningful) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 2) continue;
         if (titleNorm.includes(nt)) score += 500;
         if (subtitleNorm.includes(nt)) score += 100;
+        /* 🆕 v10.5: domain + keywords scoring in priority search */
+        if (domainNorm.includes(nt)) score += 80;
+        if (keywordsNorm.includes(nt)) score += 60;
       }
       return { ...c, relevanceScore: score };
     }).filter((c) => c.relevanceScore > 0);
@@ -1201,7 +1235,7 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
 /* ══════════════════════════════════════════════════════════
    ██████████████████████████████████████████████████████████
    ██                                                      ██
-   ██   SECTION 11: 🧠 THE BRAIN v10.4                    ██
+   ██   SECTION 11: 🧠 THE BRAIN v10.5                    ██
    ██   Two-Phase RAG + Context Memory + Smart Filtering   ██
    ██                                                      ██
    ██████████████████████████████████████████████████████████
@@ -1865,6 +1899,7 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
+   🆕 v10.5: Includes domain + keywords in RAG data
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -1894,6 +1929,9 @@ function prepareCourseForRAG(course, instructors) {
     description: cleanDesc,
     syllabus: cleanSyllabus,
     objectives: cleanObjectives,
+    /* 🆕 v10.5: domain + keywords passed to GPT Phase 2 */
+    domain: course.domain || "",
+    keywords: course.keywords || "",
     price: priceNum,
     instructor: instructor ? instructor.name : "",
     link: course.link || "",
@@ -1973,6 +2011,7 @@ ${JSON.stringify(allItems, null, 1)}
 - كورس بنقاط عالية (100+) = عنوانه يحتوي على كلمة البحث → الأكثر ملاءمة
 - كورس بنقاط منخفضة (<10) = المطابقة في الوصف فقط → غالباً مش مناسب
 - ⚠️ فضّل الكورسات ذات النقاط العالية!
+- 🆕 كل كورس فيه "domain" (المجال) و"keywords" (كلمات مفتاحية) — استخدمهم للحكم على الملاءمة
 
 ═══ مطلوب منك ═══
 ارجع JSON بهذا الشكل بالظبط:
@@ -2110,10 +2149,12 @@ ${JSON.stringify(allItems, null, 1)}
 
 /* ═══════════════════════════════════
    Safety Check — verify GPT's choices
+   🆕 v10.5: Includes domain + keywords in verification
    ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
+  /* 🆕 v10.5: Added domain + keywords to courseText */
   const courseText = normalizeArabic(
     [
       course.title || "",
@@ -2121,6 +2162,8 @@ function verifyCourseRelevance(course, searchTerms) {
       course.description || "",
       course.syllabus || "",
       course.objectives || "",
+      course.domain || "",
+      course.keywords || "",
     ]
       .join(" ")
       .toLowerCase()
@@ -2190,7 +2233,7 @@ ${currentSummary ? `الملخص السابق: ${currentSummary}` : ""}
 }
 
 /* ═══════════════════════════════════
-   11-F: 🧠 Master Orchestrator v10.4
+   11-F: 🧠 Master Orchestrator v10.5
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
@@ -2235,14 +2278,13 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-if (quickCheck && quickCheck.confidence >= 0.9) {
+  if (quickCheck && quickCheck.confidence >= 0.9) {
     if (analysis.action !== quickCheck.intent) {
       console.log(`⚡ Override: "${analysis.action}" → "${quickCheck.intent}" (quickCheck forced)`);
       analysis.action = quickCheck.intent;
     }
   }
 
-  // 🆕 FIX #22: Skip upsell & enrichment for casual chat / greetings
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
     analysis.search_terms = [];
@@ -2301,7 +2343,6 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-// 🆕 FIX #22: Skip enrichment for casual/greeting messages
   if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
     enrichSearchTermsFromResponse(analysis);
@@ -2339,7 +2380,6 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-    // 🔧 FIX #20: Try corrections if no results — uses corrected_reply instead of search_terms
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
       if (corrections.length > 0) {
@@ -2347,16 +2387,14 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
           .flatMap((c) => c.correct_course_ids || [])
           .filter(Boolean);
         if (corrIds.length > 0 && supabase) {
+          /* 🆕 v10.5: Uses COURSE_SELECT_COLS */
           const { data: corrCourses } = await supabase
             .from("courses")
-            .select(
-              "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives"
-            )
+            .select(COURSE_SELECT_COLS)
             .in("id", corrIds);
           if (corrCourses?.length > 0) courses = corrCourses;
         }
         if (courses.length === 0) {
-          // 🔧 FIX #20: Extract search terms from corrected_reply
           const corrTerms = corrections
             .flatMap((c) => {
               const reply = c.corrected_reply || "";
@@ -2613,7 +2651,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       analysis.response_message ||
       getSmartFallback(sessionId);
 
-   if (analysis.search_terms && analysis.search_terms.length > 0 && !skipUpsell) {
+    if (analysis.search_terms && analysis.search_terms.length > 0 && !skipUpsell) {
       try {
         const [upsellCourses, upsellDiplomas] = await Promise.all([
           searchCourses(analysis.search_terms, [], null),
@@ -2711,7 +2749,7 @@ app.post("/chat", limiter, async (req, res) => {
 
     const { reply, intent } = await smartChat(cleanMessage, sessionId);
 
-    await logChat(sessionId, "bot", reply, intent, { version: "10.4" });
+    await logChat(sessionId, "bot", reply, intent, { version: "10.5" });
 
     return res.json({ reply });
   } catch (error) {
@@ -2837,7 +2875,6 @@ app.get("/admin/corrections", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 🔧 FIX #20: POST corrections — uses correct column names
 app.post("/admin/corrections", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
@@ -2923,7 +2960,6 @@ app.get("/admin/custom-responses", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 🔧 FIX #21: POST custom-responses — adds title, category, priority
 app.post("/admin/custom-responses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
@@ -2943,7 +2979,6 @@ app.post("/admin/custom-responses", adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 🔧 FIX #21: PUT custom-responses — adds title, category, priority
 app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
@@ -3165,8 +3200,8 @@ app.get("/test", (req, res) => { res.sendFile(path.join(__dirname, "test.html"))
 app.get("/admin/debug", async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
-    version: "10.4",
-    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache",
+    version: "10.5",
+    engine: "Two-Phase RAG + Context Memory + Smart Filtering + Cache + Domain/Keywords",
     environment: {
       SUPABASE_URL: process.env.SUPABASE_URL ? "✅ SET" : "❌ NOT SET",
       SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? "✅ SET" : "❌ NOT SET",
@@ -3198,10 +3233,10 @@ app.get("/health", async (req, res) => {
   } else dbStatus = "not initialized";
   res.json({
     status: dbStatus === "connected" ? "ok" : "degraded",
-    version: "10.4",
+    version: "10.5",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords",
     active_sessions: sessionMemory.size,
     search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
@@ -3211,13 +3246,17 @@ app.get("/health", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
-    version: "10.4",
+    version: "10.5",
     status: "running ✅",
-    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
       "Title-priority scoring (50x weight, +200 exact match)",
+      "🆕 Domain scoring (30x weight) + Keywords scoring (20x weight)",
+      "🆕 Richer embeddings (page_content + domain + keywords)",
+      "🆕 RAG Phase 2 sees domain + keywords per course",
+      "🆕 verifyCourseRelevance checks domain + keywords",
       "Follow-up context memory (remembers last topic)",
       "Card images with onerror fallback",
       "Phase 2 sees relevance scores",
@@ -3227,12 +3266,9 @@ app.get("/", (req, res) => {
       "Safety check: verifies GPT's course choices",
       "\\n → <br> formatting fix",
       "Session Memory + Auto Summary",
-      "🆕 Search cache (5 min TTL) — reduces DB queries",
-      "🆕 Dynamic Phase 2 model — saves cost with must-show courses",
-      "🆕 Smarter verifyCourseRelevance — multi-term awareness",
-      "🆕 Fixed duplicate prompt rules",
-      "🔧 FIX #20: corrections table — correct column names",
-      "🔧 FIX #21: custom_responses — title/category/priority support",
+      "Search cache (5 min TTL) — reduces DB queries",
+      "Dynamic Phase 2 model — saves cost with must-show courses",
+      "Smarter verifyCourseRelevance — multi-term awareness",
     ],
     endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health", debug: "GET /admin/debug" },
   });
@@ -3242,7 +3278,7 @@ app.get("/", (req, res) => {
    SECTION 15: Start Server
    ══════════════════════════════════════════════════════════ */
 async function startServer() {
-  console.log("\n🚀 Starting Ziko Chatbot v10.4...\n");
+  console.log("\n🚀 Starting Ziko Chatbot v10.5...\n");
   if (missingEnv.length > 0) console.error(`⚠️  Missing: ${missingEnv.join(", ")}\n`);
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
@@ -3486,9 +3522,10 @@ console.log('   GET  /api/guide/health  — Health Check');
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  🤖 زيكو Chatbot — v10.4                              ║
+║  🤖 زيكو Chatbot — v10.5                              ║
 ║  🧠 Engine: Two-Phase RAG + Context Memory + Cache     ║
-║  🔍 Search: Title 50x priority + exact match +200      ║
+║  🔍 Search: Title 50x + Domain 30x + Keywords 20x     ║
+║  🆕 Richer embeddings: page_content + domain + kw      ║
 ║  🔄 Follow-up: Remembers last topic for context        ║
 ║  📦 Cache: 5min TTL search cache                       ║
 ║  🌍 Dialects: Iraqi/Gulf/Levantine/Moroccan            ║
@@ -3506,6 +3543,7 @@ console.log('   GET  /api/guide/health  — Health Check');
 
 /* ══════════════════════════════════════════════════════════
    🧬 Generate Embeddings Route
+   🆕 v10.5: Richer embedding text — includes page_content + domain + keywords
    ══════════════════════════════════════════════════════════ */
 async function generateSingleEmbedding(text) {
   const cleanText = text.substring(0, 8000);
@@ -3522,13 +3560,14 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
   }
 
   try {
-    console.log('🚀 Starting embedding generation...');
+    console.log('🚀 Starting embedding generation (v10.5 — richer content)...');
     const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
 
     // ====== COURSES ======
+    /* 🆕 v10.5: Added page_content + domain to embedding source */
     const { data: courses, error: cErr } = await supabase
       .from('courses')
-      .select('id, title, description, subtitle, syllabus, objectives, keywords')
+      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain')
       .is('embedding', null);
 
     if (cErr) {
@@ -3539,8 +3578,18 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
 
       for (const course of courses) {
         try {
-          const text = [course.title, course.description, course.subtitle, course.syllabus, course.objectives, course.keywords]
-            .filter(Boolean).join(' ');
+          /* 🆕 v10.5: Richer text for embedding — domain + keywords + page_content */
+          const text = [
+            course.title,
+            course.subtitle,
+            course.domain,
+            course.keywords,
+            course.description,
+            course.page_content,
+            course.syllabus,
+            course.objectives,
+          ].filter(Boolean).join(' ');
+
           if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
 
           const embedding = await generateSingleEmbedding(text);
@@ -3564,7 +3613,7 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
     // ====== DIPLOMAS ======
     const { data: diplomas, error: dErr } = await supabase
       .from('diplomas')
-.select('id, title, description, keywords, search_text')
+      .select('id, title, description, keywords, search_text')
       .is('embedding', null);
 
     if (dErr) {
@@ -3575,7 +3624,7 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
 
       for (const diploma of diplomas) {
         try {
-const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
+          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
             .filter(Boolean).join(' ');
           if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
 
@@ -3602,6 +3651,105 @@ const text = [diploma.title, diploma.description, diploma.keywords, diploma.sear
 
   } catch (error) {
     console.error('❌ Generate embeddings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* 🆕 v10.5: Force regenerate ALL embeddings with richer content */
+app.get('/api/admin/regenerate-all-embeddings', async (req, res) => {
+  if (!supabase || !openai) {
+    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
+  }
+
+  try {
+    console.log('🔄 Force regenerating ALL embeddings with richer content (v10.5)...');
+    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
+
+    // ====== ALL COURSES ======
+    const { data: courses, error: cErr } = await supabase
+      .from('courses')
+      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain');
+
+    if (cErr) {
+      console.error('Error fetching courses:', cErr);
+    } else {
+      results.courses.total = courses.length;
+      console.log(`📚 Regenerating embeddings for ${courses.length} courses`);
+
+      for (const course of courses) {
+        try {
+          const text = [
+            course.title,
+            course.subtitle,
+            course.domain,
+            course.keywords,
+            course.description,
+            course.page_content,
+            course.syllabus,
+            course.objectives,
+          ].filter(Boolean).join(' ');
+
+          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
+
+          if (upErr) {
+            console.error(`❌ Course "${course.title}":`, upErr.message);
+            results.courses.errors++;
+          } else {
+            results.courses.processed++;
+            if (results.courses.processed % 10 === 0) {
+              console.log(`✅ ${results.courses.processed}/${courses.length} courses processed...`);
+            }
+          }
+          await new Promise(r => setTimeout(r, 300));
+        } catch (err) {
+          console.error(`❌ Course "${course.title}":`, err.message);
+          results.courses.errors++;
+        }
+      }
+    }
+
+    // ====== ALL DIPLOMAS ======
+    const { data: diplomas, error: dErr } = await supabase
+      .from('diplomas')
+      .select('id, title, description, keywords, search_text');
+
+    if (dErr) {
+      console.error('Error fetching diplomas:', dErr);
+    } else {
+      results.diplomas.total = diplomas.length;
+      console.log(`🎓 Regenerating embeddings for ${diplomas.length} diplomas`);
+
+      for (const diploma of diplomas) {
+        try {
+          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
+            .filter(Boolean).join(' ');
+          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
+
+          const embedding = await generateSingleEmbedding(text);
+          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
+
+          if (upErr) {
+            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
+            results.diplomas.errors++;
+          } else {
+            results.diplomas.processed++;
+          }
+          await new Promise(r => setTimeout(r, 300));
+        } catch (err) {
+          console.error(`❌ Diploma "${diploma.title}":`, err.message);
+          results.diplomas.errors++;
+        }
+      }
+    }
+
+    console.log('🎉 Full embedding regeneration complete!', results);
+    res.json({ message: 'All embeddings regenerated with richer content!', results });
+
+  } catch (error) {
+    console.error('❌ Regenerate embeddings error:', error);
     res.status(500).json({ error: error.message });
   }
 });
