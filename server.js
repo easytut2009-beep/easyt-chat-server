@@ -31,6 +31,14 @@
    ✅ FIX #24: Embedding generation uses richer content (page_content + domain + keywords)
    ✅ FIX #25: RAG Phase 2 sees domain + keywords for better recommendations
    ✅ FIX #26: verifyCourseRelevance includes domain + keywords
+
+   🧹 CLEANUP:
+   ✅ Removed /test endpoint
+   ✅ Removed /admin/test-search endpoint
+   ✅ Removed /api/admin/regenerate-all-embeddings endpoint
+   ✅ Removed /api/admin/audit-mismatched endpoint
+   ✅ Added adminAuth to /admin/debug
+   ✅ Added adminAuth to /api/admin/generate-embeddings
    ══════════════════════════════════════════════════════════ */
 
 require("dotenv").config();
@@ -159,12 +167,10 @@ const limiter = rateLimit({
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 
-/* 🆕 v10.5: Standard select columns for courses — includes domain + keywords */
 const COURSE_SELECT_COLS = "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
 
 const CATEGORIES = {
-
-"الجرافيكس والتصميم": {
+  "الجرافيكس والتصميم": {
     url: "https://easyt.online/courses/category/e8447c71-db40-46d5-aeac-5b3f364119d2",
     keywords: [
       "جرافيك","تصميم جرافيك","فوتوشوب","اليستريتر","كانفا","فيجما","photoshop",
@@ -172,7 +178,6 @@ const CATEGORIES = {
       "logo","ui","ux","xd","كرتون","بوستر","بنر","هوية بصرية","تعديل صور",
     ],
   },
-
   "الحماية والاختراق": {
     url: "https://easyt.online/courses/category/e534333b-0c15-4f0e-bc61-cfae152d5001",
     keywords: [
@@ -260,7 +265,7 @@ const CATEGORIES = {
     url: "https://easyt.online/courses/category/d00d3c49-7ef3-4041-8e71-4c6b6ce5026d",
     keywords: ["فن","هوايات","رسم","خط","art","hobby","موسيقى"],
   },
-"الروبوت والالكترونيات والشبكات": {
+  "الروبوت والالكترونيات والشبكات": {
     url: "https://easyt.online/courses/category/9a58b6bd-bf96-4a95-b87d-77b2a742c1b4",
     keywords: [
       "روبوت","الكترونيات","الكتروني","الكترونيه","شبكات","اردوينو","arduino",
@@ -268,7 +273,6 @@ const CATEGORIES = {
       "الكترونيك","electronic","circuit","iot","انترنت الاشياء",
     ],
   },
-
   "أساسيات البرمجة وقواعد البيانات": {
     url: "https://easyt.online/courses/category/4de04adc-a9e6-4516-b361-2eed510b6730",
     keywords: [
@@ -586,7 +590,6 @@ function quickIntentCheck(message) {
       const normKw = normalizeArabic(kw.toLowerCase());
       return normKw.length > 2 && (norm.includes(normKw) || lower.includes(kw.toLowerCase()));
     });
-
     if (!hasSpecificSubject) {
       return { intent: "DIPLOMAS", confidence: 0.93 };
     }
@@ -644,9 +647,6 @@ function detectRelevantCategory(searchTerms) {
   return bestScore >= 2 ? bestCat : null;
 }
 
-
-
-/* 🆕 FIX #27: Classify which category a course belongs to */
 function getCourseCategories(course) {
   const titleNorm = normalizeArabic((course.title || "").toLowerCase());
   const domainNorm = normalizeArabic((course.domain || "").toLowerCase());
@@ -660,14 +660,12 @@ function getCourseCategories(course) {
     for (const kw of catInfo.keywords) {
       const nkw = normalizeArabic(kw.toLowerCase());
       if (nkw.length <= 2) continue;
-
       if (combined.includes(nkw)) {
         const inTitle = titleNorm.includes(nkw);
         const inDomain = domainNorm.includes(nkw);
         score += inTitle ? 3 : inDomain ? 4 : 1;
         continue;
       }
-
       if (nkw.length >= 6) {
         const root = nkw.substring(0, 5);
         if (combined.includes(root)) {
@@ -675,22 +673,17 @@ function getCourseCategories(course) {
         }
       }
     }
-
     const catNorm = normalizeArabic(catName.toLowerCase());
     for (const word of catNorm.split(/\s+/)) {
       if (word.length > 3 && combined.includes(word)) score += 2;
     }
-
     if (score >= 2) {
       matchedCats.push({ name: catName, score });
     }
   }
-
   matchedCats.sort((a, b) => b.score - a.score);
   return matchedCats;
 }
-
-
 
 function formatCategoriesList() {
   let html = `📂 <strong>التصنيفات المتاحة في المنصة:</strong><br><br>`;
@@ -703,7 +696,7 @@ function formatCategoriesList() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 Diploma List — loads ALL diplomas from DB
+   Diploma List — loads ALL diplomas from DB
    ══════════════════════════════════════════════════════════ */
 async function loadAllDiplomas() {
   if (!supabase) return [];
@@ -728,23 +721,19 @@ function formatDiplomasList(diplomas) {
     return `🎓 عندنا دبلومات كتير على المنصة!<br><br>` +
       `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح جميع الدبلومات ←</a>`;
   }
-
   let html = `🎓 <strong>الدبلومات المتاحة على المنصة (${diplomas.length} دبلومة):</strong><br><br>`;
-
   diplomas.forEach((d, i) => {
     const url = d.link || ALL_DIPLOMAS_URL;
     html += `${i + 1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${d.title}</a><br>`;
   });
-
   html += `<br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي (<strong>49$ عرض رمضان</strong>)`;
   html += `<br><br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة جميع الدبلومات ←</a>`;
   html += `<br><a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
-
   return html;
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 FIX #14: Search Cache — avoids repeated DB queries
+   FIX #14: Search Cache — avoids repeated DB queries
    ══════════════════════════════════════════════════════════ */
 const searchCache = new Map();
 const SEARCH_CACHE_TTL = 5 * 60 * 1000;
@@ -776,7 +765,6 @@ setInterval(() => {
 
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
-   🆕 v10.5: Uses domain + keywords columns
    ══════════════════════════════════════════════════════════ */
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
@@ -793,7 +781,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 
     console.log("🔍 Search terms:", allTerms);
 
-    /* 🆕 v10.5: Added domain + keywords to search columns */
     const cols =
       allTerms.length > 8
         ? ["title", "subtitle", "description", "domain", "keywords"]
@@ -803,7 +790,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
 
-    /* 🆕 v10.5: Uses COURSE_SELECT_COLS constant (includes domain, keywords) */
     const ilikePromise = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
@@ -848,7 +834,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const semanticOnlyIds = [...semanticMap.keys()].filter(id => !ilikeIds.has(id));
 
       if (semanticOnlyIds.length > 0) {
-        /* 🆕 v10.5: Uses COURSE_SELECT_COLS */
         const { data: semCourses } = await supabase
           .from("courses")
           .select(COURSE_SELECT_COLS)
@@ -891,7 +876,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const objectivesNorm = normalizeArabic((c.objectives || "").toLowerCase());
       const descNorm = normalizeArabic((c.description || "").toLowerCase());
       const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
-      /* 🆕 v10.5: domain + keywords scoring */
       const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
       const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
@@ -904,7 +888,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         if (nt.length <= 1) continue;
         if (titleNorm.includes(nt)) score += 50;
         if (subtitleNorm.includes(nt)) score += 15;
-        /* 🆕 v10.5: domain match = 30 pts, keywords match = 20 pts */
         if (domainNorm.includes(nt)) score += 30;
         if (keywordsNorm.includes(nt)) score += 20;
         if (pageNorm.includes(nt)) score += 5;
@@ -919,7 +902,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       ).length;
       if (titleHits >= 2) score += 40;
 
-      /* 🆕 v10.5: Bonus if domain matches the full query */
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
 
       if (semanticMap.has(c.id)) {
@@ -931,30 +913,23 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       return { ...c, relevanceScore: score };
     });
 
-
-/* 🆕 FIX #27: Category-Aware Penalty — penalize courses from wrong domain */
     const searchCategory = detectRelevantCategory(searchTerms);
     if (searchCategory) {
       console.log(`📂 FIX #27: Search category = "${searchCategory.name}"`);
       for (const item of scored) {
         const courseCats = getCourseCategories(item);
-        if (courseCats.length === 0) continue; /* can't classify → leave alone */
-
+        if (courseCats.length === 0) continue;
         const primaryCat = courseCats[0].name;
         const matchesSearchCat = courseCats.some(c => c.name === searchCategory.name);
-
         if (matchesSearchCat) {
-          /* ✅ Course is in the right category → boost */
           item.relevanceScore += 40;
         } else if (primaryCat !== searchCategory.name) {
-          /* ❌ Course clearly belongs to a DIFFERENT category → heavy penalty */
           const oldScore = item.relevanceScore;
           item.relevanceScore = Math.round(item.relevanceScore * 0.15);
           console.log(`   ⚠️ FIX #27: "${item.title}" → "${primaryCat}" ≠ "${searchCategory.name}" | ${oldScore} → ${item.relevanceScore}`);
         }
       }
     }
-
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
@@ -974,7 +949,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 async function fuzzySearchFallback(terms) {
   if (!supabase) return [];
   try {
-    /* 🆕 v10.5: Added domain, keywords to select */
     const { data: all, error } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
@@ -989,7 +963,6 @@ async function fuzzySearchFallback(terms) {
       const titleN = normalizeArabic((course.title || "").toLowerCase());
       const subtitleN = normalizeArabic((course.subtitle || "").toLowerCase());
       const pageN = normalizeArabic((course.page_content || "").toLowerCase());
-      /* 🆕 v10.5: domain + keywords for fuzzy matching */
       const domainN = normalizeArabic((course.domain || "").toLowerCase());
       const keywordsN = normalizeArabic((course.keywords || "").toLowerCase());
       let matchCount = 0;
@@ -1007,7 +980,6 @@ async function fuzzySearchFallback(terms) {
           bestSim = Math.max(bestSim, 75);
           matched = true;
         }
-        /* 🆕 v10.5: domain match = 80, keywords match = 78 */
         if (domainN.includes(nt)) {
           bestSim = Math.max(bestSim, 80);
           matched = true;
@@ -1037,7 +1009,6 @@ async function fuzzySearchFallback(terms) {
       if (bestSim >= 55) results.push({ ...course, relevanceScore: bestSim });
     }
 
-/* 🆕 FIX #27: Category-Aware Penalty in fuzzy fallback */
     const searchCategory = detectRelevantCategory(terms);
     if (searchCategory) {
       for (const item of results) {
@@ -1057,8 +1028,6 @@ async function fuzzySearchFallback(terms) {
 
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
     return results.slice(0, 10);
-
-
   } catch (e) {
     console.error("fuzzySearch error:", e.message);
     return [];
@@ -1128,7 +1097,7 @@ async function searchDiplomas(searchTerms) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🔧 FIX #20: searchCorrections — uses correct column names
+   FIX #20: searchCorrections — uses correct column names
    ══════════════════════════════════════════════════════════ */
 async function searchCorrections(terms) {
   if (!supabase || !terms || terms.length === 0) return [];
@@ -1166,7 +1135,6 @@ async function searchCorrections(terms) {
 
 /* ══════════════════════════════════════════════════════════
    Priority Title Search
-   🆕 v10.5: Also matches domain column
    ══════════════════════════════════════════════════════════ */
 async function priorityTitleSearch(searchTerms) {
   if (!supabase || !searchTerms || searchTerms.length === 0) return [];
@@ -1182,7 +1150,6 @@ async function priorityTitleSearch(searchTerms) {
     );
     if (meaningful.length === 0) return [];
 
-    /* 🆕 v10.5: Added domain + keywords to priority filters */
     const titleFilters = meaningful
       .flatMap((t) => [
         `title.ilike.%${t}%`,
@@ -1212,7 +1179,6 @@ async function priorityTitleSearch(searchTerms) {
         if (nt.length <= 2) continue;
         if (titleNorm.includes(nt)) score += 500;
         if (subtitleNorm.includes(nt)) score += 100;
-        /* 🆕 v10.5: domain + keywords scoring in priority search */
         if (domainNorm.includes(nt)) score += 80;
         if (keywordsNorm.includes(nt)) score += 60;
       }
@@ -1997,7 +1963,6 @@ async function analyzeMessage(
 
 /* ═══════════════════════════════════
    11-D: Phase 2 — RAG Recommender
-   🆕 v10.5: Includes domain + keywords in RAG data
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
@@ -2027,7 +1992,6 @@ function prepareCourseForRAG(course, instructors) {
     description: cleanDesc,
     syllabus: cleanSyllabus,
     objectives: cleanObjectives,
-    /* 🆕 v10.5: domain + keywords passed to GPT Phase 2 */
     domain: course.domain || "",
     keywords: course.keywords || "",
     price: priceNum,
@@ -2200,7 +2164,7 @@ ${JSON.stringify(allItems, null, 1)}
     };
   } catch (e) {
     console.error(`❌ RAG Recommender error (${model}):`, e.message);
-    const fallbackModel = model === "gpt-4o" ? "gpt-4o-mini" : "gpt-4o-mini";
+    const fallbackModel = "gpt-4o-mini";
     try {
       const resp = await openai.chat.completions.create({
         model: fallbackModel,
@@ -2247,12 +2211,10 @@ ${JSON.stringify(allItems, null, 1)}
 
 /* ═══════════════════════════════════
    Safety Check — verify GPT's choices
-   🆕 v10.5: Includes domain + keywords in verification
    ═══════════════════════════════════ */
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
-  /* 🆕 FIX #27: Category mismatch = auto reject */
   const searchCat = detectRelevantCategory(searchTerms);
   if (searchCat) {
     const courseCats = getCourseCategories(course);
@@ -2266,7 +2228,6 @@ function verifyCourseRelevance(course, searchTerms) {
     }
   }
 
-  /* 🆕 v10.5: Added domain + keywords to courseText */
   const courseText = normalizeArabic(
     [
       course.title || "",
@@ -2499,7 +2460,6 @@ async function smartChat(message, sessionId) {
           .flatMap((c) => c.correct_course_ids || [])
           .filter(Boolean);
         if (corrIds.length > 0 && supabase) {
-          /* 🆕 v10.5: Uses COURSE_SELECT_COLS */
           const { data: corrCourses } = await supabase
             .from("courses")
             .select(COURSE_SELECT_COLS)
@@ -3279,17 +3239,6 @@ app.get("/admin/sessions/:sessionId", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.post("/admin/test-search", async (req, res) => {
-  try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ success: false, error: "query required" });
-    const start = Date.now();
-    const terms = query.split(/\s+/).filter((w) => w.length > 1);
-    const [courses, diplomas] = await Promise.all([searchCourses(terms), searchDiplomas(terms)]);
-    res.json({ success: true, query, terms, results: { courses: courses.length, diplomas: diplomas.length }, elapsed_ms: Date.now() - start });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
 app.get("/admin/export-logs", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
@@ -3304,12 +3253,13 @@ app.get("/admin/export-logs", async (req, res) => {
 });
 
 app.get("/admin", (req, res) => { res.sendFile(path.join(__dirname, "admin.html")); });
-app.get("/test", (req, res) => { res.sendFile(path.join(__dirname, "test.html")); });
 
 /* ══════════════════════════════════════════════════════════
    SECTION 14: Health, Debug, Root
    ══════════════════════════════════════════════════════════ */
-app.get("/admin/debug", async (req, res) => {
+
+/* 🔒 CLEANUP: Added adminAuth protection */
+app.get("/admin/debug", adminAuth, async (req, res) => {
   const diag = {
     timestamp: new Date().toISOString(),
     version: "10.5",
@@ -3348,7 +3298,7 @@ app.get("/health", async (req, res) => {
     version: "10.5",
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
-engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
     active_sessions: sessionMemory.size,
     search_cache: searchCache.size,
     timestamp: new Date().toISOString(),
@@ -3360,15 +3310,15 @@ app.get("/", (req, res) => {
     name: "زيكو — easyT Chatbot",
     version: "10.5",
     status: "running ✅",
-engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
+    engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Keywords + CategoryAware",
     features: [
       "Phase 1: Smart Analyzer (gpt-4o-mini) + Dialect awareness",
       "Phase 2: RAG Recommender + Strict Filter (dynamic gpt-4o / gpt-4o-mini)",
       "Title-priority scoring (50x weight, +200 exact match)",
-      "🆕 Domain scoring (30x weight) + Keywords scoring (20x weight)",
-      "🆕 Richer embeddings (page_content + domain + keywords)",
-      "🆕 RAG Phase 2 sees domain + keywords per course",
-      "🆕 verifyCourseRelevance checks domain + keywords",
+      "Domain scoring (30x weight) + Keywords scoring (20x weight)",
+      "Richer embeddings (page_content + domain + keywords)",
+      "RAG Phase 2 sees domain + keywords per course",
+      "verifyCourseRelevance checks domain + keywords",
       "Follow-up context memory (remembers last topic)",
       "Card images with onerror fallback",
       "Phase 2 sees relevance scores",
@@ -3382,7 +3332,7 @@ engine: "🧠 Two-Phase RAG + Context Memory + Smart Filter + Cache + Domain/Key
       "Dynamic Phase 2 model — saves cost with must-show courses",
       "Smarter verifyCourseRelevance — multi-term awareness",
     ],
-    endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health", debug: "GET /admin/debug" },
+    endpoints: { chat: "POST /chat", admin: "GET /admin", health: "GET /health" },
   });
 });
 
@@ -3395,37 +3345,37 @@ async function startServer() {
   supabaseConnected = await testSupabaseConnection();
   if (!supabaseConnected) console.error("⚠️  SUPABASE NOT CONNECTED!\n");
 
-/* ═══════════════════════════════════════════════════════════════
-   🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.5
-   ═══════════════════════════════════════════════════════════════ */
+  /* ═══════════════════════════════════════════════════════════════
+     🎓 GUIDE BOT — Educational Assistant (GPT-4o-mini) v1.5
+     ═══════════════════════════════════════════════════════════════ */
 
-const guideConversations = {};
-const guideRateLimits = {};
-const GUIDE_DAILY_LIMIT = 20;
-const GUIDE_MAX_HISTORY = 20;
+  const guideConversations = {};
+  const guideRateLimits = {};
+  const GUIDE_DAILY_LIMIT = 20;
+  const GUIDE_MAX_HISTORY = 20;
 
-function getToday() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getGuideRemaining(sessionId) {
-  const today = getToday();
-  if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
-    return GUIDE_DAILY_LIMIT;
+  function getToday() {
+    return new Date().toISOString().split('T')[0];
   }
-  return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
-}
 
-function consumeGuideMsg(sessionId) {
-  const today = getToday();
-  if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
-    guideRateLimits[sessionId] = { date: today, count: 0 };
+  function getGuideRemaining(sessionId) {
+    const today = getToday();
+    if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
+      return GUIDE_DAILY_LIMIT;
+    }
+    return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
   }
-  guideRateLimits[sessionId].count++;
-}
 
-function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt) {
-  let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
+  function consumeGuideMsg(sessionId) {
+    const today = getToday();
+    if (!guideRateLimits[sessionId] || guideRateLimits[sessionId].date !== today) {
+      guideRateLimits[sessionId] = { date: today, count: 0 };
+    }
+    guideRateLimits[sessionId].count++;
+  }
+
+  function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt) {
+    let p = `أنت "زيكو" المرشد التعليمي الذكي في منصة "إيزي تي" التعليمية.
 
 ## دورك:
 - تساعد الطلاب يفهموا أي مفهوم أو موضوع تعليمي
@@ -3446,190 +3396,190 @@ function buildGuideSystemPrompt(courseName, lectureTitle, clientPrompt) {
 - ما تتكلمش عن أسعار أو كورسات أو اشتراكات — ده مش دورك
 - لو حد سألك عن أسعار أو كورسات قوله "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية وهيساعدك"`;
 
-  if (courseName || lectureTitle) {
-    p += `\n\n═══════════════════════════════════`;
-    p += `\n📍 سياق الطالب الحالي:`;
-    if (courseName) p += `\n📚 الكورس: "${courseName}"`;
-    if (lectureTitle) p += `\n📖 الدرس: "${lectureTitle}"`;
+    if (courseName || lectureTitle) {
+      p += `\n\n═══════════════════════════════════`;
+      p += `\n📍 سياق الطالب الحالي:`;
+      if (courseName) p += `\n📚 الكورس: "${courseName}"`;
+      if (lectureTitle) p += `\n📖 الدرس: "${lectureTitle}"`;
 
-    p += `\n\n⚡ تعليمات التعامل مع السياق (مهمة جداً):`;
+      p += `\n\n⚡ تعليمات التعامل مع السياق (مهمة جداً):`;
 
-    p += `\n\n1️⃣ لو الطالب سأل سؤال عام زي "مش فاهم" أو "اشرحلي" أو "مش فاهم الدرس" أو "ممكن تساعدني":`;
-    p += `\n   - أأكدله إنك عارف هو في أنهي درس بالظبط (اذكر اسم الدرس)`;
-    p += `\n   - اشرحله الدرس ده بيتكلم عن إيه في 2-3 سطور بشكل مبسط`;
-    p += `\n   - بعد كده اسأله: "إيه بالظبط اللي محتاج أوضحهولك؟"`;
-    p += `\n   - أو اديله اختيارات يختار منها`;
+      p += `\n\n1️⃣ لو الطالب سأل سؤال عام زي "مش فاهم" أو "اشرحلي" أو "مش فاهم الدرس" أو "ممكن تساعدني":`;
+      p += `\n   - أأكدله إنك عارف هو في أنهي درس بالظبط (اذكر اسم الدرس)`;
+      p += `\n   - اشرحله الدرس ده بيتكلم عن إيه في 2-3 سطور بشكل مبسط`;
+      p += `\n   - بعد كده اسأله: "إيه بالظبط اللي محتاج أوضحهولك؟"`;
+      p += `\n   - أو اديله اختيارات يختار منها`;
 
-    p += `\n\n2️⃣ لو الطالب سأل سؤال محدد:`;
-    p += `\n   - جاوبه مباشرة وادّيله أمثلة عملية`;
-    p += `\n   - حاول تربط الإجابة بسياق الدرس الحالي`;
+      p += `\n\n2️⃣ لو الطالب سأل سؤال محدد:`;
+      p += `\n   - جاوبه مباشرة وادّيله أمثلة عملية`;
+      p += `\n   - حاول تربط الإجابة بسياق الدرس الحالي`;
 
-    p += `\n\n3️⃣ لو الدرس عن كود أو برمجة:`;
-    p += `\n   - اكتب أكواد توضيحية واشرح كل سطر`;
-    p += `\n   - استخدم أمثلة بسيطة الأول وبعدين عقّد شوية`;
+      p += `\n\n3️⃣ لو الدرس عن كود أو برمجة:`;
+      p += `\n   - اكتب أكواد توضيحية واشرح كل سطر`;
+      p += `\n   - استخدم أمثلة بسيطة الأول وبعدين عقّد شوية`;
 
-    p += `\n\n4️⃣ لو مش عارف محتوى الدرس بالظبط:`;
-    p += `\n   - اشرح الموضوع العام بناءً على اسم الدرس`;
-    p += `\n   - اسأل الطالب يحددلك أكتر`;
+      p += `\n\n4️⃣ لو مش عارف محتوى الدرس بالظبط:`;
+      p += `\n   - اشرح الموضوع العام بناءً على اسم الدرس`;
+      p += `\n   - اسأل الطالب يحددلك أكتر`;
 
-    p += `\n\n5️⃣ دايماً:`;
-    p += `\n   - خليك مشجع وإيجابي`;
-    p += `\n   - استخدم أمثلة من الواقع عشان يفهم`;
-    p += `\n   - لو الطالب قال "فهمت" — شجعه واسأله لو عنده حاجة تانية`;
+      p += `\n\n5️⃣ دايماً:`;
+      p += `\n   - خليك مشجع وإيجابي`;
+      p += `\n   - استخدم أمثلة من الواقع عشان يفهم`;
+      p += `\n   - لو الطالب قال "فهمت" — شجعه واسأله لو عنده حاجة تانية`;
 
-  } else {
-    p += `\n\n⚠️ ملاحظة: مش قادر أحدد الدرس الحالي للطالب.`;
-    p += `\nلو الطالب سأل سؤال عام — اسأله هو في أنهي كورس وأنهي درس عشان تساعده أحسن.`;
-    p += `\nلو سأل سؤال محدد — جاوبه عادي.`;
+    } else {
+      p += `\n\n⚠️ ملاحظة: مش قادر أحدد الدرس الحالي للطالب.`;
+      p += `\nلو الطالب سأل سؤال عام — اسأله هو في أنهي كورس وأنهي درس عشان تساعده أحسن.`;
+      p += `\nلو سأل سؤال محدد — جاوبه عادي.`;
+    }
+
+    if (clientPrompt && clientPrompt.trim()) {
+      p += `\n\n═══ سياق إضافي من الصفحة ═══`;
+      p += `\n${clientPrompt.trim().substring(0, 500)}`;
+    }
+
+    return p;
   }
 
-  if (clientPrompt && clientPrompt.trim()) {
-    p += `\n\n═══ سياق إضافي من الصفحة ═══`;
-    p += `\n${clientPrompt.trim().substring(0, 500)}`;
-  }
+  app.get('/api/guide/status', (req, res) => {
+    try {
+      const sessionId = req.query.session_id;
 
-  return p;
-}
+      if (!sessionId) {
+        return res.json({
+          remaining_messages: GUIDE_DAILY_LIMIT,
+          daily_limit: GUIDE_DAILY_LIMIT,
+          date: getToday()
+        });
+      }
 
-app.get('/api/guide/status', (req, res) => {
-  try {
-    const sessionId = req.query.session_id;
+      const remaining = getGuideRemaining(sessionId);
 
-    if (!sessionId) {
-      return res.json({
+      console.log(`📊 Guide Status | Session: ${sessionId.slice(0, 15)}... | Remaining: ${remaining}/${GUIDE_DAILY_LIMIT}`);
+
+      res.json({
+        remaining_messages: remaining,
+        daily_limit: GUIDE_DAILY_LIMIT,
+        date: getToday(),
+        session_id: sessionId
+      });
+
+    } catch (error) {
+      console.error('❌ Guide Status Error:', error.message);
+      res.json({
         remaining_messages: GUIDE_DAILY_LIMIT,
         daily_limit: GUIDE_DAILY_LIMIT,
         date: getToday()
       });
     }
+  });
 
-    const remaining = getGuideRemaining(sessionId);
+  app.post('/api/guide', async (req, res) => {
+    try {
+      const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
 
-    console.log(`📊 Guide Status | Session: ${sessionId.slice(0, 15)}... | Remaining: ${remaining}/${GUIDE_DAILY_LIMIT}`);
+      if (!message || !session_id) {
+        return res.status(400).json({ error: 'Missing message or session_id' });
+      }
 
-    res.json({
-      remaining_messages: remaining,
-      daily_limit: GUIDE_DAILY_LIMIT,
-      date: getToday(),
-      session_id: sessionId
-    });
+      const remaining = getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        return res.json({
+          reply: '⚠️ خلصت رسائلك النهارده (20 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪',
+          remaining_messages: 0
+        });
+      }
 
-  } catch (error) {
-    console.error('❌ Guide Status Error:', error.message);
-    res.json({
-      remaining_messages: GUIDE_DAILY_LIMIT,
-      daily_limit: GUIDE_DAILY_LIMIT,
-      date: getToday()
-    });
-  }
-});
+      consumeGuideMsg(session_id);
 
-app.post('/api/guide', async (req, res) => {
-  try {
-    const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
+      const finalSystemPrompt = buildGuideSystemPrompt(
+        course_name || '',
+        lecture_title || '',
+        system_prompt || ''
+      );
 
-    if (!message || !session_id) {
-      return res.status(400).json({ error: 'Missing message or session_id' });
-    }
+      if (!guideConversations[session_id]) {
+        guideConversations[session_id] = {
+          messages: [{ role: 'system', content: finalSystemPrompt }],
+          lastActivity: Date.now()
+        };
+      }
 
-    const remaining = getGuideRemaining(session_id);
-    if (remaining <= 0) {
-      return res.json({
-        reply: '⚠️ خلصت رسائلك النهارده (20 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪',
-        remaining_messages: 0
+      const conv = guideConversations[session_id];
+
+      conv.messages[0] = { role: 'system', content: finalSystemPrompt };
+      conv.lastActivity = Date.now();
+      conv.messages.push({ role: 'user', content: message });
+
+      if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
+        conv.messages = [conv.messages[0], ...conv.messages.slice(-GUIDE_MAX_HISTORY)];
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: conv.messages,
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+
+      const reply = completion.choices[0].message.content;
+      conv.messages.push({ role: 'assistant', content: reply });
+
+      const newRemaining = getGuideRemaining(session_id);
+      console.log(`🎓 Guide | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || 'N/A'} | Lecture: ${lecture_title || 'N/A'} | Remaining: ${newRemaining}`);
+
+      res.json({ reply, remaining_messages: newRemaining });
+
+    } catch (error) {
+      console.error('❌ Guide Error:', error.message);
+      res.status(500).json({
+        reply: 'عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏',
+        remaining_messages: getGuideRemaining(req.body?.session_id || ''),
+        error: true
       });
     }
-
-    consumeGuideMsg(session_id);
-
-    const finalSystemPrompt = buildGuideSystemPrompt(
-      course_name || '',
-      lecture_title || '',
-      system_prompt || ''
-    );
-
-    if (!guideConversations[session_id]) {
-      guideConversations[session_id] = {
-        messages: [{ role: 'system', content: finalSystemPrompt }],
-        lastActivity: Date.now()
-      };
-    }
-
-    const conv = guideConversations[session_id];
-
-    conv.messages[0] = { role: 'system', content: finalSystemPrompt };
-    conv.lastActivity = Date.now();
-    conv.messages.push({ role: 'user', content: message });
-
-    if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
-      conv.messages = [conv.messages[0], ...conv.messages.slice(-GUIDE_MAX_HISTORY)];
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: conv.messages,
-      max_tokens: 1000,
-      temperature: 0.7
-    });
-
-    const reply = completion.choices[0].message.content;
-    conv.messages.push({ role: 'assistant', content: reply });
-
-    const newRemaining = getGuideRemaining(session_id);
-    console.log(`🎓 Guide | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || 'N/A'} | Lecture: ${lecture_title || 'N/A'} | Remaining: ${newRemaining}`);
-
-    res.json({ reply, remaining_messages: newRemaining });
-
-  } catch (error) {
-    console.error('❌ Guide Error:', error.message);
-    res.status(500).json({
-      reply: 'عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏',
-      remaining_messages: getGuideRemaining(req.body?.session_id || ''),
-      error: true
-    });
-  }
-});
-
-app.get('/api/guide/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'Ziko Guide v1.5',
-    model: 'gpt-4o-mini',
-    daily_limit: GUIDE_DAILY_LIMIT,
-    active_sessions: Object.keys(guideConversations).length,
-    active_rate_limits: Object.keys(guideRateLimits).length
   });
-});
 
-setInterval(() => {
-  const now = Date.now();
-  const today = getToday();
-  let cleanedConv = 0;
-  let cleanedRate = 0;
+  app.get('/api/guide/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'Ziko Guide v1.5',
+      model: 'gpt-4o-mini',
+      daily_limit: GUIDE_DAILY_LIMIT,
+      active_sessions: Object.keys(guideConversations).length,
+      active_rate_limits: Object.keys(guideRateLimits).length
+    });
+  });
 
-  for (const sid in guideConversations) {
-    if (now - guideConversations[sid].lastActivity > 2 * 60 * 60 * 1000) {
-      delete guideConversations[sid];
-      cleanedConv++;
+  setInterval(() => {
+    const now = Date.now();
+    const today = getToday();
+    let cleanedConv = 0;
+    let cleanedRate = 0;
+
+    for (const sid in guideConversations) {
+      if (now - guideConversations[sid].lastActivity > 2 * 60 * 60 * 1000) {
+        delete guideConversations[sid];
+        cleanedConv++;
+      }
     }
-  }
 
-  for (const sid in guideRateLimits) {
-    if (guideRateLimits[sid].date !== today) {
-      delete guideRateLimits[sid];
-      cleanedRate++;
+    for (const sid in guideRateLimits) {
+      if (guideRateLimits[sid].date !== today) {
+        delete guideRateLimits[sid];
+        cleanedRate++;
+      }
     }
-  }
 
-  if (cleanedConv > 0 || cleanedRate > 0) {
-    console.log(`🧹 Guide Cleanup: ${cleanedConv} conversations, ${cleanedRate} rate limits removed`);
-  }
-}, 60 * 60 * 1000);
+    if (cleanedConv > 0 || cleanedRate > 0) {
+      console.log(`🧹 Guide Cleanup: ${cleanedConv} conversations, ${cleanedRate} rate limits removed`);
+    }
+  }, 60 * 60 * 1000);
 
-console.log('🎓 Guide Bot v1.5 (Persistent Counter) endpoints ready:');
-console.log('   POST /api/guide        — Chat');
-console.log('   GET  /api/guide/status  — Counter Sync');
-console.log('   GET  /api/guide/health  — Health Check');
+  console.log('🎓 Guide Bot v1.5 (Persistent Counter) endpoints ready:');
+  console.log('   POST /api/guide        — Chat');
+  console.log('   GET  /api/guide/status  — Counter Sync');
+  console.log('   GET  /api/guide/health  — Health Check');
 
   app.listen(PORT, () => {
     console.log(`
@@ -3652,10 +3602,8 @@ console.log('   GET  /api/guide/health  — Health Check');
   });
 }
 
-
 /* ══════════════════════════════════════════════════════════
-   🧬 Generate Embeddings Route
-   🆕 v10.5: Richer embedding text — includes page_content + domain + keywords
+   🧬 Generate Embeddings Route (Protected)
    ══════════════════════════════════════════════════════════ */
 async function generateSingleEmbedding(text) {
   const cleanText = text.substring(0, 8000);
@@ -3666,7 +3614,8 @@ async function generateSingleEmbedding(text) {
   return response.data[0].embedding;
 }
 
-app.get('/api/admin/generate-embeddings', async (req, res) => {
+/* 🔒 CLEANUP: Added adminAuth protection */
+app.get('/api/admin/generate-embeddings', adminAuth, async (req, res) => {
   if (!supabase || !openai) {
     return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
   }
@@ -3676,7 +3625,6 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
     const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
 
     // ====== COURSES ======
-    /* 🆕 v10.5: Added page_content + domain to embedding source */
     const { data: courses, error: cErr } = await supabase
       .from('courses')
       .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain')
@@ -3690,7 +3638,6 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
 
       for (const course of courses) {
         try {
-          /* 🆕 v10.5: Richer text for embedding — domain + keywords + page_content */
           const text = [
             course.title,
             course.subtitle,
@@ -3766,225 +3713,5 @@ app.get('/api/admin/generate-embeddings', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-/* 🆕 v10.5: Force regenerate ALL embeddings with richer content */
-app.get('/api/admin/regenerate-all-embeddings', async (req, res) => {
-  if (!supabase || !openai) {
-    return res.status(500).json({ error: 'Supabase or OpenAI not initialized' });
-  }
-
-  try {
-    console.log('🔄 Force regenerating ALL embeddings with richer content (v10.5)...');
-    const results = { courses: { processed: 0, total: 0, errors: 0 }, diplomas: { processed: 0, total: 0, errors: 0 } };
-
-    // ====== ALL COURSES ======
-    const { data: courses, error: cErr } = await supabase
-      .from('courses')
-      .select('id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain');
-
-    if (cErr) {
-      console.error('Error fetching courses:', cErr);
-    } else {
-      results.courses.total = courses.length;
-      console.log(`📚 Regenerating embeddings for ${courses.length} courses`);
-
-      for (const course of courses) {
-        try {
-          const text = [
-            course.title,
-            course.subtitle,
-            course.domain,
-            course.keywords,
-            course.description,
-            course.page_content,
-            course.syllabus,
-            course.objectives,
-          ].filter(Boolean).join(' ');
-
-          if (!text.trim()) { console.log(`⏭️ Skip course ${course.id}`); continue; }
-
-          const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('courses').update({ embedding }).eq('id', course.id);
-
-          if (upErr) {
-            console.error(`❌ Course "${course.title}":`, upErr.message);
-            results.courses.errors++;
-          } else {
-            results.courses.processed++;
-            if (results.courses.processed % 10 === 0) {
-              console.log(`✅ ${results.courses.processed}/${courses.length} courses processed...`);
-            }
-          }
-          await new Promise(r => setTimeout(r, 300));
-        } catch (err) {
-          console.error(`❌ Course "${course.title}":`, err.message);
-          results.courses.errors++;
-        }
-      }
-    }
-
-    // ====== ALL DIPLOMAS ======
-    const { data: diplomas, error: dErr } = await supabase
-      .from('diplomas')
-      .select('id, title, description, keywords, search_text');
-
-    if (dErr) {
-      console.error('Error fetching diplomas:', dErr);
-    } else {
-      results.diplomas.total = diplomas.length;
-      console.log(`🎓 Regenerating embeddings for ${diplomas.length} diplomas`);
-
-      for (const diploma of diplomas) {
-        try {
-          const text = [diploma.title, diploma.description, diploma.keywords, diploma.search_text]
-            .filter(Boolean).join(' ');
-          if (!text.trim()) { console.log(`⏭️ Skip diploma ${diploma.id}`); continue; }
-
-          const embedding = await generateSingleEmbedding(text);
-          const { error: upErr } = await supabase.from('diplomas').update({ embedding }).eq('id', diploma.id);
-
-          if (upErr) {
-            console.error(`❌ Diploma "${diploma.title}":`, upErr.message);
-            results.diplomas.errors++;
-          } else {
-            results.diplomas.processed++;
-          }
-          await new Promise(r => setTimeout(r, 300));
-        } catch (err) {
-          console.error(`❌ Diploma "${diploma.title}":`, err.message);
-          results.diplomas.errors++;
-        }
-      }
-    }
-
-    console.log('🎉 Full embedding regeneration complete!', results);
-    res.json({ message: 'All embeddings regenerated with richer content!', results });
-
-  } catch (error) {
-    console.error('❌ Regenerate embeddings error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/* ══════════════════════════════════════════════════════════
-   🔍 Audit: Find courses with WRONG domain
-   ══════════════════════════════════════════════════════════ */
-app.get('/api/admin/audit-mismatched', async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: 'DB not connected' });
-  
-  try {
-    const { data, error } = await supabase
-      .from('courses')
-      .select('id, title, domain, keywords, subtitle');
-
-    if (error) throw error;
-
-    var DOMAIN_KEYWORDS = {
-      "design": ["جرافيك","فوتوشوب","photoshop","اليستريتور","illustrator","افتر افكت","after effects","بريمير","premiere","figma","فيجما","ui","ux","canva","لوجو","logo","موشن","motion","graphic","indesign"],
-      "web": ["html","css","javascript","react","angular","vue","node","php","laravel","wordpress","مواقع","ويب","frontend","backend","bootstrap","django"],
-      "mobile": ["اندرويد","android","ios","flutter","react native","kotlin","swift","dart","موبايل","تطبيقات الهواتف"],
-      "data": ["بيانات","data","python","بايثون","machine learning","ذكاء اصطناعي","ai","excel","اكسل","power bi","tableau","sql","تحليل","analytics","scraping","r programming"],
-      "programming": ["برمجة","programming","c++","java","خوارزميات","oop","قواعد بيانات","database","scratch","سكراتش","solidity","blockchain","oracle"],
-      "it": ["شبكات","network","سيرفر","server","linux","حماية","security","سيبراني","cyber","هاكر","hack","اختراق","wifi","iso"],
-      "marketing": ["تسويق","marketing","سوشيال ميديا","اعلانات","ads","فيسبوك","seo","محتوى","content","affiliate","بالعمولة","ماركتنج"],
-      "leadership": ["قيادة","ادارة","تنمية بشرية","مهارات","تخطيط","ازمات","عرض","تقديم","presentation","مالية","شركات"],
-      "language": ["انجليزي","english","فرنسي","french","الماني","deutsch","toefl","ielts","لغة","language"],
-      "game": ["العاب","game","gaming","unity","unreal","godot"],
-      "media": ["بودكاست","podcast","يوتيوب","youtube","فيديو","مونتاج"],
-      "business": ["اعمال","business","مشروع","ريادة","startup","نموذج","model"]
-    };
-
-    var mismatched = [];
-    var uncertain = [];
-    var correctCount = 0;
-
-    for (var i = 0; i < (data || []).length; i++) {
-      var course = data[i];
-      var domain = (course.domain || "").trim().toLowerCase();
-      if (!domain) continue;
-
-      var titleLower = normalizeArabic((course.title || "").toLowerCase());
-      var kwLower = normalizeArabic((course.keywords || "").toLowerCase());
-      var subLower = normalizeArabic((course.subtitle || "").toLowerCase());
-      var allText = titleLower + " " + kwLower + " " + subLower;
-
-      var currentKws = DOMAIN_KEYWORDS[domain] || [];
-      var currentScore = 0;
-      var currentHits = [];
-      for (var j = 0; j < currentKws.length; j++) {
-        var nkw = normalizeArabic(currentKws[j].toLowerCase());
-        if (allText.includes(nkw)) {
-          currentScore += titleLower.includes(nkw) ? 3 : 1;
-          currentHits.push(currentKws[j]);
-        }
-      }
-
-      var bestDomain = domain;
-      var bestScore = currentScore;
-      var bestHits = currentHits;
-      var domainNames = Object.keys(DOMAIN_KEYWORDS);
-
-      for (var k = 0; k < domainNames.length; k++) {
-        var d = domainNames[k];
-        var dKws = DOMAIN_KEYWORDS[d];
-        var dScore = 0;
-        var dHits = [];
-        for (var m = 0; m < dKws.length; m++) {
-          var nk = normalizeArabic(dKws[m].toLowerCase());
-          if (allText.includes(nk)) {
-            dScore += titleLower.includes(nk) ? 3 : 1;
-            dHits.push(dKws[m]);
-          }
-        }
-        if (dScore > bestScore) {
-          bestScore = dScore;
-          bestDomain = d;
-          bestHits = dHits;
-        }
-      }
-
-      if (bestDomain !== domain && bestScore > currentScore + 1) {
-        mismatched.push({
-          id: course.id,
-          title: course.title,
-          current_domain: domain,
-          current_score: currentScore,
-          current_hits: currentHits.slice(0, 5),
-          suggested_domain: bestDomain,
-          suggested_score: bestScore,
-          suggested_hits: bestHits.slice(0, 5)
-        });
-      } else if (currentScore === 0) {
-        uncertain.push({
-          id: course.id,
-          title: course.title,
-          current_domain: domain,
-          best_domain: bestDomain,
-          best_score: bestScore,
-          best_hits: bestHits.slice(0, 5)
-        });
-      } else {
-        correctCount++;
-      }
-    }
-
-    mismatched.sort(function(a, b) {
-      return (b.suggested_score - b.current_score) - (a.suggested_score - a.current_score);
-    });
-
-    return res.json({
-      total: (data || []).length,
-      correct: correctCount,
-      mismatched_count: mismatched.length,
-      uncertain_count: uncertain.length,
-      mismatched: mismatched,
-      uncertain: uncertain
-    });
-
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
-});
-
 
 startServer();
