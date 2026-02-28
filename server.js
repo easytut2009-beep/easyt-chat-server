@@ -4143,96 +4143,10 @@ app.get("/admin/export-logs", async (req, res) => {
 
 
 // ============================================================
-// 🆕 Upload & Process Lessons
+// 🆕 Upload & Process Lessons v2 (uses lessons table correctly)
 // ============================================================
 
-// --- Delete all chunks for a course ---
-app.delete("/api/admin/courses/:courseId/chunks", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false });
-  try {
-    const { courseId } = req.params;
-
-    const { count } = await supabase
-      .from("chunks")
-      .select("*", { count: "exact", head: true })
-      .eq("course_id", courseId);
-
-    const { error } = await supabase
-      .from("chunks")
-      .delete()
-      .eq("course_id", courseId);
-
-    if (error) throw error;
-    res.json({ success: true, deleted: count || 0 });
-  } catch (err) {
-    console.error("Error deleting chunks:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- Process a single lesson (chunk + embed + store) ---
-app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
-  if (!supabase || !openai) return res.status(500).json({ error: "Not initialized" });
-  try {
-    const { courseId, lessonNumber, lessonName, transcript } = req.body;
-
-    if (!courseId || !lessonNumber || !lessonName || !transcript) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    // 1️⃣ Parse & chunk the transcript
-    const chunks = parseAndChunkTranscript(transcript, 500);
-
-    if (chunks.length === 0) {
-      return res.json({ success: true, chunksCreated: 0, message: "No valid lines found" });
-    }
-
-    console.log(`📖 Processing lesson "${lessonName}": ${chunks.length} chunks`);
-
-    // 2️⃣ Generate embeddings & insert
-    let chunksCreated = 0;
-
-    for (const chunk of chunks) {
-      const embeddingRes = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: chunk.content,
-      });
-      const embedding = embeddingRes.data[0].embedding;
-
-      const { error } = await supabase.from("chunks").insert({
-        course_id: courseId,
-        lesson_number: lessonNumber,
-        lesson_name: lessonName,
-        content: chunk.content,
-        start_time: chunk.startTime,
-        end_time: chunk.endTime,
-        embedding: embedding,
-      });
-
-      if (error) {
-        console.error("❌ Insert error for chunk:", error);
-        throw error;
-      }
-
-      chunksCreated++;
-      await sleep(100);
-    }
-
-    console.log(`✅ Lesson "${lessonName}": ${chunksCreated} chunks created`);
-
-    res.json({
-      success: true,
-      chunksCreated,
-      lessonName,
-    });
-  } catch (err) {
-    console.error("❌ Error processing lesson:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// --- Get all courses for upload page (simple list) ---
+// --- Get all courses for upload page ---
 app.get("/api/upload/courses", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "DB not connected" });
   try {
@@ -4240,29 +4154,64 @@ app.get("/api/upload/courses", async (req, res) => {
       .from("courses")
       .select("id, title")
       .order("title", { ascending: true });
-    
     if (error) throw error;
-    
     res.json({ 
       success: true, 
       courses: (data || []).map(c => ({ id: c.id, name: c.title }))
     });
   } catch (err) {
-    console.error("Error fetching courses for upload:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
+// --- Get lessons for a course (from lessons table + chunk count) ---
+app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const { courseId } = req.params;
+    const { data: lessons, error } = await supabase
+      .from("lessons")
+      .select("id, title")
+      .eq("course_id", courseId)
+      .order("title", { ascending: true });
+    if (error) throw error;
 
-// --- Get chunk count for a course ---
+    const result = [];
+    for (const lesson of (lessons || [])) {
+      const { count } = await supabase
+        .from("chunks")
+        .select("*", { count: "exact", head: true })
+        .eq("lesson_id", lesson.id);
+      result.push({
+        id: lesson.id,
+        title: lesson.title,
+        chunk_count: count || 0
+      });
+    }
+    res.json({ success: true, lessons: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Get total chunk count for a course ---
 app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "DB not connected" });
   try {
+    const { courseId } = req.params;
+    const { data: lessons } = await supabase
+      .from("lessons")
+      .select("id")
+      .eq("course_id", courseId);
+
+    if (!lessons || lessons.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+    const lessonIds = lessons.map(l => l.id);
     const { count, error } = await supabase
       .from("chunks")
       .select("*", { count: "exact", head: true })
-      .eq("course_id", req.params.courseId);
-    
+      .in("lesson_id", lessonIds);
     if (error) throw error;
     res.json({ success: true, count: count || 0 });
   } catch (err) {
@@ -4270,55 +4219,29 @@ app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
   }
 });
 
-
-
-// --- Get existing lessons for a course (from chunks table) ---
-app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
-  if (!supabase) return res.status(500).json({ error: "DB not connected" });
-  try {
-    const { courseId } = req.params;
-    const { data, error } = await supabase
-      .from("chunks")
-      .select("lesson_number, lesson_name")
-      .eq("course_id", courseId);
-    if (error) throw error;
-
-    const lessonsMap = {};
-    (data || []).forEach(chunk => {
-      const key = chunk.lesson_number;
-      if (!lessonsMap[key]) {
-        lessonsMap[key] = {
-          lesson_number: chunk.lesson_number,
-          lesson_name: chunk.lesson_name || "درس " + chunk.lesson_number,
-          chunk_count: 0
-        };
-      }
-      lessonsMap[key].chunk_count++;
-    });
-
-    const lessons = Object.values(lessonsMap).sort((a, b) => a.lesson_number - b.lesson_number);
-    res.json({ success: true, lessons });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- Delete chunks for a specific lesson ---
-app.delete("/api/admin/courses/:courseId/lessons/:lessonNumber/chunks", adminAuth, async (req, res) => {
+// --- Delete ALL chunks for a course ---
+app.delete("/api/admin/courses/:courseId/chunks", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { courseId, lessonNumber } = req.params;
+    const { courseId } = req.params;
+    const { data: lessons } = await supabase
+      .from("lessons")
+      .select("id")
+      .eq("course_id", courseId);
+
+    if (!lessons || lessons.length === 0) {
+      return res.json({ success: true, deleted: 0 });
+    }
+    const lessonIds = lessons.map(l => l.id);
     const { count } = await supabase
       .from("chunks")
       .select("*", { count: "exact", head: true })
-      .eq("course_id", courseId)
-      .eq("lesson_number", parseInt(lessonNumber));
+      .in("lesson_id", lessonIds);
 
     const { error } = await supabase
       .from("chunks")
       .delete()
-      .eq("course_id", courseId)
-      .eq("lesson_number", parseInt(lessonNumber));
+      .in("lesson_id", lessonIds);
     if (error) throw error;
     res.json({ success: true, deleted: count || 0 });
   } catch (err) {
@@ -4326,29 +4249,123 @@ app.delete("/api/admin/courses/:courseId/lessons/:lessonNumber/chunks", adminAut
   }
 });
 
-
-
-// --- Rename a lesson ---
-app.patch("/api/admin/courses/:courseId/lessons/:lessonNumber", adminAuth, async (req, res) => {
+// --- Delete chunks for a specific lesson ---
+app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { courseId, lessonNumber } = req.params;
-    const { lessonName } = req.body;
+    const { lessonId } = req.params;
+    const { count } = await supabase
+      .from("chunks")
+      .select("*", { count: "exact", head: true })
+      .eq("lesson_id", lessonId);
 
-    if (!lessonName || !lessonName.trim()) {
-      return res.status(400).json({ error: "Lesson name is required" });
+    const { error } = await supabase
+      .from("chunks")
+      .delete()
+      .eq("lesson_id", lessonId);
+    if (error) throw error;
+    console.log(`🗑️ Deleted ${count || 0} chunks for lesson ${lessonId}`);
+    res.json({ success: true, deleted: count || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Rename a lesson (update title in lessons table) ---
+app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { lessonId } = req.params;
+    const { title } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Title is required" });
+    }
+    const { data, error } = await supabase
+      .from("lessons")
+      .update({ title: title.trim() })
+      .eq("id", lessonId)
+      .select()
+      .single();
+    if (error) throw error;
+    console.log(`✏️ Renamed lesson ${lessonId} → "${title.trim()}"`);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Process lesson (create/reupload → chunk → embed → store) ---
+app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
+  if (!supabase || !openai) return res.status(500).json({ error: "Not initialized" });
+  try {
+    const { courseId, lessonId, lessonName, transcript } = req.body;
+    if (!courseId || !lessonName || !transcript) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const { data, error } = await supabase
-      .from("chunks")
-      .update({ lesson_name: lessonName.trim() })
-      .eq("course_id", courseId)
-      .eq("lesson_number", parseInt(lessonNumber))
-      .select("id");
+    let targetLessonId = lessonId;
 
-    if (error) throw error;
-    res.json({ success: true, updated: (data || []).length });
+    if (targetLessonId) {
+      // Re-upload: update title + delete old chunks
+      await supabase
+        .from("lessons")
+        .update({ title: lessonName.trim() })
+        .eq("id", targetLessonId);
+
+      const { error: delErr } = await supabase
+        .from("chunks")
+        .delete()
+        .eq("lesson_id", targetLessonId);
+      if (delErr) console.error("Error deleting old chunks:", delErr);
+      console.log(`📖 Re-uploading lesson: "${lessonName}" (id: ${targetLessonId})`);
+    } else {
+      // New lesson: create entry in lessons table
+      const { data: newLesson, error: lessonErr } = await supabase
+        .from("lessons")
+        .insert({ title: lessonName.trim(), course_id: courseId })
+        .select()
+        .single();
+      if (lessonErr) throw lessonErr;
+      targetLessonId = newLesson.id;
+      console.log(`📖 Created new lesson: "${lessonName}" (id: ${targetLessonId})`);
+    }
+
+    // 1️⃣ Parse & chunk
+    const chunks = parseAndChunkTranscript(transcript, 500);
+    if (chunks.length === 0) {
+      return res.json({ success: true, chunksCreated: 0, lessonId: targetLessonId, message: "No valid lines found" });
+    }
+    console.log(`📖 Processing "${lessonName}": ${chunks.length} chunks`);
+
+    // 2️⃣ Generate embeddings & insert
+    let chunksCreated = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const embeddingRes = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: chunk.content,
+      });
+      const embedding = embeddingRes.data[0].embedding;
+
+      const { error } = await supabase.from("chunks").insert({
+        lesson_id: targetLessonId,
+        content: chunk.content,
+        chunk_order: i + 1,
+        timestamp_start: chunk.startTime || null,
+        embedding: embedding,
+      });
+      if (error) {
+        console.error("❌ Chunk insert error:", error);
+        throw error;
+      }
+      chunksCreated++;
+      await sleep(100);
+    }
+
+    console.log(`✅ Lesson "${lessonName}": ${chunksCreated} chunks created`);
+    res.json({ success: true, chunksCreated, lessonId: targetLessonId, lessonName });
   } catch (err) {
+    console.error("❌ Error processing lesson:", err);
     res.status(500).json({ error: err.message });
   }
 });
