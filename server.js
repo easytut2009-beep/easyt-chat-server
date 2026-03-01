@@ -6326,83 +6326,96 @@ console.log(
       finalReply = markdownToHtml(finalReply);
       finalReply = finalizeReply(finalReply);
 
-// 🆕 Generate smart suggestions based on actual reply
+// 🆕 Generate smart suggestions — SPECIFIC, NEVER GENERIC
 let suggestions = [];
 if (newRemaining > 0) {
     try {
         const cleanReplyText = finalReply.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        const replyLast800 = cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800));
         
         const suggResp = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
-                    content: `أنت بتولّد 3 اقتراحات ذكية ومحددة للطالب بعد رد المرشد.
+                    content: `مهمتك: تطلع 3 أسئلة محددة جداً الطالب ممكن يسألها بعد الرد ده.
 
-🔴 ممنوع نهائياً تستخدم أي اقتراح عام زي:
-❌ "وضّحلي أكتر"
-❌ "اديني مثال"  
-❌ "اديني مثال عملي"
-❌ "اشرحلي أكتر"
-❌ "مش فاهم"
-❌ "لخّصلي الدرس"
-❌ "وبعدين أعمل إيه؟"
-❌ "عندي سؤال تاني"
+🔴🔴🔴 القاعدة الوحيدة: كل اقتراح لازم يحتوي على كلمة أو مصطلح تقني من الرد نفسه!
 
-✅ المطلوب: اقتراحات محددة مبنية على المحتوى الفعلي للرد:
-- اسأل عن مفهوم أو أداة اتذكرت في الرد
-- اسأل عن خطوة عملية مرتبطة بالموضوع
-- اسأل سؤال يوسّع الموضوع اللي اتشرح
+مثال — لو الرد كان عن "السيلز فانل وصفحة الهبوط":
+✅ "إيه أحسن أداة لبناء سيلز فانل؟"
+✅ "صفحة الهبوط محتاجة إيه بالظبط؟"
+✅ "الفرق بين السيلز فانل والويب سايت؟"
 
-مثال لو الرد كان عن "إنشاء متجر إلكتروني":
-✅ "إيه أحسن بوابة دفع؟"
-✅ "إزاي أصوّر المنتجات؟"
-✅ "تكلفة الشحن بتتحسب إزاي؟"
+مثال — لو الرد كان عن "التسويق بالإيميل":
+✅ "إيه أحسن وقت لإرسال الإيميلات؟"
+✅ "إزاي أكتب subject line قوي؟"
+✅ "معدل الفتح الطبيعي كام في المية؟"
 
-مثال لو الرد كان عن "التسويق بالمحتوى":
-✅ "إيه أنواع المحتوى الأفضل؟"
-✅ "أنشر كل قد إيه؟"
-✅ "إزاي أقيس نجاح المحتوى؟"
+مثال — لو الرد كان عن "إنشاء متجر إلكتروني":
+✅ "إيه أحسن بوابة دفع في مصر؟"
+✅ "الشحن بتاع المتجر بيشتغل إزاي؟"
+✅ "إزاي أختار المنتجات المربحة؟"
 
-القواعد:
-- كل اقتراح 3-8 كلمات بالعامية المصرية
-- لازم يكون مرتبط بالمحتوى الفعلي مش عام
-- الـ 3 اقتراحات يكونوا مختلفين عن بعض
-
-ارجع JSON بس: {"suggestions": ["...", "...", "..."]}`
+ارجع JSON: {"suggestions": ["...", "...", "..."], "keywords_used": ["كلمة1", "كلمة2", "كلمة3"]}`
                 },
                 {
                     role: "user",
-                    content: `الكورس: "${course_name || 'غير محدد'}"
-الدرس: "${lecture_title || 'غير محدد'}"
+                    content: `سؤال الطالب: "${message.substring(0, 300)}"
 
-سؤال الطالب: "${message.substring(0, 300)}"
-
-رد المرشد (آخر جزء): "${cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800))}"`
+رد المرشد: "${replyLast800}"`
                 }
             ],
             response_format: { type: "json_object" },
-            max_tokens: 150,
-            temperature: 0.9,
+            max_tokens: 200,
+            temperature: 1.0,
         });
 
         const suggResult = JSON.parse(suggResp.choices[0].message.content);
         if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
-            const banned = ['وضحلي', 'وضّحلي', 'اديني مثال', 'مش فاهم', 'لخصلي', 'لخّصلي', 'اشرحلي', 'عندي سؤال'];
-            suggestions = suggResult.suggestions
-                .filter(s => !banned.some(b => s.includes(b)))
-                .slice(0, 3);
+            const banned = [
+                'وضحلي أكتر', 'وضّحلي أكتر', 'وضحلي اكتر',
+                'اديني مثال', 'اديني مثال عملي',
+                'اشرحلي أكتر', 'اشرحلي اكتر',
+                'مش فاهم', 'مش فاهمه',
+                'لخصلي الدرس', 'لخّصلي الدرس',
+                'وبعدين أعمل', 'وبعدين اعمل',
+                'عندي سؤال', 'سؤال تاني',
+                'اشرحلي بمثال', 'ممكن توضح',
+                'إيه الخطوة الجاية', 'ايه الخطوه الجايه',
+            ];
             
-            if (suggestions.length === 0) {
-                suggestions = suggResult.suggestions.slice(0, 3);
-            }
+            suggestions = suggResult.suggestions
+                .filter(s => {
+                    const sNorm = s.replace(/[؟?!\.،,]/g, '').trim();
+                    return !banned.some(b => {
+                        const bNorm = b.replace(/[؟?!\.،,]/g, '').trim();
+                        return sNorm.includes(bNorm) || bNorm.includes(sNorm);
+                    });
+                })
+                .filter(s => s.length >= 8 && s.length <= 60)
+                .slice(0, 3);
         }
     } catch (suggErr) {
-        console.error("⚠️ Suggestions generation error:", suggErr.message);
-        suggestions = [];
+        console.error("⚠️ Suggestions error:", suggErr.message);
+    }
+    
+    // If still empty — extract keywords from reply and build suggestions
+    if (suggestions.length === 0) {
+        try {
+            const words = finalReply
+                .replace(/<[^>]*>/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 4)
+                .filter(w => !/^(عشان|علشان|ممكن|لازم|محتاج|الطالب|المحاضر|الدرس|الكورس|بتاع|كمان|دلوقتي|هتلاقي|بالتفصيل)$/i.test(w));
+            
+            const unique = [...new Set(words)].slice(0, 3);
+            if (unique.length >= 1) {
+                suggestions = unique.map(w => `إيه التفاصيل عن ${w}؟`).slice(0, 3);
+            }
+        } catch (e) {}
     }
 }
-
 res.json({
     reply: finalReply,
     remaining_messages: newRemaining,
