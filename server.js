@@ -5135,21 +5135,55 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
           }
 
           if (courses && courses.length > 0) {
-            // Score courses to find best match
+// 🆕 FIX #57: Better scoring — prioritize title matches & original terms
             let bestCourse = courses[0];
             let bestScore = 0;
             
+            // Extract original words from user message (highest priority)
+            const originalWords = searchText.split(/\s+/).filter(w => w.length >= 2);
+            
             for (const course of courses) {
               let score = 0;
-              const titleNorm = normalizeArabic((course.title || '').toLowerCase());
-              const subtitleNorm = normalizeArabic((course.subtitle || '').toLowerCase());
+              const titleLower = (course.title || '').toLowerCase();
+              const titleNorm = normalizeArabic(titleLower);
+              const subtitleLower = (course.subtitle || '').toLowerCase();
+              const subtitleNorm = normalizeArabic(subtitleLower);
               
+              // 🔴 Priority 1: Original user words in TITLE (strongest signal)
+              for (const word of originalWords) {
+                const wLower = word.toLowerCase();
+                const wNorm = normalizeArabic(wLower);
+                if (wLower.length < 2) continue;
+                
+                // English term in title = very strong (e.g. "SEO" in title)
+                if (/^[a-zA-Z]+$/i.test(word) && titleLower.includes(wLower)) {
+                  score += 100;
+                }
+                // Arabic term in title
+                if (wNorm.length > 2 && titleNorm.includes(wNorm)) {
+                  score += 30;
+                }
+                // In subtitle
+                if (wNorm.length > 2 && subtitleNorm.includes(wNorm)) {
+                  score += 10;
+                }
+              }
+              
+              // Priority 2: Expanded/synonym terms
               for (const term of searchTerms) {
-                const normTerm = normalizeArabic(term.toLowerCase());
+                const termLower = term.toLowerCase();
+                const normTerm = normalizeArabic(termLower);
                 if (normTerm.length < 2) continue;
-                if (titleNorm.includes(normTerm)) score += 10;
+                
+                // English expanded term in title
+                if (/^[a-zA-Z]+$/i.test(term) && titleLower.includes(termLower)) {
+                  score += 50;
+                }
+                if (titleNorm.includes(normTerm)) score += 15;
                 if (subtitleNorm.includes(normTerm)) score += 5;
               }
+              
+              console.log(`      📊 FIX #57 Score: "${course.title}" = ${score}`);
               
               if (score > bestScore) {
                 bestScore = score;
