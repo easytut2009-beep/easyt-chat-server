@@ -5228,10 +5228,6 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
     }
 
 
-} catch (tblErr) {
-        console.error(`   ❌ Strategy 2 EXCEPTION: ${tblErr.message}`);
-      }
-    }
 
     // ═══ Return result ═══
     return result;
