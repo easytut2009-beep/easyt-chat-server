@@ -6326,10 +6326,61 @@ console.log(
       finalReply = markdownToHtml(finalReply);
       finalReply = finalizeReply(finalReply);
 
-      res.json({
-        reply: finalReply,
-        remaining_messages: newRemaining,
-      });
+// 🆕 Generate smart suggestions based on actual reply
+let suggestions = [];
+if (newRemaining > 0) {
+    try {
+        const suggResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: `أنت مساعد بيولّد اقتراحات للطالب بعد رد المرشد التعليمي.
+
+المطلوب: ارجع JSON فيه array من 3 اقتراحات قصيرة (كل اقتراح 2-5 كلمات).
+
+القواعد:
+- الاقتراحات تكون متعلقة بالرد اللي المرشد قاله
+- تكون أسئلة أو طلبات طبيعية الطالب ممكن يسألها بعد الرد ده
+- تكون بالعامية المصرية
+- تكون مختصرة جداً (2-5 كلمات بس)
+- متكررش نفس المعنى
+- لو الرد فيه شرح → اقترح "وضّحلي أكتر" أو "اديني مثال"
+- لو الرد فيه خطوات → اقترح "وبعدين أعمل إيه؟"
+- لو الرد فيه درس تاني → اقترح "لخّصلي الدرس ده"
+
+ارجع JSON بس: {"suggestions": ["اقتراح1", "اقتراح2", "اقتراح3"]}`
+                },
+                {
+                    role: "user",
+                    content: `رسالة الطالب: "${message.substring(0, 200)}"\n\nرد المرشد: "${finalReply.replace(/<[^>]*>/g, '').substring(0, 500)}"`
+                }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 100,
+            temperature: 0.7,
+        });
+
+        const suggResult = JSON.parse(suggResp.choices[0].message.content);
+        if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
+            suggestions = suggResult.suggestions.slice(0, 3);
+        }
+    } catch (suggErr) {
+        console.error("⚠️ Suggestions generation error:", suggErr.message);
+        // Fallback to basic suggestions
+        if (lecture_title) {
+            suggestions = ["وضّحلي أكتر", "اديني مثال عملي", "لخّصلي الدرس"];
+        } else {
+            suggestions = ["عندي سؤال تاني", "اشرحلي بمثال", "مش فاهم"];
+        }
+    }
+}
+
+res.json({
+    reply: finalReply,
+    remaining_messages: newRemaining,
+    suggestions: suggestions,
+});
 
     } catch (error) {
       console.error("❌ Guide Error:", error.message);
