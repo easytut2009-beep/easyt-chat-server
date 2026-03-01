@@ -4941,8 +4941,14 @@ async function getRelevantChunks(query, courseId = null, limit = 8) {
       filter_course_id: courseId || null,
     });
 
-    if (error) {
-      console.error("match_lesson_chunks RPC error:", error.message);
+if (error) {
+      console.error("═══════════════════════════════════════");
+      console.error("❌ match_lesson_chunks RPC FAILED!");
+      console.error("   Error:", error.message);
+      console.error("   Code:", error.code);
+      console.error("   Hint:", error.hint);
+      console.error("   courseId:", courseId);
+      console.error("═══════════════════════════════════════");
       return [];
     }
 
@@ -5083,14 +5089,19 @@ function buildGuideSystemPrompt(
     p += `\n║  ⚠️ قواعد الإجابة                     ║`;
     p += `\n╚════════════════════════════════════╝`;
 
-    if (hasCurrentContent) {
+if (hasCurrentContent) {
       p += `\n\n✅ عندك محتوى فعلي من الدرس الحالي — استخدمه أولاً!`;
-      p += `\n- جاوب من المحتوى مباشرة`;
+      p += `\n- 🔴 جاوب من المحتوى اللي تحت فقط — ده كلام المحاضر الفعلي`;
       p += `\n- اذكر الـ timestamp لو موجود: "المحاضر شرح ده عند الدقيقة X:XX ⏱️"`;
-      p += `\n- استخدم نفس أمثلة المحاضر — ما تخترعش`;
+      p += `\n- استخدم نفس أمثلة المحاضر بالظبط — ما تخترعش أمثلة من عندك`;
+      p += `\n- لو السؤال مش موجود في المحتوى قول: "المحاضر ما اتكلمش عن النقطة دي في الدرس ده"`;
+      p += `\n- 🔴 ممنوع تجيب معلومات من بره المحتوى المتاح!`;
     } else {
       p += `\n\n⚠️ مفيش محتوى متاح من الدرس الحالي`;
-      p += `\n- قول بصراحة: "محتوى الدرس ده مش متاح عندي بالتفصيل، بس خليني أشرحلك من خبرتي 💡"`;
+      p += `\n- 🔴 قول بصراحة: "للأسف محتوى الدرس ده مش متاح عندي حالياً، محتاج يترفع الأول"`;
+      p += `\n- ❌ ممنوع تجاوب من معرفتك العامة أو من ChatGPT`;
+      p += `\n- ❌ ممنوع تشرح الموضوع من عندك`;
+      p += `\n- ✅ ممكن تقترح على الطالب يسأل في درس تاني لو فيه محتوى متاح`;
     }
 
     if (hasOtherContent) {
@@ -5098,8 +5109,10 @@ function buildGuideSystemPrompt(
       p += `\n- قول: "المحاضر شرح ده في درس [الاسم بالظبط] عند الدقيقة [X:XX] ⏱️"`;
     }
 
-    p += `\n\n📌 لو الإجابة مش في أي محتوى:`;
-    p += `\n- قول: "الموضوع ده مش في المحتوى اللي عندي، بس خليني أشرحلك 💡"`;
+p += `\n\n📌 لو الإجابة مش في أي محتوى:`;
+    p += `\n- قول: "الموضوع ده مش موجود في محتوى الدروس المتاحة عندي حالياً"`;
+    p += `\n- ❌ ممنوع تقول "خليني أشرحلك" وتجيب معلومات من بره`;
+    p += `\n- ✅ ممكن تقول "جرب تسأل عن حاجة تانية من محتوى الدرس"`;
 
     p += `\n\n🔴 ممنوعات:`;
     p += `\n❌ ممنوع تخترع اسم درس أو timestamp مش في المحتوى!`;
@@ -5161,6 +5174,13 @@ let currentLessonContext = "";
 
       if (course_name || lecture_title) {
         try {
+          console.log("═══════════════════════════════════════");
+          console.log("🔍 GUIDE DEBUG INPUT:");
+          console.log("   course_name:", course_name);
+          console.log("   lecture_title:", lecture_title);
+          console.log("   message:", message.substring(0, 80));
+          console.log("═══════════════════════════════════════");
+
           // Step 1: Find Course
           const courseMatch = await findCourseByName(course_name || lecture_title);
           var courseId = courseMatch ? courseMatch.id : null;
@@ -5271,9 +5291,25 @@ let currentLessonContext = "";
           if (otherLessonsContext.length > 10000) otherLessonsContext = otherLessonsContext.substring(0, 10000) + "\n\n[... بقية المحتوى]";
 
           console.log(`📚 Guide RAG: current=${ragStats.currentLesson} | semantic=${ragStats.semantic} | text=${ragStats.text} | other=${ragStats.otherLessons} | total=${ragStats.total}`);
+
+
+console.log("═══════════════════════════════════════");
+          console.log("📖 CURRENT LESSON CONTEXT LENGTH:", currentLessonContext.length, "chars");
+          console.log("📖 CURRENT LESSON PREVIEW:", currentLessonContext.substring(0, 200));
+          console.log("📚 OTHER LESSONS CONTEXT LENGTH:", otherLessonsContext.length, "chars");
+          console.log("═══════════════════════════════════════");
+
         } catch (ragErr) {
-          console.error("Guide RAG error:", ragErr.message);
+          console.error("═══════════════════════════════════════");
+          console.error("❌ GUIDE RAG ERROR (CRITICAL):");
+          console.error("   Error:", ragErr.message);
+          console.error("   Stack:", ragErr.stack?.substring(0, 300));
+          console.error("   course_name:", course_name);
+          console.error("   lecture_title:", lecture_title);
+          console.error("═══════════════════════════════════════");
+          currentLessonContext = "[❌ حصل خطأ تقني في تحميل محتوى الدرس — جاوب بحذر]";
         }
+
       }
 
       // Build System Prompt
