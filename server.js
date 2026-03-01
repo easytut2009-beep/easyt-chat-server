@@ -5635,4 +5635,60 @@ function sleep(ms) {
 }
 
 
+app.get("/api/debug-guide", async (req, res) => {
+  const courseName = req.query.course || "";
+  const lessonTitle = req.query.lesson || "";
+  
+  const result = {
+    input: { courseName, lessonTitle },
+    step1_course: null,
+    step2_lessons: [],
+    step3_lessonMatch: null,
+    step4_chunks: 0,
+    step5_sampleChunk: "",
+  };
+
+  try {
+    // Step 1: Find course
+    const courseMatch = await findCourseByName(courseName);
+    result.step1_course = courseMatch ? { id: courseMatch.id, title: courseMatch.title } : "NOT FOUND";
+
+    if (courseMatch) {
+      // Step 2: Get all lessons
+      const { data: lessons } = await supabase
+        .from("lessons")
+        .select("id, title, lesson_order")
+        .eq("course_id", courseMatch.id)
+        .order("lesson_order", { ascending: true });
+      result.step2_lessons = (lessons || []).map(l => ({
+        id: l.id,
+        title: l.title,
+        order: l.lesson_order
+      }));
+
+      // Step 3: Find lesson by title
+      const lessonMatch = await findLessonByTitle(lessonTitle, courseMatch.id);
+      result.step3_lessonMatch = lessonMatch ? {
+        id: lessonMatch.id,
+        title: lessonMatch.title,
+        order: lessonMatch.lesson_order
+      } : "NOT FOUND";
+
+      // Step 4: Get chunks
+      if (lessonMatch) {
+        const chunks = await getAllLessonChunks(lessonMatch.id, 5);
+        result.step4_chunks = chunks.length;
+        if (chunks.length > 0) {
+          result.step5_sampleChunk = chunks[0].content?.substring(0, 200) || "";
+        }
+      }
+    }
+  } catch (e) {
+    result.error = e.message;
+  }
+
+  res.json(result);
+});
+
+
 startServer();
