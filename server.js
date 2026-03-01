@@ -5075,19 +5075,15 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
       console.error(`   ❌ Strategy 1 EXCEPTION: ${semErr.message}`);
     }
 
-    // ═══ Strategy 2: Search courses table (for courses without chunks) ═══
+// ═══ Strategy 2: Search courses table (for courses without chunks) ═══
     if (!result) {
       console.log(`   🔄 Strategy 2: Searching courses table...`);
       try {
-        // Extract search terms - more aggressively
         const allWords = searchText.split(/\s+/).filter(w => w.length >= 2);
         const meaningful = allWords.filter(w => 
           w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
         );
-        
-        // Also keep English terms even if short (like "AI", "SEO", "UI", "UX")
         const englishTerms = allWords.filter(w => /^[a-zA-Z]{2,}$/.test(w));
-        
         const rawTerms = [...new Set([...meaningful, ...englishTerms])];
         console.log(`   📝 Strategy 2 raw terms: [${rawTerms.join(', ')}]`);
 
@@ -5099,99 +5095,103 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
         const corrected = rawTerms.map(t => applyArabicCorrections(t));
         const expanded = expandSynonyms(corrected);
         const searchTerms = splitIntoSearchableTerms(expanded);
-
         console.log(`   📝 Strategy 2 expanded terms: [${searchTerms.join(', ')}]`);
 
         if (searchTerms.length > 0) {
-          const orFilters = searchTerms
-            .flatMap(t => [
-              `title.ilike.%${t}%`, 
-              `subtitle.ilike.%${t}%`, 
-              `keywords.ilike.%${t}%`, 
-              `domain.ilike.%${t}%`,
-              `description.ilike.%${t}%`
-            ])
+          // 🆕 FIX #57: Title-first search — find courses where the term is in the TITLE
+          let allFoundCourses = [];
+          
+          // Pass 1: Title-only search (highest relevance)
+          const titleFilters = searchTerms
+            .flatMap(t => [`title.ilike.%${t}%`])
             .join(",");
-
-          let courseQuery = supabase
+          
+          let titleQuery = supabase
             .from("courses")
             .select("id, title, link, subtitle, description")
-            .or(orFilters)
-            .limit(5);
-
-          if (currentCourseId) {
-            courseQuery = courseQuery.neq("id", currentCourseId);
+            .or(titleFilters)
+            .limit(10);
+          if (currentCourseId) titleQuery = titleQuery.neq("id", currentCourseId);
+          
+          const { data: titleCourses, error: titleErr } = await titleQuery;
+          if (!titleErr && titleCourses && titleCourses.length > 0) {
+            console.log(`   📊 Strategy 2 Pass 1 (title): ${titleCourses.length} courses`);
+            titleCourses.forEach((c, i) => console.log(`      ${i+1}. "${c.title}"`));
+            allFoundCourses = [...titleCourses];
           }
 
-          const { data: courses, error: courseErr } = await courseQuery;
-          
-          if (courseErr) {
-            console.log(`   ❌ Strategy 2 query error: ${courseErr.message}`);
-          } else {
-            console.log(`   📊 Strategy 2: ${(courses || []).length} courses found`);
-            if (courses && courses.length > 0) {
-              courses.forEach((c, i) => console.log(`      ${i+1}. "${c.title}"`));
+          // Pass 2: Broader search (subtitle, keywords, domain, description)
+          if (allFoundCourses.length < 3) {
+            const broadFilters = searchTerms
+              .flatMap(t => [
+                `subtitle.ilike.%${t}%`, 
+                `keywords.ilike.%${t}%`, 
+                `domain.ilike.%${t}%`,
+                `description.ilike.%${t}%`
+              ])
+              .join(",");
+
+            let broadQuery = supabase
+              .from("courses")
+              .select("id, title, link, subtitle, description")
+              .or(broadFilters)
+              .limit(10);
+            if (currentCourseId) broadQuery = broadQuery.neq("id", currentCourseId);
+
+            const { data: broadCourses, error: broadErr } = await broadQuery;
+            if (!broadErr && broadCourses && broadCourses.length > 0) {
+              const existingIds = new Set(allFoundCourses.map(c => c.id));
+              for (const bc of broadCourses) {
+                if (!existingIds.has(bc.id)) {
+                  allFoundCourses.push(bc);
+                  existingIds.add(bc.id);
+                }
+              }
+              console.log(`   📊 Strategy 2 Pass 2 (broad): ${broadCourses.length} extra courses`);
             }
           }
 
-          if (courses && courses.length > 0) {
-// 🆕 FIX #57: Better scoring — prioritize title matches & original terms
-            let bestCourse = courses[0];
+          console.log(`   📊 Strategy 2 TOTAL: ${allFoundCourses.length} courses`);
+          
+          if (allFoundCourses.length > 0) {
+            // 🆕 FIX #57: Better scoring
+            let bestCourse = allFoundCourses[0];
             let bestScore = 0;
             
-            // Extract original words from user message (highest priority)
             const originalWords = searchText.split(/\s+/).filter(w => w.length >= 2);
             
-            for (const course of courses) {
+            for (const course of allFoundCourses) {
               let score = 0;
               const titleLower = (course.title || '').toLowerCase();
               const titleNorm = normalizeArabic(titleLower);
               const subtitleLower = (course.subtitle || '').toLowerCase();
               const subtitleNorm = normalizeArabic(subtitleLower);
               
-              // 🔴 Priority 1: Original user words in TITLE (strongest signal)
+              // Priority 1: Original user words in TITLE
               for (const word of originalWords) {
                 const wLower = word.toLowerCase();
                 const wNorm = normalizeArabic(wLower);
                 if (wLower.length < 2) continue;
-                
-                // English term in title = very strong (e.g. "SEO" in title)
-                if (/^[a-zA-Z]+$/i.test(word) && titleLower.includes(wLower)) {
-                  score += 100;
-                }
-                // Arabic term in title
-                if (wNorm.length > 2 && titleNorm.includes(wNorm)) {
-                  score += 30;
-                }
-                // In subtitle
-                if (wNorm.length > 2 && subtitleNorm.includes(wNorm)) {
-                  score += 10;
-                }
+                if (/^[a-zA-Z]+$/i.test(word) && titleLower.includes(wLower)) score += 100;
+                if (wNorm.length > 2 && titleNorm.includes(wNorm)) score += 30;
+                if (wNorm.length > 2 && subtitleNorm.includes(wNorm)) score += 10;
               }
               
-              // Priority 2: Expanded/synonym terms
+              // Priority 2: Expanded terms
               for (const term of searchTerms) {
                 const termLower = term.toLowerCase();
                 const normTerm = normalizeArabic(termLower);
                 if (normTerm.length < 2) continue;
-                
-                // English expanded term in title
-                if (/^[a-zA-Z]+$/i.test(term) && titleLower.includes(termLower)) {
-                  score += 50;
-                }
+                if (/^[a-zA-Z]+$/i.test(term) && titleLower.includes(termLower)) score += 50;
                 if (titleNorm.includes(normTerm)) score += 15;
                 if (subtitleNorm.includes(normTerm)) score += 5;
               }
               
-              console.log(`      📊 FIX #57 Score: "${course.title}" = ${score}`);
-              
-              if (score > bestScore) {
-                bestScore = score;
-                bestCourse = course;
-              }
+              console.log(`      📊 Score: "${course.title}" = ${score}`);
+              if (score > bestScore) { bestScore = score; bestCourse = course; }
             }
 
-            // Get lessons for this course (even if no chunks)
+            // Get lessons for best course
             let courseLessons = [];
             try {
               const { data: lessons } = await supabase
@@ -5199,9 +5199,7 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
                 .select("id, title")
                 .eq("course_id", bestCourse.id)
                 .limit(5);
-              
               if (lessons && lessons.length > 0) {
-                // Find lessons most relevant to search
                 courseLessons = lessons
                   .filter(l => {
                     const lNorm = normalizeArabic((l.title || '').toLowerCase());
@@ -5210,9 +5208,7 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
                   .slice(0, 3)
                   .map(l => ({ title: l.title, timestamp: null }));
               }
-            } catch (lessonErr) {
-              // OK — no lessons
-            }
+            } catch (lessonErr) {}
 
             result = {
               courseTitle: bestCourse.title,
@@ -5221,7 +5217,7 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
               source: "courses_table",
               score: 0.5,
             };
-            console.log(`   ✅ Strategy 2 SUCCESS: "${bestCourse.title}" (${courseLessons.length} lessons)`);
+            console.log(`   ✅ Strategy 2 SUCCESS: "${bestCourse.title}" (score=${bestScore})`);
           } else {
             console.log(`   ❌ Strategy 2: No courses matched`);
           }
@@ -5231,13 +5227,22 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
       }
     }
 
-    console.log(`   🏁 Final result: ${result ? `"${result.courseTitle}" (source: ${result.source})` : 'NULL'}`);
+
+} catch (tblErr) {
+        console.error(`   ❌ Strategy 2 EXCEPTION: ${tblErr.message}`);
+      }
+    }
+
+    // ═══ Return result ═══
     return result;
-  } catch (e) {
-    console.error(`❌ searchOtherCoursesForGuide FATAL: ${e.message}`);
+
+  } catch (outerErr) {
+    console.error(`   ❌ searchOtherCoursesForGuide OUTER ERROR: ${outerErr.message}`);
     return null;
   }
 }
+
+
 
 /* ══════════════════════════════════════════════════════════
    SECTION 17: Start Server + 🎓 Guide Bot v2.0
