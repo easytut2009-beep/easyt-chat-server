@@ -4970,6 +4970,152 @@ if (error) {
   }
 }
 
+
+/* ══════════════════════════════════════════════════════════
+   🆕 FIX #55: Search OTHER courses for Guide Bot
+   ══════════════════════════════════════════════════════════ */
+async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
+  if (!supabase || !openai || !searchText) return null;
+
+  try {
+    let result = null;
+
+    // ═══ Strategy 1: Semantic search in ALL chunks ═══
+    try {
+      const embResponse = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: searchText.substring(0, 2000),
+      });
+      const queryEmbedding = embResponse.data[0].embedding;
+
+      const { data: allChunks, error } = await supabase.rpc("match_lesson_chunks", {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.55,
+        match_count: 15,
+        filter_course_id: null, // Search ALL courses
+      });
+
+      if (!error && allChunks && allChunks.length > 0) {
+        // Group by course, exclude current
+        const courseGroups = {};
+        for (const chunk of allChunks) {
+          const cid = chunk.course_id;
+          if (!cid || cid === currentCourseId) continue;
+          if (!courseGroups[cid]) {
+            courseGroups[cid] = { courseId: cid, chunks: [], totalSim: 0 };
+          }
+          courseGroups[cid].chunks.push(chunk);
+          courseGroups[cid].totalSim += (chunk.similarity || 0);
+        }
+
+        // Find best course
+        let bestGroup = null;
+        let bestScore = 0;
+        for (const group of Object.values(courseGroups)) {
+          const score = group.totalSim + (group.chunks.length * 0.05);
+          if (score > bestScore) {
+            bestScore = score;
+            bestGroup = group;
+          }
+        }
+
+        if (bestGroup && bestScore > 0.55) {
+          // Get course info
+          const { data: courseData } = await supabase
+            .from("courses")
+            .select("id, title, link")
+            .eq("id", bestGroup.courseId)
+            .single();
+
+          if (courseData) {
+            // Get lesson titles for matched chunks
+            const lessonIds = [...new Set(bestGroup.chunks.map(c => c.lesson_id).filter(Boolean))];
+            let lessonDetails = [];
+
+            if (lessonIds.length > 0) {
+              const { data: lessons } = await supabase
+                .from("lessons")
+                .select("id, title")
+                .in("id", lessonIds);
+              const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
+
+              const seenLessons = new Set();
+              for (const chunk of bestGroup.chunks) {
+                if (!chunk.lesson_id || seenLessons.has(chunk.lesson_id)) continue;
+                seenLessons.add(chunk.lesson_id);
+                lessonDetails.push({
+                  title: lessonMap.get(chunk.lesson_id) || chunk.lesson_title || "",
+                  timestamp: chunk.timestamp_start || null,
+                });
+              }
+            }
+
+            result = {
+              courseTitle: courseData.title,
+              courseLink: courseData.link || "https://easyt.online/courses",
+              lessons: lessonDetails.slice(0, 3),
+              source: "chunks",
+              score: bestScore,
+            };
+
+            console.log(`🎓 FIX #55: Found other course: "${courseData.title}" (score=${bestScore.toFixed(2)}, ${lessonDetails.length} lessons)`);
+          }
+        }
+      }
+    } catch (semErr) {
+      console.error("searchOtherCourses semantic error:", semErr.message);
+    }
+
+    // ═══ Strategy 2: Fallback — search courses table ═══
+    if (!result) {
+      try {
+        const terms = searchText.split(/\s+/).filter(w => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
+        if (terms.length === 0) return null;
+
+        const corrected = terms.map(t => applyArabicCorrections(t));
+        const expanded = expandSynonyms(corrected);
+        const searchTerms = splitIntoSearchableTerms(expanded);
+
+        if (searchTerms.length > 0) {
+          const orFilters = searchTerms
+            .flatMap(t => [`title.ilike.%${t}%`, `subtitle.ilike.%${t}%`, `keywords.ilike.%${t}%`, `domain.ilike.%${t}%`])
+            .join(",");
+
+          let courseQuery = supabase
+            .from("courses")
+            .select("id, title, link")
+            .or(orFilters)
+            .limit(5);
+
+          if (currentCourseId) {
+            courseQuery = courseQuery.neq("id", currentCourseId);
+          }
+
+          const { data: courses } = await courseQuery;
+          if (courses && courses.length > 0) {
+            result = {
+              courseTitle: courses[0].title,
+              courseLink: courses[0].link || "https://easyt.online/courses",
+              lessons: [],
+              source: "courses_table",
+              score: 0.5,
+            };
+            console.log(`🎓 FIX #55: Fallback course: "${courses[0].title}" (from courses table)`);
+          }
+        }
+      } catch (tblErr) {
+        console.error("searchOtherCourses table error:", tblErr.message);
+      }
+    }
+
+    return result;
+  } catch (e) {
+    console.error("searchOtherCoursesForGuide error:", e.message);
+    return null;
+  }
+}
+
+
 /* ══════════════════════════════════════════════════════════
    SECTION 17: Start Server + 🎓 Guide Bot v2.0
    ══════════════════════════════════════════════════════════ */
@@ -5017,8 +5163,12 @@ async function startServer() {
 function buildGuideSystemPrompt(
     courseName, lectureTitle, clientPrompt,
     currentLessonContext, otherLessonsContext,
-    allCourseLessons, lessonFound
+    allCourseLessons, lessonFound,
+    otherCourseRecommendation  // 🆕 FIX #55
   ) {
+
+
+
     const hasCurrentContent = currentLessonContext && currentLessonContext.trim().length > 20;
     const hasOtherContent = otherLessonsContext && otherLessonsContext.trim().length > 20;
 
@@ -5087,6 +5237,25 @@ function buildGuideSystemPrompt(
       p += `\n${otherLessonsContext}`;
     }
 
+
+// ══════════════════════════════════════
+    // 🆕 FIX #55: كورس تاني على المنصة
+    // ══════════════════════════════════════
+    if (otherCourseRecommendation) {
+      p += `\n\n╔══════════════════════════════════════════════════╗`;
+      p += `\n║  🎓 كورس تاني على المنصة فيه الموضوع ده          ║`;
+      p += `\n╚══════════════════════════════════════════════════╝`;
+      p += `\n📚 كورس: "${otherCourseRecommendation.courseTitle}"`;
+      p += `\n🔗 رابط: ${otherCourseRecommendation.courseLink}`;
+      if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
+        p += `\n📖 الدروس المرتبطة:`;
+        for (const l of otherCourseRecommendation.lessons) {
+          p += `\n  - "${l.title}"${l.timestamp ? ` [⏱️ ${l.timestamp}]` : ""}`;
+        }
+      }
+    }
+
+
 // ══════════════════════════════════════
     // 🔴 تعليمات الإجابة — الأهم في البرومبت كله
     // ══════════════════════════════════════
@@ -5154,6 +5323,23 @@ function buildGuideSystemPrompt(
     p += `\n   - خلي الإجابة مرتبطة بسياق الكورس والمجال اللي الطالب بيدرسه`;
     p += `\n   - أضف "💡 نصيحة:" في الآخر بنصيحة عملية`;
     p += `\n   - ❌ بس ممنوع تقول "المحاضر قال" أو تخترع timestamp — وضّح إنها معلومة إضافية منك`;
+
+// ═══ الخطوة 4: ترشيح كورس تاني ═══
+    if (otherCourseRecommendation) {
+      p += `\n\n📌 الخطوة 4 (اختيارية): ترشيح كورس تاني من المنصة`;
+      p += `\n   لقيت كورس تاني على المنصة ممكن يفيد الطالب (قسم 🎓 فوق)`;
+      p += `\n   ❌ لو جاوبت بالكامل من الدرس الحالي (خطوة 1) وكان كافي → ما ترشحش`;
+      p += `\n   ✅ لو جاوبت من معرفتك (خطوة 3) → رشّح الكورس`;
+      p += `\n   ✅ لو الإجابة ناقصة أو الموضوع محتاج تعمق أكتر → رشّح الكورس`;
+      p += `\n   ✅ لو الطالب سأل عن موضوع مش موجود في الكورس الحالي بس موجود في الكورس التاني → رشّح`;
+      p += `\n   الشكل:`;
+      p += `\n   📚 "لو عايز تتعمق أكتر في الموضوع ده، هتلاقيه بالتفصيل في كورس [اسم الكورس]"`;
+      p += `\n   🔗 [رابط الكورس]`;
+      if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
+        p += `\n   📖 واذكر الدروس المحددة لو موجودة`;
+      }
+      p += `\n   ❌ ممنوع ترشح لو السؤال مالوش علاقة بالكورس المرشح`;
+    }
 
     // ═══ الممنوعات ═══
     p += `\n\n══════════════════════════════════════`;
@@ -5235,6 +5421,7 @@ let currentLessonContext = "";
       let otherLessonsContext = "";
       let allCourseLessons = [];
       let lessonMatch = null;
+      let otherCourseRecommendation = null;  // 🆕 FIX #55
       let ragStats = { currentLesson: 0, semantic: 0, text: 0, otherLessons: 0, total: 0 };
 
       if (course_name || lecture_title) {
@@ -5306,14 +5493,20 @@ let currentLessonContext = "";
             console.log(`⚠️ No lesson matched — currentLessonContext will be empty`);
           }
 
-          // Step 4: Search OTHER lessons
+// Step 4: Search OTHER lessons + OTHER COURSES (🆕 FIX #55)
           const currentLessonId = lessonMatch ? lessonMatch.id : null;
           const otherChunksMap = new Map();
           const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
 
-          // Semantic search
           const searchQuery = message + (lecture_title ? " " + lecture_title : "");
-          const semanticChunks = await getRelevantChunks(searchQuery, courseId, 8);
+          
+// 🆕 FIX #55: Run both searches in parallel
+          const [semanticChunks, _otherCourseRec] = await Promise.all([
+            getRelevantChunks(searchQuery, courseId, 8),
+            searchOtherCoursesForGuide(message, courseId),
+          ]);
+          otherCourseRecommendation = _otherCourseRec;
+          
           ragStats.semantic = semanticChunks.length;
 
           for (const sc of semanticChunks) {
@@ -5392,7 +5585,7 @@ console.log("══════════════════════�
       console.log(`═══════════════════════════\n`);
 
 
-      // Build System Prompt
+ // Build System Prompt
       const finalSystemPrompt = buildGuideSystemPrompt(
         course_name || "",
         lecture_title || "",
@@ -5400,7 +5593,8 @@ console.log("══════════════════════�
         currentLessonContext,
         otherLessonsContext,
         allCourseLessons,
-        !!lessonMatch
+        !!lessonMatch,
+        otherCourseRecommendation  // 🆕 FIX #55
       );
 
 
@@ -5482,16 +5676,11 @@ console.log("══════════════════════�
 
       const newRemaining = getGuideRemaining(session_id);
 
-      console.log(
-        `🎓 Guide v2.0 | Session: ${session_id.slice(
-          0,
-          12
-        )}... | Course: ${course_name || "N/A"} | Lecture: ${
+console.log(
+        `🎓 Guide v2.1 | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || "N/A"} | Lecture: ${
           lecture_title || "N/A"
-        } | RAG: ${
-          ragStats.total > 0
-            ? `YES (${ragStats.total} chunks)`
-            : "NO"
+        } | RAG: ${ragStats.total > 0 ? `YES (${ragStats.total} chunks)` : "NO"
+        } | OtherCourse: ${otherCourseRecommendation ? otherCourseRecommendation.courseTitle : "NONE"
         } | Remaining: ${newRemaining}`
       );
 
