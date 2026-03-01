@@ -4971,6 +4971,68 @@ if (error) {
 }
 
 
+// ═══════════════════════════════════════════════════════
+// 🧠 SMART TOPIC EXTRACTION - يفهم السياق مش بس الكلمات
+// ═══════════════════════════════════════════════════════
+async function extractSearchTopic(userMessage, currentCourseTitle, recentMessages = []) {
+  try {
+    // Build conversation context
+    let contextBlock = "";
+    if (recentMessages.length > 0) {
+      const last3 = recentMessages.slice(-3);
+      contextBlock = `\nآخر رسائل في المحادثة:\n${last3.map(m => `- ${m.role === 'user' ? 'الطالب' : 'المرشد'}: ${m.content?.substring(0, 100)}`).join('\n')}`;
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `أنت محلل سياق ذكي. مهمتك تفهم الطالب بيسأل عن إيه بالظبط وتستخرج الموضوع التقني.
+
+الكورس الحالي: "${currentCourseTitle}"
+${contextBlock}
+
+## أمثلة:
+
+| سؤال الطالب | الموضوع المستخرج |
+|---|---|
+| "هل الـ SEO مهم في الموضوع ده" | SEO |
+| "ازاي اخلي الناس تلاقيني في جوجل" | SEO |
+| "عايز اتعلم اعمل إعلانات" | اعلانات مدفوعة |
+| "ازاي اربط ده بالايميل ماركتنج" | email marketing |
+| "الموضوع ده ليه علاقة بالووردبريس" | WordPress |
+| "ايه الفرق بين ده والدروبشيبينج" | دروبشيبينج |
+| "وضحلي أكتر" | CURRENT_COURSE |
+| "ايه الخطوة الجاية" | CURRENT_COURSE |
+| "شكراً" | NONE |
+| "تمام فهمت" | NONE |
+
+## القواعد:
+1. افهم **نية** الطالب مش بس الكلمات
+2. لو بيسأل عن موضوع **خارج** الكورس الحالي → اكتب اسم الموضوع (بالعربي والإنجليزي لو ممكن)
+3. لو بيسأل عن **الكورس الحالي** نفسه → CURRENT_COURSE
+4. لو مفيش موضوع تقني → NONE
+5. رد بـ **كلمة أو كلمتين فقط** — لا تكتب جمل`
+        },
+        { role: "user", content: userMessage }
+      ],
+      max_tokens: 25,
+      temperature: 0,
+    });
+
+    const topic = response.choices[0].message.content.trim();
+    console.log(`🧠 Smart Topic Extraction:`);
+    console.log(`   📝 User said: "${userMessage}"`);
+    console.log(`   🎯 Extracted topic: "${topic}"`);
+    return topic;
+  } catch (err) {
+    console.error(`❌ extractSearchTopic error: ${err.message}`);
+    return null; // fallback
+  }
+}
+
+
 /* ══════════════════════════════════════════════════════════
    🆕 FIX #55: Search OTHER courses for Guide Bot
    ══════════════════════════════════════════════════════════ */
@@ -5624,13 +5686,32 @@ let currentLessonContext = "";
           const otherChunksMap = new Map();
           const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
 
-          const searchQuery = message + (lecture_title ? " " + lecture_title : "");
           
-// 🆕 FIX #55: Run both searches in parallel
-          const [semanticChunks, _otherCourseRec] = await Promise.all([
-            getRelevantChunks(searchQuery, courseId, 8),
-            searchOtherCoursesForGuide(message, courseId),
-          ]);
+const searchQuery = message + (lecture_title ? " " + lecture_title : "");
+
+// 🆕 FIX #58: Smart Topic Extraction before searching other courses
+const recentMsgs = (guideConversations[session_id]?.messages || [])
+    .filter(m => m.role !== 'system')
+    .slice(-4);
+const smartTopic = await extractSearchTopic(message, course_name || "", recentMsgs);
+
+let otherCourseSearchText = message; // default: raw message
+if (smartTopic && smartTopic !== "CURRENT_COURSE" && smartTopic !== "NONE") {
+    otherCourseSearchText = smartTopic;
+    console.log(`🧠 FIX #58: Using smart topic "${smartTopic}" instead of raw message`);
+} else if (smartTopic === "CURRENT_COURSE" || smartTopic === "NONE") {
+    otherCourseSearchText = null; // Don't search other courses
+    console.log(`🧠 FIX #58: Topic is "${smartTopic}" — skipping other course search`);
+}
+
+// 🆕 FIX #55+#58: Run both searches in parallel (with smart topic)
+const [semanticChunks, _otherCourseRec] = await Promise.all([
+    getRelevantChunks(searchQuery, courseId, 8),
+    otherCourseSearchText 
+        ? searchOtherCoursesForGuide(otherCourseSearchText, courseId)
+        : Promise.resolve(null),
+]);
+otherCourseRecommendation = _otherCourseRec;
           otherCourseRecommendation = _otherCourseRec;
           
           ragStats.semantic = semanticChunks.length;
