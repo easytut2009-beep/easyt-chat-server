@@ -5042,125 +5042,31 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
   try {
     let result = null;
 
-    console.log(`\n🔍 FIX #55: searchOtherCoursesForGuide START`);
+    console.log(`\n🔍 FIX #59: searchOtherCoursesForGuide START`);
     console.log(`   searchText: "${searchText.substring(0, 100)}"`);
     console.log(`   currentCourseId: ${currentCourseId}`);
 
-    // ═══ Strategy 1: Semantic search in ALL chunks ═══
+    // ═══════════════════════════════════════════════════════════
+    // Strategy 1 (FIRST): Search courses TABLE by title/keywords
+    // Most accurate for finding courses by name!
+    // ═══════════════════════════════════════════════════════════
+    console.log(`   🔄 Strategy 1: Courses table (TITLE FIRST)...`);
     try {
-      const embResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: searchText.substring(0, 2000),
-      });
-      const queryEmbedding = embResponse.data[0].embedding;
+      const allWords = searchText.split(/\s+/).filter(w => w.length >= 2);
+      const meaningful = allWords.filter(w => 
+        w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+      );
+      const englishTerms = allWords.filter(w => /^[a-zA-Z]{2,}$/.test(w));
+      const rawTerms = [...new Set([...meaningful, ...englishTerms])];
+      console.log(`   📝 Strategy 1 raw terms: [${rawTerms.join(', ')}]`);
 
-      const { data: allChunks, error } = await supabase.rpc("match_lesson_chunks", {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.55,
-        match_count: 15,
-        filter_course_id: null,
-      });
-
-      if (error) {
-        console.log(`   ⚠️ Strategy 1 RPC error: ${error.message}`);
-      } else {
-        console.log(`   📊 Strategy 1: ${(allChunks || []).length} chunks found`);
-      }
-
-      if (!error && allChunks && allChunks.length > 0) {
-        const courseGroups = {};
-        for (const chunk of allChunks) {
-          const cid = chunk.course_id;
-          if (!cid || cid === currentCourseId) continue;
-          if (!courseGroups[cid]) {
-            courseGroups[cid] = { courseId: cid, chunks: [], totalSim: 0 };
-          }
-          courseGroups[cid].chunks.push(chunk);
-          courseGroups[cid].totalSim += (chunk.similarity || 0);
-        }
-
-        console.log(`   📊 Strategy 1: ${Object.keys(courseGroups).length} other courses found in chunks`);
-
-        let bestGroup = null;
-        let bestScore = 0;
-        for (const group of Object.values(courseGroups)) {
-          const score = group.totalSim + (group.chunks.length * 0.05);
-          if (score > bestScore) {
-            bestScore = score;
-            bestGroup = group;
-          }
-        }
-
-        if (bestGroup && bestScore > 0.55) {
-          const { data: courseData } = await supabase
-            .from("courses")
-            .select("id, title, link")
-            .eq("id", bestGroup.courseId)
-            .single();
-
-          if (courseData) {
-            const lessonIds = [...new Set(bestGroup.chunks.map(c => c.lesson_id).filter(Boolean))];
-            let lessonDetails = [];
-
-            if (lessonIds.length > 0) {
-              const { data: lessons } = await supabase
-                .from("lessons")
-                .select("id, title")
-                .in("id", lessonIds);
-              const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
-
-              const seenLessons = new Set();
-              for (const chunk of bestGroup.chunks) {
-                if (!chunk.lesson_id || seenLessons.has(chunk.lesson_id)) continue;
-                seenLessons.add(chunk.lesson_id);
-                lessonDetails.push({
-                  title: lessonMap.get(chunk.lesson_id) || chunk.lesson_title || "",
-                  timestamp: chunk.timestamp_start || null,
-                });
-              }
-            }
-
-            result = {
-              courseTitle: courseData.title,
-              courseLink: courseData.link || "https://easyt.online/courses",
-              lessons: lessonDetails.slice(0, 3),
-              source: "chunks",
-              score: bestScore,
-            };
-            console.log(`   ✅ Strategy 1 SUCCESS: "${courseData.title}" (score=${bestScore.toFixed(2)})`);
-          }
-        } else {
-          console.log(`   ❌ Strategy 1: No course scored high enough (best=${bestScore.toFixed(2)})`);
-        }
-      }
-    } catch (semErr) {
-      console.error(`   ❌ Strategy 1 EXCEPTION: ${semErr.message}`);
-    }
-
-// ═══ Strategy 2: Search courses table (for courses without chunks) ═══
-    if (!result) {
-      console.log(`   🔄 Strategy 2: Searching courses table...`);
-      try {
-        const allWords = searchText.split(/\s+/).filter(w => w.length >= 2);
-        const meaningful = allWords.filter(w => 
-          w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
-        );
-        const englishTerms = allWords.filter(w => /^[a-zA-Z]{2,}$/.test(w));
-        const rawTerms = [...new Set([...meaningful, ...englishTerms])];
-        console.log(`   📝 Strategy 2 raw terms: [${rawTerms.join(', ')}]`);
-
-        if (rawTerms.length === 0) {
-          console.log(`   ❌ Strategy 2: No search terms extracted`);
-          return null;
-        }
-
+      if (rawTerms.length > 0) {
         const corrected = rawTerms.map(t => applyArabicCorrections(t));
         const expanded = expandSynonyms(corrected);
         const searchTerms = splitIntoSearchableTerms(expanded);
-        console.log(`   📝 Strategy 2 expanded terms: [${searchTerms.join(', ')}]`);
+        console.log(`   📝 Strategy 1 expanded terms: [${searchTerms.join(', ')}]`);
 
         if (searchTerms.length > 0) {
-          // 🆕 FIX #57: Title-first search — find courses where the term is in the TITLE
           let allFoundCourses = [];
           
           // Pass 1: Title-only search (highest relevance)
@@ -5177,12 +5083,12 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
           
           const { data: titleCourses, error: titleErr } = await titleQuery;
           if (!titleErr && titleCourses && titleCourses.length > 0) {
-            console.log(`   📊 Strategy 2 Pass 1 (title): ${titleCourses.length} courses`);
+            console.log(`   📊 Strategy 1 Pass 1 (title): ${titleCourses.length} courses`);
             titleCourses.forEach((c, i) => console.log(`      ${i+1}. "${c.title}"`));
             allFoundCourses = [...titleCourses];
           }
 
-          // Pass 2: Broader search (subtitle, keywords, domain, description)
+          // Pass 2: Broader search
           if (allFoundCourses.length < 3) {
             const broadFilters = searchTerms
               .flatMap(t => [
@@ -5209,14 +5115,13 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
                   existingIds.add(bc.id);
                 }
               }
-              console.log(`   📊 Strategy 2 Pass 2 (broad): ${broadCourses.length} extra courses`);
+              console.log(`   📊 Strategy 1 Pass 2 (broad): ${broadCourses.length} extra courses`);
             }
           }
 
-          console.log(`   📊 Strategy 2 TOTAL: ${allFoundCourses.length} courses`);
+          console.log(`   📊 Strategy 1 TOTAL: ${allFoundCourses.length} courses`);
           
           if (allFoundCourses.length > 0) {
-            // 🆕 FIX #57: Better scoring
             let bestCourse = allFoundCourses[0];
             let bestScore = 0;
             
@@ -5253,45 +5158,146 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
               if (score > bestScore) { bestScore = score; bestCourse = course; }
             }
 
-            // Get lessons for best course
-            let courseLessons = [];
-            try {
-              const { data: lessons } = await supabase
-                .from("lessons")
-                .select("id, title")
-                .eq("course_id", bestCourse.id)
-                .limit(5);
-              if (lessons && lessons.length > 0) {
-                courseLessons = lessons
-                  .filter(l => {
-                    const lNorm = normalizeArabic((l.title || '').toLowerCase());
-                    return searchTerms.some(t => lNorm.includes(normalizeArabic(t.toLowerCase())));
-                  })
-                  .slice(0, 3)
-                  .map(l => ({ title: l.title, timestamp: null }));
-              }
-            } catch (lessonErr) {}
+            // 🆕 FIX #59: Only use title result if score is meaningful
+            if (bestScore >= 30) {
+              // Get lessons for best course
+              let courseLessons = [];
+              try {
+                const { data: lessons } = await supabase
+                  .from("lessons")
+                  .select("id, title")
+                  .eq("course_id", bestCourse.id)
+                  .limit(5);
+                if (lessons && lessons.length > 0) {
+                  courseLessons = lessons
+                    .filter(l => {
+                      const lNorm = normalizeArabic((l.title || '').toLowerCase());
+                      return searchTerms.some(t => lNorm.includes(normalizeArabic(t.toLowerCase())));
+                    })
+                    .slice(0, 3)
+                    .map(l => ({ title: l.title, timestamp: null }));
+                }
+              } catch (lessonErr) {}
 
-            result = {
-              courseTitle: bestCourse.title,
-              courseLink: bestCourse.link || "https://easyt.online/courses",
-              lessons: courseLessons,
-              source: "courses_table",
-              score: 0.5,
-            };
-            console.log(`   ✅ Strategy 2 SUCCESS: "${bestCourse.title}" (score=${bestScore})`);
+              result = {
+                courseTitle: bestCourse.title,
+                courseLink: bestCourse.link || "https://easyt.online/courses",
+                lessons: courseLessons,
+                source: "courses_table",
+                score: 0.7,
+              };
+              console.log(`   ✅ Strategy 1 SUCCESS: "${bestCourse.title}" (score=${bestScore})`);
+            } else {
+              console.log(`   ❌ Strategy 1: Best score too low (${bestScore}) — falling through`);
+            }
           } else {
-            console.log(`   ❌ Strategy 2: No courses matched`);
+            console.log(`   ❌ Strategy 1: No courses matched`);
           }
         }
-      } catch (tblErr) {
-        console.error(`   ❌ Strategy 2 EXCEPTION: ${tblErr.message}`);
+      } else {
+        console.log(`   ❌ Strategy 1: No search terms extracted`);
+      }
+    } catch (tblErr) {
+      console.error(`   ❌ Strategy 1 EXCEPTION: ${tblErr.message}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Strategy 2 (FALLBACK): Semantic search in ALL chunks
+    // For topics buried in lesson content, not in course titles
+    // ═══════════════════════════════════════════════════════════
+    if (!result) {
+      console.log(`   🔄 Strategy 2: Semantic chunks (FALLBACK)...`);
+      try {
+        const embResponse = await openai.embeddings.create({
+          model: "text-embedding-3-small",
+          input: searchText.substring(0, 2000),
+        });
+        const queryEmbedding = embResponse.data[0].embedding;
+
+        const { data: allChunks, error } = await supabase.rpc("match_lesson_chunks", {
+          query_embedding: queryEmbedding,
+          match_threshold: 0.55,
+          match_count: 15,
+          filter_course_id: null,
+        });
+
+        if (error) {
+          console.log(`   ⚠️ Strategy 2 RPC error: ${error.message}`);
+        } else {
+          console.log(`   📊 Strategy 2: ${(allChunks || []).length} chunks found`);
+        }
+
+        if (!error && allChunks && allChunks.length > 0) {
+          const courseGroups = {};
+          for (const chunk of allChunks) {
+            const cid = chunk.course_id;
+            if (!cid || cid === currentCourseId) continue;
+            if (!courseGroups[cid]) {
+              courseGroups[cid] = { courseId: cid, chunks: [], totalSim: 0 };
+            }
+            courseGroups[cid].chunks.push(chunk);
+            courseGroups[cid].totalSim += (chunk.similarity || 0);
+          }
+
+          console.log(`   📊 Strategy 2: ${Object.keys(courseGroups).length} other courses found`);
+
+          let bestGroup = null;
+          let bestScore = 0;
+          for (const group of Object.values(courseGroups)) {
+            const score = group.totalSim + (group.chunks.length * 0.05);
+            if (score > bestScore) {
+              bestScore = score;
+              bestGroup = group;
+            }
+          }
+
+          if (bestGroup && bestScore > 0.55) {
+            const { data: courseData } = await supabase
+              .from("courses")
+              .select("id, title, link")
+              .eq("id", bestGroup.courseId)
+              .single();
+
+            if (courseData) {
+              const lessonIds = [...new Set(bestGroup.chunks.map(c => c.lesson_id).filter(Boolean))];
+              let lessonDetails = [];
+
+              if (lessonIds.length > 0) {
+                const { data: lessons } = await supabase
+                  .from("lessons")
+                  .select("id, title")
+                  .in("id", lessonIds);
+                const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
+
+                const seenLessons = new Set();
+                for (const chunk of bestGroup.chunks) {
+                  if (!chunk.lesson_id || seenLessons.has(chunk.lesson_id)) continue;
+                  seenLessons.add(chunk.lesson_id);
+                  lessonDetails.push({
+                    title: lessonMap.get(chunk.lesson_id) || chunk.lesson_title || "",
+                    timestamp: chunk.timestamp_start || null,
+                  });
+                }
+              }
+
+              result = {
+                courseTitle: courseData.title,
+                courseLink: courseData.link || "https://easyt.online/courses",
+                lessons: lessonDetails.slice(0, 3),
+                source: "chunks",
+                score: bestScore,
+              };
+              console.log(`   ✅ Strategy 2 SUCCESS: "${courseData.title}" (score=${bestScore.toFixed(2)})`);
+            }
+          } else {
+            console.log(`   ❌ Strategy 2: No course scored high enough (best=${bestScore.toFixed(2)})`);
+          }
+        }
+      } catch (semErr) {
+        console.error(`   ❌ Strategy 2 EXCEPTION: ${semErr.message}`);
       }
     }
 
-
-
-    // ═══ Return result ═══
     return result;
 
   } catch (outerErr) {
@@ -5299,7 +5305,6 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
     return null;
   }
 }
-
 
 
 /* ══════════════════════════════════════════════════════════
@@ -5449,7 +5454,7 @@ function buildGuideSystemPrompt(
     p += `\n║  🔴🔴🔴 تعليمات الإجابة — اتبعها بالترتيب 🔴🔴🔴    ║`;
     p += `\n╚══════════════════════════════════════════════════╝`;
 
-// 🆕 FIX #53: Ultra-strong current lesson awareness
+    // 🆕 FIX #53: Ultra-strong current lesson awareness
     if (lectureTitle) {
       p += `\n\n${'🔴'.repeat(10)} قاعدة ذهبية إجبارية ${'🔴'.repeat(10)}`;
       p += `\n┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓`;
@@ -5459,12 +5464,32 @@ function buildGuideSystemPrompt(
       p += `\n┃ القاعدة #2: لو لقيت معلومة من درس اسمه "${lectureTitle}" = ده الدرس الحالي ✅`;
       p += `\n┃ القاعدة #3: ممنوع نهائياً تقول "ما اتكلمش عنها" وبعدها تذكر درس "${lectureTitle}"`;
       p += `\n┃            لأن ده نفس الدرس اللي الطالب فيه دلوقتي!`;
-      p += `\n┃ القاعدة #4: لو المعلومة موجودة + فيها timestamp = قول "المحاضر شرح ده عند الدقيقة X"`;
-      p += `\n┃`;
-      p += `\n┃ ❌ مثال غلط: "المحاضر ما اتكلمش عنها في الدرس الحالي، لكن شرحها في درس ${lectureTitle}"`;
-      p += `\n┃ ✅ مثال صح:  "المحاضر شرح النقطة دي عند الدقيقة 7:32 ⏱️"`;
+      p += `\n┃ القاعدة #4: لو المعلومة موجودة + فيها timestamp = اذكر التوقيت طبيعي في سياق الكلام`;
       p += `\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛`;
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🔴🔴🔴 القاعدة الأهم: أسلوب الرد
+    // ═══════════════════════════════════════════════════════════
+    p += `\n\n${'🔴'.repeat(10)} أسلوب الرد — إجباري ${'🔴'.repeat(10)}`;
+    p += `\n┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓`;
+    p += `\n┃ أنت بتشرح كأنك المحاضر نفسه — كل كلامك لازم يكون متصل وطبيعي`;
+    p += `\n┃`;
+    p += `\n┃ ❌ ممنوع نهائياً تقول أي حاجة من دول:`;
+    p += `\n┃    - "معلومة إضافية"`;
+    p += `\n┃    - "الموضوع ده ما اتغطاش في الكورس"`;
+    p += `\n┃    - "المحاضر ما ذكرش ده"`;
+    p += `\n┃    - "ما اتكلمش عنها في الدرس الحالي"`;
+    p += `\n┃    - "من معرفتي العامة"`;
+    p += `\n┃    - "دي معلومة إضافية مني"`;
+    p += `\n┃    - أي كلام يوضّح إن فيه فرق بين محتوى الكورس ومعلومات إضافية`;
+    p += `\n┃`;
+    p += `\n┃ ✅ المطلوب:`;
+    p += `\n┃    - ادمج كل المعلومات (من الكورس + معرفتك) في إجابة واحدة متصلة`;
+    p += `\n┃    - خلّي الكلام يتدفق كأنه شرح واحد من نفس الشخص`;
+    p += `\n┃    - لو عندك نصيحة إضافية، قولها طبيعي كأنها جزء من الشرح`;
+    p += `\n┃    - لو فيه timestamp اذكره طبيعي: "زي ما شرحنا عند الدقيقة X:XX ⏱️"`;
+    p += `\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛`;
 
     p += `\n\nلما الطالب يسألك أي سؤال، نفّذ الخطوات دي بالترتيب:`;
 
@@ -5473,16 +5498,12 @@ function buildGuideSystemPrompt(
     if (hasCurrentContent) {
       p += `\n   ✅ عندك نص الدرس الحالي فوق — اقرأه كله وابحث عن الإجابة`;
       p += `\n   لو لقيت الإجابة:`;
-      p += `\n   - ابدأ ردك بـ: ✅`;
-      p += `\n   - اذكر التوقيت بالظبط من [⏱️] اللي في النص: "المحاضر شرح ده عند الدقيقة X:XX ⏱️"`;
+      p += `\n   - اشرح الإجابة بشكل طبيعي ومتصل`;
+      p += `\n   - لو فيه timestamp، ادمجه في الكلام: "زي ما شرحنا عند الدقيقة X:XX ⏱️"`;
       p += `\n   - استخدم نفس كلام وأمثلة المحاضر — ما تغيرش فيها`;
       p += `\n   - لو التوقيت مش موجود في النص، ما تخترعش توقيت`;
-      p += `\n\n   💡 بعد ما تجيب المعلومة من الدرس، أضف قيمة إضافية:`;
-      p += `\n   - نصيحة عملية أو تجربة مفيدة متعلقة بالموضوع`;
-      p += `\n   - مثال توضيحي يسهّل الفهم`;
-      p += `\n   - تحذير من خطأ شائع المبتدئين بيعملوه`;
-      p += `\n   - ربط المعلومة بمعلومة تانية في الكورس لو تعرف`;
-      p += `\n   - افصل القيمة الإضافية بعنوان "💡 نصيحة إضافية:"`;
+      p += `\n   - أضف أي نصائح أو أمثلة مكملة بشكل طبيعي في نفس السياق`;
+      p += `\n   - خلّي كل الكلام متصل — ما تفصلش بعناوين زي "نصيحة إضافية"`;
     } else {
       p += `\n   ⚠️ مفيش نص متاح للدرس الحالي — انتقل للخطوة 2`;
     }
@@ -5492,36 +5513,34 @@ function buildGuideSystemPrompt(
     if (hasOtherContent) {
       p += `\n   ✅ عندك محتوى من دروس تانية فوق — ابحث فيه`;
       p += `\n   لو لقيت الإجابة في درس تاني:`;
-      p += `\n   - قول: "⚠️ النقطة دي المحاضر ما اتكلمش عنها في الدرس الحالي"`;
-      p += `\n   - قول: "لكن شرحها في درس [اسم الدرس بالظبط من القائمة] عند الدقيقة [X:XX] ⏱️"`;
-      p += `\n   - بعدين اشرح الإجابة من المحتوى`;
-      p += `\n   - أضف "💡 نصيحة إضافية:" بمعلومة مكملة تفيد الطالب`;
+      p += `\n   - اشرح الإجابة بشكل طبيعي ومتصل`;
+      p += `\n   - اذكر اسم الدرس والتوقيت بشكل مدمج: "ده اتشرح بالتفصيل في درس [اسم الدرس] عند الدقيقة [X:XX] ⏱️"`;
+      p += `\n   - أكمل بأي نصائح أو معلومات مكملة بشكل طبيعي`;
     } else {
       p += `\n   ⚠️ مفيش محتوى من دروس تانية — انتقل للخطوة 3`;
     }
 
-    // ═══ الخطوة 3: معرفة عامة (الجديد!) ═══
+    // ═══ الخطوة 3: معرفة عامة ═══
     p += `\n\n📌 الخطوة 3: لو مش موجود في أي محتوى → جاوب من معرفتك العامة`;
     p += `\n   الموضوع مش موجود في الدروس المرفوعة، بس لسه تقدر تفيد الطالب!`;
-    p += `\n   - ابدأ بـ: "🧠 معلومة إضافية:"`;
-    p += `\n   - قول: "الموضوع ده ما اتغطاش في الكورس، بس خليني أفيدك:"`;
-    p += `\n   - جاوب على السؤال من معرفتك العامة بشكل عملي ومفيد`;
-    p += `\n   - خلي الإجابة مرتبطة بسياق الكورس والمجال اللي الطالب بيدرسه`;
-    p += `\n   - أضف "💡 نصيحة:" في الآخر بنصيحة عملية`;
-    p += `\n   - ❌ بس ممنوع تقول "المحاضر قال" أو تخترع timestamp — وضّح إنها معلومة إضافية منك`;
+    p += `\n   - جاوب على السؤال مباشرة بشكل طبيعي — كأنك بتشرحه عادي`;
+    p += `\n   - ❌ ممنوع تقول "الموضوع ده ما اتغطاش" أو "معلومة إضافية"`;
+    p += `\n   - ❌ ممنوع تقول "المحاضر قال" أو تخترع timestamp`;
+    p += `\n   - ✅ اشرح الموضوع بثقة وبشكل عملي مرتبط بسياق الكورس`;
+    p += `\n   - ✅ أضف نصائح وأمثلة عملية بشكل طبيعي في نفس الكلام`;
+    p += `\n   - خلّي الرد يبان كأنه امتداد طبيعي لمحتوى الكورس`;
 
-// ═══ الخطوة 4: ترشيح كورس تاني ═══
+    // ═══ الخطوة 4: ترشيح كورس تاني ═══
     if (otherCourseRecommendation) {
-// جديد:
-p += `\n\n📌 الخطوة 4 (إجبارية لو جاوبت من خطوة 3): ترشيح كورس تاني`;
-p += `\n   🔴 لو جاوبت من معرفتك العامة (خطوة 3) = لازم ترشّح الكورس ده — مش اختياري!`;
+      p += `\n\n📌 الخطوة 4 (إجبارية لو جاوبت من خطوة 3): ترشيح كورس تاني`;
+      p += `\n   🔴 لو جاوبت من معرفتك العامة (خطوة 3) = لازم ترشّح الكورس ده — مش اختياري!`;
       p += `\n   لقيت كورس تاني على المنصة ممكن يفيد الطالب (قسم 🎓 فوق)`;
       p += `\n   ❌ لو جاوبت بالكامل من الدرس الحالي (خطوة 1) وكان كافي → ما ترشحش`;
       p += `\n   ✅ لو جاوبت من معرفتك (خطوة 3) → رشّح الكورس`;
       p += `\n   ✅ لو الإجابة ناقصة أو الموضوع محتاج تعمق أكتر → رشّح الكورس`;
       p += `\n   ✅ لو الطالب سأل عن موضوع مش موجود في الكورس الحالي بس موجود في الكورس التاني → رشّح`;
-      p += `\n   الشكل:`;
-      p += `\n   📚 "لو عايز تتعمق أكتر في الموضوع ده، هتلاقيه بالتفصيل في كورس [اسم الكورس]"`;
+      p += `\n   الشكل — ادمجه طبيعي في آخر الكلام:`;
+      p += `\n   "بالمناسبة، الموضوع ده متشرح بالتفصيل في كورس [اسم الكورس] على المنصة!"`;
       p += `\n   🔗 [رابط الكورس]`;
       if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
         p += `\n   📖 واذكر الدروس المحددة لو موجودة`;
@@ -5537,29 +5556,30 @@ p += `\n   🔴 لو جاوبت من معرفتك العامة (خطوة 3) = ل
     p += `\n❌ ممنوع تخترع اسم درس مش في القائمة`;
     p += `\n❌ ممنوع تقول "المحاضر قال" لو مش لاقي الكلام في النص فوق`;
     p += `\n❌ ممنوع تخترع أسماء مواقع أو أدوات المحاضر ما ذكرهاش`;
+    p += `\n❌ ممنوع تقول "معلومة إضافية" أو "الموضوع ده ما اتغطاش" أو "المحاضر ما ذكرش"`;
+    p += `\n❌ ممنوع تفصل بين محتوى الكورس والمعلومات الإضافية — كل الكلام لازم يكون متصل`;
     p += `\n✅ لو الطالب سأل بكلمات مختلفة عن اللي في النص، افهم المعنى وطابق`;
     p += `\n✅ لو فيه أرقام أو تكاليف في النص، اذكرها بالظبط`;
-    p += `\n✅ لو جاوبت من معرفتك (الخطوة 3)، وضّح ده — ما تخلطوش بمحتوى الدرس`;
 
     // ═══ شكل الإجابة ═══
     p += `\n\n══════════════════════════════════════`;
     p += `\n📋 شكل الإجابة المطلوب:`;
     p += `\n══════════════════════════════════════`;
-    p += `\n\nلو من الدرس (خطوة 1 أو 2):`;
-    p += `\n   📚 من الدرس:`;
-    p += `\n   [الإجابة من محتوى الدرس]`;
-    p += `\n   🕐 الدقيقة: [timestamp] - درس: [اسم الدرس]`;
-    p += `\n   💡 نصيحة إضافية:`;
-    p += `\n   [معلومة أو نصيحة مكملة تفيد الطالب]`;
-    p += `\n`;
-    p += `\nلو من معرفتك (خطوة 3):`;
-    p += `\n   🧠 معلومة إضافية:`;
-    p += `\n   الموضوع ده ما اتغطاش في الكورس، بس خليني أفيدك:`;
-    p += `\n   [الإجابة من معرفتك العامة]`;
-    p += `\n   💡 نصيحة:`;
-    p += `\n   [نصيحة عملية]`;
+    p += `\n\n- اكتب إجابة واحدة متصلة طبيعية — بدون تقسيم لأقسام`;
+    p += `\n- ابدأ بالإجابة على السؤال مباشرة`;
+    p += `\n- ادمج الأمثلة والنصائح في نفس تدفق الكلام`;
+    p += `\n- لو فيه timestamp ادمجه طبيعي: "زي ما شرحنا عند الدقيقة X:XX ⏱️"`;
+    p += `\n- لو فيه ترشيح كورس، حطه في آخر الرد بشكل طبيعي`;
+    p += `\n- خلّي الرد كله يبان كأنه كلام شخص واحد بيشرح — مش نظام بيجمّع معلومات`;
+    
+    p += `\n\nمثال على رد مثالي:`;
+    p += `\n"السيلز فانل الديناميكية بتعتمد على إنك تغيّر المحتوى حسب سلوك العميل. يعني لو العميل زار صفحة معينة ومشتراش، تعرضله عرض مختلف. ده اتشرح بالتفصيل عند الدقيقة 5:30 ⏱️.`;
+    p += `\nالمهم إنك تبدأ بتحديد مراحل الفانل بتاعتك الأول — مرحلة الوعي، الاهتمام، القرار، والشراء. وفي كل مرحلة تجهّز محتوى مناسب.`;
+    p += `\nنصيحة مهمة: ما تعقدش الفانل في البداية — ابدأ بسيطة وطوّرها مع الوقت بناءً على البيانات."`;
+
     return p;
   }
+
   /* ═══════════════════════════════════
      Guide Bot Status Endpoint
      ═══════════════════════════════════ */
@@ -5919,11 +5939,14 @@ console.log(
         } | Remaining: ${newRemaining}`
       );
 
+// 🆕 FIX #60: Make links clickable in guide replies
+      finalReply = markdownToHtml(finalReply);
+      finalReply = finalizeReply(finalReply);
+
       res.json({
         reply: finalReply,
         remaining_messages: newRemaining,
       });
-
 
     } catch (error) {
       console.error("❌ Guide Error:", error.message);
