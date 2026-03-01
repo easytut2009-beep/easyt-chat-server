@@ -6330,49 +6330,76 @@ console.log(
 let suggestions = [];
 if (newRemaining > 0) {
     try {
+        const cleanReplyText = finalReply.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        
         const suggResp = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
-                    content: `أنت مساعد بيولّد اقتراحات للطالب بعد رد المرشد التعليمي.
+                    content: `أنت بتولّد 3 اقتراحات ذكية ومحددة للطالب بعد رد المرشد.
 
-المطلوب: ارجع JSON فيه array من 3 اقتراحات قصيرة (كل اقتراح 2-5 كلمات).
+🔴 ممنوع نهائياً تستخدم أي اقتراح عام زي:
+❌ "وضّحلي أكتر"
+❌ "اديني مثال"  
+❌ "اديني مثال عملي"
+❌ "اشرحلي أكتر"
+❌ "مش فاهم"
+❌ "لخّصلي الدرس"
+❌ "وبعدين أعمل إيه؟"
+❌ "عندي سؤال تاني"
+
+✅ المطلوب: اقتراحات محددة مبنية على المحتوى الفعلي للرد:
+- اسأل عن مفهوم أو أداة اتذكرت في الرد
+- اسأل عن خطوة عملية مرتبطة بالموضوع
+- اسأل سؤال يوسّع الموضوع اللي اتشرح
+
+مثال لو الرد كان عن "إنشاء متجر إلكتروني":
+✅ "إيه أحسن بوابة دفع؟"
+✅ "إزاي أصوّر المنتجات؟"
+✅ "تكلفة الشحن بتتحسب إزاي؟"
+
+مثال لو الرد كان عن "التسويق بالمحتوى":
+✅ "إيه أنواع المحتوى الأفضل؟"
+✅ "أنشر كل قد إيه؟"
+✅ "إزاي أقيس نجاح المحتوى؟"
 
 القواعد:
-- الاقتراحات تكون متعلقة بالرد اللي المرشد قاله
-- تكون أسئلة أو طلبات طبيعية الطالب ممكن يسألها بعد الرد ده
-- تكون بالعامية المصرية
-- تكون مختصرة جداً (2-5 كلمات بس)
-- متكررش نفس المعنى
-- لو الرد فيه شرح → اقترح "وضّحلي أكتر" أو "اديني مثال"
-- لو الرد فيه خطوات → اقترح "وبعدين أعمل إيه؟"
-- لو الرد فيه درس تاني → اقترح "لخّصلي الدرس ده"
+- كل اقتراح 3-8 كلمات بالعامية المصرية
+- لازم يكون مرتبط بالمحتوى الفعلي مش عام
+- الـ 3 اقتراحات يكونوا مختلفين عن بعض
 
-ارجع JSON بس: {"suggestions": ["اقتراح1", "اقتراح2", "اقتراح3"]}`
+ارجع JSON بس: {"suggestions": ["...", "...", "..."]}`
                 },
                 {
                     role: "user",
-                    content: `رسالة الطالب: "${message.substring(0, 200)}"\n\nرد المرشد: "${finalReply.replace(/<[^>]*>/g, '').substring(0, 500)}"`
+                    content: `الكورس: "${course_name || 'غير محدد'}"
+الدرس: "${lecture_title || 'غير محدد'}"
+
+سؤال الطالب: "${message.substring(0, 300)}"
+
+رد المرشد (آخر جزء): "${cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800))}"`
                 }
             ],
             response_format: { type: "json_object" },
-            max_tokens: 100,
-            temperature: 0.7,
+            max_tokens: 150,
+            temperature: 0.9,
         });
 
         const suggResult = JSON.parse(suggResp.choices[0].message.content);
         if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
-            suggestions = suggResult.suggestions.slice(0, 3);
+            const banned = ['وضحلي', 'وضّحلي', 'اديني مثال', 'مش فاهم', 'لخصلي', 'لخّصلي', 'اشرحلي', 'عندي سؤال'];
+            suggestions = suggResult.suggestions
+                .filter(s => !banned.some(b => s.includes(b)))
+                .slice(0, 3);
+            
+            if (suggestions.length === 0) {
+                suggestions = suggResult.suggestions.slice(0, 3);
+            }
         }
     } catch (suggErr) {
         console.error("⚠️ Suggestions generation error:", suggErr.message);
-        // Fallback to basic suggestions
-        if (lecture_title) {
-            suggestions = ["وضّحلي أكتر", "اديني مثال عملي", "لخّصلي الدرس"];
-        } else {
-            suggestions = ["عندي سؤال تاني", "اشرحلي بمثال", "مش فاهم"];
-        }
+        suggestions = [];
     }
 }
 
