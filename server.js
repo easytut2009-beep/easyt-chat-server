@@ -4179,7 +4179,7 @@ app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
         .from("lessons")
         .select("id, title")
         .eq("course_id", courseId)
-        .order("title", { ascending: true });
+        .order("created_at", { ascending: true });
       
       if (error) {
         console.error("❌ Lessons query error:", error.message, error.code);
