@@ -3845,6 +3845,36 @@ if (phoneticExtra.length > 0) {
       searchLessonsInCourses(termsToSearch),
     ]);
 
+
+
+// 🆕 FIX #86: Re-rank courses by title match to search terms
+    // Problem: "اليستريتور بالذكاء" finds regular Illustrator course instead of AI one
+    // Solution: Boost courses whose title matches MORE search terms
+    if (courses.length > 1) {
+      const _stripArabicPrefix = (w) => w.replace(/^(بال|وال|فال|لل|ال|ب|و|ف|ل|ك)/, '');
+      const _searchRoots = termsToSearch
+        .map(t => _stripArabicPrefix(t.toLowerCase()))
+        .filter(t => t.length > 2);
+      
+      for (const c of courses) {
+        const titleLow = (c.title || "").toLowerCase();
+        const descLow = (c.description || "").toLowerCase();
+        const textToCheck = titleLow + " " + descLow;
+        const matchCount = _searchRoots.filter(root => textToCheck.includes(root)).length;
+        
+        // Each additional matching term = +150 boost
+        c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 150);
+      }
+      
+      // Re-sort by new scores
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+      
+      console.log("FIX86 re-rank:", courses.slice(0, 3).map(c => 
+        `"${c.title}" score=${c.relevanceScore}`
+      ));
+    }
+
+
     // Merge lesson results
     if (lessonResults && lessonResults.length > 0) {
       const seenCourseIds = new Set(courses.map((c) => c.id));
