@@ -2866,6 +2866,40 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   }
 }
 
+
+// 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
+  if (analysis.action === "SUBSCRIPTION") {
+    const educationalOverride = hasNewExplicitTopic(enrichedMessage);
+    if (educationalOverride) {
+      console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (found topic: "${educationalOverride}")`);
+      analysis.action = "SEARCH";
+      if (!analysis.search_terms || analysis.search_terms.length === 0) {
+        analysis.search_terms = [educationalOverride];
+      }
+    } else {
+      // Check if message has learning intent words + topic
+      const normMsg = normalizeArabic(enrichedMessage.toLowerCase());
+      const hasLearningIntent = /اتعلم|تعلم|اتعلّم|كورس|دوره|دورة|course/.test(normMsg);
+      if (hasLearningIntent) {
+        const foundTerms = [];
+        for (const [, catInfo] of Object.entries(CATEGORIES)) {
+          for (const kw of catInfo.keywords) {
+            const nkw = normalizeArabic(kw.toLowerCase());
+            if (nkw.length > 3 && normMsg.includes(nkw)) {
+              foundTerms.push(kw);
+            }
+          }
+        }
+        if (foundTerms.length > 0) {
+          console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (learning intent + topics: [${foundTerms.join(", ")}])`);
+          analysis.action = "SEARCH";
+          analysis.search_terms = [...new Set([...analysis.search_terms, ...foundTerms])];
+        }
+      }
+    }
+  }
+
+
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
     analysis.search_terms = [];
