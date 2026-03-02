@@ -1826,12 +1826,13 @@ const SESSION_MEMORY_TTL = 30 * 60 * 1000;
 
 function getSessionMemory(sessionId) {
   if (!sessionMemory.has(sessionId)) {
-    sessionMemory.set(sessionId, {
+sessionMemory.set(sessionId, {
       summary: "",
       topics: [],
       lastSearchTerms: [],
       lastSearchTopic: null,
       lastSearchCategory: null,
+      lastShownCourseIds: [],
       userLevel: null,
       interests: [],
       messageCount: 0,
@@ -1867,8 +1868,11 @@ function updateSessionMemory(sessionId, updates) {
   if (updates.lastSearchTopic) {
     mem.lastSearchTopic = updates.lastSearchTopic;
   }
-  if (updates.lastSearchCategory) {
+if (updates.lastSearchCategory) {
     mem.lastSearchCategory = updates.lastSearchCategory;
+  }
+  if (updates.lastShownCourseIds) {
+    mem.lastShownCourseIds = updates.lastShownCourseIds;
   }
 }
 
@@ -2574,31 +2578,39 @@ ${JSON.stringify(allItems, null, 1)}
 
 ═══ مطلوب منك ═══
 
-1. اقرأ رسالة المستخدم وافهم:
-   - مين هو (سنه، مستواه، خبرته، وظيفته)
-   - عايز ايه بالظبط
-   - ايه اللي يناسبه وايه اللي مش منطقي ليه
+1. اقرأ رسالة المستخدم وافهم عايز ايه بالظبط
 
-2. من الكورسات المتاحة، اختار بس اللي فعلاً منطقي ومناسب ليه:
+2. من الكورسات المتاحة فوق، اختار بس اللي فعلاً مناسب:
    - لو كورس وصفه بيقول "للأطفال" والمستخدم باين إنه كبير — متعرضهوش
    - لو كورس متقدم جداً والمستخدم لسه بيبدأ — متعرضهوش
    - لو كورس مالوش أي علاقة بالموضوع اللي المستخدم طلبه — متعرضهوش
-   - فكّر: "لو أنا مدرس قدامي الطالب ده، هقوله يبدأ بإيه؟"
 
-3. لو مفيش ولا كورس مناسب — ارجع [] فاضية وقول في الرسالة إن مفيش حالياً كورسات مناسبة
+3. 🔴🔴🔴 القاعدة الأهم — ممنوع الهلوسة:
+   - ممنوع نهائياً تذكر اسم كورس مش موجود في البيانات فوق
+   - ممنوع تخترع سعر أو رابط أو وصف من عندك
+   - لو مفيش كورس مطابق بالظبط قول "مفيش كورس متخصص حالياً" واعرض أقرب بديل
+   - الكورسات الوحيدة اللي تقدر تذكرها هي اللي في الـ JSON فوق
 
-4. ارجع JSON:
+4. 🔴 اختيار الكورس الصح:
+   - لو المستخدم طلب "فوتوشوب" وفيه كورس اسمه فيه "فوتوشوب" أو "Photoshop" اختاره اولا
+   - لو فيه كورس اسمه مطابق لطلب المستخدم أولوية أولى
+   - لو كورس بس فيه درس مرتبط أولوية تانية
+   - متعرضش كورس مالوش أي علاقة
+
+5. لو مفيش ولا كورس مناسب — ارجع [] فاضية
+
+6. ارجع JSON فقط:
 {
-  "message": "ردك للمستخدم (${lang})",
+  "message": "ردك للمستخدم بنفس لهجته (${lang})",
   "relevant_course_indices": [],
   "relevant_diploma_indices": [],
   "has_exact_match": true/false,
   "suggestion": ""
 }
 
-❌ ممنوع تذكر أسعار أو تخترع معلومات
-❌ ممنوع تعرض كورس مش منطقي للمستخدم حتى لو في نفس المجال
-❌ أقصى عدد: 3 كورسات + 1 دبلومة`;
+ممنوع تذكر أسعار في الرد
+ممنوع تخترع اسم كورس مش في البيانات
+أقصى عدد 3 كورسات و 1 دبلومة`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -2930,6 +2942,19 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
+// 🆕 FIX #65: Exclude previously shown courses on follow-up
+    if (analysis.is_follow_up && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
+      const prevIds = new Set(sessionMem.lastShownCourseIds);
+      const beforeCount = courses.length;
+      const filtered = courses.filter(c => !prevIds.has(c.id));
+      if (filtered.length > 0) {
+        courses = filtered;
+        console.log("FIX65: Excluded prev courses, before:", beforeCount, "after:", filtered.length);
+      } else {
+        console.log("FIX65: All were prev shown, keeping originals");
+      }
+    }
+
     // Boost lesson-matched courses
     const hasLessonMatchedCourses = courses.some(
       (c) =>
@@ -3018,12 +3043,28 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
+
 // Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
         verifyCourseRelevance(c, termsToSearch)
       );
 
-      // 🆕 FIX #62: Fallback — لو RAG رجّع فاضي بس البحث لقى كورسات، اعرض أعلاهم
+      // 🆕 FIX #63: Must-show courses with direct title match
+      const titleMatchMustShow = courses.filter(c => {
+        if (relevantCourses.find(rc => rc.id === c.id)) return false;
+        const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+        return termsToSearch.some(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          return nt.length > 3 && titleNorm.includes(nt);
+        });
+      });
+      for (const tmc of titleMatchMustShow.slice(0, 2)) {
+        relevantCourses.unshift(tmc);
+        console.log("FIX63 Must-show title-match added:", tmc.title);
+      }
+
+      // 🆕 FIX #62: Fallback
+
       if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         console.log(`⚠️ FIX #62: RAG returned empty but search found ${courses.length} courses — using top results`);
         const fallbackCourses = courses
@@ -3076,14 +3117,16 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
 
-      const mainTopic = extractMainTopic(termsToSearch);
+const mainTopic = extractMainTopic(termsToSearch);
       updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: contextResult.detectedTopic || mainTopic,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
+        lastShownCourseIds: relevantCourses.map(c => c.id),
       });
+
     } else {
       // No results
       const cat = getSmartCategoryFromCourses([], termsToSearch);
@@ -3093,11 +3136,12 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
 
-      updateSessionMemory(sessionId, {
+updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: extractMainTopic(termsToSearch),
         userLevel: analysis.user_level,
         topics: analysis.topics,
+        lastShownCourseIds: [],
       });
     }
   }
