@@ -4109,21 +4109,6 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       }
     }
 
-    // Score threshold filtering
-    if (courses.length > 3) {
-      const maxScore = Math.max(
-        ...courses.map((c) => c.relevanceScore || 0)
-      );
-      const threshold =
-        maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
-      const preFiltered = courses.filter(
-        (c) => (c.relevanceScore || 0) >= threshold
-      );
-      if (preFiltered.length >= 1) courses = preFiltered;
-    }
-
-
-
 // Score threshold filtering
     if (courses.length > 3) {
       const maxScore = Math.max(
@@ -4167,10 +4152,6 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
         courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
       }
     }
-
-if (courses.length > 0 || diplomas.length > 0) {
-
-
 
 if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
