@@ -838,116 +838,65 @@ function markdownToHtml(text) {
 function quickIntentCheck(message) {
   const lower = (message || "").toLowerCase();
   const norm = normalizeArabic(lower);
+  const wordCount = lower.split(/\s+/).length;
 
-  // Payment patterns
-  const paymentPatterns = [
-    /ادفع/,
-    /دفع/,
-    /اشتراك/,
-    /اشترك/,
-    /سعر/,
-    /اسعار/,
-    /تكلف/,
-    /كام.*سعر/,
-    /سعر.*كام/,
-    /فلوس/,
-    /ثمن/,
-    /pay/,
-    /price/,
-    /subscri/,
-    /كم.*سعر/,
-    /طريق.*دفع/,
-    /طرق.*دفع/,
-    /visa/,
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #61: quickIntentCheck = ONLY for ultra-obvious cases
+  // Rule: if message is >6 words → ALWAYS let GPT decide
+  // GPT understands context, regex doesn't.
+  // ═══════════════════════════════════════════════════════════
+
+  // Long messages = ALWAYS let GPT handle (it understands context)
+  if (wordCount > 6) return null;
+
+  // --- PURE payment method words (zero ambiguity) ---
+  const purePaymentPatterns = [
+    /^طرق?\s*الدفع$/,
+    /^ازاي\s*ادفع$/,
+    /^كيف\s*ادفع$/,
+    /visa/i,
     /فيزا/,
-    /ماستر/,
-    /master/,
+    /ماستركارد|ماستر\s*كارد/i,
     /فودافون.*كاش/,
     /انستا.*باي/,
-    /instapay/,
-    /تحويل/,
-    /باي.*بال/,
-    /paypal/,
+    /instapay/i,
+    /paypal|باي.*بال/i,
+    /skrill/i,
   ];
-  for (const p of paymentPatterns) {
+  for (const p of purePaymentPatterns) {
     if (p.test(norm) || p.test(lower)) {
       return { intent: "SUBSCRIPTION", confidence: 0.95 };
     }
   }
 
-  // Greeting patterns
-  const greetingPatterns = [
-    /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم|ازيك|إزيك|ازيكم|عامل\s*ايه|كيفك|شلونك|يا\s*هلا)/,
-  ];
-  for (const p of greetingPatterns) {
-    if (p.test(norm) || p.test(lower)) {
-      if (lower.split(/\s+/).length <= 4) {
+  // --- Short greeting (≤4 words) ---
+  if (wordCount <= 4) {
+    const greetingPatterns = [
+      /^(هاي|هلو|مرحبا|سلام|اهلا|صباح|مساء|hi|hello|hey|السلام عليكم|ازيك|إزيك|عامل\s*ايه|كيفك|شلونك|يا\s*هلا)/,
+    ];
+    for (const p of greetingPatterns) {
+      if (p.test(norm) || p.test(lower)) {
         return { intent: "GREETING", confidence: 0.9, isCasual: true };
       }
     }
   }
 
-  // Casual chat patterns
-  const casualChatPatterns = [
-    /^الحمد\s*(لله|الله)/,
-    /^بخير/,
-    /^تمام(\s|$)/,
-    /^كويس/,
-    /^ماشي/,
-    /^الله يسلمك/,
-    /^الله يبارك/,
-    /^جزاك الله/,
-    /^يسلمو/,
-    /^مشكور/,
-    /^شكرا\s*(جدا|ليك|لك|اوي)?$/,
-    /^حلو/,
-    /^اوكي$/,
-    /^ok(ay)?$/i,
-    /^نايس/,
-    /^nice/i,
-    /^good/i,
-    /^تسلم/,
-  ];
-  for (const p of casualChatPatterns) {
-    if ((p.test(norm) || p.test(lower)) && lower.split(/\s+/).length <= 6) {
-      return { intent: "CHAT", confidence: 0.95, isCasual: true };
+  // --- Short casual (≤4 words) ---
+  if (wordCount <= 4) {
+    const casualPatterns = [
+      /^الحمد\s*(لله|الله)/,
+      /^بخير/, /^تمام(\s|$)/, /^كويس/, /^ماشي/,
+      /^شكرا/, /^مشكور/, /^تسلم/, /^يسلمو/,
+      /^اوكي$/, /^ok(ay)?$/i, /^نايس/, /^nice/i, /^good/i,
+    ];
+    for (const p of casualPatterns) {
+      if (p.test(norm) || p.test(lower)) {
+        return { intent: "CHAT", confidence: 0.95, isCasual: true };
+      }
     }
   }
 
-  // Category patterns
-  const catPatterns = [
-    /عندكم.*ايه/,
-    /عندكم.*شو/,
-    /عندكم.*وش/,
-    /ايه.*المجالات/,
-    /شو.*المجالات/,
-    /التصنيفات/,
-    /المجالات.*المتاح/,
-    /فيه.*ايه.*كورس/,
-  ];
-  for (const p of catPatterns) {
-    if (p.test(norm) || p.test(lower)) {
-      return { intent: "CATEGORIES", confidence: 0.85 };
-    }
-  }
-
-  // Diploma patterns
-  const hasDiploma =
-    /دبلوم|diploma/i.test(norm) || /دبلوم|diploma/i.test(lower);
-  if (hasDiploma) {
-    const allCatKeywords = Object.values(CATEGORIES).flatMap((c) => c.keywords);
-    const hasSpecificSubject = allCatKeywords.some((kw) => {
-      const normKw = normalizeArabic(kw.toLowerCase());
-      return (
-        normKw.length > 2 &&
-        (norm.includes(normKw) || lower.includes(kw.toLowerCase()))
-      );
-    });
-    if (!hasSpecificSubject) {
-      return { intent: "DIPLOMAS", confidence: 0.93 };
-    }
-  }
-
+  // --- Everything else → let GPT decide ---
   return null;
 }
 
@@ -2336,18 +2285,39 @@ ${categoriesList}
 }
 
 ═══ 🔴 قواعد التصنيف ═══
-💰 SUBSCRIPTION — أي سؤال عن الدفع/الأسعار/الاشتراك
-🎓 DIPLOMAS — لما يسأل عن الدبلومات بصفة عامة (مش مجال محدد)
-🔍 SEARCH — لما يدور على كورس/دبلومة محددة/مهارة
-📂 CATEGORIES — لما يسأل عن المجالات/التصنيفات
+🔍 SEARCH — المستخدم بيوصف احتياج تعليمي أو بيدور على كورس
+💰 SUBSCRIPTION — بيسأل عن طرق الدفع أو الأسعار فقط
+🎓 DIPLOMAS — بيسأل عن الدبلومات بصفة عامة
+📂 CATEGORIES — بيسأل عن المجالات/التصنيفات
 🛠️ SUPPORT — مشاكل تقنية
-💬 CHAT — ترحيب/أسئلة عامة
+💬 CHAT — ترحيب/كلام عام
 
-═══ قاعدة ذهبية ═══
-لو الرسالة فيها كلمة دفع/سعر/اشتراك/فلوس = SUBSCRIPTION
-لو الرسالة فيها كلمة دبلوم/دبلومات بدون مجال محدد = DIPLOMAS
-لو تقدر تتخيل نتائج بحث للكلمة = SEARCH
-لو مينفعش تبحث من غير ما تعرف الموضوع = CHAT
+═══ ⚠️ القاعدة الأهم: افهم النية مش الكلمات! ═══
+
+🔍 كل دول SEARCH (بيدور على كورس مناسب):
+  - "ابني عنده 10 سنين وعايز اشترك له في كورس برمجة"
+  - "ابني في اولى اعدادي عايز يتعلم حاجة"
+  - "عاوز اسجل في كورس تصميم"
+  - "عايز اشتري كورس فوتوشوب"
+  - "عندي ابن لسه ناشئ ومحتاج كورس"
+  - "انا مبتدئ ايه الكورس المناسب"
+  - "عايز كورس يناسب حد عمره 12 سنة"
+  - "ايه احسن كورس برمجة للاطفال"
+  - "بنتي عايزة تتعلم رسم"
+  - "انا طالب ثانوي عايز اتعلم برمجة"
+
+💰 كل دول SUBSCRIPTION (بيسأل عن الفلوس):
+  - "عايز اشترك" (بس كده)
+  - "ازاي ادفع"
+  - "كام سعر الاشتراك"
+  - "طرق الدفع ايه"
+  - "بقبلوا فيزا؟"
+  - "فودافون كاش"
+
+═══ القاعدة الذهبية ═══
+لو فيه أي سياق تعليمي (سن/مستوى/موضوع/مرحلة/وصف احتياج) = SEARCH
+لو الكلام كله عن فلوس ودفع بس = SUBSCRIPTION
+لو مش متأكد = SEARCH أفضل من SUBSCRIPTION
 
 لـ SEARCH: response_message = ""
 لـ DIPLOMAS: response_message = ""
@@ -2820,14 +2790,22 @@ async function smartChat(message, sessionId) {
     customResponses
   );
 
-  // Override if quick check is confident
-  if (
-    quickCheck &&
-    quickCheck.confidence >= 0.9 &&
-    analysis.action !== quickCheck.intent
-  ) {
+// 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
+// For everything else, GPT's analysis wins — it understands context
+if (quickCheck && quickCheck.confidence >= 0.9) {
+  // Only override if GPT returned something generic (no search terms, no topics)
+  const gptHasContext =
+    (analysis.search_terms && analysis.search_terms.length > 0) ||
+    (analysis.topics && analysis.topics.length > 0);
+
+  if (gptHasContext && quickCheck.intent !== analysis.action) {
+    console.log(
+      `🧠 FIX #61: GPT has context (terms=${(analysis.search_terms||[]).join(",")}, topics=${(analysis.topics||[]).join(",")}) — trusting GPT [${analysis.action}] over quickCheck [${quickCheck.intent}]`
+    );
+  } else if (analysis.action !== quickCheck.intent) {
     analysis.action = quickCheck.intent;
   }
+}
 
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
