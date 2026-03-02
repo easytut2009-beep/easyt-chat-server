@@ -4138,40 +4138,43 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
 
 
 
-    // 🆕 FIX #89: Re-rank by number of matching search terms (multi-term boost)
+// 🆕 FIX #89 v2: Re-rank by matching ARABIC search terms only
     if (courses.length > 1 && termsToSearch.length > 1) {
       const _fix89strip = (w) => normalizeArabic(w.toLowerCase())
         .replace(/^(بال|وال|فال|كال|لل|ال|ب|و|ف|ل|ك)/, '');
       const _fix89roots = [...new Set(
         termsToSearch
+          .filter(t => /[\u0600-\u06FF]/.test(t))
           .map(t => _fix89strip(t))
           .filter(t => t.length > 2)
       )];
 
+      console.log("FIX89v2 arabic-only roots:", _fix89roots, "count:", _fix89roots.length);
+
       if (_fix89roots.length >= 2) {
+        let bestMatchCount = 0;
         for (const c of courses) {
           const fullText = normalizeArabic(
             ((c.title || "") + " " + (c.subtitle || "") + " " + (c.description || "") + " " + (c.keywords || ""))
             .toLowerCase()
           );
-          const matchCount = _fix89roots.filter(root => fullText.includes(root)).length;
-          
-          // Massive boost for courses matching ALL search terms
-if (matchCount >= _fix89roots.length) {
-            c.relevanceScore = ((c.relevanceScore || 0) + 50000) * 3;
-            console.log(`FIX89: "${c.title}" matches ALL ${matchCount} roots → MEGA BOOST`);
-          } else if (matchCount >= 2) {
-            c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 500);
-            console.log(`FIX89: "${c.title}" matches ${matchCount}/${_fix89roots.length} roots → +${matchCount * 500}`);
-            console.log(`FIX89: "${c.title}" matches ALL ${matchCount} roots → +1000`);
-          } else if (matchCount >= 2) {
-            c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 300);
-            console.log(`FIX89: "${c.title}" matches ${matchCount}/${_fix89roots.length} roots → +${matchCount * 300}`);
-          }
+          c._fix89mc = _fix89roots.filter(root => fullText.includes(root)).length;
+          if (c._fix89mc > bestMatchCount) bestMatchCount = c._fix89mc;
+          console.log(`FIX89v2: "${c.title}" matches ${c._fix89mc}/${_fix89roots.length} roots`);
         }
-        courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+        if (bestMatchCount >= 2) {
+          for (const c of courses) {
+            if (c._fix89mc === bestMatchCount) {
+              c.relevanceScore = ((c.relevanceScore || 0) + 90000) * 5;
+              console.log(`FIX89v2: "${c.title}" BEST MATCH (${c._fix89mc}) → score=${c.relevanceScore}`);
+            }
+          }
+          courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+        }
       }
     }
+
 
 if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
