@@ -3849,15 +3849,22 @@ termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
 const _rawWords = (message || "").split(/\s+/).filter(w => w.length > 3);
 const _extraWords = [];
 for (const w of _rawWords) {
-  let clean = w;
+  let clean = w.trim();
+  if (/^\d+$/.test(clean)) continue;
+  
+  // Add raw word as-is
+  _extraWords.push(clean);
+  
+  // Strip prefixes and add variations  
   if (/^(بال|وال|فال|كال)/.test(clean) && clean.length > 4) {
     clean = clean.replace(/^(بال|وال|فال|كال)/, "");
     _extraWords.push(clean);
     _extraWords.push("ال" + clean);
   } else if (clean.startsWith("لل") && clean.length > 4) {
-    clean = clean.substring(2);
-    _extraWords.push(clean);
-    _extraWords.push("ال" + clean);
+    _extraWords.push(clean.substring(2));
+    _extraWords.push("ال" + clean.substring(2));
+  } else if (clean.startsWith("ال") && clean.length > 4) {
+    _extraWords.push(clean.substring(2));
   }
 }
 if (_extraWords.length > 0) {
