@@ -2004,7 +2004,7 @@ function generateSmartClarification(message) {
         { emoji: "🗣️", name: "تعليم اللغات", desc: "لغات للأطفال" }
       ]
     },
-    {
+  {
       id: "security",
       keywords: ["حماية", "حمايه", "اختراق", "هاكر", "هكر", "سيكيورتي", "امن سيبراني", "أمن معلومات"],
       intro: "فهمت إنك مهتم بمجال الحماية والأمن السيبراني 🔒",
@@ -2012,8 +2012,33 @@ function generateSmartClarification(message) {
         { emoji: "🛡️", name: "الحماية والاختراق", desc: "أمن سيبراني واختبار اختراق" },
         { emoji: "💻", name: "البرمجة", desc: "أساسيات مهمة للمجال" }
       ]
+    },
+    {
+      id: "student",
+      keywords: ["طالب ثانوي", "طالبه ثانوي", "طالب جامعي", "طالبه جامعي", "طالب اعدادي", "طالبه اعدادي", "لسه طالب", "لسا طالب", "طالب مبتدئ", "انا طالب"],
+      intro: "أهلاً بيك! 🎓 جميل إنك عايز تستغل وقتك في تعلم حاجة جديدة",
+      options: [
+        { emoji: "💻", name: "البرمجة والتكنولوجيا", desc: "ابدأ تعلم البرمجة من الصفر" },
+        { emoji: "🎨", name: "الجرافيكس والتصميم", desc: "تصميم جرافيك وفوتوشوب" },
+        { emoji: "📢", name: "الديجيتال ماركيتنج", desc: "تسويق إلكتروني وسوشيال ميديا" },
+        { emoji: "💰", name: "الربح من الانترنت", desc: "اشتغل أونلاين وانت لسه بتدرس" },
+        { emoji: "🗣️", name: "تعليم اللغات", desc: "إنجليزي وفرنسي وألماني" }
+      ]
+    },
+    {
+      id: "unclear",
+      keywords: ["مش عارف ابدأ", "مش عارف ابدا", "محتار", "مش متأكد", "ابدأ منين", "ابدا منين", "حد يساعدني", "مش عارف اتعلم ايه", "مش عارف اختار", "ايه المناسب", "ايه الانسب", "مش عارف اعمل ايه", "منين ابدأ", "منين ابدا", "ابدأ ازاي", "ابدا ازاي", "مش عارف ايه", "اعمل ايه"],
+      intro: "أهلاً بيك! 😊 خليني أساعدك تختار المجال المناسبليك",
+      options: [
+        { emoji: "💻", name: "البرمجة والتكنولوجيا", desc: "لو بتحب الكمبيوتر والتكنولوجيا" },
+        { emoji: "🎨", name: "الجرافيكس والتصميم", desc: "لو بتحب الرسم والإبداع" },
+        { emoji: "📢", name: "الديجيتال ماركيتنج", desc: "لو بتحب السوشيال ميديا" },
+        { emoji: "💰", name: "الربح من الانترنت", desc: "لو عايز تشتغل من البيت" },
+        { emoji: "📊", name: "الإدارة والبيزنس", desc: "لو مهتم بإدارة المشاريع" }
+      ]
     }
   ];
+
 
   for (const mapping of topicMappings) {
     for (const kw of mapping.keywords) {
@@ -3008,9 +3033,24 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-  if (!skipUpsell) {
+if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
     enrichSearchTermsFromResponse(analysis);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #71: Intercept vague SEARCH → smart clarification
+  // ═══════════════════════════════════════════════════════════
+  if (!skipUpsell && analysis.action === "SEARCH") {
+    const vagueCheck = generateSmartClarification(enrichedMessage);
+    if (vagueCheck.matched && ["unclear", "student"].includes(vagueCheck.topicId)) {
+      const explicitTopic = hasNewExplicitTopic(enrichedMessage);
+      if (!explicitTopic) {
+        console.log(`🧠 FIX #71: Vague SEARCH intercepted → clarification (topic: ${vagueCheck.topicId})`);
+        analysis.action = "CHAT";
+        analysis.search_terms = [];
+      }
+    }
   }
 
   let reply = "";
