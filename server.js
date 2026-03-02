@@ -1233,19 +1233,19 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
       const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
-      const fullQuery = normalizeArabic(
+const fullQuery = normalizeArabic(
         searchTerms.join(" ").toLowerCase()
       );
-      if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 200;
-      if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 50;
+      if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 500;
+      if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 100;
 
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-        if (titleNorm.includes(nt)) score += 50;
-        if (subtitleNorm.includes(nt)) score += 15;
-        if (domainNorm.includes(nt)) score += 30;
-        if (keywordsNorm.includes(nt)) score += 20;
+        if (titleNorm.includes(nt)) score += 150;
+        if (subtitleNorm.includes(nt)) score += 30;
+        if (domainNorm.includes(nt)) score += 10;
+        if (keywordsNorm.includes(nt)) score += 5;
         if (pageNorm.includes(nt)) score += 5;
         if (syllabusNorm.includes(nt)) score += 4;
         if (objectivesNorm.includes(nt)) score += 4;
@@ -1915,14 +1915,25 @@ function isFollowUpMessage(message) {
     "كام سعره",
     "سعرها كام",
     "بكام",
-    "غيره",
+"غيره",
     "غيرها",
+    "غيرهم",
+    "غير دول",
+    "غيردول",
+    "فيه غيرهم",
+    "فيه غير",
+    "مفيش غيرهم",
     "حاجة تانية",
     "حاجه تانيه",
     "بديل",
+    "بدائل",
     "كمان",
     "تاني",
+    "تانيين",
     "زيه",
+    "زيهم",
+    "مش عاجبني",
+    "مش عاجبني دول",
     "اسهل",
     "اصعب",
     "ابسط",
@@ -2305,18 +2316,35 @@ ${categoriesList}
   - "ايه احسن كورس برمجة للاطفال"
   - "بنتي عايزة تتعلم رسم"
   - "انا طالب ثانوي عايز اتعلم برمجة"
+  - "كام سعر كورس الفوتوشوب" ← بيسأل عن كورس محدد!
+  - "بكام كورس البرمجة" ← بيسأل عن كورس محدد!
+  - "سعر كورس التسويق كام" ← بيسأل عن كورس محدد!
+  - "انا دكتور وعايز اتعلم تسويق لعيادتي"
+  - "عايز كورس تسويق للعيادات"
 
-💰 كل دول SUBSCRIPTION (بيسأل عن الفلوس):
-  - "عايز اشترك" (بس كده)
+💰 كل دول SUBSCRIPTION (بيسأل عن الاشتراك العام أو طرق الدفع):
+  - "عايز اشترك" (بس كده — بدون ذكر كورس!)
   - "ازاي ادفع"
-  - "كام سعر الاشتراك"
+  - "كام سعر الاشتراك" ← بيسأل عن الاشتراك العام مش كورس!
   - "طرق الدفع ايه"
   - "بقبلوا فيزا؟"
   - "فودافون كاش"
+  - "عايز اجدد الاشتراك"
+  - "ايه اسعار الاشتراك"
+
+═══ ⚠️⚠️⚠️ قاعدة "سعر كورس محدد" — الأهم ═══
+لو المستخدم سأل عن سعر أو ثمن كورس معين بالاسم = SEARCH !!!
+لأنه بيدور على الكورس ده عشان يشوف سعره
+أمثلة:
+  - "كام سعر كورس الفوتوشوب" = SEARCH (ذكر كورس محدد)
+  - "بكام كورس البرمجة" = SEARCH (ذكر كورس محدد)
+  - "كام سعر الاشتراك" = SUBSCRIPTION (بيسأل عن الاشتراك العام)
+  - "ادفع ازاي" = SUBSCRIPTION (طرق دفع عامة)
 
 ═══ القاعدة الذهبية ═══
-لو فيه أي سياق تعليمي (سن/مستوى/موضوع/مرحلة/وصف احتياج) = SEARCH
-لو الكلام كله عن فلوس ودفع بس = SUBSCRIPTION
+لو فيه أي سياق تعليمي (سن/مستوى/موضوع/مرحلة/وصف احتياج/اسم كورس) = SEARCH
+لو الكلام كله عن فلوس ودفع واشتراك عام بس = SUBSCRIPTION
+لو ذكر اسم كورس أو مجال + سعر = SEARCH
 لو مش متأكد = SEARCH أفضل من SUBSCRIPTION
 
 لـ SEARCH: response_message = ""
@@ -2990,10 +3018,26 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
-      // Verify relevance
+// Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
         verifyCourseRelevance(c, termsToSearch)
       );
+
+      // 🆕 FIX #62: Fallback — لو RAG رجّع فاضي بس البحث لقى كورسات، اعرض أعلاهم
+      if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
+        console.log(`⚠️ FIX #62: RAG returned empty but search found ${courses.length} courses — using top results`);
+        const fallbackCourses = courses
+          .filter((c) => verifyCourseRelevance(c, termsToSearch))
+          .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
+          .slice(0, 3);
+        
+        if (fallbackCourses.length > 0) {
+          relevantCourses = fallbackCourses;
+          if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+            recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
+          }
+        }
+      }
 
       // Ensure must-show courses are included
       relevantCourses.sort(
