@@ -3366,34 +3366,25 @@ updateSessionMemory(sessionId, {
      ACTION: CHAT (default) — FIX #70
      ═══════════════════════════════════ */
   else {
-    const responseMsg = analysis.response_message || "";
-    const isGenericOrEmpty = !responseMsg || responseMsg.trim().length < 15;
-    const looksLikeFallback = responseMsg.includes("توضح") || responseMsg.includes("مش فاهم") || responseMsg.includes("وضّح");
+    // FIX #70: Try smart clarification FIRST (before GPT's generic response)
+    let usedSmartClarification = false;
 
-    if (isGenericOrEmpty || looksLikeFallback) {
-      // FIX #70: Reset previous search context so it doesn't bleed
-      sessionMem.lastSearchCategory = null;
-      sessionMem.lastSearchTopic = null;
-
-      const wordCount = enrichedMessage.trim().split(/\s+/).length;
-      if (wordCount >= 3) {
-        const smartResult = generateSmartClarification(enrichedMessage);
-        if (smartResult.matched) {
-          console.log(`🧠 FIX #70: Smart clarification for topic: ${smartResult.topicId}`);
-          reply = smartResult.response;
-        } else {
-          // Improved generic fallback — no hardcoded course names
-          reply = `مش متأكد فهمتك صح 🤔\n\nممكن تقولي:\n• عايز تتعلم إيه بالظبط؟\n• أو المجال اللي مهتم بيه؟\n\nوأنا هساعدك ألاقي الكورس المناسب 😊`;
-        }
-      } else {
-        reply = responseMsg || getSmartFallback(sessionId);
+    if (!skipUpsell) {
+      const smartResult = generateSmartClarification(enrichedMessage);
+      if (smartResult.matched) {
+        console.log(`🧠 FIX #70: Smart clarification matched topic: ${smartResult.topicId}`);
+        reply = smartResult.response;
+        usedSmartClarification = true;
       }
-    } else {
-      reply = responseMsg;
+    }
+
+    if (!usedSmartClarification) {
+      reply = analysis.response_message || getSmartFallback(sessionId);
     }
 
 // No upsell in CHAT mode
   }
+
   // Final processing
   reply = markdownToHtml(reply);
   reply = finalizeReply(reply);
