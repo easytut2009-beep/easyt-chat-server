@@ -4195,6 +4195,64 @@ if (courses.length > 0 || diplomas.length > 0) {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
+// 🆕 FIX #91: Verify diploma relevance — filter out unrelated diplomas
+      if (relevantDiplomas.length > 0 && termsToSearch.length > 0) {
+        const meaningfulSearchTerms = termsToSearch.filter(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          return nt.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase()) && !/دبلوم/.test(nt);
+        });
+
+        if (meaningfulSearchTerms.length > 0) {
+          const filteredDiplomas = relevantDiplomas.filter(d => {
+            const titleNorm = normalizeArabic((d.title || "").toLowerCase());
+            const descNorm = normalizeArabic(
+              ((d.description || "").replace(/<[^>]*>/g, "")).toLowerCase()
+            );
+            const diplomaText = titleNorm + " " + descNorm;
+
+            // Check if ANY meaningful search term appears in diploma title or description
+            const hasMatch = meaningfulSearchTerms.some(t => {
+              const nt = normalizeArabic(t.toLowerCase());
+              if (nt.length <= 2) return false;
+
+              // Direct match
+              if (diplomaText.includes(nt)) return true;
+
+              // Check category keywords match
+              const searchCat = detectRelevantCategory([t]);
+              if (searchCat) {
+                const diplomaCatTerms = [];
+                for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+                  for (const kw of catInfo.keywords) {
+                    const nkw = normalizeArabic(kw.toLowerCase());
+                    if (nkw.length > 2 && diplomaText.includes(nkw)) {
+                      diplomaCatTerms.push(catName);
+                      break;
+                    }
+                  }
+                }
+                // Diploma's category matches search category
+                if (diplomaCatTerms.includes(searchCat.name)) return true;
+              }
+
+              return false;
+            });
+
+            if (!hasMatch) {
+              console.log(`FIX91: ❌ Diploma "${d.title}" filtered out — no relevance to [${meaningfulSearchTerms.join(", ")}]`);
+            }
+            return hasMatch;
+          });
+
+          if (filteredDiplomas.length > 0 || relevantDiplomas.length === filteredDiplomas.length) {
+            relevantDiplomas = filteredDiplomas;
+          } else {
+            console.log(`FIX91: All diplomas filtered — keeping top 1 as fallback`);
+            relevantDiplomas = relevantDiplomas.slice(0, 1);
+          }
+        }
+      }
+
 
 // Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
