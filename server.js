@@ -2809,18 +2809,28 @@ QUESTION — المستخدم عاوز يفهم حاجة أو يسأل سؤال:
   - "إيه هو الفانل" ← سؤال عن مصطلح = QUESTION
   - "ازاي الإعلانات بتشتغل" ← سؤال معرفي = QUESTION
 
-UNCLEAR — الكلام مش مفهوم أو حروف عشوائية:
-  - "TDV TGHN" ← حروف عشوائية = UNCLEAR
-  - "اسبلادبغ" ← كلام مش مفهوم = UNCLEAR
+UNCLEAR — حروف عشوائية بالكامل مفيهاش أي كلمة حقيقية:
+  - "TDV TGHN" ← حروف عشوائية 100% = UNCLEAR
+  - "اسبلادبغ" ← كلمة واحدة عشوائية مش موجودة في أي لغة = UNCLEAR
   - "hhhhh" ← حروف مكررة = UNCLEAR
+  - "fjksd sdkfj" ← عشوائي بالكامل = UNCLEAR
+  
+  🔴🔴🔴 انتبه: UNCLEAR نادر جداً! لو فيه أي كلمة حقيقية واحدة = مش UNCLEAR!
+  ❌ "يعني إيه SEO" ← فيها كلمات عربية مفهومة + مصطلح إنجليزي = QUESTION!
+  ❌ "ROAS" ← مصطلح إنجليزي معروف = QUESTION!
+  ❌ "فوتوشوب" ← اسم برنامج = FIND_COURSE!
+  ❌ "ازاي اتعلم" ← جملة عربية مفهومة = FIND_COURSE!
+  ✅ "sdkfjh skdjfh" ← حروف عشوائية 100% = UNCLEAR
 
 القواعد:
 1. مصطلح/اختصار لوحده (كلمة واحدة أجنبية مش اسم برنامج معروف) = QUESTION
 2. اسم برنامج معروف لوحده (فوتوشوب، بريميير، اكسل) = FIND_COURSE
 3. جملة فيها نية تعلم = FIND_COURSE
 4. جملة استفهامية عن مفهوم = QUESTION
-5. حروف عشوائية أو كلام مش بيكوّن معنى = UNCLEAR
-6. لو مش متأكد = QUESTION أفضل من UNCLEAR
+5. "يعني إيه X" أو "ما معنى X" أو "إيه هو X" = QUESTION (دايماً!)
+6. أي رسالة فيها كلمة عربية أو إنجليزية حقيقية واحدة على الأقل = مش UNCLEAR!
+7. UNCLEAR = فقط لو كل الرسالة حروف عشوائية 100% بدون أي كلمة حقيقية
+8. لو مش متأكد = QUESTION (أفضل بكتير من UNCLEAR)
 
 ═══ 🔴 قواعد التصنيف ═══
 🔍 SEARCH — المستخدم بيوصف احتياج تعليمي أو بيدور على كورس
@@ -3648,17 +3658,69 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
 
 // ═══════════════════════════════════════════════════════════
-  // 🆕 FIX #84: Handle UNCLEAR intent — ask for clarification
+  // 🆕 FIX #84: Handle UNCLEAR intent — with safeguard
+  // Only treat as UNCLEAR if message is TRULY unintelligible
   // ═══════════════════════════════════════════════════════════
   if (analysis.user_intent === "UNCLEAR") {
-    console.log(`🧠 FIX #84: UNCLEAR intent detected → asking for clarification`);
-    analysis.action = "CHAT";
-    analysis.search_terms = [];
-    if (!analysis.response_message || analysis.response_message.length < 10) {
-      analysis.response_message = "مش فاهم قصدك 😅 ممكن توضحلي أكتر؟<br>مثلاً قولي اسم الكورس أو المجال اللي بتدور عليه 🎯";
+    let isActuallyRecognizable = false;
+    const normMsgCheck = normalizeArabic(enrichedMessage.toLowerCase());
+    const lowerMsgCheck = enrichedMessage.toLowerCase();
+
+    // Safeguard 1: Question patterns → QUESTION
+    const questionPatterns = /يعني\s*(ايه|إيه|اية|ايش)|ايه\s*(هو|هي|هم|يعني)|ما\s*(هو|هي|معنى)|الفرق\s*بين|شو\s*يعني|وش\s*يعني|ازاي|كيف|ليه|علاش|شلون/;
+    if (questionPatterns.test(normMsgCheck) || questionPatterns.test(lowerMsgCheck)) {
+      isActuallyRecognizable = true;
+      console.log(`🧠 FIX #84 safeguard: question pattern detected`);
+    }
+
+    // Safeguard 2: English terms (2+ letters) → not random
+    if (!isActuallyRecognizable) {
+      const englishWords = enrichedMessage.match(/[a-zA-Z]{2,}/g);
+      if (englishWords && englishWords.some(w => w.length >= 2)) {
+        isActuallyRecognizable = true;
+        console.log(`🧠 FIX #84 safeguard: English term found: [${englishWords.join(', ')}]`);
+      }
+    }
+
+    // Safeguard 3: Known keywords from CATEGORIES
+    if (!isActuallyRecognizable) {
+      for (const [, catInfo] of Object.entries(CATEGORIES)) {
+        for (const kw of catInfo.keywords) {
+          const nkw = normalizeArabic(kw.toLowerCase());
+          if (nkw.length > 2 && (normMsgCheck.includes(nkw) || lowerMsgCheck.includes(kw.toLowerCase()))) {
+            isActuallyRecognizable = true;
+            console.log(`🧠 FIX #84 safeguard: category keyword found: "${kw}"`);
+            break;
+          }
+        }
+        if (isActuallyRecognizable) break;
+      }
+    }
+
+    // Safeguard 4: Arabic words with 3+ chars → probably not gibberish
+    if (!isActuallyRecognizable) {
+      const arabicWords = enrichedMessage.match(/[\u0600-\u06FF]{3,}/g);
+      if (arabicWords && arabicWords.length >= 2) {
+        isActuallyRecognizable = true;
+        console.log(`🧠 FIX #84 safeguard: multiple Arabic words found`);
+      }
+    }
+
+    if (isActuallyRecognizable) {
+      // Override: this is a recognizable message, treat as QUESTION
+      console.log(`🧠 FIX #84: UNCLEAR → QUESTION (message has recognizable content)`);
+      analysis.user_intent = "QUESTION";
+      // Don't clear search_terms — let the flow continue
+    } else {
+      // Truly unintelligible — ask for clarification
+      console.log(`🧠 FIX #84: UNCLEAR confirmed → asking for clarification`);
+      analysis.action = "CHAT";
+      analysis.search_terms = [];
+      if (!analysis.response_message || analysis.response_message.length < 10) {
+        analysis.response_message = "مش فاهم قصدك 😅 ممكن توضحلي أكتر؟<br>مثلاً قولي اسم الكورس أو المجال اللي بتدور عليه 🎯";
+      }
     }
   }
-
 
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
