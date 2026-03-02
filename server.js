@@ -2779,6 +2779,7 @@ ${categoriesList}
 حلل رسالة المستخدم وارجع JSON فقط:
 {
   "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "DIPLOMAS" | "CHAT" | "SUPPORT",
+  "user_intent": "FIND_COURSE" | "QUESTION" | "UNCLEAR",
   "search_terms": ["كلمة1", "كلمة2"],
   "response_message": "ردك (للأكشنز غير SEARCH فقط)",
   "intent": "وصف النية",
@@ -2789,6 +2790,37 @@ ${categoriesList}
   "audience_filter": null,
   "language": "ar" | "en"
 }
+
+═══ ⚠️⚠️⚠️ قاعدة إجبارية: فهم النية (user_intent) بدون كلمات مفتاحية ═══
+
+مش هتدور على كلمات معينة — افهم النية من السياق الكامل:
+
+FIND_COURSE — المستخدم عاوز يتعلم حاجة أو يدور على كورس:
+  - "فوتوشوب" ← اسم برنامج = غالباً عاوز يتعلمه = FIND_COURSE
+  - "عاوز اتعلم برمجة" ← نية تعلم واضحة = FIND_COURSE
+  - "كورس تسويق" ← بيدور على كورس = FIND_COURSE
+  - "ابني عنده 10 سنين عايز يتعلم" ← نية تعلم = FIND_COURSE
+  - "بكام كورس الفوتوشوب" ← بيسأل عن كورس محدد = FIND_COURSE
+
+QUESTION — المستخدم عاوز يفهم حاجة أو يسأل سؤال:
+  - "ROAS" ← مصطلح/اختصار لوحده = عاوز يعرف معناه = QUESTION
+  - "يعني إيه SEO" ← سؤال عن مفهوم = QUESTION
+  - "الفرق بين UI و UX" ← سؤال مقارنة = QUESTION
+  - "إيه هو الفانل" ← سؤال عن مصطلح = QUESTION
+  - "ازاي الإعلانات بتشتغل" ← سؤال معرفي = QUESTION
+
+UNCLEAR — الكلام مش مفهوم أو حروف عشوائية:
+  - "TDV TGHN" ← حروف عشوائية = UNCLEAR
+  - "اسبلادبغ" ← كلام مش مفهوم = UNCLEAR
+  - "hhhhh" ← حروف مكررة = UNCLEAR
+
+القواعد:
+1. مصطلح/اختصار لوحده (كلمة واحدة أجنبية مش اسم برنامج معروف) = QUESTION
+2. اسم برنامج معروف لوحده (فوتوشوب، بريميير، اكسل) = FIND_COURSE
+3. جملة فيها نية تعلم = FIND_COURSE
+4. جملة استفهامية عن مفهوم = QUESTION
+5. حروف عشوائية أو كلام مش بيكوّن معنى = UNCLEAR
+6. لو مش متأكد = QUESTION أفضل من UNCLEAR
 
 ═══ 🔴 قواعد التصنيف ═══
 🔍 SEARCH — المستخدم بيوصف احتياج تعليمي أو بيدور على كورس
@@ -2936,8 +2968,9 @@ async function analyzeMessage(
     }
 
     if (!result) {
-      return {
+return {
         action: "CHAT",
+        user_intent: "UNCLEAR",
         search_terms: [],
         response_message: "",
         intent: "GENERAL",
@@ -2950,8 +2983,9 @@ async function analyzeMessage(
       };
     }
 
-    return {
+return {
       action: result.action || "CHAT",
+      user_intent: result.user_intent || "FIND_COURSE",
       search_terms: Array.isArray(result.search_terms)
         ? result.search_terms.filter((t) => t && t.length > 0)
         : [],
@@ -2964,10 +2998,12 @@ async function analyzeMessage(
       audience_filter: result.audience_filter || null,
       language: result.language || "ar",
     };
+
   } catch (e) {
     console.error("❌ Analyzer error:", e.message);
-    return {
+return {
       action: "CHAT",
+      user_intent: "UNCLEAR",
       search_terms: [],
       response_message: "",
       intent: "ERROR",
@@ -3368,6 +3404,113 @@ function isGeneralDiplomaRequest(message) {
 }
 
 
+
+/* ═══════════════════════════════════════════════════════════
+   🆕 FIX #84: Answer questions from chunks or general knowledge
+   Cascading: chunks (semantic + text) → GPT knowledge
+   ═══════════════════════════════════════════════════════════ */
+async function answerFromChunksOrKnowledge(question, searchTerms) {
+  if (!openai) return null;
+
+  let chunkContext = "";
+  let relatedCourses = [];
+
+  try {
+    // 1. Semantic search in ALL chunks (no course filter)
+    const semanticChunks = await getRelevantChunks(question, null, 5);
+
+    // 2. Text search in ALL chunks
+    const textTerms = (searchTerms || []).filter(t => t.length > 2);
+    const textChunks = textTerms.length > 0
+      ? await searchChunksByText(textTerms, null, null, 5)
+      : [];
+
+    // 3. Merge and deduplicate
+    const allChunks = [...semanticChunks];
+    const seenIds = new Set(semanticChunks.map(c => c.id));
+    for (const tc of textChunks) {
+      if (!seenIds.has(tc.id)) {
+        allChunks.push(tc);
+        seenIds.add(tc.id);
+      }
+    }
+
+    console.log(`🧠 FIX #84: answerFromChunks — ${allChunks.length} chunks found`);
+
+    // 4. Build context from chunks
+    if (allChunks.length > 0) {
+      chunkContext = allChunks.slice(0, 8).map(c => {
+        const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+        const lesson = c.lesson_title || c.chunk_title || "";
+        return `[${lesson}] ${ts} ${(c.content || "").substring(0, 800)}`;
+      }).join("\n\n");
+
+      // Track related courses
+      const courseIds = [...new Set(allChunks.map(c => c.course_id).filter(Boolean))];
+      if (courseIds.length > 0 && supabase) {
+        const { data: courses } = await supabase
+          .from("courses")
+          .select("id, title, link")
+          .in("id", courseIds)
+          .limit(3);
+        relatedCourses = courses || [];
+      }
+    }
+
+    // 5. Generate answer using GPT
+    const hasChunks = chunkContext.length > 50;
+
+    const systemContent = hasChunks
+      ? `أنت "زيكو" المرشد التعليمي الذكي في منصة easyT.
+
+المستخدم سأل سؤال. ده محتوى من الكورسات المتاحة على المنصة:
+
+${chunkContext}
+
+جاوب على سؤال المستخدم:
+1. لو المحتوى فوق فيه الإجابة → جاوب منه واذكر اسم الدرس والتوقيت لو متاح
+2. لو المحتوى مش كافي → كمّل من معرفتك العامة بشكل طبيعي ومتصل
+3. الرد يكون بالعامية المصرية وودود
+4. ممنوع تقول "مفيش كورس" — أنت بتجاوب سؤال
+5. ممنوع ترشح منصات تعليمية خارجية
+6. لو السؤال عن مصطلح → اشرحه بمثال عملي
+7. استخدم <br> للأسطر الجديدة و <strong> للعناوين`
+      : `أنت "زيكو" المرشد التعليمي الذكي في منصة easyT.
+
+المستخدم سأل سؤال. جاوب عليه من معرفتك:
+1. جاوب بشكل واضح ومختصر وعملي
+2. لو السؤال عن مصطلح → اشرحه + مثال عملي + ليه مهم
+3. لو السؤال عن مفهوم → اشرحه ببساطة
+4. الرد يكون بالعامية المصرية وودود
+5. ممنوع تقول "مفيش كورس" — أنت بتجاوب سؤال مش بتدور على كورس
+6. ممنوع ترشح منصات تعليمية خارجية
+7. استخدم <br> للأسطر الجديدة و <strong> للعناوين`;
+
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemContent },
+        { role: "user", content: question },
+      ],
+      max_tokens: 600,
+      temperature: 0.5,
+    });
+
+    const answer = resp.choices[0].message.content || "";
+    console.log(`🧠 FIX #84: Answer generated (${answer.length} chars, chunks=${hasChunks})`);
+
+    return {
+      answer,
+      hasChunkContent: hasChunks,
+      relatedCourses,
+    };
+  } catch (e) {
+    console.error("❌ answerFromChunksOrKnowledge error:", e.message);
+    return null;
+  }
+}
+
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
@@ -3499,6 +3642,20 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       if (!analysis.search_terms.some(t => normalizeArabic(t).includes('دبلوم'))) {
         analysis.search_terms.push('دبلومة');
       }
+    }
+  }
+
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #84: Handle UNCLEAR intent — ask for clarification
+  // ═══════════════════════════════════════════════════════════
+  if (analysis.user_intent === "UNCLEAR") {
+    console.log(`🧠 FIX #84: UNCLEAR intent detected → asking for clarification`);
+    analysis.action = "CHAT";
+    analysis.search_terms = [];
+    if (!analysis.response_message || analysis.response_message.length < 10) {
+      analysis.response_message = "مش فاهم قصدك 😅 ممكن توضحلي أكتر؟<br>مثلاً قولي اسم الكورس أو المجال اللي بتدور عليه 🎯";
     }
   }
 
@@ -3798,23 +3955,30 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       if (preFiltered.length >= 1) courses = preFiltered;
     }
 
-    if (courses.length > 0 || diplomas.length > 0) {
+if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
       // Must-show courses
       const phase2Model = "gpt-4o-mini";
 
+      // 🆕 FIX #84: For QUESTION intent, also generate an answer
+      const questionAnswerPromise = analysis.user_intent === "QUESTION"
+        ? answerFromChunksOrKnowledge(message, termsToSearch)
+        : Promise.resolve(null);
 
-      // Phase 2: Smart Recommendation
-      const recommendation = await generateSmartRecommendation(
-        message,
-        courses,
-        diplomas,
-        sessionMem,
-        analysis,
-        instructors,
-        phase2Model
-      );
+      // Phase 2: Smart Recommendation (runs in parallel with question answer)
+      const [recommendation, questionAnswer] = await Promise.all([
+        generateSmartRecommendation(
+	message,
+          courses,
+          diplomas,
+          sessionMem,
+          analysis,
+          instructors,
+          phase2Model
+        ),
+        questionAnswerPromise,
+      ]);
 
       let recommendationMessage = recommendation.message || "";
 
@@ -3864,8 +4028,20 @@ const fallbackCourses = courses
         (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
 
-      // Build reply
-      reply = recommendationMessage + "<br><br>";
+// 🆕 FIX #84: Build reply based on user_intent
+      if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.answer) {
+        // QUESTION intent: answer first, then courses as suggestions
+        reply = questionAnswer.answer + "<br><br>";
+
+        if (relevantCourses.length > 0 || relevantDiplomas.length > 0) {
+          reply += `<br>💡 <strong>كورسات ممكن تفيدك لو حبيت تتعمق:</strong><br><br>`;
+        }
+
+        console.log(`🧠 FIX #84: QUESTION answered + ${relevantCourses.length} courses suggested`);
+      } else {
+        // FIND_COURSE intent: current behavior
+        reply = recommendationMessage + "<br><br>";
+      }
 
       if (relevantDiplomas.length > 0) {
         relevantDiplomas.slice(0, 3).forEach((d) => {
@@ -3906,14 +4082,41 @@ const mainTopic = extractMainTopic(termsToSearch);
         lastShownCourseIds: relevantCourses.map(c => c.id),
       });
 
-    } else {
-      // No results
-      const cat = getSmartCategoryFromCourses([], termsToSearch);
-      reply = `🔍 للأسف مفيش كورسات متاحة حالياً عن الموضوع ده.`;
-      if (cat) {
-        reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
+} else {
+      // No results from courses/diplomas/lessons
+
+      // 🆕 FIX #84: QUESTION intent → answer from chunks or knowledge
+      if (analysis.user_intent === "QUESTION") {
+        console.log(`🧠 FIX #84: QUESTION intent + no courses → answering from chunks/knowledge`);
+        const questionAnswer = await answerFromChunksOrKnowledge(message, termsToSearch);
+
+        if (questionAnswer && questionAnswer.answer) {
+          reply = questionAnswer.answer;
+
+          // Show related courses from chunks if found
+          if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+            const instructors = await getInstructors();
+            reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
+            for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
+              const rcUrl = rc.link || ALL_COURSES_URL;
+              reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
+            }
+          }
+
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        } else {
+          reply = `🤔 معنديش معلومات كافية عن الموضوع ده حالياً.`;
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        }
+      } else {
+        // FIND_COURSE intent → current "مفيش كورس" behavior
+        const cat = getSmartCategoryFromCourses([], termsToSearch);
+        reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
+        if (cat) {
+          reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
+        }
+        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
       }
-      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
 
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
