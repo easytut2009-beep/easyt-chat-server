@@ -1025,9 +1025,27 @@ function splitIntoSearchableTerms(terms) {
       result.add(w);
       const nw = normalizeArabic(w);
       if (nw.length > 1) result.add(nw);
-      if (w.startsWith("ال") && w.length > 3) {
-        result.add(w.substring(2));
-      }
+// Strip "ال" prefix
+        if (w.startsWith("ال") && w.length > 3) {
+          result.add(w.substring(2));
+        }
+
+        // 🆕 FIX #87: Strip Arabic compound prefixes (بال، وال، فال، كال، لل)
+        // "بالذكاء" → "ذكاء" + "الذكاء"
+        // "بالفوتوشوب" → "فوتوشوب" + "الفوتوشوب"
+        const _compoundPrefixes = ["بال", "وال", "فال", "كال"];
+        for (const _cp of _compoundPrefixes) {
+          if (nw.startsWith(_cp) && nw.length > _cp.length + 2) {
+            const _stripped = nw.substring(_cp.length);
+            result.add(_stripped);              // "ذكاء"
+            result.add("ال" + _stripped);       // "الذكاء"
+          }
+        }
+        // Also handle "لل" prefix: "للمبتدئين" → "مبتدئين"
+        if (nw.startsWith("لل") && nw.length > 4) {
+          result.add(nw.substring(2));
+          result.add("ال" + nw.substring(2));
+        }
     }
     if (result.size >= 15) break;
   }
@@ -3825,9 +3843,28 @@ let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
 
 
 // 🆕 FIX #86: Keep original terms alongside corrected ones
-// "اليستريتور" gets corrected to "اليستريتر" but course title has "اليستريتور"
-// We need BOTH forms for accurate title matching
 termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
+
+// 🆕 FIX #87: Extract meaningful words from original message
+// GPT sometimes omits qualifiers like "بالذكاء" (with AI)
+const _msgMeaningfulWords = enrichedMessage
+  .split(/\s+/)
+  .map(w => w.toLowerCase().trim())
+  .filter(w => {
+    if (w.length <= 3) return false;
+    if (ARABIC_STOP_WORDS.has(w)) return false;
+    if (/^\d+$/.test(w)) return false;
+    const wNorm = normalizeArabic(w);
+    return !termsToSearch.some(t => {
+      const tNorm = normalizeArabic(t.toLowerCase());
+      return tNorm === wNorm || tNorm.includes(wNorm) || wNorm.includes(tNorm);
+    });
+  });
+
+if (_msgMeaningfulWords.length > 0) {
+  console.log(`FIX87: Adding message words: [${_msgMeaningfulWords.join(', ')}]`);
+  termsToSearch = [...new Set([...termsToSearch, ..._msgMeaningfulWords])];
+}
 
 // 🆕 Auto phonetic transliteration (Arabic brand names → English)
 const phoneticExtra = addPhoneticTransliterations(termsToSearch);
