@@ -2004,13 +2004,26 @@ function generateSmartClarification(message) {
         { emoji: "🗣️", name: "تعليم اللغات", desc: "لغات للأطفال" }
       ]
     },
-  {
+ 
+
+{
       id: "security",
       keywords: ["حماية", "حمايه", "اختراق", "هاكر", "هكر", "سيكيورتي", "امن سيبراني", "أمن معلومات"],
       intro: "فهمت إنك مهتم بمجال الحماية والأمن السيبراني 🔒",
       options: [
         { emoji: "🛡️", name: "الحماية والاختراق", desc: "أمن سيبراني واختبار اختراق" },
         { emoji: "💻", name: "البرمجة", desc: "أساسيات مهمة للمجال" }
+      ]
+    },
+    {
+      id: "design",
+      keywords: ["تصميم", "ديزاين", "design"],
+      intro: "فهمت إنك مهتم بالتصميم 🎨 بس التصميم مجال واسع!",
+      options: [
+        { emoji: "🎨", name: "تصميم جرافيك", desc: "فوتوشوب، اليستريتر، هوية بصرية" },
+        { emoji: "🌐", name: "تصميم مواقع وتطبيقات", desc: "UI/UX، فيجما، واجهات" },
+        { emoji: "🎬", name: "موشن جرافيك وأنيميشن", desc: "افتر افكتس، موشن" },
+        { emoji: "🕹️", name: "تصميم ألعاب", desc: "محركات ألعاب، 3D" }
       ]
     },
     {
@@ -2072,8 +2085,30 @@ for (const mapping of topicMappings) {
           const hasExplicitTopic = explicitTopics.some(t => 
             normMsg.includes(normalizeArabic(t.toLowerCase()))
           );
-          if (hasExplicitTopic) {
+if (hasExplicitTopic) {
             console.log(`🧠 FIX #72: "${mapping.id}" matched but explicit topic found → skipping clarification`);
+            return { matched: false };
+          }
+        }
+
+        // 🆕 FIX #73: design topic — skip if user specified TYPE
+        if (mapping.id === "design") {
+          const designQualifiers = [
+            "جرافيك", "جرافكس", "graphic", "مواقع", "موقع", "ويب", "web",
+            "تطبيقات", "تطبيق", "app", "ألعاب", "العاب", "game",
+            "موشن", "motion", "انيميشن", "animation",
+            "فوتوشوب", "photoshop", "اليستريتر", "illustrator",
+            "فيجما", "figma", "كانفا", "canva", "xd",
+            "بريمير", "premiere", "افتر افكت", "after effect",
+            "انديزاين", "indesign", "بلندر", "blender",
+            "ui", "ux", "واجهة", "واجهات", "هوية بصرية",
+            "3d", "ثري دي", "لوجو", "شعار", "بوستر", "سوشيال"
+          ];
+          const hasQualifier = designQualifiers.some(q =>
+            normMsg.includes(normalizeArabic(q.toLowerCase()))
+          );
+          if (hasQualifier) {
+            console.log(`🧠 FIX #73: design matched but qualifier found → skip`);
             return { matched: false };
           }
         }
@@ -3077,7 +3112,7 @@ if (!skipUpsell) {
   // ═══════════════════════════════════════════════════════════
   if (!skipUpsell && analysis.action === "SEARCH") {
     const vagueCheck = generateSmartClarification(enrichedMessage);
-    if (vagueCheck.matched && ["unclear", "student"].includes(vagueCheck.topicId)) {
+if (vagueCheck.matched && ["unclear", "student", "design"].includes(vagueCheck.topicId)) {
       const explicitTopic = hasNewExplicitTopic(enrichedMessage);
       if (!explicitTopic) {
         console.log(`🧠 FIX #71: Vague SEARCH intercepted → clarification (topic: ${vagueCheck.topicId})`);
