@@ -4122,6 +4122,22 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       if (preFiltered.length >= 1) courses = preFiltered;
     }
 
+
+// Score threshold filtering
+    if (courses.length > 3) {
+      const maxScore = Math.max(...courses.map((c) => c.relevanceScore || 0));
+      const threshold = maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
+      const preFiltered = courses.filter((c) => (c.relevanceScore || 0) >= threshold);
+      if (preFiltered.length >= 1) courses = preFiltered;
+    }
+
+    console.log("=== DEBUG FIX89 START ===");
+    console.log("courses.length:", courses.length);
+    console.log("termsToSearch:", termsToSearch);
+    console.log("termsToSearch.length:", termsToSearch.length);
+
+
+
     // 🆕 FIX #89: Re-rank by number of matching search terms (multi-term boost)
     if (courses.length > 1 && termsToSearch.length > 1) {
       const _fix89strip = (w) => normalizeArabic(w.toLowerCase())
