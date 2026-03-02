@@ -2537,27 +2537,29 @@ async function generateSmartRecommendation(
   const allItems = [...diplomaData, ...courseData];
   const lang = analysis.language === "en" ? "English" : "ودود وطبيعي";
 
-const userContext = [
-    analysis.user_level ? `المستوى: ${analysis.user_level}` : "",
-    analysis.audience_filter ? `الفئة: ${analysis.audience_filter}` : "",
-    analysis.intent ? `النية: ${analysis.intent}` : "",
-  ].filter(Boolean).join(" | ");
+const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
 
-  const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي في منصة easyT.
-
-⚠️ أهم قاعدة: لا تُظهر أي كورس إلا إذا كان مناسب لمستوى واحتياج المستخدم
-
-═══ سياق المستخدم ═══
-الرسالة الأصلية: "${message}"
-${userContext ? `${userContext}` : ""}
+الرسالة الأصلية للمستخدم: "${message}"
 
 ═══ الكورسات والدبلومات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
 
 ═══ مطلوب منك ═══
-1. افهم مستوى وسن واحتياج المستخدم من رسالته الأصلية
-2. فلتر الكورسات حسب المستوى والسن
-3. ارجع JSON:
+
+1. اقرأ رسالة المستخدم وافهم:
+   - مين هو (سنه، مستواه، خبرته، وظيفته)
+   - عايز ايه بالظبط
+   - ايه اللي يناسبه وايه اللي مش منطقي ليه
+
+2. من الكورسات المتاحة، اختار بس اللي فعلاً منطقي ومناسب ليه:
+   - لو كورس وصفه بيقول "للأطفال" والمستخدم باين إنه كبير — متعرضهوش
+   - لو كورس متقدم جداً والمستخدم لسه بيبدأ — متعرضهوش
+   - لو كورس مالوش أي علاقة بالموضوع اللي المستخدم طلبه — متعرضهوش
+   - فكّر: "لو أنا مدرس قدامي الطالب ده، هقوله يبدأ بإيه؟"
+
+3. لو مفيش ولا كورس مناسب — ارجع [] فاضية وقول في الرسالة إن مفيش حالياً كورسات مناسبة
+
+4. ارجع JSON:
 {
   "message": "ردك للمستخدم (${lang})",
   "relevant_course_indices": [],
@@ -2566,50 +2568,10 @@ ${JSON.stringify(allItems, null, 1)}
   "suggestion": ""
 }
 
-═══ 🔴 قواعد الفلترة — إجبارية ═══
+❌ ممنوع تذكر أسعار أو تخترع معلومات
+❌ ممنوع تعرض كورس مش منطقي للمستخدم حتى لو في نفس المجال
+❌ أقصى عدد: 3 كورسات + 1 دبلومة`;
 
-📌 القاعدة 1: افهم مين المستخدم
-- "مبتدئ" / "لسه بادئ" / "من الصفر" = مبتدئ بالغ
-- ذكر سن صغير / "ابني" / "بنتي" / "طفل" = طفل
-- "متقدم" / "محترف" / "عندي خبرة" = متقدم
-- لو ما حددش = افترض مبتدئ بالغ
-
-📌 القاعدة 2: فلتر حسب المستوى
-🔴 مبتدئ بالغ:
-  ✅ كورسات فيها: أساسيات / مبتدئين / من الصفر / basics / beginner
-  ❌ ممنوع: كورسات متقدمة (Oracle ADF, Solidity, Blockchain, DevOps, إلخ)
-  ❌ ممنوع: كورسات أطفال (سكراتش / Scratch / kids)
-
-🔴 طفل (سن صغير):
-  ✅ كورسات فيها: أطفال / kids / سكراتش / Scratch / ناشئين
-  ❌ ممنوع: كورسات كبار أو متقدمة
-
-🔴 متقدم:
-  ✅ كورسات متقدمة ومتخصصة
-  ❌ ممنوع: كورسات أساسيات أو أطفال
-
-📌 القاعدة 3: الترتيب
-- الأنسب للمستوى أولاً
-- لو مفيش ولا كورس مناسب للمستوى: relevant_course_indices = []
-  وقول في message إن المتاح حالياً مش مناسب واقترح يتصفح التصنيفات
-
-📌 القاعدة 4: ممنوعات
-- ❌ ممنوع تذكر أسعار أو تخترع معلومات
-- ❌ ممنوع تعرض كورس متقدم لمبتدئ حتى لو نفس المجال
-- ❌ ممنوع تعرض كورس أطفال لشخص بالغ
-
-═══ أمثلة ═══
-"انا مبتدئ في البرمجة":
-  ✅ دبلومة تعليم البرمجة للمبتدئين / أساسيات Python
-  ❌ Oracle ADF / Solidity / Blockchain / سكراتش للأطفال
-
-"ابني عنده 10 سنين عايز يتعلم برمجة":
-  ✅ سكراتش Scratch / برمجة للأطفال
-  ❌ Oracle ADF / Solidity / أي حاجة متقدمة
-
-"عايز اتعلم برمجة متقدمة":
-  ✅ Oracle ADF / Solidity / أي حاجة advanced
-  ❌ أساسيات / سكراتش`;
   try {
     const resp = await openai.chat.completions.create({
       model,
@@ -3004,21 +2966,8 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       const instructors = await getInstructors();
 
       // Must-show courses
-      const mustShowCourses = courses.filter((c) => {
-        const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-        const hasTitleMatch = termsToSearch.some((t) => {
-          const termNorm = normalizeArabic(t.toLowerCase());
-          return termNorm.length > 3 && titleNorm.includes(termNorm);
-        });
-        const hasLessonMatch =
-          c.matchType === "lesson_title" &&
-          c.matchedLessons &&
-          c.matchedLessons.length > 0;
-        return hasTitleMatch || hasLessonMatch;
-      });
+      const phase2Model = "gpt-4o-mini";
 
-      const phase2Model =
-        mustShowCourses.length > 0 ? "gpt-4o-mini" : "gpt-4o";
 
       // Phase 2: Smart Recommendation
       const recommendation = await generateSmartRecommendation(
@@ -3047,17 +2996,6 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       );
 
       // Ensure must-show courses are included
-      if (mustShowCourses.length > 0) {
-        for (const mc of mustShowCourses) {
-          if (!relevantCourses.find((rc) => rc.id === mc.id)) {
-            relevantCourses.unshift(mc);
-          }
-        }
-        if (!recommendation.hasExactMatch) {
-          recommendationMessage = `🎯 أيوه عندنا كورس ممتاز في الموضوع ده!`;
-        }
-      }
-
       relevantCourses.sort(
         (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
@@ -3170,40 +3108,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   else {
     reply = analysis.response_message || getSmartFallback(sessionId);
 
-    // Upsell if has search terms
-    if (
-      analysis.search_terms &&
-      analysis.search_terms.length > 0 &&
-      !skipUpsell
-    ) {
-      try {
-        const [upsellCourses, upsellDiplomas] = await Promise.all([
-          searchCourses(analysis.search_terms, [], null),
-          searchDiplomas(analysis.search_terms),
-        ]);
-
-        if (upsellCourses.length > 0 || upsellDiplomas.length > 0) {
-          const instructors = await getInstructors();
-          reply += `<br><br>💡 <strong>بالمناسبة، عندنا كورسات ممكن تفيدك:</strong>`;
-
-          if (upsellDiplomas.length > 0) {
-            upsellDiplomas.slice(0, 1).forEach((d) => {
-              reply += formatDiplomaCard(d);
-            });
-          }
-
-          if (upsellCourses.length > 0) {
-            upsellCourses.slice(0, 3).forEach((c, i) => {
-              reply += formatCourseCard(c, instructors, i + 1);
-            });
-          }
-
-          reply += `<br>✨ كل الكورسات دي متاحة مع الاشتراك السنوي (49$ عرض رمضان) 🎓`;
-        }
-      } catch (e) {
-        // Silent fail
-      }
-    }
+// No upsell in CHAT mode
   }
 
   // Final processing
