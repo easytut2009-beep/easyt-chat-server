@@ -4109,18 +4109,6 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       }
     }
 
-// Score threshold filtering
-    if (courses.length > 3) {
-      const maxScore = Math.max(
-        ...courses.map((c) => c.relevanceScore || 0)
-      );
-      const threshold =
-        maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
-      const preFiltered = courses.filter(
-        (c) => (c.relevanceScore || 0) >= threshold
-      );
-      if (preFiltered.length >= 1) courses = preFiltered;
-    }
 
 
 // Score threshold filtering
@@ -4130,12 +4118,6 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       const preFiltered = courses.filter((c) => (c.relevanceScore || 0) >= threshold);
       if (preFiltered.length >= 1) courses = preFiltered;
     }
-
-    console.log("=== DEBUG FIX89 START ===");
-    console.log("courses.length:", courses.length);
-    console.log("termsToSearch:", termsToSearch);
-    console.log("termsToSearch.length:", termsToSearch.length);
-
 
 
 // 🆕 FIX #89 v2: Re-rank by matching ARABIC search terms only
@@ -4149,8 +4131,6 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
           .filter(t => t.length > 2)
       )];
 
-      console.log("FIX89v2 arabic-only roots:", _fix89roots, "count:", _fix89roots.length);
-
       if (_fix89roots.length >= 2) {
         let bestMatchCount = 0;
         for (const c of courses) {
@@ -4160,14 +4140,12 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
           );
           c._fix89mc = _fix89roots.filter(root => fullText.includes(root)).length;
           if (c._fix89mc > bestMatchCount) bestMatchCount = c._fix89mc;
-          console.log(`FIX89v2: "${c.title}" matches ${c._fix89mc}/${_fix89roots.length} roots`);
         }
 
         if (bestMatchCount >= 2) {
           for (const c of courses) {
             if (c._fix89mc === bestMatchCount) {
               c.relevanceScore = ((c.relevanceScore || 0) + 90000) * 5;
-              console.log(`FIX89v2: "${c.title}" BEST MATCH (${c._fix89mc}) → score=${c.relevanceScore}`);
             }
           }
           courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
