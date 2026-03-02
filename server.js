@@ -2712,6 +2712,9 @@ ${JSON.stringify(allItems, null, 1)}
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
+  // 🆕 FIX #68: Title-matched courses always pass
+  if (course._titleMatch) return true;
+
   if (
     course.matchType === "lesson_title" &&
     course.matchedLessons &&
@@ -2997,11 +3000,16 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     // rank above courses that match ONLY through lesson chunks.
     // ═══════════════════════════════════════════════════════
     {
-      for (const c of courses) {
+for (const c of courses) {
         const tn = normalizeArabic((c.title || "").toLowerCase());
         c._titleMatch = termsToSearch.some(t => {
           const nt = normalizeArabic(t.toLowerCase());
-          return nt.length > 3 && tn.includes(nt);
+          if (nt.length <= 3) return false;
+          // Direct match
+          if (tn.includes(nt)) return true;
+          // FIX #68: Split compound terms — "كورس فوتوشوب" → check "فوتوشوب" alone
+          const words = nt.split(/\s+/).filter(w => w.length > 3 && !ARABIC_STOP_WORDS.has(w));
+          return words.length > 0 && words.some(w => tn.includes(w));
         });
       }
 
@@ -3098,14 +3106,10 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         verifyCourseRelevance(c, termsToSearch)
       );
 
-      // 🆕 FIX #63: Must-show courses with direct title match
+// 🆕 FIX #63+#68: Must-show courses with title match
       const titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
-        const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-        return termsToSearch.some(t => {
-          const nt = normalizeArabic(t.toLowerCase());
-          return nt.length > 3 && titleNorm.includes(nt);
-        });
+        return c._titleMatch === true;
       });
       for (const tmc of titleMatchMustShow.slice(0, 2)) {
         relevantCourses.unshift(tmc);
@@ -3116,8 +3120,8 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
       if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         console.log(`⚠️ FIX #62: RAG returned empty but search found ${courses.length} courses — using top results`);
-        const fallbackCourses = courses
-          .filter((c) => verifyCourseRelevance(c, termsToSearch))
+const fallbackCourses = courses
+          .filter((c) => c._titleMatch || verifyCourseRelevance(c, termsToSearch))
           .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
           .slice(0, 3);
         
