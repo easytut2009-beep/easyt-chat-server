@@ -4122,6 +4122,56 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
       if (preFiltered.length >= 1) courses = preFiltered;
     }
 
+
+
+// Score threshold filtering
+    if (courses.length > 3) {
+      const maxScore = Math.max(
+        ...courses.map((c) => c.relevanceScore || 0)
+      );
+      const threshold =
+        maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
+      const preFiltered = courses.filter(
+        (c) => (c.relevanceScore || 0) >= threshold
+      );
+      if (preFiltered.length >= 1) courses = preFiltered;
+    }
+
+    // 🆕 FIX #89: Re-rank by number of matching search terms (multi-term boost)
+    if (courses.length > 1 && termsToSearch.length > 1) {
+      const _fix89strip = (w) => normalizeArabic(w.toLowerCase())
+        .replace(/^(بال|وال|فال|كال|لل|ال|ب|و|ف|ل|ك)/, '');
+      const _fix89roots = [...new Set(
+        termsToSearch
+          .map(t => _fix89strip(t))
+          .filter(t => t.length > 2)
+      )];
+
+      if (_fix89roots.length >= 2) {
+        for (const c of courses) {
+          const fullText = normalizeArabic(
+            ((c.title || "") + " " + (c.subtitle || "") + " " + (c.description || "") + " " + (c.keywords || ""))
+            .toLowerCase()
+          );
+          const matchCount = _fix89roots.filter(root => fullText.includes(root)).length;
+          
+          // Massive boost for courses matching ALL search terms
+          if (matchCount >= _fix89roots.length) {
+            c.relevanceScore = (c.relevanceScore || 0) + 1000;
+            console.log(`FIX89: "${c.title}" matches ALL ${matchCount} roots → +1000`);
+          } else if (matchCount >= 2) {
+            c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 300);
+            console.log(`FIX89: "${c.title}" matches ${matchCount}/${_fix89roots.length} roots → +${matchCount * 300}`);
+          }
+        }
+        courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+      }
+    }
+
+if (courses.length > 0 || diplomas.length > 0) {
+
+
+
 if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
 
