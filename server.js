@@ -1431,6 +1431,9 @@ async function searchDiplomas(searchTerms) {
   if (cached) return cached;
 
   try {
+    let rawResults = [];
+
+    // Semantic search
     if (openai) {
       try {
         const queryText = searchTerms.join(" ");
@@ -1443,35 +1446,89 @@ async function searchDiplomas(searchTerms) {
           {
             query_embedding: embResponse.data[0].embedding,
             match_threshold: 0.75,
-            match_count: 5,
+            match_count: 8,
           }
         );
         if (!semErr && semanticResults && semanticResults.length > 0) {
-          setCachedSearch(cacheKey, semanticResults);
-          return semanticResults;
+          rawResults = semanticResults;
         }
       } catch (embErr) {
         console.error("Semantic diploma search error:", embErr.message);
       }
     }
 
-    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
-    const expanded = expandSynonyms(corrected);
-    const allTerms = splitIntoSearchableTerms(expanded);
-    if (allTerms.length === 0) return [];
+    // Text search fallback
+    if (rawResults.length === 0) {
+      const corrected = searchTerms.map((t) => applyArabicCorrections(t));
+      const expanded = expandSynonyms(corrected);
+      const allTerms = splitIntoSearchableTerms(expanded);
+      if (allTerms.length === 0) return [];
 
-    const orFilters = allTerms
-      .flatMap((t) => [`title.ilike.%${t}%`, `description.ilike.%${t}%`])
-      .join(",");
+      const orFilters = allTerms
+        .flatMap((t) => [`title.ilike.%${t}%`, `description.ilike.%${t}%`])
+        .join(",");
 
-    const { data, error } = await supabase
-      .from("diplomas")
-      .select("id, title, link, description, price")
-      .or(orFilters)
-      .limit(5);
+      const { data, error } = await supabase
+        .from("diplomas")
+        .select("id, title, link, description, price")
+        .or(orFilters)
+        .limit(10);
 
-    if (error) return [];
-    const result = data || [];
+      if (error) return [];
+      rawResults = data || [];
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 FIX #80: Score diplomas by relevance (title > description)
+    // ═══════════════════════════════════════════════════════════
+    if (rawResults.length > 1) {
+      // Get meaningful search terms (exclude "دبلومة")
+      const meaningfulTerms = searchTerms.filter(t => {
+        const nt = normalizeArabic(t.toLowerCase());
+        return nt.length > 2 && !/دبلوم/.test(nt);
+      });
+
+      if (meaningfulTerms.length > 0) {
+        const scored = rawResults.map(d => {
+          let score = 0;
+          const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+          const descNorm = normalizeArabic(
+            ((d.description || '').replace(/<[^>]*>/g, '')).toLowerCase()
+          );
+
+          // 🏆 Full phrase match in title (highest priority)
+          const fullPhrase = normalizeArabic(meaningfulTerms.join(' ').toLowerCase().trim());
+          if (fullPhrase.length > 3 && titleNorm.includes(fullPhrase)) {
+            score += 200;
+            console.log(`🎯 FIX #80: Diploma PHRASE match: "${d.title}" (phrase="${fullPhrase}")`);
+          }
+
+          for (const term of meaningfulTerms) {
+            const nt = normalizeArabic(term.toLowerCase());
+            if (nt.length <= 2) continue;
+
+            if (titleNorm.includes(nt)) {
+              score += 50;  // Title match = HIGH
+            } else if (descNorm.includes(nt)) {
+              score += 3;   // Description match = LOW
+            }
+          }
+
+          return { ...d, _diplomaScore: score };
+        });
+
+        // If there are title matches, REMOVE description-only matches
+        const titleMatched = scored.filter(d => d._diplomaScore >= 50);
+        if (titleMatched.length > 0) {
+          console.log(`🎯 FIX #80: ${titleMatched.length} title-matched diplomas, filtering out description-only`);
+          rawResults = titleMatched.sort((a, b) => b._diplomaScore - a._diplomaScore);
+        } else {
+          rawResults = scored.sort((a, b) => b._diplomaScore - a._diplomaScore);
+        }
+      }
+    }
+
+    const result = rawResults.slice(0, 5);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
@@ -2807,7 +2864,22 @@ ${JSON.stringify(allItems, null, 1)}
 
 5. لو مفيش ولا كورس مناسب — ارجع [] فاضية
 
-6. ارجع JSON فقط:
+6. 🔴🔴🔴 قاعدة "مفيش كورس" — الأهم:
+   - ممنوع نهائياً تقول "مفيش كورس متخصص" لو النتائج فيها كورس عنوانه فيه الموضوع اللي المستخدم طلبه
+   - لو المستخدم قال "دبلومة X" ولقيت كورس (مش دبلومة) عن X → اعرضه وقول "عندنا كورس عن X"
+   - مثال: لو طلب "دبلومة فيجوال كونتنت" ولقيت كورس "الفيجوال كونتنت" → ده كورس مطابق 100%! اعرضه!
+   - مثال: لو طلب "دبلومة تصميم" ولقيت كورس "تعلم التصميم" → اعرضه!
+   - ❌ تقول "مفيش" وأنت شايف كورس عن نفس الموضوع في البيانات
+
+7. 🔴 قاعدة "هل X موجود في كورس Y؟":
+   - لو المستخدم سأل "هل الموضوع X مشروح في كورس Y؟" أو "كورس Y فيه X؟":
+   - أولاً: دوّر على X في كورس Y (في matchedLessons أو في الوصف)
+   - لو X موجود في كورس Y → قول "أيوه! كورس Y فيه درس عن X" واعرض الكورس
+   - لو X مش في كورس Y بس موجود في كورس Z (من خلال matchedLessons) → قول "الموضوع ده مش متغطي في كورس Y، لكن هتلاقيه في كورس Z" واعرض الكورسين
+   - ❌ ممنوع تقول "مفيش كورس متخصص" لو شايف كورس تاني فيه الموضوع في matchedLessons!
+   - المهم: اعرض كلا الكورسين (Y عشان المستخدم سأل عنه + Z عشان فيه الموضوع)
+
+8. ارجع JSON فقط:
 {
   "message": "ردك للمستخدم بنفس لهجته (${lang})",
   "relevant_course_indices": [],
@@ -3015,6 +3087,41 @@ async function generateConversationSummary(chatHistory, currentSummary) {
   }
 }
 
+
+/* ══════════════════════════════════════════════════════════
+   🆕 FIX #79: Detect "show ALL diplomas" requests
+   Catches messages GPT might misclassify as CHAT/SEARCH
+   ══════════════════════════════════════════════════════════ */
+function isGeneralDiplomaRequest(message) {
+  const norm = normalizeArabic((message || '').toLowerCase().trim());
+
+  // Step 1: Must contain diploma keyword
+  if (!/دبلوم(ه|ات|ة|ا)/.test(norm)) return false;
+
+  // Step 2: Strip diploma words + generic words → see if specific topic remains
+  const stripped = norm
+    .replace(/دبلوم(ه|ات|ة|ا)?/g, '')
+    .replace(/(ال)?(متاح|متوفر|موجود)(ه|ة|ين)?/g, '')
+    .replace(/عندك(م|و|وا)?/g, '')
+    .replace(/(ايه|إيه|اية|إية|ايش|شو|وش)/g, '')
+    .replace(/(كلها|كل)/g, '')
+    .replace(/(عايز|عاوز|محتاج|ابغي|ابغى|اريد|أريد|بدي|حاب|حابب|نفسي)/g, '')
+    .replace(/(اشوف|اعرف|عرضلي|ورين[يى]?|قولي)/g, '')
+    .replace(/(في|فيه|فى|هي|اللي|ال\b|عن|على)/g, '')
+    .replace(/(المنصه|المنصة|عندنا|بتاعتكم|بتاعكم|حقكم)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // If nothing meaningful left (≤3 chars) → it's a general request
+  if (stripped.length <= 3) {
+    console.log(`📋 FIX #79: General diploma request detected (remaining="${stripped}")`);
+    return true;
+  }
+
+  return false;
+}
+
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
@@ -3071,6 +3178,17 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #79: Force DIPLOMAS for general diploma requests
+  // Catches cases where GPT misclassifies as CHAT/SEARCH
+  // Must run BEFORE FIX #77 (which converts specific DIPLOMAS → SEARCH)
+  // ═══════════════════════════════════════════════════════════
+  if (isGeneralDiplomaRequest(enrichedMessage)) {
+    console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
+    analysis.action = "DIPLOMAS";
+    analysis.search_terms = [];
+  }
+
 // 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
   if (analysis.action === "SUBSCRIPTION") {
     const educationalOverride = hasNewExplicitTopic(enrichedMessage);
@@ -3103,14 +3221,17 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-// 🆕 FIX #77: If DIPLOMAS but message has specific topic → SEARCH
+// 🆕 FIX #77 (v2): If DIPLOMAS but message has specific topic → SEARCH
+  // 🆕 FIX #81: Keep full phrase for better matching
   if (analysis.action === "DIPLOMAS") {
     const normDiplMsg = normalizeArabic(enrichedMessage.toLowerCase());
     const diplomaStripped = normDiplMsg
       .replace(/دبلوم(ه|ات|ة|ا)?/g, '')
-      .replace(/المتاح(ه|ة)?/g, '')
-      .replace(/الموجود(ه|ة)?/g, '')
-      .replace(/عندكم|عندك|ايه|إيه|ايش|شو|كلها|كل|عايز|عاوز|ابغى|اريد|بدي|حاب/g, '')
+      .replace(/(ال)?(متاح|متوفر|موجود)(ه|ة|ين)?/g, '')
+      .replace(/عندك(م|و|وا)?/g, '')
+      .replace(/(ايه|إيه|ايش|شو|وش|كلها|كل)/g, '')
+      .replace(/(عايز|عاوز|محتاج|ابغي|ابغى|اريد|أريد|بدي|حاب)/g, '')
+      .replace(/(اشوف|اعرف|في|فيه|فى)/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -3118,7 +3239,16 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       console.log(`🔄 FIX #77: DIPLOMAS → SEARCH (specific topic: "${diplomaStripped}")`);
       analysis.action = "SEARCH";
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
-        analysis.search_terms = diplomaStripped.split(/\s+/).filter(w => w.length > 2);
+        // 🆕 FIX #81: Keep full phrase + individual words
+        const words = diplomaStripped.split(/\s+/).filter(w => w.length > 2);
+        if (diplomaStripped.includes(' ') && words.length >= 2) {
+          // Multi-word phrase: keep phrase as first term for exact matching
+          analysis.search_terms = [diplomaStripped, ...words];
+        } else {
+          analysis.search_terms = words;
+        }
+        // Remove duplicates
+        analysis.search_terms = [...new Set(analysis.search_terms)];
       }
       if (!analysis.search_terms.some(t => normalizeArabic(t).includes('دبلوم'))) {
         analysis.search_terms.push('دبلومة');
@@ -3326,13 +3456,51 @@ for (const c of courses) {
         c.matchedLessons && c.matchedLessons.length > 0
       );
 
-      if (titleMatched.length > 0 && chunkOnly.length > 0) {
+if (titleMatched.length > 0 && chunkOnly.length > 0) {
         const minTitleScore = Math.min(
           ...titleMatched.map(c => c.relevanceScore || 0)
         );
 
+        // ═══════════════════════════════════════════════════════
+        // 🆕 FIX #83: Find which search terms title-matched courses cover
+        // Don't demote chunk-only courses that match DIFFERENT terms
+        // Example: "سكامبر فوتوشوب" → Photoshop=title("فوتوشوب"), 
+        //          Visual Content=lesson("سكامبر") → DON'T demote!
+        // ═══════════════════════════════════════════════════════
+        const titleCoveredTerms = new Set();
+        for (const tm of titleMatched) {
+          const tn = normalizeArabic((tm.title || "").toLowerCase());
+          for (const t of termsToSearch) {
+            const nt = normalizeArabic(t.toLowerCase());
+            if (nt.length > 3 && tn.includes(nt)) {
+              titleCoveredTerms.add(nt);
+            }
+          }
+        }
+
         for (const c of chunkOnly) {
-          if ((c.relevanceScore || 0) >= minTitleScore * 0.3) {
+          // Check if this course's matched lessons answer a UNIQUE search term
+          let matchesUniqueTerm = false;
+          
+          if (c.matchedLessons && c.matchedLessons.length > 0) {
+            for (const ml of c.matchedLessons) {
+              const lessonTitle = normalizeArabic((ml.title || "").toLowerCase());
+              for (const t of termsToSearch) {
+                const nt = normalizeArabic(t.toLowerCase());
+                if (nt.length > 3 && lessonTitle.includes(nt) && !titleCoveredTerms.has(nt)) {
+                  matchesUniqueTerm = true;
+                  break;
+                }
+              }
+              if (matchesUniqueTerm) break;
+            }
+          }
+
+          if (matchesUniqueTerm) {
+            // This course answers a DIFFERENT part of the query → keep it!
+            console.log(`FIX83: "${c.title}" matches unique term → NOT demoting (score=${c.relevanceScore})`);
+          } else if ((c.relevanceScore || 0) >= minTitleScore * 0.3) {
+            // Same term as title-matched → demote as before
             const oldScore = c.relevanceScore;
             c.relevanceScore = Math.round(minTitleScore * 0.1);
             console.log(`FIX67: "${c.title}" (chunk-only) score ${oldScore} → ${c.relevanceScore}`);
@@ -3340,7 +3508,7 @@ for (const c of courses) {
         }
 
         courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-        console.log(`FIX67: ${titleMatched.length} title-matched, ${chunkOnly.length} chunk-only → reranked`);
+        console.log(`FIX67+83: ${titleMatched.length} title-matched, ${chunkOnly.length} chunk-only → reranked`);
       }
     }
 
