@@ -4235,23 +4235,90 @@ updateSessionMemory(sessionId, {
   }
 
 /* ═══════════════════════════════════
-     ACTION: CHAT (default) — FIX #70
+     ACTION: CHAT (default) — FIX #70 + FIX #85
      ═══════════════════════════════════ */
   else {
-    // FIX #70: Try smart clarification FIRST (before GPT's generic response)
-    let usedSmartClarification = false;
+    // 🆕 FIX #85: QUESTION intent in CHAT → answer + show related courses
+    if (analysis.user_intent === "QUESTION" && !skipUpsell) {
+      console.log(`🧠 FIX #85: QUESTION in CHAT → answering + searching courses`);
 
-    if (!skipUpsell) {
-      const smartResult = generateSmartClarification(enrichedMessage);
-      if (smartResult.matched) {
-        console.log(`🧠 FIX #70: Smart clarification matched topic: ${smartResult.topicId}`);
-        reply = smartResult.response;
-        usedSmartClarification = true;
+      // Extract search terms from message
+      let questionTerms = (analysis.search_terms || []).length > 0
+        ? analysis.search_terms
+        : enrichedMessage.split(/\s+/).filter(w =>
+            w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+          );
+
+      // Answer the question from chunks or GPT knowledge
+      const questionAnswer = await answerFromChunksOrKnowledge(enrichedMessage, questionTerms);
+
+      if (questionAnswer && questionAnswer.answer) {
+        reply = questionAnswer.answer;
+
+        // Also search for related courses in courses table
+        if (questionTerms.length > 0) {
+          try {
+            const relatedCourses = await searchCourses(questionTerms, [], null);
+            if (relatedCourses.length > 0) {
+              const instructors = await getInstructors();
+              const topCourses = relatedCourses
+                .filter(c => verifyCourseRelevance(c, questionTerms))
+                .slice(0, 2);
+
+              if (topCourses.length > 0) {
+                reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
+                topCourses.forEach((c, i) => {
+                  reply += formatCourseCard(c, instructors, i + 1);
+                });
+              }
+            }
+          } catch (searchErr) {
+            console.error("FIX #85 course search error:", searchErr.message);
+          }
+        }
+
+        // Show related courses from chunks if found
+        if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+          const alreadyShown = reply.toLowerCase();
+          for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
+            if (!alreadyShown.includes((rc.title || "").toLowerCase().substring(0, 15))) {
+              const rcUrl = rc.link || ALL_COURSES_URL;
+              reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
+            }
+          }
+        }
+
+        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+
+      } else {
+        // No answer available → fallback to smart clarification
+        let usedSmartClarification = false;
+        const smartResult = generateSmartClarification(enrichedMessage);
+        if (smartResult.matched) {
+          reply = smartResult.response;
+          usedSmartClarification = true;
+        }
+        if (!usedSmartClarification) {
+          reply = analysis.response_message || getSmartFallback(sessionId);
+        }
       }
-    }
 
-    if (!usedSmartClarification) {
-      reply = analysis.response_message || getSmartFallback(sessionId);
+    } else {
+      // Original CHAT handling (FIX #70) — greetings, casual, etc.
+      let usedSmartClarification = false;
+
+      if (!skipUpsell) {
+        const smartResult = generateSmartClarification(enrichedMessage);
+        if (smartResult.matched) {
+          console.log(`🧠 FIX #70: Smart clarification matched topic: ${smartResult.topicId}`);
+          reply = smartResult.response;
+          usedSmartClarification = true;
+        }
+      }
+
+      if (!usedSmartClarification) {
+        reply = analysis.response_message || getSmartFallback(sessionId);
+      }
     }
 
 // No upsell in CHAT mode
