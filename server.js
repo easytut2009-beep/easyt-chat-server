@@ -4141,8 +4141,12 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
           const matchCount = _fix89roots.filter(root => fullText.includes(root)).length;
           
           // Massive boost for courses matching ALL search terms
-          if (matchCount >= _fix89roots.length) {
-            c.relevanceScore = (c.relevanceScore || 0) + 1000;
+if (matchCount >= _fix89roots.length) {
+            c.relevanceScore = ((c.relevanceScore || 0) + 50000) * 3;
+            console.log(`FIX89: "${c.title}" matches ALL ${matchCount} roots → MEGA BOOST`);
+          } else if (matchCount >= 2) {
+            c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 500);
+            console.log(`FIX89: "${c.title}" matches ${matchCount}/${_fix89roots.length} roots → +${matchCount * 500}`);
             console.log(`FIX89: "${c.title}" matches ALL ${matchCount} roots → +1000`);
           } else if (matchCount >= 2) {
             c.relevanceScore = (c.relevanceScore || 0) + (matchCount * 300);
