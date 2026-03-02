@@ -737,6 +737,236 @@ const ARABIC_STOP_WORDS = new Set([
   "ابغى", "اريد", "شلون", "كيف", "بدي", "حاب", "شو", "وش", "ابي",
 ]);
 
+
+// ═══════════════════════════════════════════════════════
+// 🆕 General Fuzzy Spell Correction (Levenshtein-based)
+// ═══════════════════════════════════════════════════════
+
+function levenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b[i - 1] === a[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+let _vocabCache = null;
+let _vocabCacheKey = null;
+
+function buildVocabulary(courses, diplomas) {
+  const cacheKey = (courses || []).length + "_" + (diplomas || []).length;
+  if (_vocabCache && _vocabCacheKey === cacheKey) return _vocabCache;
+
+  const vocabSet = new Set();
+
+  for (const c of (courses || [])) {
+    // من العنوان
+    const title = normalizeArabic((c.title || "").toLowerCase());
+    title.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+
+    // من الكلمات المفتاحية
+    if (c.keywords) {
+      const kw = normalizeArabic(c.keywords.toLowerCase());
+      kw.split(/[,،\s]+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    }
+
+    // من أسماء الدروس
+    if (c.lessons) {
+      for (const lesson of c.lessons) {
+        const lt = normalizeArabic((lesson.title || lesson || "").toString().toLowerCase());
+        lt.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+      }
+    }
+
+    // من الـ syllabus
+    if (c.syllabus) {
+      const syl = normalizeArabic((typeof c.syllabus === "string" ? c.syllabus : JSON.stringify(c.syllabus)).toLowerCase());
+      syl.split(/[\s,،:]+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    }
+  }
+
+  for (const d of (diplomas || [])) {
+    const dt = normalizeArabic((d.title || "").toLowerCase());
+    dt.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+  }
+
+  _vocabCache = Array.from(vocabSet);
+  _vocabCacheKey = cacheKey;
+  console.log(`📚 Vocabulary built: ${_vocabCache.length} words`);
+  return _vocabCache;
+}
+
+function fuzzyCorrectWord(word, vocabulary, maxDistance) {
+  const normalized = normalizeArabic(word.toLowerCase());
+  if (normalized.length < 3) return word;
+
+  // لو الكلمة موجودة بالظبط → مفيش تصحيح
+  if (vocabulary.includes(normalized)) return word;
+
+  // حدد أقصى مسافة بناءً على طول الكلمة
+  const autoMax = normalized.length <= 4 ? 1 : normalized.length <= 7 ? 2 : 3;
+  const effectiveMax = maxDistance !== undefined ? maxDistance : autoMax;
+
+  let bestMatch = null;
+  let bestDist = Infinity;
+
+  for (const vocab of vocabulary) {
+    // تجاهل لو الفرق في الطول أكبر من المسافة المسموحة
+    if (Math.abs(vocab.length - normalized.length) > effectiveMax) continue;
+
+    const dist = levenshteinDistance(normalized, vocab);
+    if (dist < bestDist && dist <= effectiveMax) {
+      bestDist = dist;
+      bestMatch = vocab;
+    }
+  }
+
+  if (bestMatch && bestMatch !== normalized) {
+    console.log(`🔤 Fuzzy correction: "${word}" → "${bestMatch}" (distance: ${bestDist})`);
+    return bestMatch;
+  }
+
+  return word;
+}
+
+function fuzzyCorrectMessage(text, courses, diplomas) {
+  const vocabulary = buildVocabulary(courses, diplomas);
+  const words = text.split(/\s+/);
+  const corrected = words.map(w => {
+    // ما تصححش كلمات صغيرة أو أرقام
+    if (w.length < 3 || /^\d+$/.test(w)) return w;
+    return fuzzyCorrectWord(w, vocabulary);
+  });
+  const result = corrected.join(" ");
+  if (result !== text) {
+    console.log(`🔤 Fuzzy corrected full message: "${text}" → "${result}"`);
+  }
+  return result;
+}
+
+
+// ═══════════════════════════════════════════════════════
+// 🆕 Static Vocabulary — from CATEGORIES + SYNONYMS
+// No DB needed — corrects search terms BEFORE search
+// ═══════════════════════════════════════════════════════
+let _staticVocabCache = null;
+
+function buildStaticVocabulary() {
+  if (_staticVocabCache) return _staticVocabCache;
+  const vocabSet = new Set();
+
+  for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
+    normalizeArabic(catName.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    for (const kw of catInfo.keywords) {
+      normalizeArabic(kw.toLowerCase()).split(/[\s,،]+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    }
+  }
+
+  for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
+    normalizeArabic(canonical.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    for (const syn of synonyms) {
+      normalizeArabic(syn.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+    }
+  }
+
+  for (const correctWord of Object.values(ARABIC_CORRECTIONS)) {
+    normalizeArabic(correctWord.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
+  }
+
+  _staticVocabCache = Array.from(vocabSet);
+  console.log(`📚 Static vocabulary built: ${_staticVocabCache.length} words`);
+  return _staticVocabCache;
+}
+
+function fuzzyCorrectTerms(terms) {
+  const vocabulary = buildStaticVocabulary();
+  return terms.map(term => {
+    const words = term.split(/\s+/);
+    const corrected = words.map(w => {
+      if (w.length < 3 || /^\d+$/.test(w) || /^[a-zA-Z]+$/.test(w)) return w;
+      return fuzzyCorrectWord(w, vocabulary);
+    });
+    const result = corrected.join(" ");
+    if (result !== term) {
+      console.log(`🔤 Fuzzy term correction: "${term}" → "${result}"`);
+    }
+    return result;
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════
+// 🆕 Automatic Arabic → English Phonetic Transliteration
+// No dictionary needed — converts letter by letter
+// ═══════════════════════════════════════════════════════
+const ARABIC_PHONETIC_MAP = {
+  'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'a', 'ٱ': 'a',
+  'ب': 'b', 'ت': 't', 'ث': 'th',
+  'ج': 'j', 'ح': 'h', 'خ': 'kh',
+  'د': 'd', 'ذ': 'z', 'ر': 'r',
+  'ز': 'z', 'س': 's', 'ش': 'sh',
+  'ص': 's', 'ض': 'd', 'ط': 't',
+  'ظ': 'z', 'ع': 'a', 'غ': 'gh',
+  'ف': 'f', 'ق': 'q', 'ك': 'k',
+  'ل': 'l', 'م': 'm', 'ن': 'n',
+  'ه': 'h', 'ة': 'a', 'و': 'o',
+  'ي': 'i', 'ى': 'a', 'ئ': 'e', 'ؤ': 'o',
+};
+
+function arabicToPhonetic(arabicText) {
+  if (!arabicText) return "";
+  let result = "";
+  const text = arabicText.replace(/[\u064B-\u065F\u0670]/g, "");
+  for (const char of text) {
+    if (ARABIC_PHONETIC_MAP[char]) {
+      result += ARABIC_PHONETIC_MAP[char];
+    } else if (/\s/.test(char)) {
+      result += " ";
+    } else {
+      result += char;
+    }
+  }
+  return result.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function isArabicText(text) {
+  return /[\u0600-\u06FF]/.test(text);
+}
+
+function addPhoneticTransliterations(terms) {
+  const extra = [];
+  for (const term of terms) {
+    if (!isArabicText(term)) continue;
+    const phonetic = arabicToPhonetic(term);
+    if (phonetic.length >= 3 && /^[a-z\s]+$/.test(phonetic)) {
+      extra.push(phonetic);
+      const words = phonetic.split(/\s+/).filter(w => w.length >= 3);
+      words.forEach(w => extra.push(w));
+    }
+  }
+  if (extra.length > 0) {
+    const unique = [...new Set(extra)];
+    console.log(`🌐 Auto phonetic: [${unique.join(", ")}]`);
+    return unique;
+  }
+  return [];
+}
+
+
 function applyArabicCorrections(text) {
   if (!text) return "";
   let c = text.toLowerCase().trim();
@@ -2612,6 +2842,22 @@ ${categoriesList}
 لو ذكر اسم كورس أو مجال + سعر = SEARCH
 لو مش متأكد = SEARCH أفضل من SUBSCRIPTION
 
+
+═══ ⚠️ قاعدة إجبارية: الترجمة التلقائية ═══
+لو المستخدم كتب اسم أداة أو برنامج أو براند بالعربي (حروف عربية)،
+لازم تضيف الاسم بالإنجليزي في search_terms جنب العربي.
+لأن أسماء الكورسات والدروس ممكن تكون بالإنجليزي.
+
+أمثلة:
+  - "نانو بنانا" → search_terms: ["نانو بنانا", "nano banana"]
+  - "فوتوشوب" → search_terms: ["فوتوشوب", "photoshop"]
+  - "بريميير" → search_terms: ["بريميير", "premiere"]
+  - "ميدجورني" → search_terms: ["ميدجورني", "midjourney"]
+  - "فلاتر نيورال" → search_terms: ["فلاتر نيورال", "neural filter"]
+  - "ريأكت نيتيف" → search_terms: ["ريأكت نيتيف", "react native"]
+
+القاعدة: كل كلمة أجنبية مكتوبة بالعربي = ضيف الإنجليزي في search_terms
+
 لـ SEARCH: response_message = ""
 لـ DIPLOMAS: response_message = ""
 
@@ -3330,7 +3576,13 @@ if (!skipUpsell) {
      ACTION: SEARCH
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-    const termsToSearch = analysis.search_terms;
+let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
+
+// 🆕 Auto phonetic transliteration (Arabic brand names → English)
+const phoneticExtra = addPhoneticTransliterations(termsToSearch);
+if (phoneticExtra.length > 0) {
+  termsToSearch = [...new Set([...termsToSearch, ...phoneticExtra])];
+}
 
     // Priority title search
     const priorityCourses = await priorityTitleSearch(termsToSearch);
