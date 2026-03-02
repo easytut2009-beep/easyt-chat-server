@@ -1524,7 +1524,7 @@ const fullQuery = normalizeArabic(
       return { ...c, relevanceScore: score };
     });
 
-    const searchCategory = detectRelevantCategory(searchTerms);
+const searchCategory = detectRelevantCategory(searchTerms);
     if (searchCategory) {
       for (const item of scored) {
         const courseCats = getCourseCategories(item);
@@ -1536,7 +1536,21 @@ const fullQuery = normalizeArabic(
         if (matchesSearchCat) {
           item.relevanceScore += 40;
         } else if (primaryCat !== searchCategory.name) {
-          item.relevanceScore = Math.round(item.relevanceScore * 0.15);
+          // 🆕 FIX #86: Don't penalize if course title matches 2+ search terms
+          // Example: "قوة الذكاء الاصطناعي داخل اليستريتور" matches both "اليستريتور" AND "ذكاء"
+          // → clearly relevant even though it's in "AI" category not "Graphics"
+          const _penaltyTitleNorm = normalizeArabic((item.title || "").toLowerCase());
+          const _penaltyTitleHits = allTerms.filter(t => {
+            const nt = normalizeArabic(t.toLowerCase());
+            return nt.length > 3 && _penaltyTitleNorm.includes(nt);
+          }).length;
+
+          if (_penaltyTitleHits >= 2) {
+            console.log(`FIX86: "${item.title}" matches ${_penaltyTitleHits} terms in title → skipping category penalty`);
+            // No penalty — course title clearly matches the search
+          } else {
+            item.relevanceScore = Math.round(item.relevanceScore * 0.15);
+          }
         }
       }
     }
@@ -1627,7 +1641,7 @@ async function fuzzySearchFallback(terms) {
       if (bestSim >= 55) results.push({ ...course, relevanceScore: bestSim });
     }
 
-    const searchCategory = detectRelevantCategory(terms);
+const searchCategory = detectRelevantCategory(terms);
     if (searchCategory) {
       for (const item of results) {
         const courseCats = getCourseCategories(item);
@@ -1640,7 +1654,19 @@ async function fuzzySearchFallback(terms) {
         } else {
           const primaryCat = courseCats[0].name;
           if (primaryCat !== searchCategory.name) {
-            item.relevanceScore = Math.round(item.relevanceScore * 0.2);
+            // 🆕 FIX #86: Don't penalize if title matches 2+ search terms
+            const _fTitleNorm = normalizeArabic((item.title || "").toLowerCase());
+            const _fSearchTerms = splitIntoSearchableTerms(terms);
+            const _fTitleHits = _fSearchTerms.filter(t => {
+              const nt = normalizeArabic(t.toLowerCase());
+              return nt.length > 3 && _fTitleNorm.includes(nt);
+            }).length;
+
+            if (_fTitleHits >= 2) {
+              console.log(`FIX86-fuzzy: "${item.title}" matches ${_fTitleHits} terms → no penalty`);
+            } else {
+              item.relevanceScore = Math.round(item.relevanceScore * 0.2);
+            }
           }
         }
       }
@@ -3796,6 +3822,13 @@ if (!skipUpsell) {
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
 let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
+
+let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
+
+// 🆕 FIX #86: Keep original terms alongside corrected ones
+// "اليستريتور" gets corrected to "اليستريتر" but course title has "اليستريتور"
+// We need BOTH forms for accurate title matching
+termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
 
 // 🆕 Auto phonetic transliteration (Arabic brand names → English)
 const phoneticExtra = addPhoneticTransliterations(termsToSearch);
