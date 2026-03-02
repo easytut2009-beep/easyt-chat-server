@@ -2516,6 +2516,7 @@ function prepareCourseForRAG(course, instructors) {
       title: l.title,
       timestamp: l.timestamp_start || null,
     })),
+titleMatch: course._titleMatch || false,
     matchType: course.matchType || "course_title",
   };
 }
@@ -2591,11 +2592,14 @@ ${JSON.stringify(allItems, null, 1)}
    - لو مفيش كورس مطابق بالظبط قول "مفيش كورس متخصص حالياً" واعرض أقرب بديل
    - الكورسات الوحيدة اللي تقدر تذكرها هي اللي في الـ JSON فوق
 
-4. 🔴 اختيار الكورس الصح:
-   - لو المستخدم طلب "فوتوشوب" وفيه كورس اسمه فيه "فوتوشوب" أو "Photoshop" اختاره اولا
-   - لو فيه كورس اسمه مطابق لطلب المستخدم أولوية أولى
-   - لو كورس بس فيه درس مرتبط أولوية تانية
-   - متعرضش كورس مالوش أي علاقة
+4. 🔴🔴🔴 اختيار الكورس الصح — القاعدة الأهم:
+   - كورس titleMatch=true = اسمه فيه الموضوع اللي المستخدم طلبه = أولوية مطلقة!
+   - كورس titleMatch=false بس فيه درس مرتبط = أولوية تانية بعيدة
+   - ممنوع نهائياً تختار كورس titleMatch=false وتسيب كورس titleMatch=true!
+   - مثال: لو المستخدم طلب "فوتوشوب":
+     ✅ كورس "فوتوشوب Adobe Photoshop" titleMatch=true ← ده الأول!
+     ❌ كورس "الفيجوال كونتنت" titleMatch=false ← ممنوع تختاره لوحده!
+   - لو فيه كورس titleMatch=true اختاره حتى لو مفيهوش matchedLessons
 
 5. لو مفيش ولا كورس مناسب — ارجع [] فاضية
 
@@ -2985,7 +2989,52 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
-    // Corrections fallback
+  
+
+// ═══════════════════════════════════════════════════════
+    // 🆕 FIX #67: Title-Match Supremacy
+    // Courses whose TITLE contains the search term ALWAYS
+    // rank above courses that match ONLY through lesson chunks.
+    // ═══════════════════════════════════════════════════════
+    {
+      for (const c of courses) {
+        const tn = normalizeArabic((c.title || "").toLowerCase());
+        c._titleMatch = termsToSearch.some(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          return nt.length > 3 && tn.includes(nt);
+        });
+      }
+
+      const titleMatched = courses.filter(c => c._titleMatch);
+      const chunkOnly = courses.filter(c =>
+        !c._titleMatch &&
+        c.matchType === "lesson_title" &&
+        c.matchedLessons && c.matchedLessons.length > 0
+      );
+
+      if (titleMatched.length > 0 && chunkOnly.length > 0) {
+        const minTitleScore = Math.min(
+          ...titleMatched.map(c => c.relevanceScore || 0)
+        );
+
+        for (const c of chunkOnly) {
+          if ((c.relevanceScore || 0) >= minTitleScore * 0.3) {
+            const oldScore = c.relevanceScore;
+            c.relevanceScore = Math.round(minTitleScore * 0.1);
+            console.log(`FIX67: "${c.title}" (chunk-only) score ${oldScore} → ${c.relevanceScore}`);
+          }
+        }
+
+        courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+        console.log(`FIX67: ${titleMatched.length} title-matched, ${chunkOnly.length} chunk-only → reranked`);
+      }
+    }
+
+
+
+
+
+  // Corrections fallback
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
       if (corrections.length > 0) {
