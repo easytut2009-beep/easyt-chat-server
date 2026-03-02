@@ -2116,7 +2116,8 @@ if (hasExplicitTopic) {
 
         // 🆕 FIX #73: design topic — skip if user specified TYPE
         if (mapping.id === "design") {
-          const designQualifiers = [
+const designQualifiers = [
+            "فيجوال", "كونتنت", "visual",
             "جرافيك", "جرافكس", "graphic", "مواقع", "موقع", "ويب", "web",
             "تطبيقات", "تطبيق", "app", "ألعاب", "العاب", "game",
             "موشن", "motion", "انيميشن", "animation",
@@ -2158,7 +2159,8 @@ if (hasExplicitTopic) {
 
 function hasNewExplicitTopic(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
-  const explicitTopics = [
+const explicitTopics = [
+    "فيجوال كونتنت", "فيجوال", "visual content",
     "فوتوشوب", "photoshop", "بايثون", "python", "جافا", "java",
     "برمجة", "programming", "جرافيك", "graphic", "ريفيت", "revit",
     "اوتوكاد", "autocad", "اكسل", "excel", "وورد", "word",
@@ -3101,6 +3103,29 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
+// 🆕 FIX #77: If DIPLOMAS but message has specific topic → SEARCH
+  if (analysis.action === "DIPLOMAS") {
+    const normDiplMsg = normalizeArabic(enrichedMessage.toLowerCase());
+    const diplomaStripped = normDiplMsg
+      .replace(/دبلوم(ه|ات|ة|ا)?/g, '')
+      .replace(/المتاح(ه|ة)?/g, '')
+      .replace(/الموجود(ه|ة)?/g, '')
+      .replace(/عندكم|عندك|ايه|إيه|ايش|شو|كلها|كل|عايز|عاوز|ابغى|اريد|بدي|حاب/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (diplomaStripped.length > 3) {
+      console.log(`🔄 FIX #77: DIPLOMAS → SEARCH (specific topic: "${diplomaStripped}")`);
+      analysis.action = "SEARCH";
+      if (!analysis.search_terms || analysis.search_terms.length === 0) {
+        analysis.search_terms = diplomaStripped.split(/\s+/).filter(w => w.length > 2);
+      }
+      if (!analysis.search_terms.some(t => normalizeArabic(t).includes('دبلوم'))) {
+        analysis.search_terms.push('دبلومة');
+      }
+    }
+  }
+
 
   let skipUpsell = false;
   if (quickCheck && quickCheck.isCasual) {
@@ -3130,21 +3155,30 @@ if (!skipUpsell) {
     enrichSearchTermsFromResponse(analysis);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // 🆕 FIX #71: Intercept vague SEARCH → smart clarification
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #71 + FIX #78c: Intercept vague SEARCH → smart clarification
   // ═══════════════════════════════════════════════════════════
   if (!skipUpsell && analysis.action === "SEARCH") {
     const vagueCheck = generateSmartClarification(enrichedMessage);
-if (vagueCheck.matched && ["unclear", "student", "design"].includes(vagueCheck.topicId)) {
+    if (vagueCheck.matched && ["unclear", "student", "design"].includes(vagueCheck.topicId)) {
       const explicitTopic = hasNewExplicitTopic(enrichedMessage);
-      if (!explicitTopic) {
+
+      // 🆕 FIX #78c: Also check if GPT found specific (non-generic) search terms
+      const genericDesignWords = new Set(["تصميم", "تصميمات", "ديزاين", "design"]);
+      const hasSpecificSearchTerms = (analysis.search_terms || []).some(t => {
+        const nt = normalizeArabic(t.toLowerCase()).trim();
+        return nt.length > 3 && !genericDesignWords.has(nt);
+      });
+
+      if (!explicitTopic && !hasSpecificSearchTerms) {
         console.log(`🧠 FIX #71: Vague SEARCH intercepted → clarification (topic: ${vagueCheck.topicId})`);
         analysis.action = "CHAT";
         analysis.search_terms = [];
+      } else {
+        console.log(`🧠 FIX #78c: SEARCH kept — explicitTopic="${explicitTopic}" hasSpecificTerms=${hasSpecificSearchTerms}`);
       }
     }
   }
-
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #74: Intercept CATEGORIES when topic matches clarification
