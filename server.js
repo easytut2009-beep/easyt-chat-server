@@ -1954,6 +1954,91 @@ function isFollowUpMessage(message) {
   return followUpPatterns.some((p) => norm.includes(normalizeArabic(p)));
 }
 
+
+// ============================================
+// FIX #70: Smart contextual clarification
+// ============================================
+function generateSmartClarification(message) {
+  const normMsg = normalizeArabic(message.toLowerCase());
+
+  const topicMappings = [
+    {
+      id: "business",
+      keywords: ["شركة", "شركه", "بيزنس", "مشروع", "اكبر الشركة", "ارباح", "مبيعات", "عملاء", "زباين", "نمو", "ادوية", "ادويه", "عقارات", "مطعم", "كافيه", "محل", "مصنع", "مكتب", "ستارت اب"],
+      intro: "فهمت إنك عندك بيزنس وعايز تكبره 💪",
+      options: [
+        { emoji: "📢", name: "الديجيتال ماركيتنج", desc: "تسويق إلكتروني وسوشيال ميديا" },
+        { emoji: "📊", name: "الإدارة وإدارة الأعمال", desc: "تنظيم وإدارة الشركة" },
+        { emoji: "💰", name: "الاقتصاد والمحاسبة", desc: "حسابات وتحليل مالي" },
+        { emoji: "🎨", name: "الجرافيكس والتصميم", desc: "تصميم هوية بصرية واعلانات" }
+      ]
+    },
+    {
+      id: "website",
+      keywords: ["موقع", "تطبيق", "ابلكيشن", "ابليكيشن", "ويب سايت", "سيستم", "نظام", "متجر الكتروني"],
+      intro: "فهمت إنك محتاج حاجة في المواقع أو التطبيقات 🌐",
+      options: [
+        { emoji: "💻", name: "تطوير وبرمجة المواقع", desc: "بناء موقع من الصفر" },
+        { emoji: "📱", name: "تطوير التطبيقات", desc: "تطبيقات موبايل" },
+        { emoji: "🎨", name: "الجرافيكس والتصميم", desc: "تصميم واجهات UI/UX" }
+      ]
+    },
+    {
+      id: "job",
+      keywords: ["شغل", "وظيفة", "وظيفه", "فريلانس", "دخل", "فلوس", "اشتغل", "اربح", "من البيت", "اونلاين", "عن بعد"],
+      intro: "فهمت إنك عايز تشتغل أو تزود دخلك 🎯",
+      options: [
+        { emoji: "💻", name: "البرمجة", desc: "مجال مطلوب جداً" },
+        { emoji: "🎨", name: "الجرافيكس والتصميم", desc: "تصميم = فريلانس" },
+        { emoji: "📢", name: "الديجيتال ماركيتنج", desc: "تسويق إلكتروني" },
+        { emoji: "💰", name: "الربح من الانترنت", desc: "طرق مختلفة للربح" }
+      ]
+    },
+    {
+      id: "kids",
+      keywords: ["اطفال", "أطفال", "طفل", "ابني", "بنتي", "تربية", "تربيه", "اولادي", "حضانة", "حضانه"],
+      intro: "فهمت إنك مهتم بتعليم أو تربية الأطفال 👶",
+      options: [
+        { emoji: "📚", name: "تربية وتعليم الأطفال", desc: "أساليب تربوية حديثة" },
+        { emoji: "🧠", name: "علم النفس", desc: "فهم سلوك الأطفال" },
+        { emoji: "🗣️", name: "تعليم اللغات", desc: "لغات للأطفال" }
+      ]
+    },
+    {
+      id: "security",
+      keywords: ["حماية", "حمايه", "اختراق", "هاكر", "هكر", "سيكيورتي", "امن سيبراني", "أمن معلومات"],
+      intro: "فهمت إنك مهتم بمجال الحماية والأمن السيبراني 🔒",
+      options: [
+        { emoji: "🛡️", name: "الحماية والاختراق", desc: "أمن سيبراني واختبار اختراق" },
+        { emoji: "💻", name: "البرمجة", desc: "أساسيات مهمة للمجال" }
+      ]
+    }
+  ];
+
+  for (const mapping of topicMappings) {
+    for (const kw of mapping.keywords) {
+      const normKw = normalizeArabic(kw.toLowerCase());
+      if (normKw.length >= 2 && normMsg.includes(normKw)) {
+        let response = `${mapping.intro}\n\nعندنا كورسات ممكن تفيدك:\n\n`;
+        mapping.options.forEach((opt, i) => {
+          response += `${opt.emoji} **${i + 1}. ${opt.name}**\n   ${opt.desc}\n\n`;
+        });
+        response += `إيه اللي يهمك أكتر من دول؟ 😊`;
+
+        return {
+          matched: true,
+          topicId: mapping.id,
+          response: response,
+          suggestedButtons: mapping.options.map(o => o.name)
+        };
+      }
+    }
+  }
+
+  return { matched: false };
+}
+
+
 function hasNewExplicitTopic(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
   const explicitTopics = [
@@ -3277,15 +3362,38 @@ updateSessionMemory(sessionId, {
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
   }
 
-  /* ═══════════════════════════════════
-     ACTION: CHAT (default)
+/* ═══════════════════════════════════
+     ACTION: CHAT (default) — FIX #70
      ═══════════════════════════════════ */
   else {
-    reply = analysis.response_message || getSmartFallback(sessionId);
+    const responseMsg = analysis.response_message || "";
+    const isGenericOrEmpty = !responseMsg || responseMsg.trim().length < 15;
+    const looksLikeFallback = responseMsg.includes("توضح") || responseMsg.includes("مش فاهم") || responseMsg.includes("وضّح");
+
+    if (isGenericOrEmpty || looksLikeFallback) {
+      // FIX #70: Reset previous search context so it doesn't bleed
+      sessionMem.lastSearchCategory = null;
+      sessionMem.lastSearchTopic = null;
+
+      const wordCount = enrichedMessage.trim().split(/\s+/).length;
+      if (wordCount >= 3) {
+        const smartResult = generateSmartClarification(enrichedMessage);
+        if (smartResult.matched) {
+          console.log(`🧠 FIX #70: Smart clarification for topic: ${smartResult.topicId}`);
+          reply = smartResult.response;
+        } else {
+          // Improved generic fallback — no hardcoded course names
+          reply = `مش متأكد فهمتك صح 🤔\n\nممكن تقولي:\n• عايز تتعلم إيه بالظبط؟\n• أو المجال اللي مهتم بيه؟\n\nوأنا هساعدك ألاقي الكورس المناسب 😊`;
+        }
+      } else {
+        reply = responseMsg || getSmartFallback(sessionId);
+      }
+    } else {
+      reply = responseMsg;
+    }
 
 // No upsell in CHAT mode
   }
-
   // Final processing
   reply = markdownToHtml(reply);
   reply = finalizeReply(reply);
