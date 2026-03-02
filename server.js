@@ -3823,7 +3823,6 @@ if (!skipUpsell) {
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
 let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
 
-let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
 
 // 🆕 FIX #86: Keep original terms alongside corrected ones
 // "اليستريتور" gets corrected to "اليستريتر" but course title has "اليستريتور"
