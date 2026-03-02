@@ -2040,10 +2040,44 @@ function generateSmartClarification(message) {
   ];
 
 
-  for (const mapping of topicMappings) {
+for (const mapping of topicMappings) {
     for (const kw of mapping.keywords) {
       const normKw = normalizeArabic(kw.toLowerCase());
       if (normKw.length >= 2 && normMsg.includes(normKw)) {
+
+        // ═══════════════════════════════════════════════════════════
+        // 🆕 FIX #72: If unclear/student BUT message has explicit topic → skip
+        // ═══════════════════════════════════════════════════════════
+        if (["unclear", "student"].includes(mapping.id)) {
+          const explicitTopics = [
+            "برمجة", "برمجه", "تصميم", "فوتوشوب", "جرافيك", "ماركتنج", "ماركيتنج",
+            "تسويق", "بايثون", "جافا", "اكسل", "ووردبريس", "تصوير", "مونتاج",
+            "فيديو", "موشن", "ويب", "اندرويد", "ايفون", "فلاتر", "ريأكت",
+            "react", "angular", "python", "java", "excel", "html", "css", "javascript",
+            "php", "flutter", "wordpress", "photoshop", "illustrator",
+            "premiere", "after effects", "figma", "ui", "ux",
+            "seo", "تهكير", "هاكينج", "اختراق", "حماية", "سيكيورتي",
+            "محاسبة", "محاسبه", "ادارة", "اداره", "بيزنس",
+            "انجليزي", "فرنسي", "الماني", "لغات", "ترجمة", "ترجمه",
+            "داتا", "data", "ذكاء اصطناعي", "ai", "شبكات",
+            "لينكس", "linux", "ريفيت", "revit", "اوتوكاد", "autocad",
+            "بلندر", "blender", "كانفا", "canva", "فيجما",
+            "انديزاين", "indesign", "بريمير", "اليستريتور",
+            "سوليدووركس", "solidworks", "ماتلاب", "matlab",
+            "اردوينو", "arduino", "روبوت", "الكترونيات",
+            "فوركس", "forex", "تداول", "trading", "استثمار",
+            "يوتيوب", "youtube", "دروبشيبنج", "dropshipping",
+            "كورس", "دبلومه", "دبلومة"
+          ];
+          const hasExplicitTopic = explicitTopics.some(t => 
+            normMsg.includes(normalizeArabic(t.toLowerCase()))
+          );
+          if (hasExplicitTopic) {
+            console.log(`🧠 FIX #72: "${mapping.id}" matched but explicit topic found → skipping clarification`);
+            return { matched: false };
+          }
+        }
+
         let response = `${mapping.intro}\n\nعندنا كورسات ممكن تفيدك:\n\n`;
         mapping.options.forEach((opt, i) => {
           response += `${opt.emoji} **${i + 1}. ${opt.name}**\n   ${opt.desc}\n\n`;
