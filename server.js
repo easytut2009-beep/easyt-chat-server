@@ -3417,6 +3417,60 @@ function verifyCourseRelevance(course, searchTerms) {
   return matchCount >= requiredMatches;
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX #92: GPT-based diploma relevance verification
+// Same pattern as verifyCourseRelevance but for diplomas
+// ═══════════════════════════════════════════════════════════
+async function verifyDiplomaRelevance(diplomas, userMessage) {
+  if (!diplomas || diplomas.length === 0) return [];
+  if (!openai) return diplomas;
+
+  const diplomaList = diplomas
+    .map((d, i) => `${i}: "${d.title}"`)
+    .join("\n");
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 50,
+      messages: [
+        {
+          role: "system",
+          content: `You are a relevance filter. Given a user question and a list of diplomas, return ONLY the indices of diplomas that are DIRECTLY related to the user's topic.
+
+Rules:
+- "DVWA" or "SQL injection" or "hacking" = cybersecurity diplomas ONLY
+- "Photoshop" or "design" = graphic design diplomas ONLY  
+- If NO diploma is relevant, return empty array []
+- Reply with a JSON array of numbers ONLY. Example: [0] or [0,1] or []`
+        },
+        {
+          role: "user",
+          content: `User question: "${userMessage}"\n\nDiplomas:\n${diplomaList}`
+        }
+      ]
+    });
+
+    const raw = response.choices[0].message.content.trim();
+    const indices = JSON.parse(raw);
+    
+    if (!Array.isArray(indices)) return diplomas;
+    
+    const filtered = indices
+      .filter(i => typeof i === 'number' && i >= 0 && i < diplomas.length)
+      .map(i => diplomas[i]);
+
+    console.log(`FIX92: verifyDiplomaRelevance: ${diplomas.length} → ${filtered.length} (indices=${raw})`);
+    return filtered;
+  } catch (e) {
+    console.error("FIX92: verifyDiplomaRelevance error:", e.message);
+    return diplomas; // fallback: return all
+  }
+}
+
+
 async function generateConversationSummary(chatHistory, currentSummary) {
   if (!openai || chatHistory.length < 4) return currentSummary;
   try {
@@ -4195,62 +4249,9 @@ if (courses.length > 0 || diplomas.length > 0) {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
-// 🆕 FIX #91: Verify diploma relevance — filter out unrelated diplomas
-      if (relevantDiplomas.length > 0 && termsToSearch.length > 0) {
-        const meaningfulSearchTerms = termsToSearch.filter(t => {
-          const nt = normalizeArabic(t.toLowerCase());
-          return nt.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase()) && !/دبلوم/.test(nt);
-        });
-
-        if (meaningfulSearchTerms.length > 0) {
-          const filteredDiplomas = relevantDiplomas.filter(d => {
-            const titleNorm = normalizeArabic((d.title || "").toLowerCase());
-            const descNorm = normalizeArabic(
-              ((d.description || "").replace(/<[^>]*>/g, "")).toLowerCase()
-            );
-            const diplomaText = titleNorm + " " + descNorm;
-
-            // Check if ANY meaningful search term appears in diploma title or description
-            const hasMatch = meaningfulSearchTerms.some(t => {
-              const nt = normalizeArabic(t.toLowerCase());
-              if (nt.length <= 2) return false;
-
-              // Direct match
-              if (diplomaText.includes(nt)) return true;
-
-              // Check category keywords match
-              const searchCat = detectRelevantCategory([t]);
-              if (searchCat) {
-                const diplomaCatTerms = [];
-                for (const [catName, catInfo] of Object.entries(CATEGORIES)) {
-                  for (const kw of catInfo.keywords) {
-                    const nkw = normalizeArabic(kw.toLowerCase());
-                    if (nkw.length > 2 && diplomaText.includes(nkw)) {
-                      diplomaCatTerms.push(catName);
-                      break;
-                    }
-                  }
-                }
-                // Diploma's category matches search category
-                if (diplomaCatTerms.includes(searchCat.name)) return true;
-              }
-
-              return false;
-            });
-
-            if (!hasMatch) {
-              console.log(`FIX91: ❌ Diploma "${d.title}" filtered out — no relevance to [${meaningfulSearchTerms.join(", ")}]`);
-            }
-            return hasMatch;
-          });
-
-          if (filteredDiplomas.length > 0 || relevantDiplomas.length === filteredDiplomas.length) {
-            relevantDiplomas = filteredDiplomas;
-          } else {
-            console.log(`FIX91: All diplomas filtered — keeping top 1 as fallback`);
-            relevantDiplomas = relevantDiplomas.slice(0, 1);
-          }
-        }
+// 🆕 FIX #92: GPT-based diploma relevance filter (replaces FIX #91)
+      if (relevantDiplomas.length > 0) {
+        relevantDiplomas = await verifyDiplomaRelevance(relevantDiplomas, message);
       }
 
 
@@ -4295,6 +4296,10 @@ const fallbackCourses = courses
       if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.answer) {
         // QUESTION intent: answer first, then courses as suggestions
         reply = questionAnswer.answer + "<br><br>";
+// 🆕 FIX #92: Filter diplomas in SEARCH→QUESTION flow
+        if (relevantDiplomas.length > 0) {
+          relevantDiplomas = await verifyDiplomaRelevance(relevantDiplomas, message);
+        }
 
         if (relevantCourses.length > 0 || relevantDiplomas.length > 0) {
           reply += `<br>💡 <strong>كورسات ممكن تفيدك لو حبيت تتعمق:</strong><br><br>`;
@@ -4485,6 +4490,12 @@ updateSessionMemory(sessionId, {
             allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
             const instructors = await getInstructors();
+
+
+// 🆕 FIX #92: Filter diplomas in QUESTION flow too
+            if (relatedDiplomas && relatedDiplomas.length > 0) {
+              relatedDiplomas = await verifyDiplomaRelevance(relatedDiplomas, enrichedMessage);
+            }
 
             // Show diplomas
             if (relatedDiplomas && relatedDiplomas.length > 0) {
