@@ -929,6 +929,10 @@ function detectRelevantCategory(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
 
   const normTerms = searchTerms.map((t) => normalizeArabic(t.toLowerCase()));
+  
+  // 🆕 FIX #75: Full phrase matching for compound terms like "تصميم مواقع"
+  const fullPhrase = normalizeArabic(searchTerms.join(" ").toLowerCase());
+  
   let bestCat = null;
   let bestScore = 0;
 
@@ -936,6 +940,25 @@ function detectRelevantCategory(searchTerms) {
     let score = 0;
     const normCat = normalizeArabic(catName.toLowerCase());
 
+    // 🆕 FIX #75: Multi-word keyword match = highest priority
+    // "تصميم مواقع" matches keyword "تصميم مواقع" exactly → big boost
+    for (const kw of catInfo.keywords) {
+      const normKw = normalizeArabic(kw.toLowerCase());
+      if (normKw.includes(" ")) { // multi-word keyword only
+        if (fullPhrase === normKw) {
+          score += 30; // exact match
+        } else if (fullPhrase.includes(normKw) || normKw.includes(fullPhrase)) {
+          score += 20; // partial phrase match
+        }
+      }
+    }
+
+    // 🆕 FIX #75: Full phrase in category name
+    if (fullPhrase.length > 3 && normCat.includes(fullPhrase)) {
+      score += 15;
+    }
+
+    // Original per-term matching (unchanged)
     for (const term of normTerms) {
       if (term.length <= 1) continue;
       if (normCat.includes(term) || term.includes(normCat)) score += 5;
@@ -3119,6 +3142,20 @@ if (vagueCheck.matched && ["unclear", "student", "design"].includes(vagueCheck.t
         analysis.action = "CHAT";
         analysis.search_terms = [];
       }
+    }
+  }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #74: Intercept CATEGORIES when topic matches clarification
+  // مثال: "التصميم" → GPT يرجع CATEGORIES → لكن المفروض يسأل "تصميم إيه؟"
+  // ═══════════════════════════════════════════════════════════
+  if (!skipUpsell && analysis.action === "CATEGORIES") {
+    const vagueCheck = generateSmartClarification(enrichedMessage);
+    if (vagueCheck.matched) {
+      console.log(`🧠 FIX #74: CATEGORIES intercepted → clarification (topic: ${vagueCheck.topicId})`);
+      analysis.action = "CHAT";
+      analysis.search_terms = [];
     }
   }
 
