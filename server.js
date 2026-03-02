@@ -3996,127 +3996,34 @@ if (phoneticExtra.length > 0) {
       }
     }
 
-    // Boost lesson-matched courses
-    const hasLessonMatchedCourses = courses.some(
-      (c) =>
-        c.matchType === "lesson_title" &&
-        c.matchedLessons &&
-        c.matchedLessons.length > 0
-    );
-
-    if (hasLessonMatchedCourses) {
-      for (const c of courses) {
-        if (
-          c.matchType !== "lesson_title" ||
-          !c.matchedLessons ||
-          c.matchedLessons.length === 0
-        ) {
-          const titleNormCheck = normalizeArabic(
-            (c.title || "").toLowerCase()
-          );
-          const hasDirectTitleMatch = termsToSearch.some((t) => {
-            const nt = normalizeArabic(t.toLowerCase());
-            return nt.length > 3 && titleNormCheck.includes(nt);
-          });
-          if (!hasDirectTitleMatch) {
-            c.relevanceScore = Math.round(c.relevanceScore * 0.2);
-          }
-        }
-      }
-      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-    }
-
   
 
 // ═══════════════════════════════════════════════════════
-    // 🆕 FIX #67: Title-Match Supremacy
-    // Courses whose TITLE contains the search term ALWAYS
-    // rank above courses that match ONLY through lesson chunks.
+    // FIX #67 v2: Title-Match Bonus (no punishment)
+    // Title-matched courses get a BONUS — chunk-only courses keep their score
     // ═══════════════════════════════════════════════════════
     {
-for (const c of courses) {
+      for (const c of courses) {
         const tn = normalizeArabic((c.title || "").toLowerCase());
         c._titleMatch = termsToSearch.some(t => {
           const nt = normalizeArabic(t.toLowerCase());
           if (nt.length <= 3) return false;
-          // Direct match — full phrase in title
           if (tn.includes(nt)) return true;
-          // Split compound terms
           const words = nt.split(/\s+/).filter(w => w.length > 3 && !ARABIC_STOP_WORDS.has(w));
           if (words.length === 0) return false;
-          if (words.length === 1) {
-            // Single word: substring match OK
-            return tn.includes(words[0]);
-          }
-          // 🆕 FIX #76: Compound term (2+ words): ALL words must be in title
-          // "تصميم مواقع" → title must contain BOTH "تصميم" AND "مواقع"
+          if (words.length === 1) return tn.includes(words[0]);
           return words.every(w => tn.includes(w));
         });
+
+        // Additive bonus — title match gets +500, no one gets punished
+        if (c._titleMatch) {
+          c.relevanceScore = (c.relevanceScore || 0) + 500;
+          console.log(`FIX67v2: "${c.title}" title-match → +500 bonus (total=${c.relevanceScore})`);
+        }
       }
 
-      const titleMatched = courses.filter(c => c._titleMatch);
-      const chunkOnly = courses.filter(c =>
-        !c._titleMatch &&
-        c.matchType === "lesson_title" &&
-        c.matchedLessons && c.matchedLessons.length > 0
-      );
-
-if (titleMatched.length > 0 && chunkOnly.length > 0) {
-        const minTitleScore = Math.min(
-          ...titleMatched.map(c => c.relevanceScore || 0)
-        );
-
-        // ═══════════════════════════════════════════════════════
-        // 🆕 FIX #83: Find which search terms title-matched courses cover
-        // Don't demote chunk-only courses that match DIFFERENT terms
-        // Example: "سكامبر فوتوشوب" → Photoshop=title("فوتوشوب"), 
-        //          Visual Content=lesson("سكامبر") → DON'T demote!
-        // ═══════════════════════════════════════════════════════
-        const titleCoveredTerms = new Set();
-        for (const tm of titleMatched) {
-          const tn = normalizeArabic((tm.title || "").toLowerCase());
-          for (const t of termsToSearch) {
-            const nt = normalizeArabic(t.toLowerCase());
-            if (nt.length > 3 && tn.includes(nt)) {
-              titleCoveredTerms.add(nt);
-            }
-          }
-        }
-
-        for (const c of chunkOnly) {
-          // Check if this course's matched lessons answer a UNIQUE search term
-          let matchesUniqueTerm = false;
-          
-          if (c.matchedLessons && c.matchedLessons.length > 0) {
-            for (const ml of c.matchedLessons) {
-              const lessonTitle = normalizeArabic((ml.title || "").toLowerCase());
-              for (const t of termsToSearch) {
-                const nt = normalizeArabic(t.toLowerCase());
-                if (nt.length > 3 && lessonTitle.includes(nt) && !titleCoveredTerms.has(nt)) {
-                  matchesUniqueTerm = true;
-                  break;
-                }
-              }
-              if (matchesUniqueTerm) break;
-            }
-          }
-
-          if (matchesUniqueTerm) {
-            // This course answers a DIFFERENT part of the query → keep it!
-            console.log(`FIX83: "${c.title}" matches unique term → NOT demoting (score=${c.relevanceScore})`);
-          } else if ((c.relevanceScore || 0) >= minTitleScore * 0.3) {
-            // Same term as title-matched → demote as before
-            const oldScore = c.relevanceScore;
-            c.relevanceScore = Math.round(minTitleScore * 0.1);
-            console.log(`FIX67: "${c.title}" (chunk-only) score ${oldScore} → ${c.relevanceScore}`);
-          }
-        }
-
-        courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-        console.log(`FIX67+83: ${titleMatched.length} title-matched, ${chunkOnly.length} chunk-only → reranked`);
-      }
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
-
 
 
 
@@ -4172,9 +4079,9 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
         }
 
         if (bestMatchCount >= 2) {
-          for (const c of courses) {
+for (const c of courses) {
             if (c._fix89mc === bestMatchCount) {
-              c.relevanceScore = ((c.relevanceScore || 0) + 90000) * 5;
+              c.relevanceScore = (c.relevanceScore || 0) + 300;
             }
           }
           courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
@@ -4244,25 +4151,9 @@ if (titleMatched.length > 0 && chunkOnly.length > 0) {
         }
       }
 
-      if (_fix90HasFullPhraseLesson && _fix90SpecificTerms.length > 0) {
-        for (const c of courses) {
-          if (c._fullPhraseLessonMatch || c._specificLessonMatch) continue;
-
-          const courseText = normalizeArabic(
-            ((c.title || "") + " " + (c.subtitle || "") + " " + (c.keywords || "") + " " + (c.domain || "")).toLowerCase()
-          );
-
-          const matchesSpecific = _fix90SpecificTerms.some(t =>
-            courseText.includes(normalizeArabic(t.toLowerCase()))
-          );
-
-          if (!matchesSpecific) {
-            const oldScore = c.relevanceScore;
-            c.relevanceScore = Math.round((c.relevanceScore || 0) * 0.05);
-            console.log(`FIX90: ❌ "${c.title}" only matches generic words → score ${oldScore} → ${c.relevanceScore}`);
-          }
-        }
-      }
+// FIX90 v2: No punishment — the boost for phrase-matched courses is enough
+      // Courses with full-phrase lesson match already got +50000/+5000 boost above
+      // No need to punish the rest — they'll naturally rank lower
 
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
@@ -4507,22 +4398,54 @@ updateSessionMemory(sessionId, {
       if (questionAnswer && questionAnswer.answer) {
         reply = questionAnswer.answer;
 
-        // Also search for related courses in courses table
+// FIX #85 v2: Search ALL sources (courses + lessons + diplomas)
         if (questionTerms.length > 0) {
           try {
-            const relatedCourses = await searchCourses(questionTerms, [], null);
-            if (relatedCourses.length > 0) {
-              const instructors = await getInstructors();
-              const topCourses = relatedCourses
-                .filter(c => verifyCourseRelevance(c, questionTerms))
-                .slice(0, 2);
+            const [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
+              searchCourses(questionTerms, [], null),
+              searchDiplomas(questionTerms),
+              searchLessonsInCourses(questionTerms),
+            ]);
 
-              if (topCourses.length > 0) {
-                reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
-                topCourses.forEach((c, i) => {
-                  reply += formatCourseCard(c, instructors, i + 1);
-                });
+            // Merge lesson results into courses
+            let allCourses = [...relatedCourses];
+            if (relatedLessons && relatedLessons.length > 0) {
+              const seenIds = new Set(allCourses.map(c => c.id));
+              for (const lr of relatedLessons) {
+                const existing = allCourses.find(c => c.id === lr.id);
+                if (existing) {
+                  existing.matchedLessons = lr.matchedLessons;
+                  existing.relevanceScore = Math.max(existing.relevanceScore || 0, lr.relevanceScore);
+                } else {
+                  allCourses.push(lr);
+                  seenIds.add(lr.id);
+                }
               }
+            }
+
+            // Sort by score
+            allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+            const instructors = await getInstructors();
+
+            // Show diplomas
+            if (relatedDiplomas && relatedDiplomas.length > 0) {
+              reply += `<br><br>💡 <strong>دبلومات على المنصة هتفيدك:</strong><br>`;
+              relatedDiplomas.slice(0, 2).forEach(d => {
+                reply += formatDiplomaCard(d);
+              });
+            }
+
+            // Show courses
+            const topCourses = allCourses
+              .filter(c => verifyCourseRelevance(c, questionTerms))
+              .slice(0, 3);
+
+            if (topCourses.length > 0) {
+              reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
+              topCourses.forEach((c, i) => {
+                reply += formatCourseCard(c, instructors, i + 1);
+              });
             }
           } catch (searchErr) {
             console.error("FIX #85 course search error:", searchErr.message);
