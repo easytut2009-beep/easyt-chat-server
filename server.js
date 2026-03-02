@@ -3845,25 +3845,24 @@ let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
 // 🆕 FIX #86: Keep original terms alongside corrected ones
 termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
 
-// 🆕 FIX #87: Extract meaningful words from original message
-// GPT sometimes omits qualifiers like "بالذكاء" (with AI)
-const _msgMeaningfulWords = enrichedMessage
-  .split(/\s+/)
-  .map(w => w.toLowerCase().trim())
-  .filter(w => {
-    if (w.length <= 3) return false;
-    if (ARABIC_STOP_WORDS.has(w)) return false;
-    if (/^\d+$/.test(w)) return false;
-    const wNorm = normalizeArabic(w);
-    return !termsToSearch.some(t => {
-      const tNorm = normalizeArabic(t.toLowerCase());
-      return tNorm === wNorm || tNorm.includes(wNorm) || wNorm.includes(tNorm);
-    });
-  });
-
-if (_msgMeaningfulWords.length > 0) {
-  console.log(`FIX87: Adding message words: [${_msgMeaningfulWords.join(', ')}]`);
-  termsToSearch = [...new Set([...termsToSearch, ..._msgMeaningfulWords])];
+// 🆕 FIX #88: Extract key words from user message directly
+const _rawWords = (message || "").split(/\s+/).filter(w => w.length > 3);
+const _extraWords = [];
+for (const w of _rawWords) {
+  let clean = w;
+  if (/^(بال|وال|فال|كال)/.test(clean) && clean.length > 4) {
+    clean = clean.replace(/^(بال|وال|فال|كال)/, "");
+    _extraWords.push(clean);
+    _extraWords.push("ال" + clean);
+  } else if (clean.startsWith("لل") && clean.length > 4) {
+    clean = clean.substring(2);
+    _extraWords.push(clean);
+    _extraWords.push("ال" + clean);
+  }
+}
+if (_extraWords.length > 0) {
+  console.log("FIX88: Extra words from message:", _extraWords);
+  termsToSearch = [...new Set([...termsToSearch, ..._extraWords])];
 }
 
 // 🆕 Auto phonetic transliteration (Arabic brand names → English)
