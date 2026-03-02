@@ -3270,11 +3270,18 @@ for (const c of courses) {
         c._titleMatch = termsToSearch.some(t => {
           const nt = normalizeArabic(t.toLowerCase());
           if (nt.length <= 3) return false;
-          // Direct match
+          // Direct match — full phrase in title
           if (tn.includes(nt)) return true;
-          // FIX #68: Split compound terms — "كورس فوتوشوب" → check "فوتوشوب" alone
+          // Split compound terms
           const words = nt.split(/\s+/).filter(w => w.length > 3 && !ARABIC_STOP_WORDS.has(w));
-          return words.length > 0 && words.some(w => tn.includes(w));
+          if (words.length === 0) return false;
+          if (words.length === 1) {
+            // Single word: substring match OK
+            return tn.includes(words[0]);
+          }
+          // 🆕 FIX #76: Compound term (2+ words): ALL words must be in title
+          // "تصميم مواقع" → title must contain BOTH "تصميم" AND "مواقع"
+          return words.every(w => tn.includes(w));
         });
       }
 
