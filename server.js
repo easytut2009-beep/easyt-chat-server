@@ -1582,7 +1582,7 @@ if (_penaltyTitleHits >= 1) {
       );
     });
 
-    const result = scored.slice(0, 10);
+    const result = scored.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
@@ -4284,10 +4284,16 @@ if (allPreviouslyShown && analysis.is_follow_up) {
     earlyExitFollowUp = true;
 
     const topic97 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
+    const cat97 = getSmartCategoryFromCourses(courses, termsToSearch);
 
-    reply = `مفيش كورسات تانية غير اللي عرضتهالك عن ${topic97 || "الموضوع ده"} 😊<br>`;
-    reply += `لو عايز تتعلم حاجة تانية خالص، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+    reply = `دول أهم الكورسات اللي عندنا عن ${topic97 || "الموضوع ده"} 😊<br>`;
+    reply += `لو عايز تتعلم حاجة تانية، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
 
+    if (cat97) {
+        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat97.name} ←</a></div>`;
+    }
+    reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+    reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
     const cat97 = getSmartCategoryFromCourses(courses, termsToSearch);
     if (cat97) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat97.name} ←</a></div>`;
@@ -4524,16 +4530,17 @@ if (allPreviouslyShown) {
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — no new results`);
       const topic93 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
-
-      reply = `مفيش كورسات تانية غير اللي عرضتهالك عن ${topic93 || "الموضوع ده"} 😊<br>`;
-      reply += `لو عايز تتعلم حاجة تانية خالص، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
-
       const cat93 = getSmartCategoryFromCourses(courses, termsToSearch);
+
+      reply = `دول كل الكورسات اللي عندنا عن ${topic93 || "الموضوع ده"} 😊<br>`;
+      reply += `لو عايز تتعلم حاجة تانية، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+
       if (cat93) {
-        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat93.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat93.name} ←</a></div>`;
+        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat93.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat93.name} ←</a></div>`;
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+
 
       const mainTopic93 = extractMainTopic(termsToSearch);
       updateSessionMemory(sessionId, {
@@ -4678,7 +4685,12 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
 
 
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-        reply = `🔍 مفيش كورسات متاحة عن الموضوع ده حالياً.`;
+        const noResultCat = getSmartCategoryFromCourses(courses, termsToSearch);
+        if (noResultCat) {
+          reply = `🔍 ممكن تلاقي اللي بتدور عليه في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇`;
+        } else {
+          reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
+        }
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       }
 
@@ -4721,8 +4733,13 @@ lastShownCourseIds: [...new Set([
           reply = `🤔 معنديش معلومات كافية عن الموضوع ده حالياً.`;
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
         }
-      } else {
-reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
+} else {
+        const outerCat = detectRelevantCategory(termsToSearch);
+        if (outerCat) {
+          reply = `🔍 ممكن تلاقي كورسات في نفس المجال في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
+        } else {
+          reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
+        }
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       }
 
