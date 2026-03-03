@@ -4426,10 +4426,14 @@ for (const c of courses) {
     }
 
 // 🆕 FIX: Filter by actual user intent
+// 🆕 FIX #96: For follow-ups, use search topic (raw message like "في تاني" has no context)
       if (courses.length > 1) {
+        const intentFilterMsg = analysis.is_follow_up 
+          ? `عايز كورسات عن ${sessionMem.lastSearchTopic || termsToSearch.join(" ")}`
+          : message;
         courses = await filterCoursesByIntent(
           courses,
-          message,
+          intentFilterMsg,
           termsToSearch
         );
       }
@@ -4473,41 +4477,29 @@ for (const c of courses) {
 
 
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
-      console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — showing directly`);
-const instructors93 = await getInstructors();
-      const topic = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
+      console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — no new results`);
+      const topic93 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
 
-      reply = `دول أحسن الكورسات المتاحة عندنا عن ${topic || "الموضوع ده"} على المنصة 😊<br>`;
+      reply = `مفيش كورسات تانية غير اللي عرضتهالك عن ${topic93 || "الموضوع ده"} 😊<br>`;
       reply += `لو عايز تتعلم حاجة تانية خالص، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
 
-      // Show relevant diplomas if found
-      if (diplomas.length > 0) {
-        const verifiedDiplomas = await verifyDiplomaRelevance(diplomas, message);
-        verifiedDiplomas.slice(0, 2).forEach((d) => {
-          reply += formatDiplomaCard(d);
-        });
+      const cat93 = getSmartCategoryFromCourses(courses, termsToSearch);
+      if (cat93) {
+        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat93.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat93.name} ←</a></div>`;
       }
-
-      // Show courses directly (no RAG filtering)
-      courses.slice(0, 5).forEach((c, i) => {
-        reply += formatCourseCard(c, instructors93, i + 1);
-      });
-
-      // Category link
-      const cat = getSmartCategoryFromCourses(courses, termsToSearch);
-      if (cat) {
-        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
-      }
+      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
-      const mainTopic = extractMainTopic(termsToSearch);
+      const mainTopic93 = extractMainTopic(termsToSearch);
       updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
-        lastSearchTopic: topic || mainTopic,
+        lastSearchTopic: topic93 || mainTopic93,
         userLevel: analysis.user_level,
         topics: analysis.topics,
-        lastShownCourseIds: courses.slice(0, 5).map((c) => c.id),
+        lastShownCourseIds: sessionMem.lastShownCourseIds,
       });
+
+    }
 
     } else if (courses.length > 0 || diplomas.length > 0) {
 
