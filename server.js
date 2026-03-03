@@ -4620,6 +4620,15 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
         });
       }
 
+// ✅ Category suggestion — only when courses ARE found
+      if (relevantCourses.length > 0 || relevantDiplomas.length > 0) {
+        const cat = getSmartCategoryFromCourses(relevantCourses, termsToSearch);
+        if (cat) {
+          reply += `<br><br>📂 ممكن كمان تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
+        }
+      }
+
+
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
         reply = `🔍 مفيش كورسات متاحة عن الموضوع ده حالياً.`;
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
