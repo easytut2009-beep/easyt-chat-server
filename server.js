@@ -3318,7 +3318,12 @@ if (analysis.is_follow_up) {
 - "مفيش كورسات متخصصة"
 - "مفيش كورس متخصص حالياً"
 - "للأسف مفيش"
+- "ممكن توضح"
+- "ممكن توضحلي"
+- "توضح أكتر"
+- "عن الموضوع اللي عايز تسأل عنه"
 - أي جملة سلبية عن عدم توفر كورسات
+- أي طلب توضيح من المستخدم
 
 ✅ بدلاً من كده، استخدم جملة إيجابية مختلفة كل مرة:
 - "كمان عندنا الكورسات دي ممكن تفيدك 👇"
@@ -4047,6 +4052,17 @@ if (analysis.is_follow_up && sessionMem.lastSearchTerms && sessionMem.lastSearch
   }
 }
 
+// Local follow-up fallback: GPT missed it but local detection caught it
+if (!analysis.is_follow_up && isContextFollowUp 
+    && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+  console.log(`🔄 Local follow-up fallback → restoring context`);
+  analysis.is_follow_up = true;
+  analysis.search_terms = [...sessionMem.lastSearchTerms];
+  if (analysis.action === "CHAT") {
+    analysis.action = "SEARCH";
+  }
+}
+
 
 if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
@@ -4631,10 +4647,9 @@ const mainTopic = extractMainTopic(termsToSearch);
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
 lastShownCourseIds: [...new Set([
+  ...(sessionMem.lastShownCourseIds || []),
   ...relevantCourses.map(c => c.id),
-  ...(courses || []).map(c => c.id)  // 🆕 Save ALL found courses
 ])],
-
       });
 
 } else {
