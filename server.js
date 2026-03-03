@@ -4020,29 +4020,28 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   }
 
 // Follow-up handling
-if (analysis.is_follow_up) {
-    if ((!analysis.search_terms || analysis.search_terms.length === 0)
-        && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
-      analysis.search_terms = [...sessionMem.lastSearchTerms];
-    }
-    // 🆕 FIX: If follow-up has search terms (restored or from GPT), force SEARCH
-    if (analysis.action === "CHAT" && analysis.search_terms && analysis.search_terms.length > 0) {
-      console.log(`🔄 FIX: Follow-up with search terms [${analysis.search_terms.join(", ")}] → CHAT → SEARCH`);
-      analysis.action = "SEARCH";
+if (analysis.is_follow_up && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+  const prevTerms = sessionMem.lastSearchTerms;
+  const newTerms = analysis.search_terms || [];
+
+  // Always start from previous terms (same topic)
+  const merged = [...prevTerms];
+
+  // Add any genuinely new terms (refinements like "مبتدئين", "ارخص")
+  for (const t of newTerms) {
+    const norm = normalizeArabic(t.toLowerCase().trim());
+    if (norm.length > 2 && !prevTerms.some(p => normalizeArabic(p.toLowerCase().trim()) === norm)) {
+      merged.push(t);
     }
   }
 
-// 🆕 FIX: Use local follow-up detection as fallback for GPT
-  if (!analysis.is_follow_up && isContextFollowUp && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
-    console.log(`🔄 FIX: Local follow-up detected (GPT missed it) → restoring context`);
-    analysis.is_follow_up = true;
-    if (!analysis.search_terms || analysis.search_terms.length === 0) {
-      analysis.search_terms = [...sessionMem.lastSearchTerms];
-    }
-    if (analysis.action === "CHAT") {
-      analysis.action = "SEARCH";
-    }
+  console.log(`🔄 Follow-up: [${newTerms.join(", ")}] → merged with prev → [${merged.join(", ")}]`);
+  analysis.search_terms = merged;
+
+  if (analysis.action === "CHAT") {
+    analysis.action = "SEARCH";
   }
+}
 
 
 if (!skipUpsell) {
