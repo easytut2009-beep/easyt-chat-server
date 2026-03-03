@@ -3710,26 +3710,51 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
 
     console.log(`🧠 FIX #84: answerFromChunks — ${allChunks.length} chunks found`);
 
-    // 4. Build context from chunks
+// 4. Build context from chunks — WITH course names
     if (allChunks.length > 0) {
+      // Fetch course names for all chunks
+      const _chunkLessonIds = [...new Set(allChunks.map(c => c.lesson_id).filter(Boolean))];
+      const _lessonCourseMap = new Map();
+      const _courseNameMap = new Map();
+      
+      if (_chunkLessonIds.length > 0 && supabase) {
+        const { data: _lessonRows } = await supabase
+          .from("lessons")
+          .select("id, title, course_id")
+          .in("id", _chunkLessonIds);
+        
+        if (_lessonRows) {
+          for (const l of _lessonRows) {
+            _lessonCourseMap.set(l.id, { courseId: l.course_id, lessonTitle: l.title });
+          }
+          
+          const _courseIds = [...new Set(_lessonRows.map(l => l.course_id).filter(Boolean))];
+          if (_courseIds.length > 0) {
+            const { data: _courses } = await supabase
+              .from("courses")
+              .select("id, title, link")
+              .in("id", _courseIds);
+            if (_courses) {
+              for (const c of _courses) {
+                _courseNameMap.set(c.id, c.title);
+              }
+              relatedCourses = _courses.slice(0, 3);
+            }
+          }
+        }
+      }
+
       chunkContext = allChunks.slice(0, 8).map(c => {
         const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
-        const lesson = c.lesson_title || c.chunk_title || "";
-        return `[${lesson}] ${ts} ${(c.content || "").substring(0, 800)}`;
+        const _info = _lessonCourseMap.get(c.lesson_id);
+        const lesson = _info?.lessonTitle || c.lesson_title || c.chunk_title || "";
+        const courseName = _info ? (_courseNameMap.get(_info.courseId) || "") : "";
+        const source = courseName 
+          ? `[كورس: "${courseName}" | درس: "${lesson}"]` 
+          : `[درس: "${lesson}"]`;
+        return `${source} ${ts} ${(c.content || "").substring(0, 800)}`;
       }).join("\n\n");
-
-      // Track related courses
-      const courseIds = [...new Set(allChunks.map(c => c.course_id).filter(Boolean))];
-      if (courseIds.length > 0 && supabase) {
-        const { data: courses } = await supabase
-          .from("courses")
-          .select("id, title, link")
-          .in("id", courseIds)
-          .limit(3);
-        relatedCourses = courses || [];
-      }
     }
-
     // 5. Generate answer using GPT
     const hasChunks = chunkContext.length > 50;
 
@@ -3741,7 +3766,7 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
 ${chunkContext}
 
 جاوب على سؤال المستخدم:
-1. لو المحتوى فوق فيه الإجابة → جاوب منه واذكر اسم الدرس والتوقيت لو متاح
+1. لو المحتوى فوق فيه الإجابة → جاوب منه واذكر اسم الكورس واسم الدرس والتوقيت لو متاح
 2. لو المحتوى مش كافي → كمّل من معرفتك العامة بشكل طبيعي ومتصل
 3. الرد يكون بالعامية المصرية وودود
 4. ممنوع تقول "مفيش كورس" — أنت بتجاوب سؤال
