@@ -3391,9 +3391,7 @@ ${followUpContext}
 
 ممنوع تذكر أسعار في الرد
 ممنوع تخترع اسم كورس مش في البيانات
-أقصى عدد 5 كورسات و 2 دبلومة
-🔴 لو كل الكورسات titleMatch=true (يعني كلهم اسمهم فيه الموضوع المطلوب) — لازم تختارهم كلهم بدون استثناء!
-مثال: لو المستخدم قال "فوتوشوب" وعندك 3 كورسات كلهم titleMatch=true — ارجع الـ 3 كلهم في relevant_course_indices!`;
+أقصى عدد 3 كورسات و 1 دبلومة`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -4619,25 +4617,41 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
         (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
 
-
- // ═══════════════════════════════════════════════════════════
-      // 🆕 FIX #103: FINAL bulletproof safety — ensure ALL titleMatch shown
-      // This runs AFTER all other safety nets as absolute last check
+// ═══════════════════════════════════════════════════════════
+      // 🆕 FIX #104: NUCLEAR SAFETY — Direct DB query for title matches
+      // Bypasses ALL search/filter/RAG — if it's in the DB, it WILL show
       // ═══════════════════════════════════════════════════════════
-      {
-        const _fix103missing = [];
-        for (const c of courses) {
-          if (c._titleMatch === true && !relevantCourses.find(rc => rc.id === c.id)) {
-            _fix103missing.push(c);
+      if (supabase && termsToSearch.length > 0) {
+        try {
+          const _fix104terms = termsToSearch.filter(t => t.length > 3 && /[\u0600-\u06FF]/.test(t));
+          const _fix104english = termsToSearch.filter(t => t.length > 3 && /^[a-zA-Z]+$/.test(t));
+          const _fix104all = [..._fix104terms, ..._fix104english];
+          
+          if (_fix104all.length > 0) {
+            const _fix104filters = _fix104all.map(t => `title.ilike.%${t}%`).join(",");
+            const { data: _fix104courses } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .or(_fix104filters)
+              .limit(10);
+            
+            if (_fix104courses && _fix104courses.length > 0) {
+              let _fix104added = 0;
+              for (const dc of _fix104courses) {
+                if (!relevantCourses.find(rc => rc.id === dc.id)) {
+                  relevantCourses.push(dc);
+                  _fix104added++;
+                  console.log(`🔥 FIX104: Direct DB added: "${dc.title}"`);
+                }
+              }
+              if (_fix104added > 0) {
+                console.log(`🔥 FIX104: Added ${_fix104added} missing courses from direct DB query`);
+                relevantCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+              }
+            }
           }
-        }
-        if (_fix103missing.length > 0) {
-          console.log(`🛡️ FIX103: ${_fix103missing.length} titleMatch courses were STILL missing after all safety nets!`);
-          for (const mc of _fix103missing) {
-            relevantCourses.push(mc);
-            console.log(`🛡️ FIX103: Force-added: "${mc.title}"`);
-          }
-          relevantCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+        } catch (_fix104err) {
+          console.error("FIX104 error:", _fix104err.message);
         }
       }
 
