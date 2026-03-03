@@ -2526,7 +2526,7 @@ function enrichMessageWithContext(message, sessionMem) {
   }
 
   if (isFollowUpMessage(message) && sessionMem.lastSearchTopic) {
-    const enriched = `${sessionMem.lastSearchTopic} ${message}`;
+const enriched = message;
     return {
       enriched,
       isFollowUp: true,
@@ -4006,22 +4006,12 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   }
 
   // Follow-up handling
-  if (isContextFollowUp && !analysis.is_follow_up) {
-    analysis.is_follow_up = true;
-    analysis.previous_topic_reference = previousTopic;
-    if (
-      sessionMem.lastSearchTerms &&
-      sessionMem.lastSearchTerms.length > 0
-    ) {
-      analysis.search_terms = [
-        ...new Set([
-          ...analysis.search_terms,
-          ...sessionMem.lastSearchTerms,
-        ]),
-      ];
+if (analysis.is_follow_up) {
+    if ((!analysis.search_terms || analysis.search_terms.length === 0)
+        && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+      analysis.search_terms = [...sessionMem.lastSearchTerms];
     }
   }
-
 if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
     enrichSearchTermsFromResponse(analysis);
