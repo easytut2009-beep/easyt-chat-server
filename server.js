@@ -3710,33 +3710,26 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
 
     console.log(`🧠 FIX #84: answerFromChunks — ${allChunks.length} chunks found`);
 
-// 4. Build context from chunks (with course names)
+    // 4. Build context from chunks
     if (allChunks.length > 0) {
-      // Get course titles FIRST
+      chunkContext = allChunks.slice(0, 8).map(c => {
+        const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+        const lesson = c.lesson_title || c.chunk_title || "";
+        return `[${lesson}] ${ts} ${(c.content || "").substring(0, 800)}`;
+      }).join("\n\n");
+
+      // Track related courses
       const courseIds = [...new Set(allChunks.map(c => c.course_id).filter(Boolean))];
-      let courseNameMap = new Map();
       if (courseIds.length > 0 && supabase) {
         const { data: courses } = await supabase
           .from("courses")
           .select("id, title, link")
           .in("id", courseIds)
-          .limit(10);
+          .limit(3);
         relatedCourses = courses || [];
-        for (const c of (courses || [])) {
-          courseNameMap.set(c.id, c.title);
-        }
       }
-
-      chunkContext = allChunks.slice(0, 8).map(c => {
-        const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
-        const lesson = c.lesson_title || c.chunk_title || "";
-        const courseName = c.course_title || courseNameMap.get(c.course_id) || "";
-        const source = courseName
-          ? `[كورس: "${courseName}" | درس: "${lesson}"]`
-          : `[درس: "${lesson}"]`;
-        return `${source} ${ts}\n${(c.content || "").substring(0, 800)}`;
-      }).join("\n\n---\n\n");
     }
+
     // 5. Generate answer using GPT
     const hasChunks = chunkContext.length > 50;
 
@@ -3748,7 +3741,7 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
 ${chunkContext}
 
 جاوب على سؤال المستخدم:
-1. لو المحتوى فوق فيه الإجابة →جاوب منه واذكر اسم الكورس واسم الدرس والتوقيت لو متاح
+1. لو المحتوى فوق فيه الإجابة → جاوب منه واذكر اسم الدرس والتوقيت لو متاح
 2. لو المحتوى مش كافي → كمّل من معرفتك العامة بشكل طبيعي ومتصل
 3. الرد يكون بالعامية المصرية وودود
 4. ممنوع تقول "مفيش كورس" — أنت بتجاوب سؤال
@@ -6625,7 +6618,7 @@ async function searchChunksByText(
       return [];
     }
 
-// Enrich with lesson titles + course names
+    // Enrich with lesson titles
     if (data && data.length > 0) {
       const lessonIds = [
         ...new Set(data.map((c) => c.lesson_id).filter(Boolean)),
@@ -6633,31 +6626,17 @@ async function searchChunksByText(
       if (lessonIds.length > 0) {
         const { data: lessons } = await supabase
           .from("lessons")
-          .select("id, title, course_id")
+          .select("id, title")
           .in("id", lessonIds);
         const lessonMap = new Map(
-          (lessons || []).map((l) => [l.id, l])
+          (lessons || []).map((l) => [l.id, l.title])
         );
-
-        // Get course titles
-        const _courseIds = [...new Set((lessons || []).map(l => l.course_id).filter(Boolean))];
-        let _courseMap = new Map();
-        if (_courseIds.length > 0) {
-          const { data: _courses } = await supabase
-            .from("courses")
-            .select("id, title")
-            .in("id", _courseIds);
-          _courseMap = new Map((_courses || []).map(c => [c.id, c.title]));
-        }
-
         data.forEach((c) => {
-          const lesson = lessonMap.get(c.lesson_id);
-          c.lesson_title = lesson ? lesson.title : "";
-          c.course_id = lesson ? lesson.course_id : null;
-          c.course_title = lesson ? (_courseMap.get(lesson.course_id) || "") : "";
+          c.lesson_title = lessonMap.get(c.lesson_id) || "";
         });
       }
     }
+
     console.log(
       `🔍 FIX #41 Text search: ${(data || []).length} results for [${meaningful.join(
         ", "
