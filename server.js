@@ -4159,7 +4159,8 @@ if (phoneticExtra.length > 0) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-// 🆕 FIX #65: Exclude previously shown courses on follow-up
+// 🆕 FIX #65 + FIX #93: Exclude previously shown courses on follow-up
+    let allPreviouslyShown = false;
     if (analysis.is_follow_up && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds);
       const beforeCount = courses.length;
@@ -4168,10 +4169,10 @@ if (phoneticExtra.length > 0) {
         courses = filtered;
         console.log("FIX65: Excluded prev courses, before:", beforeCount, "after:", filtered.length);
       } else {
-        console.log("FIX65: All were prev shown, keeping originals");
+        console.log("FIX93: All courses were prev shown — will show directly without RAG");
+        allPreviouslyShown = true;
       }
     }
-
   
 
 // ═══════════════════════════════════════════════════════
@@ -4343,7 +4344,54 @@ for (const c of courses) {
         );
       }
 
-if (courses.length > 0 || diplomas.length > 0) {
+// ═══════════════════════════════════════════════════════════
+    // 🆕 FIX #93: Follow-up "في حاجة تانية" — no new alternatives
+    // When ALL search results were already shown, skip RAG and show directly
+    // RAG would say "مفيش كورس" because user asked for "something else"
+    // but there IS no "something else" — these are the best we have
+    // ═══════════════════════════════════════════════════════════
+    if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
+      console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — showing directly`);
+      const instructors = await getInstructors();
+      const topic = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
+
+      reply = `دول أحسن الكورسات المتاحة عندنا عن ${topic || "الموضوع ده"} على المنصة 😊<br>`;
+      reply += `لو عايز تتعلم حاجة تانية خالص، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+
+      // Show relevant diplomas if found
+      if (diplomas.length > 0) {
+        const verifiedDiplomas = await verifyDiplomaRelevance(diplomas, message);
+        verifiedDiplomas.slice(0, 2).forEach((d) => {
+          reply += formatDiplomaCard(d);
+        });
+      }
+
+      // Show courses directly (no RAG filtering)
+      courses.slice(0, 5).forEach((c, i) => {
+        reply += formatCourseCard(c, instructors, i + 1);
+      });
+
+      // Category link
+      const cat = getSmartCategoryFromCourses(courses, termsToSearch);
+      if (cat) {
+        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
+      }
+      reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+      const mainTopic = extractMainTopic(termsToSearch);
+      updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: topic || mainTopic,
+        userLevel: analysis.user_level,
+        topics: analysis.topics,
+        lastShownCourseIds: courses.slice(0, 5).map((c) => c.id),
+      });
+
+    } else if (courses.length > 0 || diplomas.length > 0) {
+      const instructors = await getInstructors();
+
+      // Must-show courses
+      const phase2Model = "gpt-4o-mini";
       const instructors = await getInstructors();
 
       // Must-show courses
