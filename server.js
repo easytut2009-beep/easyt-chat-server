@@ -4735,6 +4735,7 @@ updateSessionMemory(sessionId, {
       });
     }
   }
+} // end if (!earlyExitFollowUp)
 
   /* ═══════════════════════════════════
      ACTION: SUBSCRIPTION
