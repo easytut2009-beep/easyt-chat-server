@@ -3808,9 +3808,14 @@ async function smartChat(message, sessionId) {
   // Dialect normalization
   const dialectNormalized = normalizeDialect(message);
 
-// 🆕 FIX #96: Don't enrich message before GPT — let GPT see the RAW message
-  // GPT already has session memory context, so it understands follow-ups naturally
-  const enrichedMessage = dialectNormalized;
+  // Context enrichment
+  const contextResult = enrichMessageWithContext(
+    dialectNormalized,
+    sessionMem
+  );
+  const enrichedMessage = contextResult.enriched;
+  const isContextFollowUp = contextResult.isFollowUp;
+  const previousTopic = contextResult.previousTopic || null;
 
   // Load bot instructions, history, and custom responses
   const [botInstructions, chatHistory, customResponses] = await Promise.all([
@@ -4000,18 +4005,22 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     skipUpsell = true;
   }
 
-// 🆕 FIX #96: Follow-up handling — trust GPT's decision, not pattern matching
-  // GPT already has session memory (lastSearchTerms, lastSearchTopic, topics)
-  // so it naturally knows if "في كورسات طبخ" is new vs "فيه حاجة تانية" is follow-up
-  if (analysis.is_follow_up) {
-    // GPT said it's a follow-up — merge old terms ONLY if GPT has no new terms
-    if ((!analysis.search_terms || analysis.search_terms.length === 0) 
-        && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
-      console.log(`🔄 FIX #96: GPT confirmed follow-up with no new terms → using previous: [${sessionMem.lastSearchTerms.join(', ')}]`);
-      analysis.search_terms = [...sessionMem.lastSearchTerms];
+  // Follow-up handling
+  if (isContextFollowUp && !analysis.is_follow_up) {
+    analysis.is_follow_up = true;
+    analysis.previous_topic_reference = previousTopic;
+    if (
+      sessionMem.lastSearchTerms &&
+      sessionMem.lastSearchTerms.length > 0
+    ) {
+      analysis.search_terms = [
+        ...new Set([
+          ...analysis.search_terms,
+          ...sessionMem.lastSearchTerms,
+        ]),
+      ];
     }
   }
-
 
 if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
