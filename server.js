@@ -1563,12 +1563,11 @@ const searchCategory = detectRelevantCategory(searchTerms);
             return nt.length > 3 && _penaltyTitleNorm.includes(nt);
           }).length;
 
-          if (_penaltyTitleHits >= 2) {
-            console.log(`FIX86: "${item.title}" matches ${_penaltyTitleHits} terms in title → skipping category penalty`);
-            // No penalty — course title clearly matches the search
-          } else {
-            item.relevanceScore = Math.round(item.relevanceScore * 0.15);
-          }
+if (_penaltyTitleHits >= 1) {
+  console.log(`FIX86: "${item.title}" matches ${_penaltyTitleHits} terms in title → skipping category penalty`);
+} else {
+  item.relevanceScore = Math.round(item.relevanceScore * 0.15);
+}
         }
       }
     }
@@ -1680,11 +1679,11 @@ const searchCategory = detectRelevantCategory(terms);
               return nt.length > 3 && _fTitleNorm.includes(nt);
             }).length;
 
-            if (_fTitleHits >= 2) {
-              console.log(`FIX86-fuzzy: "${item.title}" matches ${_fTitleHits} terms → no penalty`);
-            } else {
-              item.relevanceScore = Math.round(item.relevanceScore * 0.2);
-            }
+if (_fTitleHits >= 1) {
+  console.log(`FIX86-fuzzy: "${item.title}" matches ${_fTitleHits} terms → no penalty`);
+} else {
+  item.relevanceScore = Math.round(item.relevanceScore * 0.2);
+}
           }
         }
       }
@@ -3175,6 +3174,10 @@ function prepareDiplomaForRAG(diploma) {
 async function filterCoursesByIntent(courses, userMessage, searchTerms) {
   if (!openai || !courses || courses.length <= 1) return courses;
 
+  // 🆕 FIX: Protect titleMatch courses — always include them
+  const protectedCourses = courses.filter(c => c._titleMatch === true);
+  const protectedIds = new Set(protectedCourses.map(c => c.id));
+
   const courseList = courses
     .slice(0, 10)
     .map((c, i) => {
@@ -3231,9 +3234,17 @@ ${courseList}`,
 
     if (!Array.isArray(indices)) return courses;
 
-    const filtered = indices
+let filtered = indices
       .filter((i) => typeof i === "number" && i >= 0 && i < courses.length)
       .map((i) => courses[i]);
+
+    // 🆕 FIX: Re-add protected titleMatch courses that GPT wrongly removed
+    for (const pc of protectedCourses) {
+      if (!filtered.find(c => c.id === pc.id)) {
+        filtered.push(pc);
+        console.log(`🛡️ Protected titleMatch course re-added: "${pc.title}"`);
+      }
+    }
 
 if (filtered.length === 0) {
       console.log(
@@ -4008,13 +4019,32 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     skipUpsell = true;
   }
 
-  // Follow-up handling
+// Follow-up handling
 if (analysis.is_follow_up) {
     if ((!analysis.search_terms || analysis.search_terms.length === 0)
         && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
       analysis.search_terms = [...sessionMem.lastSearchTerms];
     }
+    // 🆕 FIX: If follow-up has search terms (restored or from GPT), force SEARCH
+    if (analysis.action === "CHAT" && analysis.search_terms && analysis.search_terms.length > 0) {
+      console.log(`🔄 FIX: Follow-up with search terms [${analysis.search_terms.join(", ")}] → CHAT → SEARCH`);
+      analysis.action = "SEARCH";
+    }
   }
+
+// 🆕 FIX: Use local follow-up detection as fallback for GPT
+  if (!analysis.is_follow_up && isContextFollowUp && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+    console.log(`🔄 FIX: Local follow-up detected (GPT missed it) → restoring context`);
+    analysis.is_follow_up = true;
+    if (!analysis.search_terms || analysis.search_terms.length === 0) {
+      analysis.search_terms = [...sessionMem.lastSearchTerms];
+    }
+    if (analysis.action === "CHAT") {
+      analysis.action = "SEARCH";
+    }
+  }
+
+
 if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
     enrichSearchTermsFromResponse(analysis);
@@ -4182,7 +4212,12 @@ if (phoneticExtra.length > 0) {
 
 // 🆕 FIX #65 + FIX #93 + FIX #94: Smart follow-up with quality gate
     let allPreviouslyShown = false;
-    if (analysis.is_follow_up && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
+    // 🆕 FIX: If user explicitly mentioned a topic in follow-up, show ALL results
+    const followUpHasExplicitTopic = analysis.is_follow_up && hasNewExplicitTopic(message);
+    if (followUpHasExplicitTopic) {
+      console.log(`🔄 Follow-up has explicit topic "${hasNewExplicitTopic(message)}" → showing ALL results (no exclusion)`);
+    }
+    if (analysis.is_follow_up && !followUpHasExplicitTopic && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds);
       const beforeCount = courses.length;
       const filtered = courses.filter(c => !prevIds.has(c.id));
@@ -4401,7 +4436,23 @@ for (const c of courses) {
     // RAG would say "مفيش كورس" because user asked for "something else"
     // but there IS no "something else" — these are the best we have
     // ═══════════════════════════════════════════════════════════
-    if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
+    
+
+// 🆕 FIX: When allPreviouslyShown, use ALL found courses (not just previously shown)
+    // This catches courses that were found but not shown by RAG
+    if (allPreviouslyShown) {
+      // Re-search to get all matching courses (not just previously shown)
+      const allFoundCourses = await searchCourses(termsToSearch, [], analysis.audience_filter);
+      if (allFoundCourses.length > courses.length) {
+        console.log(`🔄 FIX: allPreviouslyShown but found ${allFoundCourses.length} total courses (was ${courses.length})`);
+        courses = allFoundCourses;
+        allPreviouslyShown = false;  // Let it go through normal RAG flow
+      }
+    }
+
+
+
+if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — showing directly`);
 const instructors93 = await getInstructors();
       const topic = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
@@ -4490,7 +4541,7 @@ const instructors93 = await getInstructors();
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
         return c._titleMatch === true;
       });
-      for (const tmc of titleMatchMustShow.slice(0, 2)) {
+for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
         console.log("FIX63 Must-show title-match added:", tmc.title);
       }
@@ -4576,7 +4627,11 @@ const mainTopic = extractMainTopic(termsToSearch);
         userLevel: analysis.user_level,
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
-        lastShownCourseIds: relevantCourses.map(c => c.id),
+lastShownCourseIds: [...new Set([
+  ...relevantCourses.map(c => c.id),
+  ...(courses || []).map(c => c.id)  // 🆕 Save ALL found courses
+])],
+
       });
 
 } else {
