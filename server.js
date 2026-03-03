@@ -2876,6 +2876,33 @@ UNCLEAR — حروف عشوائية بالكامل مفيهاش أي كلمة ح
 7. UNCLEAR = فقط لو كل الرسالة حروف عشوائية 100% بدون أي كلمة حقيقية
 8. لو مش متأكد = QUESTION (أفضل بكتير من UNCLEAR)
 
+
+═══ ⚠️⚠️⚠️ قاعدة إجبارية: search_terms = النية الحقيقية مش كلمات الرسالة ═══
+
+❌ ممنوع تنسخ كلمات من رسالة المستخدم وتحطها في search_terms!
+✅ المطلوب: افهم إيه اللي المستخدم عايز يتعلمه فعلاً، وحط المصطلحات التقنية اللي هتوصّل للكورس الصح
+
+القاعدة الذهبية: 
+search_terms = "لو كنت بدوّر على كورس للموضوع ده، هكتب إيه في البحث؟"
+مش "إيه الكلمات الموجودة في رسالة المستخدم؟"
+
+أمثلة:
+
+| رسالة المستخدم | ❌ غلط | ✅ صح | ليه؟ |
+|---|---|---|---|
+| "عاوز اعمل بلن لتخطيط البيت والديكور" | ["تخطيط", "بيت"] | ["تصميم داخلي", "ديكور", "interior design"] | "تخطيط" لوحدها هتجيب "التخطيط الشخصي" اللي مالوش علاقة |
+| "عايز اتعلم ازاي اعمل فلوس من النت" | ["فلوس", "نت"] | ["الربح من الانترنت", "freelance", "عمل حر"] | الكلمات الحرفية مش هتلاقي كورسات |
+| "عايز اعرف ازاي ابيع اونلاين" | ["بيع", "اونلاين"] | ["تجارة الكترونية", "ecommerce", "متجر الكتروني"] | النية = تجارة إلكترونية |
+| "عايز اتعلم اعمل فيديوهات حلوة" | ["فيديو"] | ["مونتاج", "premiere", "تصوير فيديو", "افتر افكت"] | النية = مونتاج |
+| "ابني عنده 10 سنين عايز يتعلم كمبيوتر" | ["كمبيوتر"] | ["برمجة اطفال", "سكراتش", "scratch"] | النية = كورسات أطفال |
+| "محتاج حاجة تساعدني اصور منتجات" | ["تصوير", "منتجات"] | ["تصوير منتجات", "product photography", "تصوير"] | محتاج المصطلح التقني |
+
+⚠️ تحذير من الكلمات المضللة:
+- "تخطيط" + "بيت/ديكور" = تصميم داخلي ≠ تخطيط شخصي
+- "تصميم" + "موقع" = تصميم مواقع ≠ تصميم جرافيك
+- "برمجة" + "اطفال" = سكراتش ≠ برمجة متقدمة
+
+
 ═══ 🔴 قواعد التصنيف ═══
 🔍 SEARCH — المستخدم بيوصف احتياج تعليمي أو بيدور على كورس
 💰 SUBSCRIPTION — بيسأل عن طرق الدفع أو الأسعار فقط
@@ -3138,6 +3165,101 @@ function prepareDiplomaForRAG(diploma) {
     link: diploma.link || "",
   };
 }
+
+
+// ══════════════════════════════════════════════════════════
+// 🆕 FIX: GPT-based intent relevance filter
+// Filters search results by ACTUAL user intent, not keywords
+// ══════════════════════════════════════════════════════════
+async function filterCoursesByIntent(courses, userMessage, searchTerms) {
+  if (!openai || !courses || courses.length <= 1) return courses;
+
+  const courseList = courses
+    .slice(0, 10)
+    .map((c, i) => {
+      const desc = (c.description || "")
+        .replace(/<[^>]*>/g, "")
+        .substring(0, 120);
+      return `${i}: "${c.title}" — ${desc}`;
+    })
+    .join("\n");
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 150,
+      messages: [
+        {
+          role: "system",
+          content: `أنت فلتر ذكي. مهمتك تشيل الكورسات اللي مالهاش علاقة بنية المستخدم الحقيقية.
+
+القواعد:
+1. افهم نية المستخدم من رسالته (مش الكلمات الحرفية)
+2. لكل كورس، اسأل نفسك: "لو حد عايز [نية المستخدم]، هل الكورس ده هيفيده فعلاً؟"
+3. لو كورس اسمه فيه كلمة مشتركة بس الموضوع مختلف تماماً = ❌ شيله
+
+أمثلة:
+- نية "تخطيط البيت والديكور" ← كورس "التخطيط الشخصي" (عن أهداف الحياة) = ❌ 
+- نية "تخطيط البيت والديكور" ← كورس "التصميم الداخلي" = ✅
+- نية "تخطيط البيت والديكور" ← كورس "الرسم الهندسي والتصميم المعماري" = ✅
+
+ارجع JSON array بالـ indices بتاعة الكورسات المناسبة بس.
+مثال: [0, 2, 5]
+لو مفيش ولا كورس مناسب: []
+ارجع الـ JSON array فقط بدون أي كلام تاني.`,
+        },
+        {
+          role: "user",
+          content: `رسالة المستخدم: "${userMessage}"
+
+الكورسات:
+${courseList}`,
+        },
+      ],
+    });
+
+    const raw = response.choices[0].message.content.trim();
+    let indices;
+    try {
+      indices = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\[[\d,\s]*\]/);
+      indices = match ? JSON.parse(match[0]) : null;
+    }
+
+    if (!Array.isArray(indices)) return courses;
+
+    const filtered = indices
+      .filter((i) => typeof i === "number" && i >= 0 && i < courses.length)
+      .map((i) => courses[i]);
+
+    if (filtered.length === 0) {
+      console.log(
+        "🎯 Intent filter returned empty — keeping original results"
+      );
+      return courses;
+    }
+
+    const removedTitles = courses
+      .filter((_, i) => !indices.includes(i))
+      .map((c) => c.title);
+    if (removedTitles.length > 0) {
+      console.log(
+        `🎯 Intent filter removed: [${removedTitles.join(", ")}]`
+      );
+    }
+    console.log(
+      `🎯 Intent filter: ${courses.length} → ${filtered.length} courses`
+    );
+
+    return filtered;
+  } catch (e) {
+    console.error("❌ filterCoursesByIntent error:", e.message);
+    return courses;
+  }
+}
+
 
 async function generateSmartRecommendation(
   message,
@@ -4212,7 +4334,14 @@ for (const c of courses) {
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
-
+// 🆕 FIX: Filter by actual user intent
+      if (courses.length > 1) {
+        courses = await filterCoursesByIntent(
+          courses,
+          message,
+          termsToSearch
+        );
+      }
 
 if (courses.length > 0 || diplomas.length > 0) {
       const instructors = await getInstructors();
