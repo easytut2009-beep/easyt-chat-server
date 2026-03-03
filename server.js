@@ -1731,22 +1731,23 @@ async function searchDiplomas(searchTerms) {
       }
     }
 
-    // Text search fallback
+// Text search fallback — STRICT: require ALL terms to match
     if (rawResults.length === 0) {
       const corrected = searchTerms.map((t) => applyArabicCorrections(t));
       const expanded = expandSynonyms(corrected);
       const allTerms = splitIntoSearchableTerms(expanded);
       if (allTerms.length === 0) return [];
 
-      const orFilters = allTerms
-        .flatMap((t) => [`title.ilike.%${t}%`, `description.ilike.%${t}%`])
-        .join(",");
-
-      const { data, error } = await supabase
+      // Use AND logic: every term must appear in title OR description
+      let query = supabase
         .from("diplomas")
-        .select("id, title, link, description, price")
-        .or(orFilters)
-        .limit(10);
+        .select("id, title, link, description, price");
+
+      for (const t of allTerms) {
+        query = query.or(`title.ilike.%${t}%,description.ilike.%${t}%`);
+      }
+
+      const { data, error } = await query.limit(10);
 
       if (error) return [];
       rawResults = data || [];
