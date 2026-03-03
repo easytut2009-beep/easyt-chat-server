@@ -1656,7 +1656,7 @@ async function fuzzySearchFallback(terms) {
       }
 
       if (matchCount >= 2) bestSim += matchCount * 3;
-      if (bestSim >= 55) results.push({ ...course, relevanceScore: bestSim });
+if (bestSim >= 72) results.push({ ...course, relevanceScore: bestSim });
     }
 
 const searchCategory = detectRelevantCategory(terms);
@@ -3235,11 +3235,11 @@ ${courseList}`,
       .filter((i) => typeof i === "number" && i >= 0 && i < courses.length)
       .map((i) => courses[i]);
 
-    if (filtered.length === 0) {
+if (filtered.length === 0) {
       console.log(
-        "🎯 Intent filter returned empty — keeping original results"
+        "🎯 Intent filter: NO relevant courses — returning empty"
       );
-      return courses;
+      return [];
     }
 
     const removedTitles = courses
@@ -3366,7 +3366,9 @@ ${followUpContext}
 3. 🔴🔴🔴 القاعدة الأهم — ممنوع الهلوسة:
    - ممنوع نهائياً تذكر اسم كورس مش موجود في البيانات فوق
    - ممنوع تخترع سعر أو رابط أو وصف من عندك
-   - لو مفيش كورس مطابق بالظبط قول "مفيش كورس متخصص حالياً" واعرض أقرب بديل
+- لو مفيش كورس مطابق أو قريب فعلاً من الموضوع المطلوب → ارجع relevant_course_indices: [] فاضية و relevant_diploma_indices: [] فاضية
+   - ❌ ممنوع نهائياً تعرض كورسات مالهاش علاقة بالموضوع كبديل — أحسن ترجع [] فاضية من إنك تعرض حاجة غلط
+   - "بديل مناسب" = كورس في نفس المجال بالظبط، مش أي كورس عشوائي على المنصة
    - الكورسات الوحيدة اللي تقدر تذكرها هي اللي في الـ JSON فوق
 
 4. 🔴🔴🔴 اختيار الكورس الصح — القاعدة الأهم:
@@ -4377,6 +4379,22 @@ for (const c of courses) {
         );
       }
 
+// 🆕 Quality gate: remove courses with very low absolute scores
+      if (courses.length > 0) {
+        const hasStrongMatch = courses.some(c => (c.relevanceScore || 0) >= 200 || c._titleMatch);
+        if (!hasStrongMatch) {
+          // No title match and no strong score → likely irrelevant results
+          const qualityCourses = courses.filter(c => (c.relevanceScore || 0) >= 100);
+          if (qualityCourses.length === 0) {
+            console.log(`🔍 Quality gate: ALL ${courses.length} courses below score 100 → clearing results`);
+            courses = [];
+          } else {
+            console.log(`🔍 Quality gate: ${courses.length} → ${qualityCourses.length} courses (min score: 100)`);
+            courses = qualityCourses;
+          }
+        }
+      }
+
 // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #93: Follow-up "في حاجة تانية" — no new alternatives
     // When ALL search results were already shown, skip RAG and show directly
@@ -4479,18 +4497,19 @@ const instructors93 = await getInstructors();
 
       // 🆕 FIX #62: Fallback
 
-      if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
-        console.log(`⚠️ FIX #62: RAG returned empty but search found ${courses.length} courses — using top results`);
-const fallbackCourses = courses
-          .filter((c) => c._titleMatch || verifyCourseRelevance(c, termsToSearch))
-          .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
-          .slice(0, 3);
+if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
+        // FIX #62 v2: Only fallback to title-matched courses (confirmed relevant)
+        const titleMatchedOnly = courses.filter((c) => c._titleMatch === true);
         
-        if (fallbackCourses.length > 0) {
-          relevantCourses = fallbackCourses;
+        if (titleMatchedOnly.length > 0) {
+          console.log(`⚠️ FIX #62: Using ${titleMatchedOnly.length} title-matched courses as fallback`);
+          relevantCourses = titleMatchedOnly.slice(0, 3);
           if (!recommendationMessage || recommendationMessage.trim().length < 10) {
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
           }
+        } else {
+          console.log(`⚠️ FIX #62: No title-matched courses found — showing "no results"`);
+          // Don't force irrelevant courses — let "no results" path handle it
         }
       }
 
