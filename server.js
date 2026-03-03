@@ -4352,7 +4352,7 @@ for (const c of courses) {
     // ═══════════════════════════════════════════════════════════
     if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — showing directly`);
-      const instructors = await getInstructors();
+const instructors93 = await getInstructors();
       const topic = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
 
       reply = `دول أحسن الكورسات المتاحة عندنا عن ${topic || "الموضوع ده"} على المنصة 😊<br>`;
@@ -4368,7 +4368,7 @@ for (const c of courses) {
 
       // Show courses directly (no RAG filtering)
       courses.slice(0, 5).forEach((c, i) => {
-        reply += formatCourseCard(c, instructors, i + 1);
+        reply += formatCourseCard(c, instructors93, i + 1);
       });
 
       // Category link
@@ -4388,14 +4388,11 @@ for (const c of courses) {
       });
 
     } else if (courses.length > 0 || diplomas.length > 0) {
-      const instructors = await getInstructors();
 
       // Must-show courses
       const phase2Model = "gpt-4o-mini";
       const instructors = await getInstructors();
 
-      // Must-show courses
-      const phase2Model = "gpt-4o-mini";
 
       // 🆕 FIX #84: For QUESTION intent, also generate an answer
       const questionAnswerPromise = analysis.user_intent === "QUESTION"
@@ -4641,11 +4638,11 @@ updateSessionMemory(sessionId, {
 // FIX #85 v2: Search ALL sources (courses + lessons + diplomas)
         if (questionTerms.length > 0) {
           try {
-            const [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
-              searchCourses(questionTerms, [], null),
-              searchDiplomas(questionTerms),
-              searchLessonsInCourses(questionTerms),
-            ]);
+let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
+  searchCourses(questionTerms, [], null),
+  searchDiplomas(questionTerms),
+  searchLessonsInCourses(questionTerms),
+]);
 
             // Merge lesson results into courses
             let allCourses = [...relatedCourses];
@@ -7593,7 +7590,7 @@ let currentLessonContext = "";
 
           // Step 1: Find Course
           const courseMatch = await findCourseByName(course_name || lecture_title);
-          var courseId = courseMatch ? courseMatch.id : null;
+let courseId = courseMatch ? courseMatch.id : null;
           console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
 
           // Step 1.5: Get ALL lessons (sorted by lesson_order)
