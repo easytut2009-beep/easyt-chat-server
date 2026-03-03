@@ -4365,6 +4365,11 @@ if (!earlyExitFollowUp) {
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
+// 🆕 FIX #99: Save ALL titleMatch courses BEFORE any filtering
+    const savedTitleMatchCourses = courses.filter(c => c._titleMatch === true);
+    console.log(`💾 FIX99: Saved ${savedTitleMatchCourses.length} titleMatch courses: [${savedTitleMatchCourses.map(c => c.title).join(", ")}]`);
+
+
 
   // Corrections fallback
     if (courses.length === 0) {
@@ -4663,6 +4668,18 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
           // Don't force irrelevant courses — let "no results" path handle it
         }
       }
+
+
+// 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
+      if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
+        for (const stm of savedTitleMatchCourses) {
+          if (!relevantCourses.find(rc => rc.id === stm.id)) {
+            relevantCourses.push(stm);
+            console.log(`🛡️ FIX99: Re-added lost titleMatch: "${stm.title}"`);
+          }
+        }
+      }
+
 
       // Ensure must-show courses are included
       relevantCourses.sort(
