@@ -4159,17 +4159,31 @@ if (phoneticExtra.length > 0) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-// 🆕 FIX #65 + FIX #93: Exclude previously shown courses on follow-up
+// 🆕 FIX #65 + FIX #93 + FIX #94: Smart follow-up with quality gate
     let allPreviouslyShown = false;
     if (analysis.is_follow_up && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds);
       const beforeCount = courses.length;
       const filtered = courses.filter(c => !prevIds.has(c.id));
+
       if (filtered.length > 0) {
-        courses = filtered;
-        console.log("FIX65: Excluded prev courses, before:", beforeCount, "after:", filtered.length);
+        // 🆕 FIX #94: Quality gate — هل الكورسات الباقية فعلاً كويسة؟
+        const bestRemainingScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
+        const bestOverallScore = Math.max(...courses.map(c => c.relevanceScore || 0));
+
+        // لو أحسن كورس باقي أقل من 25% من أحسن كورس أصلاً
+        // أو أقل من 50 سكور → يبقى ده مش بديل حقيقي
+        if (bestRemainingScore < bestOverallScore * 0.25 || bestRemainingScore < 50) {
+          console.log(`FIX94: Remaining courses too weak (bestRemaining=${bestRemainingScore} vs bestOverall=${bestOverallScore}) → showing original results`);
+          allPreviouslyShown = true;
+          // خلّي الكورسات الأصلية الكويسة للعرض
+          courses = courses.filter(c => prevIds.has(c.id));
+        } else {
+          courses = filtered;
+          console.log("FIX65: Excluded prev courses, before:", beforeCount, "after:", filtered.length);
+        }
       } else {
-        console.log("FIX93: All courses were prev shown — will show directly without RAG");
+        console.log("FIX93: All courses were prev shown → showing original results");
         allPreviouslyShown = true;
       }
     }
