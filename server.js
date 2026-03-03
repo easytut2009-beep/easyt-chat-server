@@ -532,30 +532,6 @@ function normalizeArabic(text) {
     .replace(/ـ+/g, "");
 }
 
-function levenshtein(a, b) {
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  const m = [];
-  for (let i = 0; i <= b.length; i++) {
-    m[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    m[0][j] = j;
-  }
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      m[i][j] =
-        b[i - 1] === a[j - 1]
-          ? m[i - 1][j - 1]
-          : Math.min(
-              m[i - 1][j - 1] + 1,
-              m[i][j - 1] + 1,
-              m[i - 1][j] + 1
-            );
-    }
-  }
-  return m[b.length][a.length];
-}
 
 function similarityRatio(a, b) {
   if (!a || !b) return 0;
@@ -564,7 +540,7 @@ function similarityRatio(a, b) {
   if (na === nb) return 100;
   const max = Math.max(na.length, nb.length);
   if (!max) return 100;
-  return Math.round(((max - levenshtein(na, nb)) / max) * 100);
+return Math.round(((max - levenshteinDistance(na, nb)) / max) * 100);
 }
 
 const DIALECT_MAP = {
@@ -764,51 +740,6 @@ function levenshteinDistance(a, b) {
   return matrix[b.length][a.length];
 }
 
-let _vocabCache = null;
-let _vocabCacheKey = null;
-
-function buildVocabulary(courses, diplomas) {
-  const cacheKey = (courses || []).length + "_" + (diplomas || []).length;
-  if (_vocabCache && _vocabCacheKey === cacheKey) return _vocabCache;
-
-  const vocabSet = new Set();
-
-  for (const c of (courses || [])) {
-    // من العنوان
-    const title = normalizeArabic((c.title || "").toLowerCase());
-    title.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-
-    // من الكلمات المفتاحية
-    if (c.keywords) {
-      const kw = normalizeArabic(c.keywords.toLowerCase());
-      kw.split(/[,،\s]+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-    }
-
-    // من أسماء الدروس
-    if (c.lessons) {
-      for (const lesson of c.lessons) {
-        const lt = normalizeArabic((lesson.title || lesson || "").toString().toLowerCase());
-        lt.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-      }
-    }
-
-    // من الـ syllabus
-    if (c.syllabus) {
-      const syl = normalizeArabic((typeof c.syllabus === "string" ? c.syllabus : JSON.stringify(c.syllabus)).toLowerCase());
-      syl.split(/[\s,،:]+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-    }
-  }
-
-  for (const d of (diplomas || [])) {
-    const dt = normalizeArabic((d.title || "").toLowerCase());
-    dt.split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-  }
-
-  _vocabCache = Array.from(vocabSet);
-  _vocabCacheKey = cacheKey;
-  console.log(`📚 Vocabulary built: ${_vocabCache.length} words`);
-  return _vocabCache;
-}
 
 function fuzzyCorrectWord(word, vocabulary, maxDistance) {
   const normalized = normalizeArabic(word.toLowerCase());
@@ -843,20 +774,6 @@ function fuzzyCorrectWord(word, vocabulary, maxDistance) {
   return word;
 }
 
-function fuzzyCorrectMessage(text, courses, diplomas) {
-  const vocabulary = buildVocabulary(courses, diplomas);
-  const words = text.split(/\s+/);
-  const corrected = words.map(w => {
-    // ما تصححش كلمات صغيرة أو أرقام
-    if (w.length < 3 || /^\d+$/.test(w)) return w;
-    return fuzzyCorrectWord(w, vocabulary);
-  });
-  const result = corrected.join(" ");
-  if (result !== text) {
-    console.log(`🔤 Fuzzy corrected full message: "${text}" → "${result}"`);
-  }
-  return result;
-}
 
 
 // ═══════════════════════════════════════════════════════
@@ -2681,7 +2598,11 @@ function enrichSearchTermsFromResponse(analysis) {
 /* ═══════════════════════════════════
    11-C: Bot Instructions & History
    ═══════════════════════════════════ */
+let _botInstructionsCache = { data: null, ts: 0 };
 async function loadBotInstructions() {
+  if (_botInstructionsCache.data && Date.now() - _botInstructionsCache.ts < CACHE_TTL) {
+    return _botInstructionsCache.data;
+  }
   if (!supabase) return "";
   try {
     const { data, error } = await supabase
@@ -2692,7 +2613,7 @@ async function loadBotInstructions() {
 
     if (error || !data || data.length === 0) return "";
 
-    return data
+const result = data
       .map((r) => {
         const p = r.priority || 10;
         const prefix =
@@ -2700,6 +2621,8 @@ async function loadBotInstructions() {
         return `[${prefix}] ${r.instruction}`;
       })
       .join("\n");
+    _botInstructionsCache = { data: result, ts: Date.now() };
+    return result;
   } catch (e) {
     return "";
   }
@@ -2740,7 +2663,13 @@ async function loadRecentHistory(sessionId, limit = 10) {
   }
 }
 
+
+
+let _customResponsesCache = { data: null, ts: 0 };
 async function loadCustomResponsesSummary() {
+  if (_customResponsesCache.data && Date.now() - _customResponsesCache.ts < CACHE_TTL) {
+    return _customResponsesCache.data;
+  }
   if (!supabase) return "";
   try {
     const { data } = await supabase
@@ -2752,7 +2681,7 @@ async function loadCustomResponsesSummary() {
 
     if (!data || data.length === 0) return "";
 
-    return data
+const result = data
       .map((r) => {
         const kw = Array.isArray(r.keywords)
           ? r.keywords.join(", ")
@@ -2763,6 +2692,8 @@ async function loadCustomResponsesSummary() {
         return `• [${r.title || "بدون عنوان"}] (كلمات: ${kw})\n  الرد: ${shortResp}`;
       })
       .join("\n\n");
+    _customResponsesCache = { data: result, ts: Date.now() };
+    return result;
   } catch (e) {
     return "";
   }
@@ -4542,24 +4473,20 @@ for (const c of courses) {
     // ═══════════════════════════════════════════════════════════
     
 
-// 🆕 FIX: When allPreviouslyShown, use ALL found courses (not just previously shown)
-    // This catches courses that were found but not shown by RAG
+// 🆕 FIX #102: Re-check allPreviouslyShown using ORIGINAL search results (no extra API call)
 if (allPreviouslyShown) {
-  const allFoundCourses = await searchCourses(termsToSearch, [], analysis.audience_filter);
   const prevIdSet = new Set(sessionMem.lastShownCourseIds || []);
-  const genuinelyNew = allFoundCourses.filter(c => !prevIdSet.has(c.id));
+  // courses here still has the ORIGINAL full results from the first search
+  const genuinelyNew = courses.filter(c => !prevIdSet.has(c.id));
   
   if (genuinelyNew.length > 0) {
-    console.log(`🔄 Re-search found ${genuinelyNew.length} genuinely new courses!`);
-    // Only pass NEW courses — prevents RAG from picking the old ones again
+    console.log(`🔄 FIX #102: Found ${genuinelyNew.length} genuinely new courses from original results`);
     courses = genuinelyNew;
     allPreviouslyShown = false;
   } else {
-    console.log(`🔄 Re-search: no new courses found (all ${allFoundCourses.length} were shown before)`);
-    // Keep allPreviouslyShown = true → will show "مفيش تاني"
+    console.log(`🔄 FIX #102: No new courses in original results — allPreviouslyShown confirmed`);
   }
 }
-
 
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — no new results`);
@@ -4694,10 +4621,6 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
       if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.answer) {
         // QUESTION intent: answer first, then courses as suggestions
         reply = questionAnswer.answer + "<br><br>";
-// 🆕 FIX #92: Filter diplomas in SEARCH→QUESTION flow
-        if (relevantDiplomas.length > 0) {
-          relevantDiplomas = await verifyDiplomaRelevance(relevantDiplomas, message);
-        }
 
         if (relevantCourses.length > 0 || relevantDiplomas.length > 0) {
           reply += `<br>💡 <strong>كورسات ممكن تفيدك لو حبيت تتعمق:</strong><br><br>`;
@@ -5358,6 +5281,7 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+_botInstructionsCache = { data: null, ts: 0 };
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5384,6 +5308,7 @@ app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+_botInstructionsCache = { data: null, ts: 0 };
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5398,6 +5323,7 @@ app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
       .delete()
       .eq("id", req.params.id);
     if (error) throw error;
+_botInstructionsCache = { data: null, ts: 0 };
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5446,6 +5372,7 @@ app.post("/admin/custom-responses", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+_customResponsesCache = { data: null, ts: 0 };
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5475,6 +5402,7 @@ app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+_customResponsesCache = { data: null, ts: 0 };
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5489,6 +5417,8 @@ app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
       .delete()
       .eq("id", req.params.id);
     if (error) throw error;
+    _customResponsesCache = { data: null, ts: 0 };
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -7908,7 +7838,6 @@ const [semanticChunks, _otherCourseRec] = await Promise.all([
         ? searchOtherCoursesForGuide(otherCourseSearchText, courseId)
         : Promise.resolve(null),
 ]);
-otherCourseRecommendation = _otherCourseRec;
           otherCourseRecommendation = _otherCourseRec;
           
           ragStats.semantic = semanticChunks.length;
