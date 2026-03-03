@@ -4029,7 +4029,8 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   }
 
 // Follow-up handling
-if (analysis.is_follow_up && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+if ((analysis.is_follow_up || isContextFollowUp) && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+  analysis.is_follow_up = true;
   const prevTerms = sessionMem.lastSearchTerms;
   const newTerms = analysis.search_terms || [];
 
@@ -4622,15 +4623,6 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
         reply = `🔍 مفيش كورسات متاحة عن الموضوع ده حالياً.`;
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
-           } else {
-        const cat = getSmartCategoryFromCourses(
-          relevantCourses,
-          termsToSearch
-        );
-        if (cat) {
-          reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat.name} ←</a></div>`;
-        }
-        reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
       }
 
 const mainTopic = extractMainTopic(termsToSearch);
