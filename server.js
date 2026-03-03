@@ -4499,9 +4499,7 @@ if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
         lastShownCourseIds: sessionMem.lastShownCourseIds,
       });
 
-    }
-
-    } else if (courses.length > 0 || diplomas.length > 0) {
+      } else if (courses.length > 0 || diplomas.length > 0) {
 
       // Must-show courses
       const phase2Model = "gpt-4o-mini";
