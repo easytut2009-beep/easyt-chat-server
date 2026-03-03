@@ -3391,7 +3391,9 @@ ${followUpContext}
 
 ممنوع تذكر أسعار في الرد
 ممنوع تخترع اسم كورس مش في البيانات
-أقصى عدد 3 كورسات و 1 دبلومة`;
+أقصى عدد 5 كورسات و 2 دبلومة
+🔴 لو كل الكورسات titleMatch=true (يعني كلهم اسمهم فيه الموضوع المطلوب) — لازم تختارهم كلهم بدون استثناء!
+مثال: لو المستخدم قال "فوتوشوب" وعندك 3 كورسات كلهم titleMatch=true — ارجع الـ 3 كلهم في relevant_course_indices!`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -4616,6 +4618,29 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
       relevantCourses.sort(
         (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
       );
+
+
+ // ═══════════════════════════════════════════════════════════
+      // 🆕 FIX #103: FINAL bulletproof safety — ensure ALL titleMatch shown
+      // This runs AFTER all other safety nets as absolute last check
+      // ═══════════════════════════════════════════════════════════
+      {
+        const _fix103missing = [];
+        for (const c of courses) {
+          if (c._titleMatch === true && !relevantCourses.find(rc => rc.id === c.id)) {
+            _fix103missing.push(c);
+          }
+        }
+        if (_fix103missing.length > 0) {
+          console.log(`🛡️ FIX103: ${_fix103missing.length} titleMatch courses were STILL missing after all safety nets!`);
+          for (const mc of _fix103missing) {
+            relevantCourses.push(mc);
+            console.log(`🛡️ FIX103: Force-added: "${mc.title}"`);
+          }
+          relevantCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+        }
+      }
+
 
 // 🆕 FIX #84: Build reply based on user_intent
       if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.answer) {
