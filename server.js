@@ -4503,7 +4503,9 @@ for (const c of courses) {
 
 // 🆕 FIX: Filter by actual user intent
 // 🆕 FIX #96: For follow-ups, use search topic (raw message like "في تاني" has no context)
-      if (courses.length > 1) {
+// 🆕 FIX #100: Skip intent filter when ALL courses are titleMatch (all relevant by definition)
+      const allAreTitleMatch = courses.length > 0 && courses.every(c => c._titleMatch);
+      if (courses.length > 1 && !allAreTitleMatch) {
         const intentFilterMsg = analysis.is_follow_up 
           ? `عايز كورسات عن ${sessionMem.lastSearchTopic || termsToSearch.join(" ")}`
           : message;
@@ -4512,6 +4514,8 @@ for (const c of courses) {
           intentFilterMsg,
           termsToSearch
         );
+      } else if (allAreTitleMatch) {
+        console.log(`🛡️ FIX #100: All ${courses.length} courses are titleMatch → skipping intent filter`);
       }
 
 // 🆕 Quality gate: remove courses with very low absolute scores
