@@ -4558,7 +4558,7 @@ if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
           reply += `<br><br><div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">📂 بس ممكن تتصفح كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a></div>`;
         }
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
-      }      } else {
+           } else {
         const cat = getSmartCategoryFromCourses(
           relevantCourses,
           termsToSearch
