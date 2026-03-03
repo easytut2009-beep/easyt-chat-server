@@ -4048,9 +4048,10 @@ if ((analysis.is_follow_up || isContextFollowUp) && sessionMem.lastSearchTerms &
   console.log(`🔄 Follow-up: [${newTerms.join(", ")}] → merged with prev → [${merged.join(", ")}]`);
   analysis.search_terms = merged;
 
-  if (analysis.action === "CHAT") {
+if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
+    console.log(`🔄 Follow-up override: ${analysis.action} → SEARCH`);
     analysis.action = "SEARCH";
-  }
+}
 }
 
 // Local follow-up fallback: GPT missed it but local detection caught it
@@ -4059,11 +4060,11 @@ if (!analysis.is_follow_up && isContextFollowUp
   console.log(`🔄 Local follow-up fallback → restoring context`);
   analysis.is_follow_up = true;
   analysis.search_terms = [...sessionMem.lastSearchTerms];
-  if (analysis.action === "CHAT") {
+  if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
+    console.log(`🔄 Local fallback override: ${analysis.action} → SEARCH`);
     analysis.action = "SEARCH";
   }
 }
-
 
 if (!skipUpsell) {
     ensureSearchTermsForEducationalTopics(enrichedMessage, analysis);
@@ -4242,26 +4243,33 @@ if (phoneticExtra.length > 0) {
       const beforeCount = courses.length;
       const filtered = courses.filter(c => !prevIds.has(c.id));
 
-      if (filtered.length > 0) {
-        // 🆕 FIX #94: Quality gate — هل الكورسات الباقية فعلاً كويسة؟
-        const bestRemainingScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
-        const bestOverallScore = Math.max(...courses.map(c => c.relevanceScore || 0));
+if (filtered.length > 0) {
+    // 🆕 FIX: Skip quality gate for follow-ups — user explicitly asked for more
+    // If they exist and have titleMatch, always show them
+    const hasTitle = filtered.some(c => c._titleMatch);
+    
+    if (hasTitle) {
+      // titleMatch courses are always relevant — show them
+      courses = filtered;
+      console.log(`🔄 Follow-up: ${filtered.length} new courses (has titleMatch) → showing all`);
+    } else {
+      // No titleMatch — apply lenient quality gate (10% instead of 25%)
+      const bestRemainingScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
+      const bestOverallScore = Math.max(...courses.map(c => c.relevanceScore || 0));
 
-        // لو أحسن كورس باقي أقل من 25% من أحسن كورس أصلاً
-        // أو أقل من 50 سكور → يبقى ده مش بديل حقيقي
-        if (bestRemainingScore < bestOverallScore * 0.25 || bestRemainingScore < 50) {
-          console.log(`FIX94: Remaining courses too weak (bestRemaining=${bestRemainingScore} vs bestOverall=${bestOverallScore}) → showing original results`);
-          allPreviouslyShown = true;
-          // خلّي الكورسات الأصلية الكويسة للعرض
-          courses = courses.filter(c => prevIds.has(c.id));
-        } else {
-          courses = filtered;
-          console.log("FIX65: Excluded prev courses, before:", beforeCount, "after:", filtered.length);
-        }
-      } else {
-        console.log("FIX93: All courses were prev shown → showing original results");
+      if (bestRemainingScore < bestOverallScore * 0.10 || bestRemainingScore < 30) {
+        console.log(`🔄 Follow-up: remaining too weak (${bestRemainingScore} vs ${bestOverallScore}) → allPreviouslyShown`);
         allPreviouslyShown = true;
+        courses = courses.filter(c => prevIds.has(c.id));
+      } else {
+        courses = filtered;
+        console.log(`🔄 Follow-up: ${filtered.length} new courses → showing`);
       }
+    }
+} else {
+    console.log("FIX93: All courses were prev shown → showing original results");
+    allPreviouslyShown = true;
+}
     }
   
 
@@ -4464,16 +4472,21 @@ for (const c of courses) {
 
 // 🆕 FIX: When allPreviouslyShown, use ALL found courses (not just previously shown)
     // This catches courses that were found but not shown by RAG
-    if (allPreviouslyShown) {
-      // Re-search to get all matching courses (not just previously shown)
-      const allFoundCourses = await searchCourses(termsToSearch, [], analysis.audience_filter);
-      if (allFoundCourses.length > courses.length) {
-        console.log(`🔄 FIX: allPreviouslyShown but found ${allFoundCourses.length} total courses (was ${courses.length})`);
-        courses = allFoundCourses;
-        allPreviouslyShown = false;  // Let it go through normal RAG flow
-      }
-    }
-
+if (allPreviouslyShown) {
+  const allFoundCourses = await searchCourses(termsToSearch, [], analysis.audience_filter);
+  const prevIdSet = new Set(sessionMem.lastShownCourseIds || []);
+  const genuinelyNew = allFoundCourses.filter(c => !prevIdSet.has(c.id));
+  
+  if (genuinelyNew.length > 0) {
+    console.log(`🔄 Re-search found ${genuinelyNew.length} genuinely new courses!`);
+    // Only pass NEW courses — prevents RAG from picking the old ones again
+    courses = genuinelyNew;
+    allPreviouslyShown = false;
+  } else {
+    console.log(`🔄 Re-search: no new courses found (all ${allFoundCourses.length} were shown before)`);
+    // Keep allPreviouslyShown = true → will show "مفيش تاني"
+  }
+}
 
 
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
@@ -4555,6 +4568,19 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
         console.log("FIX63 Must-show title-match added:", tmc.title);
       }
+
+
+// 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
+      // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
+      // but RAG didn't select
+      const allTitleMatched = courses.filter(c => c._titleMatch === true);
+      for (const tm of allTitleMatched) {
+        if (!relevantCourses.find(rc => rc.id === tm.id)) {
+          relevantCourses.push(tm);
+          console.log(`🆕 Force-include titleMatch: "${tm.title}"`);
+        }
+      }
+
 
       // 🆕 FIX #62: Fallback
 
