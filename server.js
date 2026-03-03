@@ -4620,14 +4620,8 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
       }
 
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-        // 🆕 FIX: OVERRIDE GPT's message — it might hallucinate "عندنا كورس"
-        // when no actual courses survived filtering
         reply = `🔍 مفيش كورسات متاحة عن الموضوع ده حالياً.`;
-        const cat = getSmartCategoryFromCourses([], termsToSearch);
-        if (cat) {
-          reply += `<br><br><div style="text-align:center;margin-top:8px;padding:12px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px">📂 بس ممكن تتصفح كورسات <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a></div>`;
-        }
-        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
            } else {
         const cat = getSmartCategoryFromCourses(
           relevantCourses,
@@ -4679,13 +4673,8 @@ lastShownCourseIds: [...new Set([
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
         }
       } else {
-        // FIND_COURSE intent → current "مفيش كورس" behavior
-        const cat = getSmartCategoryFromCourses([], termsToSearch);
-        reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
-        if (cat) {
-          reply += `<br><br>📂 بس ممكن تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
-        }
-        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 أو تصفح كل الدورات (+600 دورة) ←</a>`;
+reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
+        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
       }
 
 updateSessionMemory(sessionId, {
