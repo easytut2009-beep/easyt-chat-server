@@ -4273,7 +4273,42 @@ if (filtered.length > 0) {
     }
   
 
-// ═══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 🆕 FIX #97: EARLY EXIT for follow-ups when all courses shown
+// Prevents quality gates and re-search from corrupting the response
+// ══════════════════════════════════════════════════════════════
+let earlyExitFollowUp = false;
+
+if (allPreviouslyShown && analysis.is_follow_up) {
+    console.log(`🔴 FIX #97: Early exit — all courses previously shown in follow-up`);
+    earlyExitFollowUp = true;
+
+    const topic97 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
+
+    reply = `مفيش كورسات تانية غير اللي عرضتهالك عن ${topic97 || "الموضوع ده"} 😊<br>`;
+    reply += `لو عايز تتعلم حاجة تانية خالص، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+
+    const cat97 = getSmartCategoryFromCourses(courses, termsToSearch);
+    if (cat97) {
+        reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📚 كل كورسات ${cat97.name} ←</a></div>`;
+    }
+    reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+    reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+    updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: topic97,
+        userLevel: analysis.user_level,
+        topics: analysis.topics,
+        lastShownCourseIds: sessionMem.lastShownCourseIds,
+    });
+}
+
+
+
+if (!earlyExitFollowUp) {
+
+    // ═══════════════════════════════════════════════════════
     // FIX #67 v2: Title-Match Bonus (no punishment)
     // Title-matched courses get a BONUS — chunk-only courses keep their score
     // ═══════════════════════════════════════════════════════
@@ -4290,7 +4325,6 @@ if (filtered.length > 0) {
           return words.every(w => tn.includes(w));
         });
 
-        // Additive bonus — title match gets +500, no one gets punished
         if (c._titleMatch) {
           c.relevanceScore = (c.relevanceScore || 0) + 500;
           console.log(`FIX67v2: "${c.title}" title-match → +500 bonus (total=${c.relevanceScore})`);
@@ -4299,8 +4333,6 @@ if (filtered.length > 0) {
 
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
-
-
 
 
   // Corrections fallback
