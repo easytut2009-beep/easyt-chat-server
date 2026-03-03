@@ -6717,16 +6717,38 @@ if (error) {
 
     console.log(`🔍 Semantic search: ${(data || []).length} results (model: text-embedding-3-small)`);
 
-    return (data || []).map((chunk) => ({
-      ...chunk,
-      chunk_title: chunk.lesson_title
-        ? `${chunk.lesson_title}${
-            chunk.timestamp_start
-              ? " [⏱️ " + chunk.timestamp_start + "]"
-              : ""
-          }`
-        : "محتوى",
-    }));
+// 🆕 FIX #105: Include course title in chunk context
+const _fix105courseIds = [...new Set((data || []).map(c => c.course_id).filter(Boolean))];
+let _fix105courseMap = {};
+if (_fix105courseIds.length > 0) {
+  try {
+    const { data: _fix105courses } = await supabase
+      .from("courses")
+      .select("id, title")
+      .in("id", _fix105courseIds);
+    if (_fix105courses) {
+      _fix105courseMap = Object.fromEntries(_fix105courses.map(c => [c.id, c.title]));
+    }
+  } catch (e) {
+    console.error("FIX105: course lookup error:", e.message);
+  }
+}
+
+return (data || []).map((chunk) => ({
+    ...chunk,
+    _courseName: _fix105courseMap[chunk.course_id] || "",
+    chunk_title: chunk.lesson_title
+      ? `${chunk.lesson_title}${
+          _fix105courseMap[chunk.course_id] 
+            ? " (من كورس: " + _fix105courseMap[chunk.course_id] + ")" 
+            : ""
+        }${
+          chunk.timestamp_start
+            ? " [🕐 " + chunk.timestamp_start + "]"
+            : ""
+        }`
+      : "محتوى",
+}));
   } catch (e) {
     console.error("getRelevantChunks error:", e.message);
     return [];
