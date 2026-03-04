@@ -3785,7 +3785,7 @@ ${chunkContext}
 7. لما تذكر اسم كورس أو درس، نسّقهم كده:
    - اسم الكورس: <strong style="color:#e63946">اسم الكورس</strong>
    - اسم الدرس: <strong>اسم الدرس</strong>
-   - التوقيت: <span style="color:#e63946;font-weight:600">⏱️ 0:16</span>
+   - التوقيت: <span style="color:#e63946;font-weight:600">⏱️ 0:16</span>`;
 
     const resp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
