@@ -2761,11 +2761,27 @@ ${categoriesList}
   "user_level": "مبتدئ" | "متوسط" | "متقدم" | null,
   "topics": ["موضوع1"],
   "is_follow_up": true/false,
+  "follow_up_type": "CLARIFY" | "ALTERNATIVE" | null,
   "previous_topic_reference": "الموضوع السابق إن وجد",
   "audience_filter": null,
   "language": "ar" | "en"
 }
 
+═══ ⚠️ قاعدة follow_up_type (إجبارية لو is_follow_up = true) ═══
+
+CLARIFY = المستخدم بيوضّح أو يحدد طلبه السابق بشكل أدق (عايز نفس النتائج بس أدق):
+  - "انا اقصد اللي عن توليد الصور" ← بيوضح أي نوع workflow
+  - "اللي خاص بالذكاء الاصطناعي" ← بيحدد المجال
+  - "للمبتدئين بس" ← بيحدد المستوى
+  - "مش ده، انا عايز اللي عن الصور" ← بيصحّح
+  - "بتاع الـ AI" ← بيوضح
+
+ALTERNATIVE = المستخدم عايز خيارات تانية مختلفة عن اللي شافها:
+  - "فيه غيرهم؟" | "حاجة تانية" | "فيه بديل؟"
+  - "ارخص" | "كمان" | "تاني" | "مش عاجبني دول"
+  - "ورني كورسات تانية"
+
+لو is_follow_up = false → follow_up_type = null
 ═══ ⚠️⚠️⚠️ قاعدة إجبارية: فهم النية (user_intent) بدون كلمات مفتاحية ═══
 
 مش هتدور على كلمات معينة — افهم النية من السياق الكامل:
@@ -2989,6 +3005,7 @@ return {
         user_level: null,
         topics: [],
         is_follow_up: false,
+  follow_up_type: null,      
         previous_topic_reference: null,
         audience_filter: null,
         language: "ar",
@@ -3006,6 +3023,7 @@ return {
       user_level: result.user_level || null,
       topics: Array.isArray(result.topics) ? result.topics : [],
       is_follow_up: !!result.is_follow_up,
+ follow_up_type: result.follow_up_type || null, 
       previous_topic_reference: result.previous_topic_reference || null,
       audience_filter: result.audience_filter || null,
       language: result.language || "ar",
@@ -3022,6 +3040,7 @@ return {
       user_level: null,
       topics: [],
       is_follow_up: false,
+follow_up_type: null, 
       previous_topic_reference: null,
       audience_filter: null,
       language: "ar",
@@ -4222,14 +4241,17 @@ if (phoneticExtra.length > 0) {
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
-// 🆕 FIX #65 + FIX #93 + FIX #94: Smart follow-up with quality gate
+// ═══════════════════════════════════════════════════════════
+    // 🆕 FIX #103: GPT-based follow-up classification (replaces keyword-based hasNewExplicitTopic)
+    // CLARIFY = user refining same search → keep previous results
+    // ALTERNATIVE = user wants different results → exclude previous
+    // ═══════════════════════════════════════════════════════════
     let allPreviouslyShown = false;
-    // 🆕 FIX: If user explicitly mentioned a topic in follow-up, show ALL results
-    const followUpHasExplicitTopic = analysis.is_follow_up && hasNewExplicitTopic(message);
-    if (followUpHasExplicitTopic) {
-      console.log(`🔄 Follow-up has explicit topic "${hasNewExplicitTopic(message)}" → showing ALL results (no exclusion)`);
+    const followUpIsClarification = analysis.is_follow_up && analysis.follow_up_type === "CLARIFY";
+    if (followUpIsClarification) {
+      console.log(`🧠 FIX #103: Follow-up is CLARIFICATION → showing ALL results (no exclusion)`);
     }
-    if (analysis.is_follow_up && !followUpHasExplicitTopic && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
+    if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds);
       const beforeCount = courses.length;
       const filtered = courses.filter(c => !prevIds.has(c.id));
