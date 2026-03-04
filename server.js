@@ -214,7 +214,9 @@ const CATEGORIES = {
       "ielts",
     ],
   },
-  "الديجيتال ماركيتنج": {
+
+
+"الديجيتال ماركيتنج": {
     url: "https://easyt.online/courses/category/19606855-bae8-4588-98a6-b52819ff48d9",
     keywords: [
       "ديجيتال",
@@ -238,8 +240,18 @@ const CATEGORIES = {
       "funnel",
       "performance",
       "analytics",
+      "google ads",
+      "اعلانات جوجل",
+      "اعلانات يوتيوب",
+      "facebook ads",
+      "اعلانات فيسبوك",
+      "اعلانات انستجرام",
+      "حملات اعلانية",
+      "حملات",
     ],
   },
+
+
   "البرامج الهندسية": {
     url: "https://easyt.online/courses/category/f3870633-bfcb-47a0-9c54-c2e71224571a",
     keywords: [
@@ -377,15 +389,31 @@ const CATEGORIES = {
       "تواصل",
     ],
   },
-  "علم النفس": {
+
+
+"علم النفس": {
     url: "https://easyt.online/courses/category/8ed523c6-b088-4e63-807e-8fe325c1dd88",
     keywords: [
       "نفس",
+      "نفسي",
+      "نفسية",
       "psychology",
       "سيكولوجي",
-      "نفسي",
+      "معالج نفسي",
+      "علاج نفسي",
+      "صحة نفسية",
+      "طبيب نفسي",
+      "علم نفس",
+      "سلوكي",
+      "معرفي سلوكي",
+      "اكتئاب",
+      "قلق",
+      "ارشاد نفسي",
+      "علاج معرفي",
     ],
   },
+
+
   "الذكاء الاصطناعى وتطبيقاته": {
     url: "https://easyt.online/courses/category/98dc1962-99df-45fe-8ea6-c334260f279a",
     keywords: [
@@ -1159,9 +1187,18 @@ function getCourseCategories(course) {
 
     for (const kw of catInfo.keywords) {
       const nkw = normalizeArabic(kw.toLowerCase());
-      if (nkw.length <= 2) continue;
+      if (nkw.length <= 3) continue;
 
-      if (combined.includes(nkw)) {
+if (combined.includes(nkw)) {
+        if (nkw.length <= 5) {
+          const kwRegex = new RegExp(`(^|\\s)${nkw}(\\s|$)`);
+          const isTitleStandalone = kwRegex.test(titleNorm);
+          const isDomainStandalone = kwRegex.test(domainNorm);
+          if (!isTitleStandalone && !isDomainStandalone) {
+            score += 0.5;
+            continue;
+          }
+        }
         const inTitle = titleNorm.includes(nkw);
         const inDomain = domainNorm.includes(nkw);
         score += inTitle ? 3 : inDomain ? 4 : 1;
@@ -1189,6 +1226,10 @@ function getCourseCategories(course) {
 }
 
 function getSmartCategoryFromCourses(relevantCourses, searchTerms) {
+  const searchBasedCat = detectRelevantCategory(searchTerms);
+  if (searchBasedCat) {
+    return searchBasedCat;
+  }
   if (relevantCourses && relevantCourses.length > 0) {
     const topCourseCats = getCourseCategories(relevantCourses[0]);
     if (topCourseCats.length > 0) {
@@ -1198,7 +1239,7 @@ function getSmartCategoryFromCourses(relevantCourses, searchTerms) {
       }
     }
   }
-  return detectRelevantCategory(searchTerms);
+  return null;
 }
 
 function formatCategoriesList() {
@@ -1481,9 +1522,15 @@ const searchCategory = detectRelevantCategory(searchTerms);
             return nt.length > 3 && _penaltyTitleNorm.includes(nt);
           }).length;
 
-if (_penaltyTitleHits >= 1) {
-  console.log(`FIX86: "${item.title}" matches ${_penaltyTitleHits} terms in title → skipping category penalty`);
+const _fix110FullPhrase = normalizeArabic(searchTerms.join(" ").toLowerCase().trim());
+const _fix110PhraseInTitle = _fix110FullPhrase.length > 5 && _penaltyTitleNorm.includes(_fix110FullPhrase);
+
+if (_fix110PhraseInTitle) {
+  console.log(`FIX110: "${item.title}" matches FULL phrase "${_fix110FullPhrase}" → skipping penalty`);
+} else if (_penaltyTitleHits >= 2) {
+  console.log(`FIX110: "${item.title}" matches ${_penaltyTitleHits} terms → skipping penalty`);
 } else {
+  console.log(`FIX110: "${item.title}" only ${_penaltyTitleHits} term(s) → PENALIZING`);
   item.relevanceScore = Math.round(item.relevanceScore * 0.15);
 }
         }
@@ -1597,9 +1644,15 @@ const searchCategory = detectRelevantCategory(terms);
               return nt.length > 3 && _fTitleNorm.includes(nt);
             }).length;
 
-if (_fTitleHits >= 1) {
-  console.log(`FIX86-fuzzy: "${item.title}" matches ${_fTitleHits} terms → no penalty`);
+const _fix110bFullPhrase = normalizeArabic(terms.join(" ").toLowerCase().trim());
+const _fix110bPhraseInTitle = _fix110bFullPhrase.length > 5 && _fTitleNorm.includes(_fix110bFullPhrase);
+
+if (_fix110bPhraseInTitle) {
+  console.log(`FIX110b: "${item.title}" matches FULL phrase → no penalty`);
+} else if (_fTitleHits >= 2) {
+  console.log(`FIX110b: "${item.title}" matches ${_fTitleHits} terms → no penalty`);
 } else {
+  console.log(`FIX110b: "${item.title}" only ${_fTitleHits} term(s) → PENALIZING`);
   item.relevanceScore = Math.round(item.relevanceScore * 0.2);
 }
           }
@@ -3234,7 +3287,7 @@ const courseList = courses
       messages: [
         {
           role: "system",
-          content: `أنت فلتر ذكي. مهمتك تشيل الكورسات اللي مالهاش علاقة بنية المستخدم الحقيقية.
+content: `أنت فلتر ذكي. مهمتك تشيل الكورسات اللي مالهاش علاقة بنية المستخدم الحقيقية.
 
 القواعد:
 1. افهم نية المستخدم من رسالته (مش الكلمات الحرفية)
@@ -3242,11 +3295,26 @@ const courseList = courses
 3. لو كورس اسمه فيه كلمة مشتركة بس الموضوع مختلف تماماً = ❌ شيله
 4. لو الكورس فيه [دروس مطابقة] = ✅ خليه! ده معناه الموضوع متشرح جوه الكورس في درس محدد — حتى لو اسم الكورس نفسه مختلف
 
-أمثلة:
-- نية "تخطيط البيت والديكور" ← كورس "التخطيط الشخصي" (عن أهداف الحياة) = ❌ 
-- نية "تخطيط البيت والديكور" ← كورس "التصميم الداخلي" = ✅
-- نية "تخطيط البيت والديكور" ← كورس "الرسم الهندسي والتصميم المعماري" = ✅
-🔴 قاعدة أساسية: لو المستخدم ذكر اسم برنامج أو أداة (زي فوتوشوب، اكسل، بريميير، افتر افكت، الستريتور، بلندر...):
+🔴🔴🔴 أمثلة حرجة على خلط المجالات — لازم تشيلها:
+
+- نية "معالج نفسي" أو "علاج نفسي" ← كورس "معالجة اللغة الطبيعية NLP" = ❌ ده برمجة ذكاء اصطناعي مش علاج نفسي
+- نية "NLP نفسي" أو "البرمجة اللغوية العصبية" ← كورس "معالجة اللغة الطبيعية NLP" = ❌ ده AI/programming مش تنمية بشرية
+- نية "Google Ads" أو "إعلانات جوجل" ← كورس "Google Blogger" = ❌ ده مدونات مش إعلانات
+- نية "Google Ads" ← كورس "Google Looker" = ❌ ده تحليل بيانات مش إعلانات
+- نية "Google Ads" ← كورس "Google Tag Manager" = ❌ ده tracking مش إعلانات
+- نية "Google Ads" ← كورس "Google Analytics" = ❌ ده تحليل مش إعلانات (إلا لو المستخدم طلب كورسات جوجل عموماً)
+- نية "تخطيط البيت والديكور" ← كورس "التخطيط الشخصي" = ❌ ده أهداف حياتية مش ديكور
+- نية "تصميم داخلي" ← كورس "التصميم الداخلي" = ✅
+
+🔴 القاعدة الذهبية: كلمة مشتركة واحدة مش كافية!
+- "معالجة" في "معالجة اللغة الطبيعية" ≠ "معالج نفسي"
+- "Google" في "Google Blogger" ≠ "Google Ads"
+- "تصميم" في "تصميم ألعاب" ≠ "تصميم داخلي"
+- "إدارة" في "إدارة المشاريع" ≠ "إدارة السيولة المالية"
+- "لغة" في "اللغة الطبيعية" ≠ "تعليم اللغات"
+
+🔴 قاعدة أسماء البرامج:
+لو المستخدم ذكر اسم برنامج أو أداة (زي فوتوشوب، اكسل، بريميير، افتر افكت، الستريتور، بلندر...):
 - أي كورس عنوانه فيه نفس البرنامج = ✅ خليه حتى لو التخصص مختلف
 - مثال: نية "فوتوشوب" ← كورس "فوتوشوب المعماري" = ✅ لسه فوتوشوب
 - مثال: نية "فوتوشوب" ← كورس "قوة الذكاء الاصطناعي داخل فوتوشوب" = ✅
@@ -3464,6 +3532,18 @@ ${followUpContext}
    - لو كورس وصفه بيقول "للأطفال" والمستخدم باين إنه كبير — متعرضهوش
    - لو كورس متقدم جداً والمستخدم لسه بيبدأ — متعرضهوش
    - لو كورس مالوش أي علاقة بالموضوع اللي المستخدم طلبه — متعرضهوش
+
+2.5 🔴🔴🔴 قاعدة مطابقة المجال — كلمة مشتركة مش كافية:
+   ❌ ممنوع تعرض كورس لمجرد إن اسمه فيه كلمة مشتركة مع طلب المستخدم!
+   - "معالج نفسي" ← "معالجة اللغة الطبيعية NLP" = ❌ (NLP هنا = ذكاء اصطناعي مش علاج نفسي)
+   - "Google Ads" ← "Google Blogger" = ❌ (بلوجر = مدونات مش إعلانات)
+   - "Google Ads" ← "Google Looker" = ❌ (لوكر = تحليل بيانات مش إعلانات)
+   - "Google Ads" ← "Google Tag Manager" = ❌ (تاج مانجر = tracking مش إعلانات)
+   - "تصميم داخلي" ← "تصميم ألعاب" = ❌ (مجال مختلف تماماً)
+   ✅ المعيار الصح: هل الكورس بيعلّم نفس الموضوع بالظبط؟
+   - "معالج نفسي" ← كورس "العلاج المعرفي السلوكي CBT" = ✅
+   - "Google Ads" ← كورس "احترف إعلانات جوجل" = ✅
+   🔴 لو مش متأكد → relevant_course_indices: [] فاضية أحسن من كورس غلط
 
 3. 🔴🔴🔴 القاعدة الأهم — ممنوع الهلوسة:
    - ممنوع نهائياً تذكر اسم كورس مش موجود في البيانات فوق
