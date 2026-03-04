@@ -4479,8 +4479,7 @@ if (c._titleMatch) {
 
 // 🆕 FIX #99+#104: Save ALL titleMatch AND lessonMatch courses BEFORE any filtering
     const savedTitleMatchCourses = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
-    console.log(`💾 FIX99: Saved ${savedTitleMatchCourses.length} protected courses: [${savedTitleMatchCourses.map(c => `${c.title}(${c._titleMatch?'T':'L'})`).join(", ")}]`);
-
+console.log("FIX99: Saved " + savedTitleMatchCourses.length + " protected courses");
 
   // Corrections fallback
     if (courses.length === 0) {
