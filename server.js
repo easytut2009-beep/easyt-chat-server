@@ -2172,6 +2172,19 @@ function isFollowUpMessage(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
   const followUpPatterns = [
     "فيه حاجة",
+"اقصد",
+    "قصدي",
+    "انا اقصد",
+    "انا قصدي",
+    "اللي اقصده",
+    "اللي قصدي",
+    "مش ده",
+    "لا انا قصدي",
+    "لا اقصد",
+    "اللي عن",
+    "اللي خاص ب",
+    "بتاع ال",
+    "الخاص ب",
     "في حاجة",
     "فى حاجة",
     "عندكم حاجة",
@@ -2434,6 +2447,28 @@ const explicitTopics = [
 }
 
 function enrichMessageWithContext(message, sessionMem) {
+  const norm = normalizeArabic((message || "").toLowerCase());
+  
+  // 🆕 FIX #105: Clarification words OVERRIDE hasNewExplicitTopic
+  // "اقصد ال workflow لتوليد الصور بالذكاء الاصطناعي" = clarification, NOT new topic
+  const clarificationWords = [
+    "اقصد", "قصدي", "انا اقصد", "انا قصدي", "اللي اقصده",
+    "لا اقصد", "لا انا قصدي", "مش ده", "اللي عن", "بتاع ال",
+    "اللي خاص ب", "الخاص ب",
+  ];
+  const hasClarification = clarificationWords.some(w => 
+    norm.includes(normalizeArabic(w))
+  );
+  
+  if (hasClarification && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+    console.log(`🔄 FIX105: Clarification detected ("${clarificationWords.find(w => norm.includes(normalizeArabic(w)))}") → treating as follow-up`);
+    return {
+      enriched: message,
+      isFollowUp: true,
+      previousTopic: sessionMem.lastSearchTopic,
+    };
+  }
+
   const newTopic = hasNewExplicitTopic(message);
   if (newTopic) {
     return {
@@ -2444,7 +2479,7 @@ function enrichMessageWithContext(message, sessionMem) {
   }
 
   if (isFollowUpMessage(message) && sessionMem.lastSearchTopic) {
-const enriched = message;
+    const enriched = message;
     return {
       enriched,
       isFollowUp: true,
@@ -2454,7 +2489,6 @@ const enriched = message;
 
   return { enriched: message, isFollowUp: false };
 }
-
 function ensureSearchTermsForEducationalTopics(message, analysis) {
   if (analysis.action !== "CHAT") return analysis;
   if (analysis.search_terms && analysis.search_terms.length > 0)
@@ -3315,6 +3349,62 @@ async function generateSmartRecommendation(
 let followUpContext = "";
 if (analysis.is_follow_up) {
   followUpContext = `
+let followUpContext = "";
+if (analysis.is_follow_up) {
+  if (analysis.follow_up_type === "CLARIFY") {
+    followUpContext = `
+═══ ⚠️⚠️⚠️ تعليمات إجبارية — رسالة توضيح ═══
+المستخدم بيوضّح أو بيحدد طلبه السابق بشكل أدق.
+ده مش معناه إن النتائج غلط — ده معناه إنه عايز يركّز على جزء معين!
+
+🔴🔴🔴 قاعدة التوضيح:
+- الكورسات اللي قدامك هي نفس الكورسات أو كورسات مشابهة — وده كويس!
+- المستخدم بيوضح أنهي كورس أو أنهي درس هو عايزه بالظبط من دول
+- لازم تختار الكورسات اللي بتطابق التوضيح بتاعه
+
+🔴 ممنوع تماماً:
+- "مفيش كورسات متخصصة" ← ممنوع!
+- "ممكن توضح" ← المستخدم أصلاً بيوضح!
+- أي جملة سلبية عن عدم توفر كورسات
+
+🔴🔴🔴 لو فيه كورس فيه matchedLessons أو matchReason فيه "كدرس جوه الكورس" عن الموضوع = لازم تختاره!
+مثال: لو المستخدم بيوضّح "اقصد workflow لتوليد الصور" وفيه كورس فيه درس اسمه "بناء Workflow مخصص" = ده مطابق 100%!
+
+✅ استخدم جمل زي:
+- "أيوه! هتلاقي الموضوع ده بالظبط في الكورسات دي 👇"
+- "تمام، فهمتك! ده اللي بتدور عليه 🎯"
+- "ممتاز، الكورسات دي فيها بالظبط اللي عايزه 👇"
+`;
+  } else {
+    followUpContext = `
+let followUpContext = "";
+if (analysis.is_follow_up) {
+  if (analysis.follow_up_type === "CLARIFY") {
+    followUpContext = `
+═══ ⚠️⚠️⚠️ تعليمات إجبارية — رسالة توضيح ═══
+المستخدم بيوضّح أو بيحدد طلبه السابق بشكل أدق.
+ده مش معناه إن النتائج غلط — ده معناه إنه عايز يركّز على جزء معين!
+
+🔴🔴🔴 قاعدة التوضيح:
+- الكورسات اللي قدامك هي نفس الكورسات أو كورسات مشابهة — وده كويس!
+- المستخدم بيوضح أنهي كورس أو أنهي درس هو عايزه بالظبط من دول
+- لازم تختار الكورسات اللي بتطابق التوضيح بتاعه
+
+🔴 ممنوع تماماً:
+- "مفيش كورسات متخصصة" ← ممنوع!
+- "ممكن توضح" ← المستخدم أصلاً بيوضح!
+- أي جملة سلبية عن عدم توفر كورسات
+
+🔴🔴🔴 لو فيه كورس فيه matchedLessons أو matchReason فيه "كدرس جوه الكورس" عن الموضوع = لازم تختاره!
+مثال: لو المستخدم بيوضّح "اقصد workflow لتوليد الصور" وفيه كورس فيه درس اسمه "بناء Workflow مخصص" = ده مطابق 100%!
+
+✅ استخدم جمل زي:
+- "أيوه! هتلاقي الموضوع ده بالظبط في الكورسات دي 👇"
+- "تمام، فهمتك! ده اللي بتدور عليه 🎯"
+- "ممتاز، الكورسات دي فيها بالظبط اللي عايزه 👇"
+`;
+  } else {
+    followUpContext = `
 ═══ ⚠️⚠️⚠️ تعليمات إجبارية — رسالة متابعة ═══
 المستخدم شاف كورسات قبل كده في نفس الموضوع وطلب المزيد.
 الكورسات اللي قدامك دلوقتي هي كورسات إضافية ليها علاقة بنفس المجال.
@@ -3339,8 +3429,8 @@ if (analysis.is_follow_up) {
 
 🔴 القاعدة: نوّع في الجملة — متكررش نفس الرد!
 `;
+  }
 }
-
 
 const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
 
@@ -4355,7 +4445,7 @@ if (!earlyExitFollowUp) {
           return words.every(w => tn.includes(w));
         });
 
-        if (c._titleMatch) {
+if (c._titleMatch) {
           c.relevanceScore = (c.relevanceScore || 0) + 500;
           console.log(`FIX67v2: "${c.title}" title-match → +500 bonus (total=${c.relevanceScore})`);
         }
@@ -4364,10 +4454,32 @@ if (!earlyExitFollowUp) {
       courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
     }
 
-// 🆕 FIX #99: Save ALL titleMatch courses BEFORE any filtering
-    const savedTitleMatchCourses = courses.filter(c => c._titleMatch === true);
-    console.log(`💾 FIX99: Saved ${savedTitleMatchCourses.length} titleMatch courses: [${savedTitleMatchCourses.map(c => c.title).join(", ")}]`);
+    // 🆕 FIX #104: _lessonMatch — protect courses with matching lessons
+    {
+      for (const c of courses) {
+        if (c._titleMatch) continue; // already protected
+        if (c.matchedLessons && c.matchedLessons.length > 0) {
+          // Check if any matched lesson title contains a search term
+          const hasRelevantLesson = c.matchedLessons.some(ml => {
+            const lessonNorm = normalizeArabic((ml.title || "").toLowerCase());
+            return termsToSearch.some(t => {
+              const nt = normalizeArabic(t.toLowerCase());
+              return nt.length > 3 && (lessonNorm.includes(nt) || nt.includes(lessonNorm));
+            });
+          });
+          if (hasRelevantLesson) {
+            c._lessonMatch = true;
+            c.relevanceScore = (c.relevanceScore || 0) + 300;
+            console.log(`FIX104: "${c.title}" lesson-match → +300 bonus (lessons: ${c.matchedLessons.map(l=>l.title).join(", ")})`);
+          }
+        }
+      }
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+    }
 
+// 🆕 FIX #99+#104: Save ALL titleMatch AND lessonMatch courses BEFORE any filtering
+    const savedTitleMatchCourses = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
+    console.log(`💾 FIX99: Saved ${savedTitleMatchCourses.length} protected courses: [${savedTitleMatchCourses.map(c => `${c.title}(${c._titleMatch?'T':'L'})`).join(", ")}]`);
 
 
   // Corrections fallback
@@ -4632,9 +4744,9 @@ if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       );
 
 // 🆕 FIX #63+#68: Must-show courses with title match
-      const titleMatchMustShow = courses.filter(c => {
+const titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
-        return c._titleMatch === true;
+        return c._titleMatch === true || c._lessonMatch === true;
       });
 for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
@@ -4645,33 +4757,30 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
       // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
       // but RAG didn't select
-      const allTitleMatched = courses.filter(c => c._titleMatch === true);
-      for (const tm of allTitleMatched) {
+const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
+      for (const tm of allProtectedMatched) {
         if (!relevantCourses.find(rc => rc.id === tm.id)) {
           relevantCourses.push(tm);
-          console.log(`🆕 Force-include titleMatch: "${tm.title}"`);
+          console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
         }
       }
-
 
       // 🆕 FIX #62: Fallback
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
-        // FIX #62 v2: Only fallback to title-matched courses (confirmed relevant)
-        const titleMatchedOnly = courses.filter((c) => c._titleMatch === true);
+        // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
+        const protectedOnly = courses.filter((c) => c._titleMatch === true || c._lessonMatch === true);
         
-        if (titleMatchedOnly.length > 0) {
-          console.log(`⚠️ FIX #62: Using ${titleMatchedOnly.length} title-matched courses as fallback`);
-          relevantCourses = titleMatchedOnly.slice(0, 3);
+        if (protectedOnly.length > 0) {
+          console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
+          relevantCourses = protectedOnly.slice(0, 3);
           if (!recommendationMessage || recommendationMessage.trim().length < 10) {
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
           }
         } else {
-          console.log(`⚠️ FIX #62: No title-matched courses found — showing "no results"`);
-          // Don't force irrelevant courses — let "no results" path handle it
+          console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
         }
       }
-
 
 // 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
       if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
