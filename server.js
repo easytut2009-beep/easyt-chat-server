@@ -710,9 +710,10 @@ const ARABIC_STOP_WORDS = new Set([
   "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
   "of", "and", "or", "i", "want", "need", "about",
   "كورس", "كورسات", "دورة", "دورات", "تعلم", "اتعلم",
-  "ابغى", "اريد", "شلون", "كيف", "بدي", "حاب", "شو", "وش", "ابي",
+"ابغى", "اريد", "شلون", "كيف", "بدي", "حاب", "شو", "وش", "ابي",
+  "معلومات", "تفاصيل", "اقصد", "قصدي", "الخاص", "خاص",
+  "بتاع", "بتاعت", "بتاعه", "شرح", "اشرح",
 ]);
-
 
 // ═══════════════════════════════════════════════════════
 // 🆕 General Fuzzy Spell Correction (Levenshtein-based)
@@ -4159,32 +4160,6 @@ let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
 // 🆕 FIX #86: Keep original terms alongside corrected ones
 termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
 
-// 🆕 FIX #88: Extract key words from user message directly
-const _rawWords = (message || "").split(/\s+/).filter(w => w.length > 3);
-const _extraWords = [];
-for (const w of _rawWords) {
-  let clean = w.trim();
-  if (/^\d+$/.test(clean)) continue;
-  
-  // Add raw word as-is
-  _extraWords.push(clean);
-  
-  // Strip prefixes and add variations  
-  if (/^(بال|وال|فال|كال)/.test(clean) && clean.length > 4) {
-    clean = clean.replace(/^(بال|وال|فال|كال)/, "");
-    _extraWords.push(clean);
-    _extraWords.push("ال" + clean);
-  } else if (clean.startsWith("لل") && clean.length > 4) {
-    _extraWords.push(clean.substring(2));
-    _extraWords.push("ال" + clean.substring(2));
-  } else if (clean.startsWith("ال") && clean.length > 4) {
-    _extraWords.push(clean.substring(2));
-  }
-}
-if (_extraWords.length > 0) {
-  console.log("FIX88: Extra words from message:", _extraWords);
-  termsToSearch = [...new Set([...termsToSearch, ..._extraWords])];
-}
 
 // 🆕 Auto phonetic transliteration (Arabic brand names → English)
 const phoneticExtra = addPhoneticTransliterations(termsToSearch);
