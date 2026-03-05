@@ -3784,15 +3784,7 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
         ];
         recommendationMessage = variety[Math.floor(Math.random() * variety.length)];
       }
-            console.log(`ℹ️ FIX #62v3: ALTERNATIVE follow-up — ${relevantRemaining.length} relevant courses`);
-            relevantCourses = relevantRemaining.slice(0, 3);
-            if (!recommendationMessage || recommendationMessage.trim().length < 10) {
-              recommendationMessage = "كمان عندنا الكورسات دي ممكن تفيدك 👇";
-            }
-          } else {
-            console.log(`ℹ️ FIX #62v3: ALTERNATIVE follow-up — no relevant courses left`);
-            // relevantCourses stays empty → "no results" block will handle it
-          }
+    
         } else {
           console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
         }
