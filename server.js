@@ -3575,7 +3575,8 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
     if (_isClearAlt && analysis.follow_up_type === "CLARIFY") {
       console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
-    if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
+console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarification=${followUpIsClarification}, lastShownIds=${JSON.stringify(sessionMem.lastShownCourseIds)}, lastShownCount=${(sessionMem.lastShownCourseIds||[]).length}`);  
+  if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
 const prevIds = new Set(sessionMem.lastShownCourseIds.map(String));
 const beforeCount = courses.length;
 const filtered = courses.filter(c => !prevIds.has(String(c.id)));
