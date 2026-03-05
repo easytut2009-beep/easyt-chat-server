@@ -3645,10 +3645,6 @@ console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarifi
       }
     }
 
-// ══════════════════════════════════════════════════════════════
-// 🆕 FIX #97: EARLY EXIT for follow-ups when all courses shown
-
-  if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
 
 
 // ══════════════════════════════════════════════════════════════
