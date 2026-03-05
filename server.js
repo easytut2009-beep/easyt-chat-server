@@ -1673,7 +1673,6 @@ sessionMemory.set(sessionId, {
       topics: [],
       lastSearchTerms: [],
       lastSearchTopic: null,
-      lastSearchCategory: null,
       lastShownCourseIds: [],
       userLevel: null,
       interests: [],
@@ -1709,9 +1708,6 @@ function updateSessionMemory(sessionId, updates) {
   }
   if (updates.lastSearchTopic) {
     mem.lastSearchTopic = updates.lastSearchTopic;
-  }
-if (updates.lastSearchCategory) {
-    mem.lastSearchCategory = updates.lastSearchCategory;
   }
   if (updates.lastShownCourseIds) {
     mem.lastShownCourseIds = updates.lastShownCourseIds;
@@ -2832,42 +2828,6 @@ function verifyCourseRelevance(course, searchTerms) {
 
 
 
-async function generateConversationSummary(chatHistory, currentSummary) {
-  if (!openai || chatHistory.length < 4) return currentSummary;
-  try {
-    const recentMsgs = chatHistory
-      .slice(-6)
-      .map(
-        (m) =>
-          `${m.role === "user" ? "المستخدم" : "زيكو"}: ${m.content.substring(
-            0,
-            200
-          )}`
-      )
-      .join("\n");
-
-    const resp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `لخّص المحادثة دي في 2-3 جمل. ركّز على اهتمامات المستخدم ومستواه.\n${
-            currentSummary ? `الملخص السابق: ${currentSummary}` : ""
-          }`,
-        },
-        { role: "user", content: recentMsgs },
-      ],
-      temperature: 0,
-      max_tokens: 200,
-    });
-
-    return resp.choices[0].message.content || currentSummary;
-  } catch (e) {
-    return currentSummary;
-  }
-}
-
-
 /* ══════════════════════════════════════════════════════════
    🆕 FIX #79: Detect "show ALL diplomas" requests
    Catches messages GPT might misclassify as CHAT/SEARCH
@@ -3063,8 +3023,20 @@ async function smartChat(message, sessionId) {
     loadCustomResponsesSummary(),
   ]);
 
-  // Quick intent check
+// Quick intent check
   const quickCheck = quickIntentCheck(enrichedMessage);
+
+  // ✅ Skip GPT for trivial messages (greetings, casual)
+  if (quickCheck && quickCheck.isCasual && quickCheck.confidence >= 0.9) {
+    console.log(`⚡ Skipping GPT analyzer — casual message (${quickCheck.intent})`);
+    const quickReply = quickCheck.intent === "GREETING"
+      ? "أهلاً بيك! 😊 أنا زيكو، مرشدك التعليمي في منصة easyT.<br>عندنا +600 دورة في كل المجالات 🎓<br><br>قولي عايز تتعلم إيه وأنا أساعدك! 💪"
+      : "تمام 😊 لو محتاج أي حاجة أنا هنا!";
+    
+    const finalQuickReply = finalizeReply(markdownToHtml(quickReply));
+    updateSessionMemory(sessionId, { topics: [], interests: [] });
+    return { reply: finalQuickReply, intent: quickCheck.intent };
+  }
 
   // Phase 1: Analyze
   const analysis = await analyzeMessage(
@@ -3464,7 +3436,6 @@ const cat97 = getSmartCategoryFromCourses(analysis.detected_category);
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: topic97,
-        lastSearchCategory: analysis.detected_category,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         lastShownCourseIds: sessionMem.lastShownCourseIds,
@@ -3722,7 +3693,6 @@ const cat93 = getSmartCategoryFromCourses(analysis.detected_category);
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: topic93 || mainTopic93,
-        lastSearchCategory: analysis.detected_category,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         lastShownCourseIds: sessionMem.lastShownCourseIds,
@@ -3879,7 +3849,6 @@ const mainTopic = extractMainTopic(termsToSearch);
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: contextResult.detectedTopic || mainTopic,
-        lastSearchCategory: analysis.detected_category,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
@@ -3928,7 +3897,6 @@ const outerCat = getSmartCategoryFromCourses(analysis.detected_category);
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: extractMainTopic(termsToSearch),
-        lastSearchCategory: analysis.detected_category,
         userLevel: analysis.user_level,
         topics: analysis.topics,
         lastShownCourseIds: [],
@@ -4122,17 +4090,6 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
     });
   }
 
-  // Periodic summary
-  if (
-    sessionMem.messageCount > 0 &&
-    sessionMem.messageCount % 4 === 0
-  ) {
-    generateConversationSummary(chatHistory, sessionMem.summary)
-      .then((summary) => {
-        if (summary) updateSessionMemory(sessionId, { summary });
-      })
-      .catch(() => {});
-  }
 
   console.log(
     `✅ Done | action=${analysis.action} | ⏱️ ${Date.now() - startTime}ms`
