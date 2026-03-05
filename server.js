@@ -2168,89 +2168,59 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
 
-  const memoryContext = sessionMem.messageCount > 0
-    ? `\n═══ ذاكرة الجلسة ═══\n- المواضيع: ${sessionMem.topics.join(", ") || "لا يوجد"}\n- آخر بحث: ${sessionMem.lastSearchTopic || "لا يوجد"}\n- كلمات بحث: ${sessionMem.lastSearchTerms.join(", ") || "لا يوجد"}\n- مستوى: ${sessionMem.userLevel || "غير محدد"}\n- اهتمامات: ${sessionMem.interests.join(", ") || "غير محدد"}\n- رسائل: ${sessionMem.messageCount}\n- ملخص: ${sessionMem.summary || "بداية محادثة"}\n`
+  const memCtx = sessionMem.messageCount > 0
+    ? `\n═══ ذاكرة ═══\nمواضيع: ${sessionMem.topics.join(", ") || "-"} | بحث: ${sessionMem.lastSearchTopic || "-"} | كلمات: ${sessionMem.lastSearchTerms.join(", ") || "-"} | مستوى: ${sessionMem.userLevel || "-"} | رسائل: ${sessionMem.messageCount}\n`
     : "";
 
-  return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات (مصري/عراقي/خليجي/شامي/مغربي).
+  return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات.
 
-${botInstructions ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n` : ""}
-${memoryContext}
-${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
-
-═══ التصنيفات المتاحة ═══
+${botInstructions ? `⛔ تعليمات الأدمن:\n${botInstructions}\n` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+═══ التصنيفات ═══
 ${categoriesList}
 
-═══ مهمتك ═══
-حلل رسالة المستخدم وارجع JSON فقط:
-{
-  "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "DIPLOMAS" | "CHAT" | "SUPPORT",
-  "detected_category": "اسم التصنيف بالظبط من القائمة أو null",
-  "user_intent": "FIND_COURSE" | "QUESTION" | "UNCLEAR",
-  "search_terms": ["مصطلح1", "مصطلح2"],
-  "response_message": "ردك (لغير SEARCH فقط)",
-  "intent": "وصف النية",
-  "user_level": "مبتدئ" | "متوسط" | "متقدم" | null,
-  "topics": ["موضوع1"],
-  "is_follow_up": true/false,
-  "follow_up_type": "CLARIFY" | "ALTERNATIVE" | null,
-  "previous_topic_reference": null,
-  "audience_filter": null,
-  "language": "ar" | "en"
-}
+═══ المطلوب ═══
+حلل الرسالة → JSON فقط:
+{"action":"SEARCH|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"اسم التصنيف بالظبط أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
 
-═══ قواعد search_terms — الأهم ═══
-search_terms = المصطلحات التقنية اللي هتوصّل للكورس الصح.
-❌ ممنوع كلمات المحادثة: "معلومات", "حاجة", "كورس", "عايز", "اتعلم"
-✅ حط بس اسم الموضوع/التقنية/الأداة
+═══ search_terms ═══
+المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم"
+✅ اسم الموضوع/التقنية/الأداة فقط
+⚠️ عربيزي → ضيف الإنجليزي: "فوتوشوب"→["فوتوشوب","photoshop"]
 
-أمثلة:
-- "عايز أعرف معلومات عن ال workflow" → ["workflow", "ورك فلو"]
-- "عاوز اعمل بلن لتخطيط البيت والديكور" → ["تصميم داخلي", "ديكور", "interior design"]
-- "عايز اتعلم ازاي اعمل فلوس من النت" → ["الربح من الانترنت", "freelance"]
-- "ابني عنده 10 سنين عايز يتعلم كمبيوتر" → ["برمجة اطفال", "سكراتش", "scratch"]
+═══ user_intent ═══
+FIND_COURSE=عايز يتعلم/يدور على كورس | QUESTION=عايز يفهم مصطلح ("يعني إيه X") | UNCLEAR=حروف عشوائية 100% فقط
+⚠️ كلمة حقيقية واحدة = مش UNCLEAR
 
-⚠️ أي كلمة إنجليزية مكتوبة بحروف عربية → ضيف الإنجليزي الأصلي:
-"فوتوشوب" → ["فوتوشوب", "photoshop"] | "كومفي يو آي" → ["comfyui", "كومفي يو آي"]
+═══ follow_up_type ═══
+CLARIFY=بيوضّح ("اقصد...","للمبتدئين") | ALTERNATIVE=عايز غيرهم ("فيه غيرهم؟","كمان")
 
-═══ قواعد user_intent ═══
-FIND_COURSE — عايز يتعلم حاجة أو يدور على كورس (اسم برنامج/تقنية/نية تعلم/سعر كورس محدد)
-QUESTION — عايز يفهم مصطلح أو مفهوم ("يعني إيه X" / "الفرق بين X و Y" / مصطلح أجنبي لوحده)
-UNCLEAR — حروف عشوائية 100% بدون أي كلمة حقيقية (نادر جداً!)
-⚠️ لو فيه كلمة حقيقية واحدة = مش UNCLEAR. لو مش متأكد = QUESTION
-
-═══ قواعد follow_up_type ═══
-CLARIFY = بيوضّح/بيحدد طلبه السابق ("اقصد اللي عن...", "للمبتدئين بس", "بتاع ال AI")
-ALTERNATIVE = عايز خيارات مختلفة ("فيه غيرهم؟", "حاجة تانية", "ارخص", "كمان")
-لو is_follow_up = false → null
-
-═══ قواعد التصنيف (action) ═══
-SEARCH — بيدور على كورس أو عايز يتعلم (حتى لو ذكر سعر كورس محدد أو سن/مستوى)
-SUBSCRIPTION — بيسأل عن طرق الدفع أو أسعار الاشتراك العام فقط (بدون ذكر كورس!)
-DIPLOMAS — بيسأل عن الدبلومات بصفة عامة
-CATEGORIES — بيسأل عن المجالات/التصنيفات
-SUPPORT — مشاكل تقنية
-CHAT — ترحيب/كلام عام
-
-⚠️ القاعدة الذهبية: لو فيه أي سياق تعليمي = SEARCH. لو كله عن فلوس ودفع بس = SUBSCRIPTION
-
-═══ قاعدة detected_category ═══
-لكل موضوع تعليمي → أقرب تصنيف من القائمة بالاسم بالظبط. لو مفيش → null
+═══ action ═══
+SEARCH=بيدور على كورس/عايز يتعلم | SUBSCRIPTION=طرق دفع/اشتراك عام بدون كورس | DIPLOMAS=دبلومات عامة | CATEGORIES=مجالات | SUPPORT=مشاكل تقنية | CHAT=ترحيب/عام
+⚠️ سياق تعليمي=SEARCH | فلوس ودفع بس=SUBSCRIPTION
 
 ═══ معلومات المنصة ═══
-+600 دورة، +27 دبلومة، +750,000 طالب
-الاشتراك السنوي: 49$ عرض رمضان (بدل 59$)
++600 دورة، +27 دبلومة، +750,000 طالب، 15 دورة جديدة شهرياً
+الاشتراك السنوي: 49$ عرض رمضان (بدل 59$) = 4$/شهر — يتجدد تلقائياً بنفس السعر — إلغاء في أي وقت
+وصول كامل فوري لكل الدورات + الدبلومات + شهادات PDF بالإيميل + مجتمع طلابي
 رابط الاشتراك: https://easyt.online/p/subscriptions
 رابط طرق الدفع: https://easyt.online/p/Payments
-طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
+
+═══ طرق الدفع ═══
+الأساسية: Visa/MasterCard — PayPal (من صفحة الاشتراك مباشرة)
+البديلة (من صفحة طرق الدفع):
+• إنستا باي (رابط مباشر من الموبايل)
+• فودافون كاش: 01027007899
+• تحويل بنكي: بنك الإسكندرية — حساب: 202069901001 — Swift: ALEXEGCXXXX
+• Skrill: info@easyt.online
+⚠️ الطرق البديلة: الطالب يملأ الفورم + يرفع إيصال → التفعيل خلال 24 ساعة
+⚠️ لو البطاقات مش شغالة → وجّهه لصفحة طرق الدفع البديلة
+واتساب للدعم متاح من صفحة طرق الدفع
 
 ═══ للردود ═══
-اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
-استخدم <br> بدل \\n
-❌ ممنوع تخترع كورسات أو دبلومات
-لـ SEARCH: response_message = ""
-لـ DIPLOMAS: response_message = ""`;
+HTML links: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
+<br> بدل \\n | ❌ ممنوع اختراع كورسات | SEARCH/DIPLOMAS: response_message=""`;
 }
+
 const FALLBACK_MESSAGES = [
   "ممكن توضحلي أكتر؟ 🤔 مثلاً قولي اسم المجال أو المهارة اللي عايز تتعلمها",
   "مش متأكد فهمتك 😅 ممكن تقولي الموضوع اللي عايز تتعلمه بشكل أوضح؟",
@@ -3080,11 +3050,37 @@ function applyQualityFilters(courses) {
 
 
 function generateChatSuggestions(action, analysis, termsToSearch, hasResults) {
-  const suggestions = [];
+  const topic = analysis.detected_category
+    || (termsToSearch && termsToSearch.length > 0 ? termsToSearch[0] : null);
 
   if (action === "SEARCH" && hasResults) {
-    suggestions.push("فيه غيرهم؟ 🔄");
-    if (analysis.detected_category) {
+    return [
+      topic ? `كورسات ${topic} تانية 🔄` : "فيه غيرهم؟ 🔄",
+      "ازاي ادفع؟ 💳",
+      "🎓 الدبلومات",
+    ];
+  }
+  if (action === "SEARCH" && !hasResults) {
+    return [
+      topic ? `📂 كورسات ${topic}` : "📂 التصنيفات",
+      "🎓 الدبلومات",
+      "ازاي ادفع؟ 💳",
+    ];
+  }
+  if (action === "SUBSCRIPTION") {
+    return ["عايز كورس 📘", "🎓 الدبلومات", "📂 التصنيفات"];
+  }
+  if (action === "DIPLOMAS") {
+    return ["عايز كورس 📘", "ازاي ادفع؟ 💳", "📂 التصنيفات"];
+  }
+  if (action === "CATEGORIES") {
+    return ["عايز كورس 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"];
+  }
+  if (analysis.user_intent === "QUESTION" && topic) {
+    return [`عايز كورس ${topic} 📘`, "📂 التصنيفات", "🎓 الدبلومات"];
+  }
+  return ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "📂 التصنيفات"];
+}    if (analysis.detected_category) {
       const cat = getSmartCategoryFromCourses(analysis.detected_category);
       if (cat) suggestions.push(`📂 كورسات ${cat.name}`);
     }
