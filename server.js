@@ -4083,19 +4083,31 @@ updateSessionMemory(sessionId, {
   /* ═══════════════════════════════════
      ACTION: SUBSCRIPTION
      ═══════════════════════════════════ */
-  else if (analysis.action === "SUBSCRIPTION") {
-    reply = `أهلاً بيك! 🎉<br><br>`;
-    reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
-    reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-    reply += `2. 🅿️ <strong>PayPal</strong><br>`;
-    reply += `3. 📱 <strong>InstaPay</strong><br>`;
-    reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
-    reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
-    reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-    reply += `✨ <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$)<br>`;
-    reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
-    reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
-    reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+else if (analysis.action === "SUBSCRIPTION") {
+    // 🆕 FIX: Use GPT response from bot instructions if available
+    if (analysis.response_message && analysis.response_message.trim().length > 20) {
+      console.log(`💡 SUBSCRIPTION: Using GPT response from bot instructions`);
+      reply = analysis.response_message;
+      if (!reply.includes('easyt.online/p/subscriptions')) {
+        reply += `<br><br><a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a>`;
+      }
+      if (!reply.includes('easyt.online/p/Payments')) {
+        reply += `<br><a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      }
+    } else {
+      reply = `أهلاً بيك! 🎉<br><br>`;
+      reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      reply += `3. 📱 <strong>InstaPay</strong><br>`;
+      reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+      reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+      reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+      reply += `✨ <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$)<br>`;
+      reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
+      reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
+      reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+    }
     intent = "SUBSCRIPTION";
   }
 
