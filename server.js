@@ -3576,9 +3576,9 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
     if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
-      const beforeCount = courses.length;
+const prevIds = new Set(sessionMem.lastShownCourseIds.map(String));
+const beforeCount = courses.length;
 const filtered = courses.filter(c => !prevIds.has(String(c.id)));
-
 if (filtered.length > 0) {
     const coreTerms = termsToSearch.filter(t => 
       t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
