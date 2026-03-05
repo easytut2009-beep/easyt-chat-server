@@ -615,7 +615,7 @@ function expandArabicVariants(terms) {
     if (term.endsWith('ى')) variants.add(term.slice(0, -1) + 'ي');
     if (term.endsWith('ي')) variants.add(term.slice(0, -1) + 'ى');
   }
-  return [...variants].filter(v => v.length > 1);
+return [...variants].filter(v => v.length > 1).slice(0, 20);
 }
 
 
@@ -647,7 +647,11 @@ const limitedTerms = allTerms.slice(0, 6);
 
 // ═══ Expand Arabic variants for ilike matching ═══
 const ilikeTerms = expandArabicVariants(limitedTerms);
-console.log("🔤 Expanded ilike terms:", ilikeTerms);
+console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
+
+// 🔧 FIX: Cap terms to avoid Supabase query length limits
+// Max ~80 filter conditions (16 terms × 5 cols)
+const cappedIlikeTerms = ilikeTerms.slice(0, 16);
 
 // 🔧 Phase 1: Search core fields only
 const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
@@ -657,9 +661,11 @@ const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
       "objectives", "domain", "keywords",
     ];
 
-const coreFilters = ilikeTerms
+const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
+
+console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
     const ilikePromise = supabase
       .from("courses")
@@ -687,16 +693,21 @@ const embResp = await openai.embeddings.create({
         })()
       : Promise.resolve([]);
 
-    const [ilikeResult, semanticResults] = await Promise.all([
+const [ilikeResult, semanticResults] = await Promise.all([
       ilikePromise,
       semanticPromise,
     ]);
 
     const { data: courses, error } = ilikeResult;
-    if (error) return [];
+    if (error) {
+      console.error("❌ ilike query FAILED:", error.message);
+      console.error("   ilikeTerms count:", ilikeTerms.length);
+      console.error("   coreFilters length:", coreFilters.length);
+    }
 
-    let allCourses = courses || [];
-
+    let allCourses = error ? [] : (courses || []);
+    
+    // 🔧 Don't throw away semantic results if ilike failed!
 
 // 🔧 Phase 2: If few core results, expand to deep content (syllabus, full_content, etc.)
     if (allCourses.length < 3 && limitedTerms.length <= 4) {
@@ -708,7 +719,7 @@ const embResp = await openai.embeddings.create({
         "objectives", "domain", "keywords",
       ];
       
-const deepIlikeTerms = expandArabicVariants(limitedTerms);
+const deepIlikeTerms = expandArabicVariants(limitedTerms).slice(0, 10);
 const deepFilters = deepIlikeTerms
   .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
