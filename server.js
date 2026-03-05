@@ -3550,13 +3550,17 @@ if (filtered.length > 0) {
       t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
     );
     
-    // 🆕 FIX #113: Check title + subtitle + domain + keywords + description
+    // 🆕 FIX #115: Strict topic filtering for ALTERNATIVE follow-ups
+    // Problem: "في تاني" after "فوتوشوب" showed "المكياج" because
+    // description mentioned "فوتوشوب". Fix: only check PRIMARY fields
+    // (title, subtitle, keywords) — NOT description/full_content
     const relevantFiltered = filtered.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
       
-      // Check ALL searchable fields, not just title/subtitle
-      const searchableText = normalizeArabic(
-        [c.title, c.subtitle, c.domain, c.keywords, c.description]
+      // PRIMARY fields only — these describe what the course IS about
+      // (not what it merely mentions in passing)
+      const primaryText = normalizeArabic(
+        [c.title, c.subtitle, c.domain, c.keywords]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
@@ -3565,13 +3569,12 @@ if (filtered.length > 0) {
       return coreTerms.some(t => {
         const nt = normalizeArabic(t.toLowerCase());
         if (nt.length <= 2) return false;
-        if (searchableText.includes(nt)) return true;
-        // Also check English terms case-insensitive
-        if (/^[a-zA-Z]+$/.test(t) && searchableText.includes(t.toLowerCase())) return true;
+        if (primaryText.includes(nt)) return true;
+        if (/^[a-zA-Z]+$/.test(t) && primaryText.includes(t.toLowerCase())) return true;
         return false;
       });
-    });
-    
+    });    
+
     if (relevantFiltered.length > 0) {
       courses = relevantFiltered;
       console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
@@ -3771,18 +3774,45 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
           }
 } else if (analysis.is_follow_up && !followUpIsClarification && courses.length > 0) {
-      // 🆕 FIX #114: For ALTERNATIVE follow-ups, show remaining courses
-      // They passed search + relevance filter → they're relevant enough
-      console.log(`ℹ️ FIX #114: ALTERNATIVE follow-up — showing ${courses.length} remaining courses`);
-      relevantCourses = courses.slice(0, 3);
-      if (!recommendationMessage || recommendationMessage.trim().length < 10) {
-        const variety = [
-          "كمان عندنا الكورسات دي ممكن تفيدك 👇",
-          "شوف الكورسات دي كمان 🎯",
-          "دول كمان كورسات تانية في نفس الموضوع 👇",
-          "ممكن كمان تستفيد من الكورسات دي 💡",
-        ];
-        recommendationMessage = variety[Math.floor(Math.random() * variety.length)];
+      // 🆕 FIX #115: For ALTERNATIVE follow-ups, only show topic-relevant courses
+      // Problem: old FIX #114 used courses.slice(0,3) blindly → showed "المكياج" for "فوتوشوب"
+      // Fix: verify topic match in primary fields before showing
+      const _topicTerms = termsToSearch.filter(t => 
+        t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+      );
+      
+      const _topicRelevant = courses.filter(c => {
+        if (c._titleMatch || c._lessonMatch) return true;
+        const _primaryText = normalizeArabic(
+          [c.title, c.subtitle, c.domain, c.keywords]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+        );
+        return _topicTerms.some(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          if (nt.length <= 2) return false;
+          if (_primaryText.includes(nt)) return true;
+          if (/^[a-zA-Z]+$/.test(t) && _primaryText.includes(t.toLowerCase())) return true;
+          return false;
+        });
+      });
+      
+      if (_topicRelevant.length > 0) {
+        console.log(`ℹ️ FIX #115: ALTERNATIVE follow-up — ${_topicRelevant.length} topic-relevant courses`);
+        relevantCourses = _topicRelevant.slice(0, 3);
+        if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+          const variety = [
+            "كمان عندنا الكورسات دي ممكن تفيدك 👇",
+            "شوف الكورسات دي كمان 🎯",
+            "دول كمان كورسات تانية في نفس الموضوع 👇",
+            "ممكن كمان تستفيد من الكورسات دي 💡",
+          ];
+          recommendationMessage = variety[Math.floor(Math.random() * variety.length)];
+        }
+      } else {
+        console.log(`ℹ️ FIX #115: No topic-relevant courses left — skipping irrelevant fallback`);
+        // Don't set relevantCourses → falls through to "no results" section below
       }
     
         } else {
