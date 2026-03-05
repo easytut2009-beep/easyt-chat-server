@@ -2595,7 +2595,8 @@ function verifyCourseRelevance(course, searchTerms) {
   // Title-matched courses always pass
   if (course._titleMatch) return true;
 
-  // Lesson matches do NOT auto-pass — must be verified like other courses
+  // 🆕 FIX: Lesson-matched courses also pass — the lesson match IS the relevance proof
+  if (course._lessonMatch) return true;
 
 
   const courseText = normalizeArabic(
@@ -3767,8 +3768,8 @@ updateSessionMemory(sessionId, {
 
 if (!earlyExitFollowUp) {
 
-const savedTitleMatchCourses = courses.filter(c => c._titleMatch);
-console.log("🛡️ Protected courses (titleMatch only):", savedTitleMatchCourses.length);
+const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMatch);
+console.log("🛡️ Protected courses (titleMatch + lessonMatch):", savedTitleMatchCourses.length);
 
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
@@ -3910,7 +3911,7 @@ updateSessionMemory(sessionId, {
 // 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
 let titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
-        return c._titleMatch === true;
+        return c._titleMatch === true || c._lessonMatch === true;
       });
 
 // 🆕 For beginners: don't force advanced/specialized courses
@@ -3939,7 +3940,7 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
       // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
       // but RAG didn't select
-const allProtectedMatched = courses.filter(c => c._titleMatch === true);
+const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
       for (const tm of allProtectedMatched) {
         if (!relevantCourses.find(rc => rc.id === tm.id)) {
           // 🆕 For beginners: don't force advanced/specialized courses
@@ -3959,7 +3960,7 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true);
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
-const protectedOnly = courses.filter((c) => c._titleMatch === true);
+const protectedOnly = courses.filter((c) => c._titleMatch === true || c._lessonMatch === true);
         
         if (protectedOnly.length > 0) {
           console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
