@@ -3513,9 +3513,14 @@ if (phoneticExtra.length > 0) {
     // ALTERNATIVE = user wants different results → exclude previous
     // ═══════════════════════════════════════════════════════════
     let allPreviouslyShown = false;
-    const followUpIsClarification = analysis.is_follow_up && analysis.follow_up_type === "CLARIFY";
+const _altNorm = normalizeArabic((message || "").toLowerCase());
+    const _isClearAlt = ["تاني", "تانى", "غيرهم", "غيرها", "غيره", "كمان", "بديل", "حاجه تانيه", "حاجة تانية", "فيه غير", "في تاني", "فى تانى"].some(w => _altNorm.includes(normalizeArabic(w)));
+    const followUpIsClarification = analysis.is_follow_up && analysis.follow_up_type === "CLARIFY" && !_isClearAlt;
     if (followUpIsClarification) {
       console.log(`🧠 FIX #103: Follow-up is CLARIFICATION → showing ALL results (no exclusion)`);
+    }
+    if (_isClearAlt && analysis.follow_up_type === "CLARIFY") {
+      console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
     if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds);
@@ -3536,8 +3541,8 @@ if (filtered.length > 0) {
       const bestRemainingScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
       const bestOverallScore = Math.max(...courses.map(c => c.relevanceScore || 0));
 
-      if (bestRemainingScore < bestOverallScore * 0.10 || bestRemainingScore < 30) {
-        console.log(`🔄 Follow-up: remaining too weak (${bestRemainingScore} vs ${bestOverallScore}) → allPreviouslyShown`);
+if (bestRemainingScore < 10) {
+        console.log(`🔄 Follow-up: remaining too weak (${bestRemainingScore}) → allPreviouslyShown`);
         allPreviouslyShown = true;
         courses = courses.filter(c => prevIds.has(c.id));
       } else {
