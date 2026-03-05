@@ -826,7 +826,7 @@ const fullQuery = normalizeArabic(
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-if (titleNorm.includes(nt)) {
+if (isWordBoundaryMatch(titleNorm, nt)) {
   score += 150;
   isTitleMatch = true;
 }
@@ -1303,7 +1303,7 @@ const meaningful = searchTerms.filter(
         for (const term of meaningful) {
           const nt = normalizeArabic(term.toLowerCase());
           if (nt.length <= 2) continue;
-          if (titleNorm.includes(nt)) score += 500;
+          if (isWordBoundaryMatch(titleNorm, nt)) score += 500;
           if (subtitleNorm.includes(nt)) score += 100;
           if (domainNorm.includes(nt)) score += 80;
           if (keywordsNorm.includes(nt)) score += 60;
@@ -2809,6 +2809,41 @@ ${chunkContext}
   }
 }
 
+// ═══ FIX: Word-boundary matching to prevent false positives ═══
+// "وورك" inside "ووركس" = FALSE | "فوتوشوب" inside "الفوتوشوب" = TRUE
+function isWordBoundaryMatch(textNorm, term) {
+  if (!textNorm || !term || term.length <= 2) return false;
+  if (!textNorm.includes(term)) return false;
+  
+  const matchIndex = textNorm.indexOf(term);
+  const charBefore = matchIndex > 0 ? textNorm[matchIndex - 1] : ' ';
+  const charAfter = matchIndex + term.length < textNorm.length ? textNorm[matchIndex + term.length] : ' ';
+  const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
+  const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + term.length) === textNorm.length;
+  
+  // Exact word match
+  if (isWordBoundaryBefore && isWordBoundaryAfter) return true;
+  
+  // Known Arabic prefixes (ال، بال، وال...)
+  if (!isWordBoundaryBefore && isWordBoundaryAfter) {
+    const lastSpaceIdx = textNorm.lastIndexOf(' ', matchIndex - 1);
+    const wordStart = lastSpaceIdx >= 0 ? lastSpaceIdx + 1 : 0;
+    const prefix = textNorm.substring(wordStart, matchIndex);
+    const knownPrefixes = ['ال', 'بال', 'وال', 'فال', 'كال', 'لل', 'و', 'ف', 'ب', 'ل', 'ك'];
+    if (knownPrefixes.includes(prefix)) return true;
+  }
+  
+  // Known Arabic suffixes (ة، ات، ين...)
+  if (isWordBoundaryBefore && !isWordBoundaryAfter) {
+    const nextSpaceIdx = textNorm.indexOf(' ', matchIndex + term.length);
+    const wordEnd = nextSpaceIdx >= 0 ? nextSpaceIdx : textNorm.length;
+    const suffix = textNorm.substring(matchIndex + term.length, wordEnd);
+    const knownSuffixes = ['ه', 'ة', 'ات', 'ين', 'ون', 'ي', 'يه', 'يا'];
+    if (knownSuffixes.includes(suffix)) return true;
+  }
+  
+  return false;
+}
 
 
 function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null) {
@@ -2898,7 +2933,7 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLe
 
       const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
       if (words.length === 0) return false;
-      return words.length === 1 ? titleNorm.includes(words[0]) : words.every(w => titleNorm.includes(w));
+      return words.length === 1 ? isWordBoundaryMatch(titleNorm, words[0]) : words.every(w => isWordBoundaryMatch(titleNorm, w));
     });
     if (c._titleMatch) {
       c.relevanceScore = (c.relevanceScore || 0) + 500;
