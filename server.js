@@ -1710,7 +1710,10 @@ function updateSessionMemory(sessionId, updates) {
   if (updates.lastSearchTopic) {
     mem.lastSearchTopic = updates.lastSearchTopic;
   }
-if (updates.lastShownDiplomaIds) {
+if (updates.lastShownCourseIds) {
+    mem.lastShownCourseIds = updates.lastShownCourseIds;
+  }
+  if (updates.lastShownDiplomaIds) {
     mem.lastShownDiplomaIds = updates.lastShownDiplomaIds;
   }
 }
@@ -3573,9 +3576,9 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
     if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
-      const prevIds = new Set(sessionMem.lastShownCourseIds);
+const filtered = courses.filter(c => !prevIds.has(String(c.id)));
       const beforeCount = courses.length;
-      const filtered = courses.filter(c => !prevIds.has(c.id));
+const filtered = courses.filter(c => !prevIds.has(String(c.id)));
 
 if (filtered.length > 0) {
     const coreTerms = termsToSearch.filter(t => 
@@ -3609,7 +3612,7 @@ if (filtered.length > 0) {
     } else {
       console.log(`🔄 Follow-up: 0 relevant unseen courses → allPreviouslyShown`);
       allPreviouslyShown = true;
-      courses = courses.filter(c => prevIds.has(c.id));
+courses = courses.filter(c => prevIds.has(String(c.id)));
     }
 }
 
@@ -3619,10 +3622,10 @@ if (filtered.length > 0) {
 }
 
     // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
-    if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
-      const prevDipIds = new Set(sessionMem.lastShownDiplomaIds);
+if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
+      const prevDipIds = new Set((sessionMem.lastShownDiplomaIds || []).map(String));
       const beforeDipCount = diplomas.length;
-      diplomas = diplomas.filter(d => !prevDipIds.has(d.id));
+      diplomas = diplomas.filter(d => !prevDipIds.has(String(d.id)));
       console.log(`🎓 FIX #115c: Excluded ${beforeDipCount - diplomas.length} shown diplomas → ${diplomas.length} remaining`);
     }
     }
@@ -3696,8 +3699,8 @@ const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) 
 
 // 🆕 FIX #102: Re-check allPreviouslyShown using ORIGINAL search results (no extra API call)
 if (allPreviouslyShown) {
-  const prevIdSet = new Set(sessionMem.lastShownCourseIds || []);
-  const genuinelyNew = courses.filter(c => !prevIdSet.has(c.id));
+  const prevIdSet = new Set((sessionMem.lastShownCourseIds || []).map(String));
+  const genuinelyNew = courses.filter(c => !prevIdSet.has(String(c.id)));
   
   if (genuinelyNew.length > 0) {
     // 🆕 FIX #115d: Re-check topic relevance (same strict filter as above)
@@ -3995,13 +3998,14 @@ updateSessionMemory(sessionId, {
         userLevel: analysis.user_level,
         topics: analysis.topics,
         interests: termsToSearch.slice(0, 3),
-        lastShownCourseIds: [...new Set([
-  ...(sessionMem.lastShownCourseIds || []),
-  ...relevantCourses.map(c => c.id),
+lastShownCourseIds: [...new Set([
+  ...(sessionMem.lastShownCourseIds || []).map(String),
+  ...relevantCourses.map(c => String(c.id)),
 ])],
-        lastShownDiplomaIds: [...new Set([
-  ...(sessionMem.lastShownDiplomaIds || []),
-  ...relevantDiplomas.map(d => d.id),
+
+lastShownDiplomaIds: [...new Set([
+  ...(sessionMem.lastShownDiplomaIds || []).map(String),
+  ...relevantDiplomas.map(d => String(d.id)),
 ])],
       });
 
