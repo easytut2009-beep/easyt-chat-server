@@ -3349,6 +3349,24 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     skipUpsell = true;
   }
 
+
+// 🆕 FIX #112: Force follow-up for clear alternative patterns
+// "في تاني" / "غيرهم" / "كمان" = ALWAYS follow-up when previous search exists
+const _ffNorm = normalizeArabic((message || "").toLowerCase());
+const _forceAltWords = ["تاني", "تانى", "غيرهم", "غيرها", "غيره", "كمان", "بديل", "حاجه تانيه", "حاجة تانية", "فيه غير", "في غير"];
+const _isForceAlt = _forceAltWords.some(w => _ffNorm.includes(normalizeArabic(w)));
+
+if (_isForceAlt && !analysis.is_follow_up 
+    && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+  console.log(`🔄 FIX #112: Force follow-up for alternative pattern "${message}"`);
+  analysis.is_follow_up = true;
+  analysis.follow_up_type = "ALTERNATIVE";
+  if (!analysis.search_terms || analysis.search_terms.length === 0) {
+    analysis.search_terms = [...sessionMem.lastSearchTerms];
+  }
+}
+
+
 // Follow-up handling
 const gptSaysNewSearch = !analysis.is_follow_up && analysis.search_terms && analysis.search_terms.length > 0;
 
@@ -3528,21 +3546,29 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       const filtered = courses.filter(c => !prevIds.has(c.id));
 
 if (filtered.length > 0) {
-    // 🆕 FIX #110: Only keep courses where search terms appear in title/subtitle
-    // Prevents showing CapCUT/Whiteboard when user searched "فوتوشوب"
     const coreTerms = termsToSearch.filter(t => 
       t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
     );
     
+    // 🆕 FIX #113: Check title + subtitle + domain + keywords + description
     const relevantFiltered = filtered.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
       
-      const titleNorm = normalizeArabic((c.title || '').toLowerCase());
-      const subtitleNorm = normalizeArabic((c.subtitle || '').toLowerCase());
+      // Check ALL searchable fields, not just title/subtitle
+      const searchableText = normalizeArabic(
+        [c.title, c.subtitle, c.domain, c.keywords, c.description]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+      );
       
       return coreTerms.some(t => {
         const nt = normalizeArabic(t.toLowerCase());
-        return nt.length > 2 && (titleNorm.includes(nt) || subtitleNorm.includes(nt));
+        if (nt.length <= 2) return false;
+        if (searchableText.includes(nt)) return true;
+        // Also check English terms case-insensitive
+        if (/^[a-zA-Z]+$/.test(t) && searchableText.includes(t.toLowerCase())) return true;
+        return false;
       });
     });
     
@@ -3745,9 +3771,19 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
           }
 } else if (analysis.is_follow_up && !followUpIsClarification && courses.length > 0) {
-          // 🆕 FIX #110: Only show titleMatch/lessonMatch courses — never random ones
-          const relevantRemaining = courses.filter(c => c._titleMatch || c._lessonMatch);
-          if (relevantRemaining.length > 0) {
+      // 🆕 FIX #114: For ALTERNATIVE follow-ups, show remaining courses
+      // They passed search + relevance filter → they're relevant enough
+      console.log(`ℹ️ FIX #114: ALTERNATIVE follow-up — showing ${courses.length} remaining courses`);
+      relevantCourses = courses.slice(0, 3);
+      if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+        const variety = [
+          "كمان عندنا الكورسات دي ممكن تفيدك 👇",
+          "شوف الكورسات دي كمان 🎯",
+          "دول كمان كورسات تانية في نفس الموضوع 👇",
+          "ممكن كمان تستفيد من الكورسات دي 💡",
+        ];
+        recommendationMessage = variety[Math.floor(Math.random() * variety.length)];
+      }
             console.log(`ℹ️ FIX #62v3: ALTERNATIVE follow-up — ${relevantRemaining.length} relevant courses`);
             relevantCourses = relevantRemaining.slice(0, 3);
             if (!recommendationMessage || recommendationMessage.trim().length < 10) {
