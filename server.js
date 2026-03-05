@@ -811,19 +811,13 @@ function getSmartCategoryFromCourses(detectedCategory) {
 }
 
 
-// 🆕 FIX #118+#123: Smart category detection with session memory
-function detectCategoryFromContext(analysis, courses, searchTerms, sessionMem = null) {
+// 🆕 FIX #118: Smart category detection with multiple fallbacks
+function detectCategoryFromContext(analysis, courses, searchTerms) {
   // Strategy 1: GPT detected category
   let cat = getSmartCategoryFromCourses(analysis?.detected_category);
   if (cat) {
     console.log(`📂 FIX #118: Category from GPT: "${cat.name}"`);
     return cat;
-  }
-
-  // 🆕 Strategy 1.5: From session memory (saved from previous search)
-  if (sessionMem && sessionMem.lastDetectedCategory) {
-    console.log(`📂 FIX #123: Category from session memory: "${sessionMem.lastDetectedCategory.name}"`);
-    return sessionMem.lastDetectedCategory;
   }
 
   // Strategy 2: From top course's domain field
@@ -1705,7 +1699,6 @@ sessionMemory.set(sessionId, {
       lastSearchTopic: null,
       lastShownCourseIds: [],
       lastShownDiplomaIds: [],
-      lastDetectedCategory: null,
       userLevel: null,
       interests: [],
       messageCount: 0,
@@ -1744,11 +1737,8 @@ function updateSessionMemory(sessionId, updates) {
 if (updates.lastShownCourseIds) {
     mem.lastShownCourseIds = updates.lastShownCourseIds;
   }
-if (updates.lastShownDiplomaIds) {
+  if (updates.lastShownDiplomaIds) {
     mem.lastShownDiplomaIds = updates.lastShownDiplomaIds;
-  }
-  if (updates.lastDetectedCategory) {
-    mem.lastDetectedCategory = updates.lastDetectedCategory;
   }
 }
 
@@ -3725,7 +3715,7 @@ if (allPreviouslyShown && analysis.is_follow_up) {
     earlyExitFollowUp = true;
 
     const topic97 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
-const cat97 = detectCategoryFromContext(analysis, courses, termsToSearch, sessionMem);
+const cat97 = detectCategoryFromContext(analysis, courses, termsToSearch);
 
 reply = `دي أبرز الكورسات اللي رشحتهالك 😊<br>`;
 reply += `لو حابب تشوف المزيد، تقدر تتصفح التصنيف من اللينك تحت 👇<br><br>`;
@@ -3743,7 +3733,6 @@ updateSessionMemory(sessionId, {
         userLevel: analysis.user_level,
         topics: analysis.topics,
         lastShownCourseIds: sessionMem.lastShownCourseIds,
-        lastDetectedCategory: cat97,
     });
 }
 
@@ -3824,7 +3813,7 @@ const _topicRelevantNew = genuinelyNew.filter(c => {
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
       console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — no new results`);
       const topic93 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
-const cat93 = detectCategoryFromContext(analysis, courses, termsToSearch, sessionMem);
+const cat93 = detectCategoryFromContext(analysis, courses, termsToSearch);
 
 
       reply = `دول كل الكورسات اللي عندنا عن ${topic93 || "الموضوع ده"} 😊<br>`;
@@ -3845,7 +3834,6 @@ updateSessionMemory(sessionId, {
         userLevel: analysis.user_level,
         topics: analysis.topics,
         lastShownCourseIds: sessionMem.lastShownCourseIds,
-        lastDetectedCategory: cat93,
       });
 
       } else if (courses.length > 0 || diplomas.length > 0) {
@@ -4022,7 +4010,7 @@ const _topicRelevant = courses.filter(c => {
 
 // ✅ Category suggestion — only when courses ARE found
       if (relevantCourses.length > 0 || relevantDiplomas.length > 0) {
-const cat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch, sessionMem);
+const cat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch);
 
         if (cat) {
           reply += `<br><br>📂 ممكن كمان تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
@@ -4031,7 +4019,7 @@ const cat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch, 
 
 
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch, sessionMem);
+let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch);
 
         const topicName = extractMainTopic(termsToSearch) || "الموضوع ده";
         if (!noResultCat && _topDomainBeforeFilter) {
@@ -4085,7 +4073,6 @@ let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch, se
       }
 
 const mainTopic = extractMainTopic(termsToSearch);
-const _savedCat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch, sessionMem);
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: contextResult.detectedTopic || mainTopic,
@@ -4101,7 +4088,6 @@ lastShownDiplomaIds: [...new Set([
   ...(sessionMem.lastShownDiplomaIds || []).map(String),
   ...relevantDiplomas.map(d => String(d.id)),
 ])],
-        lastDetectedCategory: _savedCat,
       });
 
 } else {
@@ -4132,7 +4118,7 @@ lastShownDiplomaIds: [...new Set([
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات  ←</a>`;
         }
 } else {
-let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch, sessionMem);
+let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
 
         if (!outerCat && _topDomainBeforeFilter) {
           outerCat = detectRelevantCategory(_topDomainBeforeFilter);
