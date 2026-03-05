@@ -3080,46 +3080,7 @@ function generateChatSuggestions(action, analysis, termsToSearch, hasResults) {
     return [`عايز كورس ${topic} 📘`, "📂 التصنيفات", "🎓 الدبلومات"];
   }
   return ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "📂 التصنيفات"];
-}    if (analysis.detected_category) {
-      const cat = getSmartCategoryFromCourses(analysis.detected_category);
-      if (cat) suggestions.push(`📂 كورسات ${cat.name}`);
-    }
-    suggestions.push("ازاي ادفع؟ 💳");
-  }
-
-  else if (action === "SEARCH" && !hasResults) {
-    suggestions.push("📂 التصنيفات");
-    suggestions.push("🎓 الدبلومات");
-    suggestions.push("ازاي ادفع؟ 💳");
-  }
-
-  else if (action === "SUBSCRIPTION") {
-    suggestions.push("عايز كورس 📘");
-    suggestions.push("🎓 الدبلومات");
-    suggestions.push("📂 التصنيفات");
-  }
-
-  else if (action === "DIPLOMAS") {
-    suggestions.push("عايز كورس 📘");
-    suggestions.push("ازاي ادفع؟ 💳");
-    suggestions.push("📂 التصنيفات");
-  }
-
-  else if (action === "CATEGORIES") {
-    suggestions.push("عايز كورس 📘");
-    suggestions.push("🎓 الدبلومات");
-    suggestions.push("ازاي ادفع؟ 💳");
-  }
-
-  else {
-    suggestions.push("عايز اتعلم حاجة 📘");
-    suggestions.push("🎓 الدبلومات");
-    suggestions.push("📂 التصنيفات");
-  }
-
-  return suggestions.slice(0, 3);
 }
-
 
 // ═══════════════════════════════════
 // Response Cache — same question = same answer
