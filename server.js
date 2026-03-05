@@ -3651,7 +3651,7 @@ if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0)
   }
 
   // 🆕 FIX #117: When all prev shown, only re-show title/lesson matches (not weak keyword matches)
-  if (allPreviouslyShown) {
+if (typeof allPreviouslyShown !== 'undefined' && allPreviouslyShown) {
       const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
       console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
       if (_strongMatches.length > 0) {
