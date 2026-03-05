@@ -607,31 +607,24 @@ const allTerms = prepareSearchTerms(searchTerms);
 
 const limitedTerms = allTerms.slice(0, 6);
 
-    const cols =
-      limitedTerms.length > 6
-        ? ["title", "subtitle", "description", "domain", "keywords"]
-        : [
-            "title",
-            "description",
-            "subtitle",
-            "full_content",
-            "page_content",
-            "syllabus",
-            "objectives",
-            "domain",
-            "keywords",
-          ];
+// 🔧 Phase 1: Search core fields only
+    const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+    const deepCols = [
+      "title", "description", "subtitle",
+      "full_content", "page_content", "syllabus",
+      "objectives", "domain", "keywords",
+    ];
 
-    const orFilters = limitedTerms
-      .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
+    const coreFilters = limitedTerms
+      .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
-
 
     const ilikePromise = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .or(orFilters)
+      .or(coreFilters)
       .limit(30);
+
 
     const semanticPromise = openai
       ? (async () => {
@@ -647,8 +640,7 @@ const embResp = await openai.embeddings.create({
               match_count: 10,
             });
             return data || [];
-          } catch (e) {
-            return [];
+          } catch (e) {            return [];
           }
         })()
       : Promise.resolve([]);
@@ -662,6 +654,36 @@ const embResp = await openai.embeddings.create({
     if (error) return [];
 
     let allCourses = courses || [];
+
+
+// 🔧 Phase 2: If few core results, expand to deep content (syllabus, full_content, etc.)
+    if (allCourses.length < 3 && limitedTerms.length <= 4) {
+      console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
+      
+      const deepCols = [
+        "title", "description", "subtitle",
+        "full_content", "page_content", "syllabus",
+        "objectives", "domain", "keywords",
+      ];
+      
+      const deepFilters = limitedTerms
+        .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
+        .join(",");
+
+      const { data: deepResults } = await supabase
+        .from("courses")
+        .select(COURSE_SELECT_COLS)
+        .or(deepFilters)
+        .limit(30);
+
+      if (deepResults && deepResults.length > 0) {
+        const existingIds = new Set(allCourses.map(c => c.id));
+        const newResults = deepResults.filter(c => !existingIds.has(c.id));
+        allCourses = [...allCourses, ...newResults];
+        console.log(`🔍 Phase 2 added ${newResults.length} deep results`);
+      }
+    }
+
     const semanticMap = new Map();
 
     if (semanticResults.length > 0) {
