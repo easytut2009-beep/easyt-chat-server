@@ -3457,11 +3457,8 @@ if (phoneticExtra.length > 0) {
       searchDiplomas(termsToSearch),
     ]);
 
-    // Lesson search — only if courses didn't find enough
-    let lessonResults = [];
-    if (courses.length < 3) {
-      lessonResults = await searchLessonsInCourses(termsToSearch);
-    }
+// 🆕 FIX #111: Always search lessons — finds content inside course lessons
+    let lessonResults = await searchLessonsInCourses(termsToSearch);
 
     // Priority title search — only if still no strong matches
     let priorityCourses = [];
@@ -3531,29 +3528,35 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       const filtered = courses.filter(c => !prevIds.has(c.id));
 
 if (filtered.length > 0) {
-    // 🆕 FIX: Skip quality gate for follow-ups — user explicitly asked for more
-    // If they exist and have titleMatch, always show them
-    const hasTitle = filtered.some(c => c._titleMatch);
+    // 🆕 FIX #110: Only keep courses where search terms appear in title/subtitle
+    // Prevents showing CapCUT/Whiteboard when user searched "فوتوشوب"
+    const coreTerms = termsToSearch.filter(t => 
+      t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+    );
     
-    if (hasTitle) {
-      // titleMatch courses are always relevant — show them
-      courses = filtered;
-      console.log(`🔄 Follow-up: ${filtered.length} new courses (has titleMatch) → showing all`);
+    const relevantFiltered = filtered.filter(c => {
+      if (c._titleMatch || c._lessonMatch) return true;
+      
+      const titleNorm = normalizeArabic((c.title || '').toLowerCase());
+      const subtitleNorm = normalizeArabic((c.subtitle || '').toLowerCase());
+      
+      return coreTerms.some(t => {
+        const nt = normalizeArabic(t.toLowerCase());
+        return nt.length > 2 && (titleNorm.includes(nt) || subtitleNorm.includes(nt));
+      });
+    });
+    
+    if (relevantFiltered.length > 0) {
+      courses = relevantFiltered;
+      console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
     } else {
-      // No titleMatch — apply lenient quality gate (10% instead of 25%)
-      const bestRemainingScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
-      const bestOverallScore = Math.max(...courses.map(c => c.relevanceScore || 0));
-
-if (bestRemainingScore < 10) {
-        console.log(`🔄 Follow-up: remaining too weak (${bestRemainingScore}) → allPreviouslyShown`);
-        allPreviouslyShown = true;
-        courses = courses.filter(c => prevIds.has(c.id));
-      } else {
-        courses = filtered;
-        console.log(`🔄 Follow-up: ${filtered.length} new courses → showing`);
-      }
+      console.log(`🔄 Follow-up: 0 relevant unseen courses → allPreviouslyShown`);
+      allPreviouslyShown = true;
+      courses = courses.filter(c => prevIds.has(c.id));
     }
-} else {
+}
+
+ else {
     console.log("FIX93: All courses were prev shown → showing original results");
     allPreviouslyShown = true;
 }
@@ -3742,10 +3745,17 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
           }
 } else if (analysis.is_follow_up && !followUpIsClarification && courses.length > 0) {
-          console.log(`ℹ️ FIX #62v3 skipped — ALTERNATIVE follow-up with ${courses.length} courses available`);
-          relevantCourses = courses.slice(0, 3);
-          if (!recommendationMessage || recommendationMessage.trim().length < 10) {
-            recommendationMessage = "كمان عندنا الكورسات دي ممكن تفيدك 👇";
+          // 🆕 FIX #110: Only show titleMatch/lessonMatch courses — never random ones
+          const relevantRemaining = courses.filter(c => c._titleMatch || c._lessonMatch);
+          if (relevantRemaining.length > 0) {
+            console.log(`ℹ️ FIX #62v3: ALTERNATIVE follow-up — ${relevantRemaining.length} relevant courses`);
+            relevantCourses = relevantRemaining.slice(0, 3);
+            if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+              recommendationMessage = "كمان عندنا الكورسات دي ممكن تفيدك 👇";
+            }
+          } else {
+            console.log(`ℹ️ FIX #62v3: ALTERNATIVE follow-up — no relevant courses left`);
+            // relevantCourses stays empty → "no results" block will handle it
           }
         } else {
           console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
@@ -5900,10 +5910,17 @@ async function searchChunksByText(
 ) {
   if (!supabase || !terms || terms.length === 0) return [];
   try {
-    const meaningful = terms.filter((t) => t.length > 2);
+const meaningful = terms.filter((t) => t.length > 2);
     if (meaningful.length === 0) return [];
 
-    const orFilters = meaningful
+    // 🆕 FIX #111: Add normalized Arabic variants for better matching
+    const allVariants = [...new Set([
+      ...meaningful,
+      ...meaningful.map(t => normalizeArabic(t)),
+      ...meaningful.map(t => applyArabicCorrections(t)),
+    ])].filter(t => t.length > 2);
+
+    const orFilters = allVariants
       .map((t) => `content.ilike.%${t}%`)
       .join(",");
 
