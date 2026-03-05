@@ -2973,24 +2973,85 @@ c.relevanceScore = (c.relevanceScore || 0) + 400;
   }
 
 
-// 🆕 FIX: Beginner scoring — boost basics, penalize advanced
+// 🆕 FIX: Beginner scoring — domain-aware boost/penalty
   if (userLevel === "مبتدئ") {
     console.log(`🎓 Beginner mode: adjusting scores for ${courses.length} courses`);
+    
+    // Detect domain from search terms
+    const _beginnerTermsJoined = normalizeArabic(termsToSearch.join(" ").toLowerCase());
+    const _isProgrammingDomain = /برمج|program|كود|code|بايثون|python|جافا|java|تطوير/.test(_beginnerTermsJoined);
+    const _isDesignDomain = /تصميم|جرافيك|graphic|design|فوتوشوب|photoshop|ديزاين/.test(_beginnerTermsJoined);
+    
+    if (_isProgrammingDomain) console.log(`   📌 Detected domain: PROGRAMMING`);
+    if (_isDesignDomain) console.log(`   📌 Detected domain: DESIGN`);
+    
     for (const c of courses) {
       const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
       const combined = titleNorm + " " + subtitleNorm;
       
-      // Boost beginner-friendly courses
+      // ═══ Generic beginner boost ═══
       if (/اساسيات|مبادئ|مقدم|من الصفر|للمبتدئين|beginner|basics|fundamentals|introduction/.test(combined)) {
         c.relevanceScore = (c.relevanceScore || 0) + 300;
         console.log(`   🟢 Beginner boost: "${c.title}" +300`);
       }
       
-      // Penalize advanced/specialized courses
+      // ═══ Generic advanced penalty ═══
       if (/احتراف|متقدم|advanced|professional|متخصص/.test(combined)) {
         c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
         console.log(`   🔴 Advanced penalty: "${c.title}" -400`);
+      }
+      
+      // ═══ Programming domain — beginner-specific ═══
+      if (_isProgrammingDomain) {
+        // Python = THE beginner language
+        if (/بايثون|python/.test(combined)) {
+          c.relevanceScore = (c.relevanceScore || 0) + 500;
+          console.log(`   🟢 Python beginner boost: "${c.title}" +500`);
+        }
+        // JavaScript = acceptable for beginners
+        if (/جافا\s*سكريبت|javascript/.test(combined) && !/جافا(?!\s*سكريبت)/.test(combined)) {
+          c.relevanceScore = (c.relevanceScore || 0) + 200;
+          console.log(`   🟢 JS beginner boost: "${c.title}" +200`);
+        }
+        // Ruby = NOT for beginners (even if title says "أساسيات")
+        if (/روبي|ruby/.test(combined)) {
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 1000);
+          c._titleMatch = false;
+          console.log(`   🔴 Ruby beginner penalty: "${c.title}" -1000, titleMatch removed`);
+        }
+        // C++ = NOT for beginners
+        if (/سي\s*بلس\s*بلس|c\s*\+\s*\+/.test(combined)) {
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 1000);
+          c._titleMatch = false;
+          console.log(`   🔴 C++ beginner penalty: "${c.title}" -1000, titleMatch removed`);
+        }
+        // Swift/Kotlin/Assembly/Rust/Go = NOT for beginners
+        if (/سويفت|swift|كوتلن|kotlin|assembly|اسمبلي|rust|go\s*lang/.test(combined)) {
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 800);
+          c._titleMatch = false;
+          console.log(`   🔴 Advanced lang penalty: "${c.title}" -800, titleMatch removed`);
+        }
+      }
+      
+      // ═══ Design domain — beginner-specific ═══
+      if (_isDesignDomain) {
+        // "أساسيات التصميم" or "فوتوشوب" = great for beginners
+        if (/فوتوشوب|photoshop/.test(combined)) {
+          c.relevanceScore = (c.relevanceScore || 0) + 400;
+          console.log(`   🟢 Photoshop beginner boost: "${c.title}" +400`);
+        }
+        // Infographic = specialized, not for beginners
+        if (/انفوجرافيك|infographic/.test(combined)) {
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 500);
+          c._titleMatch = false;
+          console.log(`   🔴 Infographic beginner penalty: "${c.title}" -500`);
+        }
+        // Motion/3D = advanced for beginners
+        if (/موشن\s*جرافيك|motion\s*graphic|ثري\s*دي|3d|ثلاثي\s*الابعاد/.test(combined)) {
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
+          console.log(`   🔴 Motion/3D beginner penalty: "${c.title}" -400`);
+        }
       }
     }
   }
@@ -3476,14 +3537,28 @@ let termsToSearch = [...new Set(analysis.search_terms)];
       });
       
       if (_diplomaTopicTerms.length > 0) {
-        const _titleMatchedDiplomas = diplomas.filter(d => {
+const _titleMatchedDiplomas = diplomas.filter(d => {
           const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+          const titleLower = (d.title || '').toLowerCase();
           return _diplomaTopicTerms.some(t => {
             const nt = normalizeArabic(t.toLowerCase());
             if (nt.length <= 2) return false;
+            // Check 1: Full term in title
             if (titleNorm.includes(nt)) return true;
-            // Also check English terms
-            if (/^[a-zA-Z]+$/.test(t) && (d.title || '').toLowerCase().includes(t.toLowerCase())) return true;
+            // Check 2: English full term in title
+            if (/^[a-zA-Z\s]+$/.test(t) && titleLower.includes(t.toLowerCase())) return true;
+            // Check 3: Individual Arabic words from multi-word terms
+            const arabicWords = nt.split(/\s+/).filter(w => w.length > 2);
+            if (arabicWords.length > 1 && arabicWords.some(w => titleNorm.includes(w))) {
+              console.log(`🎓 Diploma word-match: "${d.title}" matched word from "${t}"`);
+              return true;
+            }
+            // Check 4: Individual English words from multi-word terms
+            const engWords = t.split(/\s+/).filter(w => /^[a-zA-Z]{3,}$/.test(w));
+            if (engWords.length > 0 && engWords.some(w => titleLower.includes(w.toLowerCase()))) {
+              console.log(`🎓 Diploma eng-word-match: "${d.title}" matched eng word from "${t}"`);
+              return true;
+            }
             return false;
           });
         });
@@ -3499,13 +3574,22 @@ if (_titleMatchedDiplomas.length > 0) {
             const catNorm = normalizeArabic(analysis.detected_category.toLowerCase());
             const catWords = catNorm.split(/\s+/).filter(w => w.length > 2);
             
-            const _catMatchedDiplomas = diplomas.filter(d => {
+const _catMatchedDiplomas = diplomas.filter(d => {
               const titleNorm = normalizeArabic((d.title || '').toLowerCase());
               const descNorm = normalizeArabic(((d.description || '').replace(/<[^>]*>/g, '')).toLowerCase());
               const fullText = titleNorm + ' ' + descNorm;
               
               // Check if diploma is related to the detected category
-              return catWords.some(cw => fullText.includes(cw));
+              return catWords.some(cw => {
+                if (cw.length <= 2) return false;
+                // Direct include
+                if (fullText.includes(cw)) return true;
+                // Root match: "الجرافيكس" matches "الجرافيك" and vice versa
+                const ftWords = fullText.split(/\s+/).filter(w => w.length > 3);
+                return ftWords.some(fw => {
+                  return (fw.length >= 4 && cw.includes(fw)) || (cw.length >= 4 && fw.includes(cw));
+                });
+              });
             });
             
             if (_catMatchedDiplomas.length > 0) {
