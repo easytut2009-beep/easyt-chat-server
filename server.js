@@ -2264,6 +2264,36 @@ function getSmartFallback(sessionId) {
   return FALLBACK_MESSAGES[(mem.messageCount || 0) % FALLBACK_MESSAGES.length];
 }
 
+
+// ═══════════════════════════════════
+// GPT Call with Retry
+// ═══════════════════════════════════
+async function gptWithRetry(callFn, maxRetries = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await callFn();
+    } catch (error) {
+      lastError = error;
+      const isRetryable = 
+        error.status === 429 ||  // Rate limit
+        error.status === 500 ||  // Server error
+        error.status === 503 ||  // Service unavailable
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ECONNRESET';
+      
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+      
+      const waitMs = attempt * 1000; // 1s, 2s
+      console.log(`⚠️ GPT retry ${attempt}/${maxRetries} after ${waitMs}ms — ${error.message}`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+  throw lastError;
+}
+
 async function analyzeMessage(
   message,
   chatHistory,
@@ -2295,13 +2325,13 @@ async function analyzeMessage(
   ];
 
   try {
-    const resp = await openai.chat.completions.create({
+const resp = await gptWithRetry(() => openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
       response_format: { type: "json_object" },
       temperature: 0.2,
       max_tokens: 600,
-    });
+    }));
 
     const raw = resp.choices[0].message.content;
     let result;
@@ -2585,7 +2615,7 @@ ${followUpContext}
 ممنوع أسعار | ممنوع اختراع كورسات | أقصى 3 كورسات + 1 دبلومة`;
 
   try {
-    const resp = await openai.chat.completions.create({
+const resp = await gptWithRetry(() => openai.chat.completions.create({
       model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -2594,7 +2624,7 @@ ${followUpContext}
       response_format: { type: "json_object" },
       temperature: 0.3,
       max_tokens: 800,
-    });
+    }));
 
     const raw = resp.choices[0].message.content;
     let result;
@@ -3094,12 +3124,68 @@ function generateChatSuggestions(action, analysis, termsToSearch, hasResults) {
   return suggestions.slice(0, 3);
 }
 
+
+// ═══════════════════════════════════
+// Response Cache — same question = same answer
+// ═══════════════════════════════════
+const responseCache = new Map();
+const RESPONSE_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+function getResponseCacheKey(message) {
+  // Normalize: lowercase + trim + remove extra spaces + normalize Arabic
+  const norm = normalizeArabic(message.toLowerCase().trim().replace(/\s+/g, ' '));
+  // Only cache messages that are likely search queries (3+ chars, not too long)
+  if (norm.length < 3 || norm.length > 200) return null;
+  return "rc:" + norm;
+}
+
+function getCachedResponse(key) {
+  if (!key) return null;
+  const cached = responseCache.get(key);
+  if (cached && Date.now() - cached.ts < RESPONSE_CACHE_TTL) {
+    console.log(`⚡ Response cache HIT: "${key.substring(3, 40)}..."`);
+    return cached.data;
+  }
+  if (cached) responseCache.delete(key);
+  return null;
+}
+
+function setCachedResponse(key, data) {
+  if (!key) return;
+  responseCache.set(key, { data, ts: Date.now() });
+  // Cleanup old entries
+  if (responseCache.size > 100) {
+    const oldest = [...responseCache.entries()]
+      .sort((a, b) => a[1].ts - b[1].ts)[0];
+    if (oldest) responseCache.delete(oldest[0]);
+  }
+}
+
+// Cleanup every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of responseCache) {
+    if (now - entry.ts > RESPONSE_CACHE_TTL) responseCache.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
+
+// Check response cache (skip for follow-ups)
+  const cacheKey = getResponseCacheKey(message);
+  if (cacheKey && !isFollowUpMessage(message) && sessionMem.messageCount <= 1) {
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
 
   // Dialect normalization
   const dialectNormalized = normalizeDialect(message);
@@ -3393,15 +3479,23 @@ if (phoneticExtra.length > 0) {
 }
 
     // Priority title search
-    const priorityCourses = await priorityTitleSearch(termsToSearch);
-
-    // Main search
-    let [courses, diplomas, lessonResults] = await Promise.all([
+// Main search — courses includes title priority + lessons merged
+    let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
-      searchLessonsInCourses(termsToSearch),
     ]);
 
+    // Lesson search — only if courses didn't find enough
+    let lessonResults = [];
+    if (courses.length < 3) {
+      lessonResults = await searchLessonsInCourses(termsToSearch);
+    }
+
+    // Priority title search — only if still no strong matches
+    let priorityCourses = [];
+    if (!courses.some(c => c.relevanceScore >= 200)) {
+      priorityCourses = await priorityTitleSearch(termsToSearch);
+    }
 
 
     // Merge lesson results
@@ -4033,7 +4127,13 @@ const suggestions = generateChatSuggestions(
   console.log(
     `✅ Done | action=${analysis.action} | ⏱️ ${Date.now() - startTime}ms`
   );
-  return { reply, intent, suggestions };
+  
+// Cache the response (only for SEARCH results with courses)
+  if (cacheKey && analysis.action === "SEARCH" && reply.includes('border:1px solid')) {
+    setCachedResponse(cacheKey, { reply, intent, suggestions });
+  }
+
+return { reply, intent, suggestions };
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -6761,12 +6861,12 @@ const finalSystemPrompt = buildGuideSystemPrompt({
 
       // ═══ Call GPT ═══
 // ═══ Call GPT ═══
-      const completion = await openai.chat.completions.create({
+const completion = await gptWithRetry(() => openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: conv.messages,
         max_tokens: 1200,
         temperature: 0.6,
-      });
+      }));
 
       const reply = completion.choices[0].message.content;
 
