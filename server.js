@@ -332,6 +332,9 @@ function finalizeReply(html) {
   if (!html) return "";
   html = html.replace(/\n/g, "<br>");
   html = html.replace(/([.!؟،])\s*(\d+)\.\s/g, "$1<br>$2. ");
+  // 🆕 FIX: Each emoji number on its own line
+  html = html.replace(/([^\n>])\s*([1-9️⃣0-9️⃣]️⃣)/g, "$1<br>$2");
+  html = html.replace(/([^\n>])\s*([\u2776-\u2793])/g, "$1<br>$2");
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
   html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
@@ -1960,12 +1963,37 @@ detected_category لازم يكون اسم تصنيف بالظبط من القا
 حلل الرسالة → JSON فقط:
 {"action":"SEARCH|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب تصنيف من القائمة فوق يناسب الموضوع (لازم يكون اسم تصنيف من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
 
-═══ search_terms ═══
 ═══ search_terms — أهم حاجة ═══
 المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم","دورة","محتاج"
 ✅ اسم الموضوع/التقنية/الأداة فقط
 ⚠️ لازم تضيف variants متعددة عشان البحث يشتغل:
-- "ادارة" → ["ادارة", "إدارة أعمال", "management", "ادارة اعمال"]
+- "فوتوشوب" → ["فوتوشوب", "photoshop"]
+- "بايثون" → ["بايثون", "python"]
+- "ماركتنج" → ["ماركيتنج", "تسويق", "digital marketing"]
+- "جرافيك" → ["جرافيك ديزاين", "تصميم جرافيك", "graphic design"]
+⚠️ لهجات مختلفة → صحح: "ابغى بايتون" → ["بايثون","python"]
+⚠️ أخطاء إملائية → صحح: "فوتشوب" → ["فوتوشوب","photoshop"]
+⚠️ عربيزي/إنجليزي → ضيف الاتنين دايماً
+⚠️ لو المصطلح مركب من كلمتين بالعربي وليه كلمة واحدة بالإنجليزي → ابعت الإنجليزي كامل أولاً
+- "وورك فلو" → ["workflow", "وورك فلو", "أتمتة"] (❌ ممنوع "وورك" لوحدها — هتطابق SolidWorks غلط)
+- "سوليد ووركس" → ["solidworks", "سوليد ووركس"] (❌ ممنوع "وورك" لوحدها)
+- "ريأكت نيتف" → ["react native", "ريأكت نيتف"] (❌ ممنوع "ريأكت" لوحدها لو قصده native)
+ممنوع تكسّر المصطلح لكلمات منفصلة لو هتغير المعنى.
+
+═══ 🔴 فهم النية — مش الكلمة الحرفية ═══
+لما المستخدم يكتب كلمة عامة أو غامضة، افهم قصده الأرجح في سياق تعليمي:
+
+⚠️ "ادارة" وحدها → المستخدم يقصد إدارة أعمال/مشاريع/بيزنس (مش إدارة الذات اللي هي تطوير ذات)
+   search_terms: ["إدارة أعمال", "ادارة اعمال", "business management", "إدارة مشاريع", "project management"]
+   detected_category: "الإدارة العامة وإدارة الأعمال"
+
+⚠️ "ادارة الذات" → هنا بس يقصد تطوير الذات
+   search_terms: ["إدارة الذات", "تطوير الذات", "self management"]
+   detected_category: "المهارات الشخصية وتطوير الذات"
+
+القاعدة: لو الكلمة ممكن تعني مجالين مختلفين → اختار المعنى الأقرب لمجال العمل/المهنة/التقنية
+مش المعنى الأقرب لتنمية بشرية/تطوير ذات
+إلا لو المستخدم حدد صراحةً (مثلاً "ادارة الذات" / "تطوير نفسي" / "مهارات شخصية")
 - "فوتوشوب" → ["فوتوشوب", "photoshop"]
 - "بايثون" → ["بايثون", "python"]
 - "ماركتنج" → ["ماركيتنج", "تسويق", "digital marketing"]
@@ -2779,9 +2807,28 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
     const fullText = titleNorm + " " + subtitleNorm + " " + descNorm + " " + keywordsNorm;
 
     c._titleMatch = termsToSearch.some(t => {
-      const nt = normalizeArabic(t.toLowerCase());
-      if (nt.length <= 3) return false;
-      if (titleNorm.includes(nt)) return true;
+  const nt = normalizeArabic(t.toLowerCase());
+  if (nt.length <= 3) return false;
+  if (titleNorm.includes(nt)) {
+    // 🆕 FIX: Verify it's a real word match, not a substring of a different word
+    // Example: "وورك" matching inside "ووركس" = FALSE match
+    const matchIndex = titleNorm.indexOf(nt);
+    const charBefore = matchIndex > 0 ? titleNorm[matchIndex - 1] : ' ';
+    const charAfter = matchIndex + nt.length < titleNorm.length ? titleNorm[matchIndex + nt.length] : ' ';
+    const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
+    const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + nt.length) === titleNorm.length;
+    
+    // If both boundaries match → real word match
+    if (isWordBoundaryBefore && isWordBoundaryAfter) return true;
+    
+    // If only one boundary → check if the term is long enough (6+ chars) to be reliable
+    if (nt.length >= 6) return true;
+    
+    // Short term (4-5 chars) matching inside a bigger word → NOT a title match
+    console.log(`⚠️ Rejected partial match: "${nt}" inside "${titleNorm}" (not word boundary)`);
+    return false;
+  }
+
       const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
       if (words.length === 0) return false;
       return words.length === 1 ? titleNorm.includes(words[0]) : words.every(w => titleNorm.includes(w));
