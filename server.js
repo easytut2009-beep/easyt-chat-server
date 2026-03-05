@@ -3040,8 +3040,12 @@ if (courses.length > 0) {
             courses.splice(i, 1);
         }
     }
-    console.log(`🎯 Relevance filter: top=${topScore}, min=${Math.round(minRelevantScore)}, ${beforeCount} → ${courses.length} courses`);
+console.log(`🎯 Relevance filter: top=${topScore}, min=${Math.round(minRelevantScore)}, ${beforeCount} → ${courses.length} courses`);
 }
+
+  console.log(`📊 Scored ${courses.length} courses:`,
+    courses.slice(0, 5).map(c => `"${c.title}" score=${c.relevanceScore}`));
+}   // ← ده القوس اللي بيقفل scoreAndRankCourses
 
 
 function applyQualityFilters(courses) {
