@@ -3569,7 +3569,7 @@ if (_titleMatchedDiplomas.length > 0) {
 } else {
             console.log(`🎓 FIX #115a: No diploma title match → showing 0 diplomas`);
             diplomas = [];
-          }        }
+          }       
       }
     }
 
