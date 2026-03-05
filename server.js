@@ -3589,72 +3589,61 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
 console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarification=${followUpIsClarification}, lastShownIds=${JSON.stringify(sessionMem.lastShownCourseIds)}, lastShownCount=${(sessionMem.lastShownCourseIds||[]).length}`);  
-  if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
-const prevIds = new Set(sessionMem.lastShownCourseIds.map(String));
-const beforeCount = courses.length;
-const filtered = courses.filter(c => !prevIds.has(String(c.id)));
-if (filtered.length > 0) {
-    const coreTerms = termsToSearch.filter(t => 
-      t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
-    );
-    
-    // 🆕 FIX #115b: Only check PRIMARY fields (title, subtitle, domain, keywords)
-    // ❌ NOT description — "Makeup" course mentions "فوتوشوب" in description!
-const relevantFiltered = filtered.filter(c => {
-      if (c._titleMatch || c._lessonMatch) return true;
-      
-      // 🆕 FIX #116: Strict filter — title + subtitle ONLY (not domain/keywords)
-      const titleSubtitle = normalizeArabic(
-        [c.title, c.subtitle]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-      );
-      
-      return coreTerms.some(t => {
-        const nt = normalizeArabic(t.toLowerCase());
-        if (nt.length <= 2) return false;
-        if (titleSubtitle.includes(nt)) return true;
-        if (/^[a-zA-Z]+$/.test(t) && 
-            [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase().includes(t.toLowerCase())) return true;
-        return false;
-      });
-    });
-    
-    if (relevantFiltered.length > 0) {
-      courses = relevantFiltered;
-      console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
-    } else {
-      console.log(`🔄 Follow-up: 0 relevant unseen courses → allPreviouslyShown`);
-      allPreviouslyShown = true;
-courses = courses.filter(c => prevIds.has(String(c.id)));
-    }
-}
 
- else {
-    console.log("FIX93: All courses were prev shown → showing original results");
-allPreviouslyShown = true;
-}
+    if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
+      const prevIds = new Set(sessionMem.lastShownCourseIds.map(String));
+      const beforeCount = courses.length;
+      const filtered = courses.filter(c => !prevIds.has(String(c.id)));
+      
+      if (filtered.length > 0) {
+        const coreTerms = termsToSearch.filter(t => 
+          t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+        );
+        
+        const relevantFiltered = filtered.filter(c => {
+          if (c._titleMatch || c._lessonMatch) return true;
+          const titleSubtitle = normalizeArabic(
+            [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase()
+          );
+          return coreTerms.some(t => {
+            const nt = normalizeArabic(t.toLowerCase());
+            if (nt.length <= 2) return false;
+            if (titleSubtitle.includes(nt)) return true;
+            if (/^[a-zA-Z]+$/.test(t) && 
+                [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase().includes(t.toLowerCase())) return true;
+            return false;
+          });
+        });
+        
+        if (relevantFiltered.length > 0) {
+          courses = relevantFiltered;
+          console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
+        } else {
+          console.log(`🔄 Follow-up: 0 relevant unseen courses → allPreviouslyShown`);
+          allPreviouslyShown = true;
+          courses = courses.filter(c => prevIds.has(String(c.id)));
+        }
+      } else {
+        console.log("FIX93: All courses were prev shown → showing original results");
+        allPreviouslyShown = true;
+      }
 
-    // 🆕 FIX #117: When all prev shown, only re-show title/lesson matches
-    if (allPreviouslyShown) {
+      if (allPreviouslyShown) {
         const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
         console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
         if (_strongMatches.length > 0) {
-            courses = _strongMatches;
-            console.log(`🆕 FIX #117: Filtered to title/lesson matches only`);
+          courses = _strongMatches;
+          console.log(`🆕 FIX #117: Filtered to title/lesson matches only`);
         }
+      }
+
+      if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
+        const prevDipIds = new Set((sessionMem.lastShownDiplomaIds || []).map(String));
+        const beforeDipCount = diplomas.length;
+        diplomas = diplomas.filter(d => !prevDipIds.has(String(d.id)));
+        console.log(`🎓 FIX #115c: Excluded ${beforeDipCount - diplomas.length} shown diplomas → ${diplomas.length} remaining`);
+      }
     }
-
-    // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
-if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
-      const prevDipIds = new Set((sessionMem.lastShownDiplomaIds || []).map(String));
-      const beforeDipCount = diplomas.length;
-      diplomas = diplomas.filter(d => !prevDipIds.has(String(d.id)));
-      console.log(`🎓 FIX #115c: Excluded ${beforeDipCount - diplomas.length} shown diplomas → ${diplomas.length} remaining`);
-}
-  }
-
 
 // ══════════════════════════════════════════════════════════════
 // 🆕 FIX #97: EARLY EXIT for follow-ups when all courses shown
