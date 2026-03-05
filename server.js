@@ -2439,16 +2439,10 @@ const resp = await gptWithRetry(() => openai.chat.completions.create({
 function verifyCourseRelevance(course, searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return true;
 
-  // 🆕 FIX #68: Title-matched courses always pass
+  // Title-matched courses always pass
   if (course._titleMatch) return true;
 
-  if (
-    course.matchType === "lesson_title" &&
-    course.matchedLessons &&
-    course.matchedLessons.length > 0
-  ) {
-    return true;
-  }
+  // Lesson matches do NOT auto-pass — must be verified like other courses
 
 
   const courseText = normalizeArabic(
@@ -2823,8 +2817,7 @@ function applyQualityFilters(courses) {
   }
 
 const hasStrongMatch = filtered.some(c =>
-    (c.relevanceScore || 0) >= 200 || c._titleMatch || 
-    (c._lessonMatch && !c._weakLessonMatch)
+    (c.relevanceScore || 0) >= 200 || c._titleMatch
   );
 
   if (!hasStrongMatch) {
@@ -3365,8 +3358,8 @@ console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarifi
           t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
         );
         
-        const relevantFiltered = filtered.filter(c => {
-          if (c._titleMatch || c._lessonMatch) return true;
+const relevantFiltered = filtered.filter(c => {
+          if (c._titleMatch) return true;
           const titleSubtitle = normalizeArabic(
             [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase()
           );
@@ -3394,7 +3387,7 @@ console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarifi
       }
 
       if (allPreviouslyShown) {
-        const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
+const _strongMatches = courses.filter(c => c._titleMatch);
         console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
         if (_strongMatches.length > 0) {
           courses = _strongMatches;
@@ -3447,8 +3440,8 @@ updateSessionMemory(sessionId, {
 
 if (!earlyExitFollowUp) {
 
-    const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMatch);
-    console.log("🛡️ Protected courses:", savedTitleMatchCourses.length);
+const savedTitleMatchCourses = courses.filter(c => c._titleMatch);
+console.log("🛡️ Protected courses (titleMatch only):", savedTitleMatchCourses.length);
 
     if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
@@ -3590,7 +3583,7 @@ updateSessionMemory(sessionId, {
 // 🆕 FIX #63+#68: Must-show courses with title match
 const titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
-        return c._titleMatch === true || c._lessonMatch === true;
+        return c._titleMatch === true;
       });
 for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
@@ -3601,7 +3594,7 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
       // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
       // but RAG didn't select
-const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
+const allProtectedMatched = courses.filter(c => c._titleMatch === true);
       for (const tm of allProtectedMatched) {
         if (!relevantCourses.find(rc => rc.id === tm.id)) {
           relevantCourses.push(tm);
@@ -3613,7 +3606,7 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._les
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
-        const protectedOnly = courses.filter((c) => c._titleMatch === true || c._lessonMatch === true);
+const protectedOnly = courses.filter((c) => c._titleMatch === true);
         
         if (protectedOnly.length > 0) {
           console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
