@@ -3633,8 +3633,18 @@ courses = courses.filter(c => prevIds.has(String(c.id)));
 
  else {
     console.log("FIX93: All courses were prev shown → showing original results");
-    allPreviouslyShown = true;
+allPreviouslyShown = true;
 }
+
+    // 🆕 FIX #117: When all prev shown, only re-show title/lesson matches
+    if (allPreviouslyShown) {
+        const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
+        console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
+        if (_strongMatches.length > 0) {
+            courses = _strongMatches;
+            console.log(`🆕 FIX #117: Filtered to title/lesson matches only`);
+        }
+    }
 
     // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
 if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
@@ -3642,25 +3652,13 @@ if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0)
       const beforeDipCount = diplomas.length;
       diplomas = diplomas.filter(d => !prevDipIds.has(String(d.id)));
       console.log(`🎓 FIX #115c: Excluded ${beforeDipCount - diplomas.length} shown diplomas → ${diplomas.length} remaining`);
-    }
-    }
-  
-} else {
-      console.log("FIX93: All courses were prev shown → showing original results");
-      allPreviouslyShown = true;
+}
   }
 
-  // 🆕 FIX #117: When all prev shown, only re-show title/lesson matches (not weak keyword matches)
-if (typeof allPreviouslyShown !== 'undefined' && allPreviouslyShown) {
-      const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
-      console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
-      if (_strongMatches.length > 0) {
-          courses = _strongMatches;
-          console.log(`🆕 FIX #117: Filtered to title/lesson matches only`);
-      }
-  }
 
-  // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
+// ══════════════════════════════════════════════════════════════
+// 🆕 FIX #97: EARLY EXIT for follow-ups when all courses shown
+
   if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
 
 
