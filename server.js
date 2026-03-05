@@ -3584,17 +3584,18 @@ const _titleMatchedDiplomas = diplomas.filter(d => {
             // Check 2: English full term in title
             if (/^[a-zA-Z\s]+$/.test(t) && titleLower.includes(t.toLowerCase())) return true;
             // Check 3: Individual Arabic words from multi-word terms
-            const arabicWords = nt.split(/\s+/).filter(w => w.length > 2);
-            if (arabicWords.length > 1 && arabicWords.some(w => titleNorm.includes(w))) {
-              console.log(`🎓 Diploma word-match: "${d.title}" matched word from "${t}"`);
-              return true;
-            }
+const arabicWords = nt.split(/\s+/).filter(w => w.length > 2);
+if (arabicWords.length > 1 && arabicWords.every(w => titleNorm.includes(w))) {
+    console.log(` 🔖 Diploma word-match: "${d.title}" matched ALL words from "${t}"`);
+    return true;
+}
+
             // Check 4: Individual English words from multi-word terms
-            const engWords = t.split(/\s+/).filter(w => /^[a-zA-Z]{3,}$/.test(w));
-            if (engWords.length > 0 && engWords.some(w => titleLower.includes(w.toLowerCase()))) {
-              console.log(`🎓 Diploma eng-word-match: "${d.title}" matched eng word from "${t}"`);
-              return true;
-            }
+const engWords = t.split(/\s+/).filter(w => /^[a-zA-Z]{3,}$/.test(w));
+if (engWords.length > 0 && engWords.every(w => titleLower.includes(w.toLowerCase()))) {
+    console.log(` 🔖 Diploma eng-word-match: "${d.title}" matched ALL eng words from "${t}"`);
+    return true;
+}
             return false;
           });
         });
