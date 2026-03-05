@@ -3610,6 +3610,7 @@ if (!earlyExitFollowUp) {
       }
     }
 
+const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) : null;
     courses = applyQualityFilters(courses);
     console.log(`📊 After filters: ${courses.length} courses`);
 
@@ -3798,8 +3799,12 @@ const cat = getSmartCategoryFromCourses(analysis.detected_category);
 
 
 if (relevantDiplomas.length === 0 && relevantCourses.length === 0) {
-        const noResultCat = getSmartCategoryFromCourses(analysis.detected_category);
+let noResultCat = getSmartCategoryFromCourses(analysis.detected_category);
         const topicName = extractMainTopic(termsToSearch) || "الموضوع ده";
+        if (!noResultCat && _topDomainBeforeFilter) {
+          noResultCat = detectRelevantCategory(_topDomainBeforeFilter);
+          if (noResultCat) console.log(`📂 No-result: used domain "${_topDomainBeforeFilter}" → "${noResultCat.name}"`);
+        }
 
         if (noResultCat) {
           reply = `🔍 مفيش كورس متخصص حالياً عن <strong>${topicName}</strong>، بس ممكن تلاقي حاجة قريبة في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇<br><br>`;
@@ -3885,7 +3890,10 @@ updateSessionMemory(sessionId, {
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
         }
 } else {
-const outerCat = getSmartCategoryFromCourses(analysis.detected_category);
+let outerCat = getSmartCategoryFromCourses(analysis.detected_category);
+        if (!outerCat && _topDomainBeforeFilter) {
+          outerCat = detectRelevantCategory(_topDomainBeforeFilter);
+        }
         if (outerCat) {
           reply = `🔍 ممكن تلاقي كورسات في نفس المجال في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
         } else {
