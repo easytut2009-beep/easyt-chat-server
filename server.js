@@ -4043,13 +4043,27 @@ const _topicRelevant = courses.filter(c => {
           reply += `<br>💡 <strong>كورسات ممكن تفيدك لو حبيت تتعمق:</strong><br><br>`;
         }
 
-        console.log(`🧠 FIX #84: QUESTION answered + ${relevantCourses.length} courses suggested`);
-      } else {
-        // FIND_COURSE intent: current behavior
-        reply = recommendationMessage + "<br><br>";
+  // 🆕 FIX: For QUESTION intent, replace search results with chunk-source courses
+      if (analysis.user_intent === "QUESTION" && questionAnswer 
+          && questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+        const _qChunkIds = questionAnswer.relatedCourses.map(c => c.id).filter(Boolean);
+        if (_qChunkIds.length > 0) {
+          try {
+            const { data: _qFullCourses } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", _qChunkIds);
+            if (_qFullCourses && _qFullCourses.length > 0) {
+              console.log(`🎯 QUESTION FIX (SEARCH path): Using ${_qFullCourses.length} chunk-source courses instead of ${relevantCourses.length} search courses`);
+              relevantCourses = _qFullCourses;
+              relevantDiplomas = [];
+            }
+          } catch (_qErr) {
+            console.error("QUESTION FIX error:", _qErr.message);
+          }
+        }
       }
 
-      if (relevantDiplomas.length > 0) {
         relevantDiplomas.slice(0, 3).forEach((d) => {
           reply += formatDiplomaCard(d);
         });
@@ -4272,70 +4286,74 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
       if (questionAnswer && questionAnswer.answer) {
         reply = questionAnswer.answer;
 
-// FIX #85 v2: Search ALL sources (courses + lessons + diplomas)
-        if (questionTerms.length > 0) {
+// 🆕 FIX: Show courses from the answer's chunk sources (not random search results)
+        const _chunkSourceIds = (questionAnswer.relatedCourses || []).map(c => c.id).filter(Boolean);
+        
+        if (_chunkSourceIds.length > 0) {
+          // The answer came from specific courses → show THOSE as cards
           try {
-let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
-  searchCourses(questionTerms, [], null),
-  searchDiplomas(questionTerms),
-  searchLessonsInCourses(questionTerms),
-]);
+            const { data: _chunkFullCourses } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", _chunkSourceIds);
+            
+            if (_chunkFullCourses && _chunkFullCourses.length > 0) {
+              const instructors = await getInstructors();
+              reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
+              _chunkFullCourses.forEach((c, i) => {
+                reply += formatCourseCard(c, instructors, i + 1);
+              });
+              console.log(`🎯 QUESTION FIX: Showed ${_chunkFullCourses.length} chunk-source courses as cards`);
+            }
+          } catch (_chunkErr) {
+            console.error("QUESTION chunk courses error:", _chunkErr.message);
+          }
+        } else if (questionTerms.length > 0) {
+          // No chunk-source courses → fall back to general search
+          try {
+            let [_fSearchCourses, _fSearchDiplomas, _fSearchLessons] = await Promise.all([
+              searchCourses(questionTerms, [], null),
+              searchDiplomas(questionTerms),
+              searchLessonsInCourses(questionTerms),
+            ]);
 
-            // Merge lesson results into courses
-            let allCourses = [...relatedCourses];
-            if (relatedLessons && relatedLessons.length > 0) {
-              const seenIds = new Set(allCourses.map(c => c.id));
-              for (const lr of relatedLessons) {
-                const existing = allCourses.find(c => c.id === lr.id);
+            let _fAllCourses = [..._fSearchCourses];
+            if (_fSearchLessons && _fSearchLessons.length > 0) {
+              const _fSeenIds = new Set(_fAllCourses.map(c => c.id));
+              for (const lr of _fSearchLessons) {
+                const existing = _fAllCourses.find(c => c.id === lr.id);
                 if (existing) {
                   existing.matchedLessons = lr.matchedLessons;
                   existing.relevanceScore = Math.max(existing.relevanceScore || 0, lr.relevanceScore);
                 } else {
-                  allCourses.push(lr);
-                  seenIds.add(lr.id);
+                  _fAllCourses.push(lr);
+                  _fSeenIds.add(lr.id);
                 }
               }
             }
 
-            // Sort by score
-            allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-
+            _fAllCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
             const instructors = await getInstructors();
 
-
-// ✅ Diploma filtering handled by search scoring (saves 1 GPT call)
-            // Show diplomas
-            if (relatedDiplomas && relatedDiplomas.length > 0) {
+            if (_fSearchDiplomas && _fSearchDiplomas.length > 0) {
               reply += `<br><br>💡 <strong>دبلومات على المنصة هتفيدك:</strong><br>`;
-              relatedDiplomas.slice(0, 2).forEach(d => {
+              _fSearchDiplomas.slice(0, 2).forEach(d => {
                 reply += formatDiplomaCard(d);
               });
             }
 
-            // Show courses
-            const topCourses = allCourses
+            const _fTopCourses = _fAllCourses
               .filter(c => verifyCourseRelevance(c, questionTerms))
               .slice(0, 3);
 
-            if (topCourses.length > 0) {
+            if (_fTopCourses.length > 0) {
               reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
-              topCourses.forEach((c, i) => {
+              _fTopCourses.forEach((c, i) => {
                 reply += formatCourseCard(c, instructors, i + 1);
               });
             }
           } catch (searchErr) {
             console.error("FIX #85 course search error:", searchErr.message);
-          }
-        }
-
-        // Show related courses from chunks if found
-        if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
-          const alreadyShown = reply.toLowerCase();
-          for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
-            if (!alreadyShown.includes((rc.title || "").toLowerCase().substring(0, 15))) {
-              const rcUrl = rc.link || ALL_COURSES_URL;
-              reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
-            }
           }
         }
 
