@@ -3600,11 +3600,12 @@ if (filtered.length > 0) {
     
     // 🆕 FIX #115b: Only check PRIMARY fields (title, subtitle, domain, keywords)
     // ❌ NOT description — "Makeup" course mentions "فوتوشوب" in description!
-    const relevantFiltered = filtered.filter(c => {
+const relevantFiltered = filtered.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
       
-      const primaryText = normalizeArabic(
-        [c.title, c.subtitle, c.domain, c.keywords]
+      // 🆕 FIX #116: Strict filter — title + subtitle ONLY (not domain/keywords)
+      const titleSubtitle = normalizeArabic(
+        [c.title, c.subtitle]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
@@ -3613,8 +3614,9 @@ if (filtered.length > 0) {
       return coreTerms.some(t => {
         const nt = normalizeArabic(t.toLowerCase());
         if (nt.length <= 2) return false;
-        if (primaryText.includes(nt)) return true;
-        if (/^[a-zA-Z]+$/.test(t) && primaryText.includes(t.toLowerCase())) return true;
+        if (titleSubtitle.includes(nt)) return true;
+        if (/^[a-zA-Z]+$/.test(t) && 
+            [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase().includes(t.toLowerCase())) return true;
         return false;
       });
     });
@@ -3720,17 +3722,19 @@ if (allPreviouslyShown) {
     const _reCheckTerms = termsToSearch.filter(t => 
       t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
     );
-    const _topicRelevantNew = genuinelyNew.filter(c => {
+const _topicRelevantNew = genuinelyNew.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
+      // 🆕 FIX #116: title + subtitle only
       const _pText = normalizeArabic(
-        [c.title, c.subtitle, c.domain, c.keywords]
+        [c.title, c.subtitle]
           .filter(Boolean).join(' ').toLowerCase()
       );
       return _reCheckTerms.some(t => {
         const nt = normalizeArabic(t.toLowerCase());
         if (nt.length <= 2) return false;
         if (_pText.includes(nt)) return true;
-        if (/^[a-zA-Z]+$/.test(t) && _pText.includes(t.toLowerCase())) return true;
+        if (/^[a-zA-Z]+$/.test(t) && 
+            [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase().includes(t.toLowerCase())) return true;
         return false;
       });
     });
@@ -3857,10 +3861,11 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
         t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
       );
       
-      const _topicRelevant = courses.filter(c => {
+const _topicRelevant = courses.filter(c => {
         if (c._titleMatch || c._lessonMatch) return true;
+        // 🆕 FIX #116: title + subtitle only
         const _primaryText = normalizeArabic(
-          [c.title, c.subtitle, c.domain, c.keywords]
+          [c.title, c.subtitle]
             .filter(Boolean)
             .join(' ')
             .toLowerCase()
@@ -3869,7 +3874,8 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
           const nt = normalizeArabic(t.toLowerCase());
           if (nt.length <= 2) return false;
           if (_primaryText.includes(nt)) return true;
-          if (/^[a-zA-Z]+$/.test(t) && _primaryText.includes(t.toLowerCase())) return true;
+          if (/^[a-zA-Z]+$/.test(t) && 
+              [c.title, c.subtitle].filter(Boolean).join(' ').toLowerCase().includes(t.toLowerCase())) return true;
           return false;
         });
       });
