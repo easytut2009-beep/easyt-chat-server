@@ -3501,8 +3501,40 @@ if (!analysis.is_follow_up && isContextFollowUp
   }
 }
 
-// GPT handles search term extraction in analyzer
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: CATEGORIES + detected_category → SEARCH
+// "ادارة" = عايز كورسات إدارة، مش عايز يشوف قائمة التصنيفات
+// ═══════════════════════════════════════════════════════════
+if (analysis.action === "CATEGORIES" && analysis.detected_category && !skipUpsell) {
+  console.log(`🔄 FIX: CATEGORIES → SEARCH (detected_category: "${analysis.detected_category}")`);
+  analysis.action = "SEARCH";
+  analysis.user_intent = "FIND_COURSE";
+  if (!analysis.search_terms || analysis.search_terms.length === 0) {
+    const msgWords = enrichedMessage.split(/\s+/).filter(w =>
+      w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+    );
+    analysis.search_terms = msgWords.length > 0 ? msgWords : [analysis.detected_category];
+  }
+  analysis.response_message = "";
+}
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: CHAT + FIND_COURSE → SEARCH
+// "كورسات ادارة" = GPT فهم إنه عايز كورس بس حط action غلط
+// ═══════════════════════════════════════════════════════════
+if (analysis.action === "CHAT" && analysis.user_intent === "FIND_COURSE" && !skipUpsell) {
+  const hasTerms = analysis.search_terms && analysis.search_terms.length > 0;
+  const hasCat = !!analysis.detected_category;
+  if (hasTerms || hasCat) {
+    console.log(`🔄 FIX: CHAT+FIND_COURSE → SEARCH (terms=[${(analysis.search_terms||[]).join(',')}], cat="${analysis.detected_category}")`);
+    analysis.action = "SEARCH";
+    if (!hasTerms && hasCat) {
+      const catWords = analysis.detected_category.split(/\s+/).filter(w => w.length > 2);
+      analysis.search_terms = catWords;
+    }
+    analysis.response_message = "";
+  }
+}
 // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #71 + FIX #78c: Intercept vague SEARCH → smart clarification
   // ═══════════════════════════════════════════════════════════
