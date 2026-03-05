@@ -3566,44 +3566,10 @@ const _titleMatchedDiplomas = diplomas.filter(d => {
 if (_titleMatchedDiplomas.length > 0) {
           console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_titleMatchedDiplomas.length} (title match)`);
           diplomas = _titleMatchedDiplomas;
-        } else {
-          // 🆕 FIX: Before giving up, try matching by detected_category
-          // Example: user asks about "graphic" → detected_category = "الجرافيكس والتصميم"
-          // Diploma "دبلومة الجرافيك ديزاين" should match!
-          if (analysis.detected_category) {
-            const catNorm = normalizeArabic(analysis.detected_category.toLowerCase());
-            const catWords = catNorm.split(/\s+/).filter(w => w.length > 2);
-            
-const _catMatchedDiplomas = diplomas.filter(d => {
-              const titleNorm = normalizeArabic((d.title || '').toLowerCase());
-              const descNorm = normalizeArabic(((d.description || '').replace(/<[^>]*>/g, '')).toLowerCase());
-              const fullText = titleNorm + ' ' + descNorm;
-              
-              // Check if diploma is related to the detected category
-              return catWords.some(cw => {
-                if (cw.length <= 2) return false;
-                // Direct include
-                if (fullText.includes(cw)) return true;
-                // Root match: "الجرافيكس" matches "الجرافيك" and vice versa
-                const ftWords = fullText.split(/\s+/).filter(w => w.length > 3);
-                return ftWords.some(fw => {
-                  return (fw.length >= 4 && cw.includes(fw)) || (cw.length >= 4 && fw.includes(cw));
-                });
-              });
-            });
-            
-            if (_catMatchedDiplomas.length > 0) {
-              console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_catMatchedDiplomas.length} (category match: "${analysis.detected_category}")`);
-              diplomas = _catMatchedDiplomas;
-            } else {
-              console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title or category match)`);
-              diplomas = [];
-            }
-          } else {
-            console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title match, no category)`);
+} else {
+            console.log(`🎓 FIX #115a: No diploma title match → showing 0 diplomas`);
             diplomas = [];
-          }
-        }
+          }        }
       }
     }
 
@@ -4304,12 +4270,35 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
 
 
 // ✅ Diploma filtering handled by search scoring (saves 1 GPT call)
-            // Show diplomas
+// Show diplomas — only if title actually matches search topic
             if (relatedDiplomas && relatedDiplomas.length > 0) {
-              reply += `<br><br>💡 <strong>دبلومات على المنصة هتفيدك:</strong><br>`;
-              relatedDiplomas.slice(0, 2).forEach(d => {
-                reply += formatDiplomaCard(d);
+              const _qDiplomaTerms = questionTerms.filter(t => {
+                const nt = normalizeArabic(t.toLowerCase());
+                return nt.length > 2 && !/^(دبلوم|كورس|دوره|دورة|تعلم|عايز|محتاج|اعرف|شرح)/.test(nt);
               });
+              
+              let _filteredQDiplomas = relatedDiplomas;
+              if (_qDiplomaTerms.length > 0) {
+                _filteredQDiplomas = relatedDiplomas.filter(d => {
+                  const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+                  const titleLower = (d.title || '').toLowerCase();
+                  return _qDiplomaTerms.some(t => {
+                    const nt = normalizeArabic(t.toLowerCase());
+                    if (nt.length <= 2) return false;
+                    if (titleNorm.includes(nt)) return true;
+                    if (/^[a-zA-Z]+$/.test(t) && titleLower.includes(t.toLowerCase())) return true;
+                    return false;
+                  });
+                });
+                console.log(`🎓 QUESTION diploma filter: ${relatedDiplomas.length} → ${_filteredQDiplomas.length}`);
+              }
+              
+              if (_filteredQDiplomas.length > 0) {
+                reply += `<br><br>💡 <strong>دبلومات على المنصة هتفيدك:</strong><br>`;
+                _filteredQDiplomas.slice(0, 2).forEach(d => {
+                  reply += formatDiplomaCard(d);
+                });
+              }
             }
 
             // Show courses
