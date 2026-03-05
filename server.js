@@ -2814,16 +2814,16 @@ if (!c._titleMatch && c.matchedLessons && c.matchedLessons.length > 0) {
         const ln = normalizeArabic((ml.title || "").toLowerCase());
         if (!ln || ln.length < 3) continue;
         if (fullPhrase.length > 4 && (ln.includes(fullPhrase) || fullPhrase.includes(ln))) {
-          c.relevanceScore = (c.relevanceScore || 0) + 50000;
+c.relevanceScore = (c.relevanceScore || 0) + 400;
           c._fullPhraseLessonMatch = true;
-          console.log(`🎯 Phrase-match: "${c.title}" lesson="${ml.title}" → +50000`);
+          console.log(`🎯 Phrase-match: "${c.title}" lesson="${ml.title}" → +400`);
           break;
         }
         if (!c._fullPhraseLessonMatch) {
           const hits = specificTerms.filter(t => ln.includes(normalizeArabic(t.toLowerCase())));
           if (hits.length > 0) {
-            c.relevanceScore = (c.relevanceScore || 0) + (hits.length * 5000);
-            c._specificLessonMatch = true;
+            c.relevanceScore = (c.relevanceScore || 0) + (hits.length * 150);
+          c._specificLessonMatch = true;
           }
         }
       }
@@ -2849,8 +2849,8 @@ if (courses.length > 0) {
         ? Math.max(400, topScore * 0.3)
         : Math.max(50, topScore * 0.3);
     const beforeCount = courses.length;
-    for (let i = courses.length - 1; i >= 0; i--) {
-        if ((courses[i].relevanceScore || 0) < minRelevantScore) {
+for (let i = courses.length - 1; i >= 0; i--) {
+        if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMatch) {
             courses.splice(i, 1);
         }
     }
@@ -2870,7 +2870,7 @@ function applyQualityFilters(courses) {
   if (filtered.length > 3) {
     const maxScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
     const threshold = maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
-    const tf = filtered.filter(c => (c.relevanceScore || 0) >= threshold);
+const tf = filtered.filter(c => (c.relevanceScore || 0) >= threshold || c._titleMatch);
     if (tf.length >= 1) filtered = tf;
   }
 
