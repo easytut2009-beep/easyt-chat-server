@@ -3659,8 +3659,8 @@ if (allPreviouslyShown && analysis.is_follow_up) {
 
     const topic97 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
 const cat97 = getSmartCategoryFromCourses(analysis.detected_category);
-    reply = `دول أهم الكورسات اللي عندنا عن ${topic97 || "الموضوع ده"} 😊<br>`;
-    reply += `لو عايز تتعلم حاجة تانية، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+reply = `دي أبرز الكورسات اللي رشحتهالك 😊<br>`;
+reply += `لو حابب تشوف المزيد، تقدر تتصفح التصنيف من اللينك تحت 👇<br><br>`;
 
     if (cat97) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat97.name} ←</a></div>`;
