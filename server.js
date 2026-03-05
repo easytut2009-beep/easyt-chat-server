@@ -836,7 +836,7 @@ function formatCategoriesList() {
     html += `${i + 1}. <a href="${CATEGORIES[name].url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${name}</a><br>`;
   });
   html += `<br>✨ اختار تصنيف وأنا هجيبلك الكورسات المتاحة فيه!`;
-  html += `<br><br>💡 أو تصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات (+600 دورة)</a>`;
+  html += `<br><br>💡 أو تصفح <a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">جميع الدورات </a>`;
   return html;
 }
 
@@ -1674,6 +1674,7 @@ sessionMemory.set(sessionId, {
       lastSearchTerms: [],
       lastSearchTopic: null,
       lastShownCourseIds: [],
+      lastShownDiplomaIds: [],
       userLevel: null,
       interests: [],
       messageCount: 0,
@@ -1709,8 +1710,8 @@ function updateSessionMemory(sessionId, updates) {
   if (updates.lastSearchTopic) {
     mem.lastSearchTopic = updates.lastSearchTopic;
   }
-  if (updates.lastShownCourseIds) {
-    mem.lastShownCourseIds = updates.lastShownCourseIds;
+if (updates.lastShownDiplomaIds) {
+    mem.lastShownDiplomaIds = updates.lastShownDiplomaIds;
   }
 }
 
@@ -2199,7 +2200,7 @@ SEARCH=بيدور على كورس/عايز يتعلم | SUBSCRIPTION=طرق دف
 ⚠️ سياق تعليمي=SEARCH | فلوس ودفع بس=SUBSCRIPTION
 
 ═══ معلومات المنصة ═══
-+600 دورة، +27 دبلومة، +750,000 طالب، 15 دورة جديدة شهرياً
++600 دورة ومحتوى تعليمي، +27 دبلومة، +750,000 طالب، 15 دورة جديدة شهرياً
 الاشتراك السنوي: 49$ عرض رمضان (بدل 59$) = 4$/شهر — يتجدد تلقائياً بنفس السعر — إلغاء في أي وقت
 وصول كامل فوري لكل الدورات + الدبلومات + شهادات PDF بالإيميل + مجتمع طلابي
 رابط الاشتراك: https://easyt.online/p/subscriptions
@@ -3182,7 +3183,7 @@ async function smartChat(message, sessionId) {
   if (quickCheck && quickCheck.isCasual && quickCheck.confidence >= 0.9) {
     console.log(`⚡ Skipping GPT analyzer — casual message (${quickCheck.intent})`);
     const quickReply = quickCheck.intent === "GREETING"
-      ? "أهلاً بيك! 😊 أنا زيكو، مرشدك التعليمي في منصة easyT.<br>عندنا +600 دورة في كل المجالات 🎓<br><br>قولي عايز تتعلم إيه وأنا أساعدك! 💪"
+      ? "أهلاً بيك! 😊 أنا زيكو، مرشدك التعليمي في منصة easyT.<br>عندنا +600 دورة ومحتوى تعليمي في كل المجالات 🎓<br><br>قولي عايز تتعلم إيه وأنا أساعدك! 💪"
       : "تمام 😊 لو محتاج أي حاجة أنا هنا!";
     
 const finalQuickReply = finalizeReply(markdownToHtml(quickReply));
@@ -3474,6 +3475,37 @@ if (phoneticExtra.length > 0) {
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
     ]);
+// 🆕 FIX #115a: Filter diplomas by TITLE topic relevance
+    // Problem: searchDiplomas uses semantic search → returns "Robot" diploma for "Photoshop"
+    // Fix: diploma title MUST contain at least one search term
+    if (diplomas.length > 0) {
+      const _diplomaTopicTerms = termsToSearch.filter(t => {
+        const nt = normalizeArabic(t.toLowerCase());
+        return nt.length > 2 && !/^(دبلوم|كورس|دوره|دورة|تعلم)/.test(nt);
+      });
+      
+      if (_diplomaTopicTerms.length > 0) {
+        const _titleMatchedDiplomas = diplomas.filter(d => {
+          const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+          return _diplomaTopicTerms.some(t => {
+            const nt = normalizeArabic(t.toLowerCase());
+            if (nt.length <= 2) return false;
+            if (titleNorm.includes(nt)) return true;
+            // Also check English terms
+            if (/^[a-zA-Z]+$/.test(t) && (d.title || '').toLowerCase().includes(t.toLowerCase())) return true;
+            return false;
+          });
+        });
+        
+        if (_titleMatchedDiplomas.length > 0) {
+          console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_titleMatchedDiplomas.length} (title match)`);
+          diplomas = _titleMatchedDiplomas;
+        } else {
+          console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title match)`);
+          diplomas = [];
+        }
+      }
+    }
 
 // 🆕 FIX #111: Always search lessons — finds content inside course lessons
     let lessonResults = await searchLessonsInCourses(termsToSearch);
@@ -3550,15 +3582,11 @@ if (filtered.length > 0) {
       t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
     );
     
-    // 🆕 FIX #115: Strict topic filtering for ALTERNATIVE follow-ups
-    // Problem: "في تاني" after "فوتوشوب" showed "المكياج" because
-    // description mentioned "فوتوشوب". Fix: only check PRIMARY fields
-    // (title, subtitle, keywords) — NOT description/full_content
+    // 🆕 FIX #115b: Only check PRIMARY fields (title, subtitle, domain, keywords)
+    // ❌ NOT description — "Makeup" course mentions "فوتوشوب" in description!
     const relevantFiltered = filtered.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
       
-      // PRIMARY fields only — these describe what the course IS about
-      // (not what it merely mentions in passing)
       const primaryText = normalizeArabic(
         [c.title, c.subtitle, c.domain, c.keywords]
           .filter(Boolean)
@@ -3573,8 +3601,8 @@ if (filtered.length > 0) {
         if (/^[a-zA-Z]+$/.test(t) && primaryText.includes(t.toLowerCase())) return true;
         return false;
       });
-    });    
-
+    });
+    
     if (relevantFiltered.length > 0) {
       courses = relevantFiltered;
       console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
@@ -3589,6 +3617,14 @@ if (filtered.length > 0) {
     console.log("FIX93: All courses were prev shown → showing original results");
     allPreviouslyShown = true;
 }
+
+    // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
+    if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
+      const prevDipIds = new Set(sessionMem.lastShownDiplomaIds);
+      const beforeDipCount = diplomas.length;
+      diplomas = diplomas.filter(d => !prevDipIds.has(d.id));
+      console.log(`🎓 FIX #115c: Excluded ${beforeDipCount - diplomas.length} shown diplomas → ${diplomas.length} remaining`);
+    }
     }
   
 
@@ -3610,7 +3646,8 @@ const cat97 = getSmartCategoryFromCourses(analysis.detected_category);
     if (cat97) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat97.name} ←</a></div>`;
     }
-    reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+    reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
     reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
 updateSessionMemory(sessionId, {
@@ -3660,13 +3697,35 @@ const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) 
 // 🆕 FIX #102: Re-check allPreviouslyShown using ORIGINAL search results (no extra API call)
 if (allPreviouslyShown) {
   const prevIdSet = new Set(sessionMem.lastShownCourseIds || []);
-  // courses here still has the ORIGINAL full results from the first search
   const genuinelyNew = courses.filter(c => !prevIdSet.has(c.id));
   
   if (genuinelyNew.length > 0) {
-    console.log(`🔄 FIX #102: Found ${genuinelyNew.length} genuinely new courses from original results`);
-    courses = genuinelyNew;
-    allPreviouslyShown = false;
+    // 🆕 FIX #115d: Re-check topic relevance (same strict filter as above)
+    const _reCheckTerms = termsToSearch.filter(t => 
+      t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+    );
+    const _topicRelevantNew = genuinelyNew.filter(c => {
+      if (c._titleMatch || c._lessonMatch) return true;
+      const _pText = normalizeArabic(
+        [c.title, c.subtitle, c.domain, c.keywords]
+          .filter(Boolean).join(' ').toLowerCase()
+      );
+      return _reCheckTerms.some(t => {
+        const nt = normalizeArabic(t.toLowerCase());
+        if (nt.length <= 2) return false;
+        if (_pText.includes(nt)) return true;
+        if (/^[a-zA-Z]+$/.test(t) && _pText.includes(t.toLowerCase())) return true;
+        return false;
+      });
+    });
+    
+    if (_topicRelevantNew.length > 0) {
+      console.log(`🔄 FIX #102+115d: Found ${_topicRelevantNew.length} topic-relevant new courses`);
+      courses = _topicRelevantNew;
+      allPreviouslyShown = false;
+    } else {
+      console.log(`🔄 FIX #102+115d: ${genuinelyNew.length} new but 0 topic-relevant → allPreviouslyShown confirmed`);
+    }
   } else {
     console.log(`🔄 FIX #102: No new courses in original results — allPreviouslyShown confirmed`);
   }
@@ -3683,7 +3742,8 @@ const cat93 = getSmartCategoryFromCourses(analysis.detected_category);
       if (cat93) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat93.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat93.name} ←</a></div>`;
       }
-      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
       reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
 
@@ -3924,7 +3984,8 @@ let noResultCat = getSmartCategoryFromCourses(analysis.detected_category);
           }
         }
 
-        reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
       }
 
 const mainTopic = extractMainTopic(termsToSearch);
@@ -3937,6 +3998,10 @@ updateSessionMemory(sessionId, {
         lastShownCourseIds: [...new Set([
   ...(sessionMem.lastShownCourseIds || []),
   ...relevantCourses.map(c => c.id),
+])],
+        lastShownDiplomaIds: [...new Set([
+  ...(sessionMem.lastShownDiplomaIds || []),
+  ...relevantDiplomas.map(d => d.id),
 ])],
       });
 
@@ -3961,10 +4026,11 @@ updateSessionMemory(sessionId, {
             }
           }
 
-          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
         } else {
           reply = `🤔 معنديش معلومات كافية عن الموضوع ده حالياً.`;
-          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات  ←</a>`;
         }
 } else {
 let outerCat = getSmartCategoryFromCourses(analysis.detected_category);
@@ -3976,7 +4042,7 @@ let outerCat = getSmartCategoryFromCourses(analysis.detected_category);
         } else {
           reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
         }
-        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
       }
 
 updateSessionMemory(sessionId, {
@@ -4122,7 +4188,7 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
           }
         }
 
-        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات (+600 دورة) ←</a>`;
+        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات  ←</a>`;
 
       } else {
         // No answer available → fallback to smart clarification
@@ -4265,7 +4331,7 @@ app.post("/chat-image", limiter, async (req, res) => {
 ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botInstructions}` : ""}
 
 ═══ معلومات المنصة ═══
-- +600 دورة تعليمية في كل المجالات
+- +600 دورة ومحتوى تعليمي في كل المجالات
 - اشتراك سنوي 49$ (عرض رمضان)
 - رابط الاشتراك: https://easyt.online/p/subscriptions`;
 
