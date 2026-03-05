@@ -987,25 +987,38 @@ const embResponse = await openai.embeddings.create({
       }
     }
 
-// Text search fallback — STRICT: require ALL terms to match
-    if (rawResults.length === 0) {
-const allTerms = prepareSearchTerms(searchTerms);
-      if (allTerms.length === 0) return [];
+// 🆕 FIX: ALWAYS run text search (not just fallback)
+// Problem: semantic search returns wrong diplomas → text search never runs → 0 results
+{
+  const allTerms = prepareSearchTerms(searchTerms);
+  if (allTerms.length > 0) {
+    try {
+      const textFilters = allTerms.slice(0, 6)
+        .map(t => `title.ilike.%${t}%`)
+        .join(",");
 
-      // Use AND logic: every term must appear in title OR description
-      let query = supabase
+      const { data: textResults, error: textErr } = await supabase
         .from("diplomas")
-        .select("id, title, link, description, price");
+        .select("id, title, link, description, price")
+        .or(textFilters)
+        .limit(10);
 
-for (const t of allTerms.slice(0, 4)) {
-        query = query.or(`title.ilike.%${t}%,description.ilike.%${t}%`);
+      if (!textErr && textResults && textResults.length > 0) {
+        // Merge with semantic results (deduplicate)
+        const existingIds = new Set(rawResults.map(d => d.id));
+        for (const td of textResults) {
+          if (!existingIds.has(td.id)) {
+            rawResults.push(td);
+            existingIds.add(td.id);
+          }
+        }
+        console.log(`🎓 Diploma text search: found ${textResults.length}, total after merge: ${rawResults.length}`);
       }
-
-      const { data, error } = await query.limit(10);
-
-      if (error) return [];
-      rawResults = data || [];
+    } catch (textErr) {
+      console.error("Diploma text search error:", textErr.message);
     }
+  }
+}
 
     // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #80: Score diplomas by relevance (title > description)
@@ -2398,9 +2411,13 @@ if (analysis.is_follow_up) {
 `;
   }
 }
+const userLevelBlock = analysis.user_level 
+  ? `\n🎯 مستوى المستخدم: "${analysis.user_level}" — لازم تراعيه في كل اختياراتك!`
+  : "";
+
 const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
 
-الرسالة: "${message}"
+الرسالة: "${message}"${userLevelBlock}
 
 ═══ البيانات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
@@ -2425,12 +2442,20 @@ ${followUpContext}
 
 3️⃣ ترتيب الأولوية:
 
-3.5️⃣ لو المستخدم قال "ابدأ" أو "مبتدئ" أو "أول كورس":
-   → رشّح كورسات الأساسيات والمبادئ الأول
-   → متعرضش كورسات متقدمة أو متخصصة (زي إنفوجرافيك) للمبتدئ
-   → رتّب: أساسيات أولاً → متوسط → متقدم
+3.5️⃣ 🔴🔴🔴 قاعدة المبتدئ (تتغلب على القاعدة 3!):
+   لو مستوى المستخدم = "مبتدئ":
+   → الدبلومة أولاً دايماً (مسار كامل أحسن من كورس واحد)
+   → بعدها كورس "أساسيات/مبادئ/مقدمة" حتى لو titleMatch=false
+   → ❌ ممنوع كورس "احترافي/متقدم/متخصص" حتى لو titleMatch=true
+   → لو برمجة: Python/بايثون أول حاجة (مش Ruby/C++/Swift)
+   → لو جرافيك: أساسيات التصميم أول حاجة (مش Infographic/موشن)
+   → الترتيب: دبلومة > أساسيات > عام > متخصص (المتخصص آخر حاجة أو ميظهرش)
+   
+   مثال: user_level="مبتدئ" + "انفوجرافيك احترافي" titleMatch=true → ❌ آخر حاجة أو ميظهرش
+   مثال: user_level="مبتدئ" + "أساسيات التصميم" titleMatch=false → ✅ أول كورس
+   مثال: user_level="مبتدئ" + "Ruby" titleMatch=true → ❌ Python أولى
 
-   titleMatch=true → أولوية مطلقة (اسم الكورس عن الموضوع)
+titleMatch=true → أولوية عالية (اسم الكورس عن الموضوع) — ⚠️ إلا لو المستخدم مبتدئ (شوف قاعدة 3.5)
    titleMatch=false + matchedLessons → أولوية تانية
    ❌ ممنوع تسيب titleMatch=true وتختار titleMatch=false
 
@@ -2786,7 +2811,7 @@ ${chunkContext}
 
 
 
-function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
+function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null) {
   if (!courses || courses.length === 0) return;
 
   const stripPrefix = (w) => normalizeArabic(w.toLowerCase())
@@ -2840,14 +2865,34 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
     const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
     const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + nt.length) === titleNorm.length;
     
-    // If both boundaries match → real word match
+// If both boundaries match → real word match
     if (isWordBoundaryBefore && isWordBoundaryAfter) return true;
     
-    // If only one boundary → check if the term is long enough (6+ chars) to be reliable
-    if (nt.length >= 6) return true;
+    // 🆕 FIX: Check if the non-matching boundary is just a known Arabic prefix
+    // "فوتوشوب" inside "الفوتوشوب" → prefix "ال" → VALID ✅
+    // "جرافيك" inside "الانفوجرافيك" → prefix "الانفو" → INVALID ❌
+    // "graphic" inside "infographic" → prefix "info" → INVALID ❌
+    if (!isWordBoundaryBefore && isWordBoundaryAfter) {
+      const lastSpaceIdx = titleNorm.lastIndexOf(' ', matchIndex - 1);
+      const wordStart = lastSpaceIdx >= 0 ? lastSpaceIdx + 1 : 0;
+      const prefix = titleNorm.substring(wordStart, matchIndex);
+      const knownPrefixes = ['ال', 'بال', 'وال', 'فال', 'كال', 'لل', 'و', 'ف', 'ب', 'ل', 'ك'];
+      if (knownPrefixes.includes(prefix)) {
+        return true; // Valid: "فوتوشوب" in "الفوتوشوب"
+      }
+    }
     
-    // Short term (4-5 chars) matching inside a bigger word → NOT a title match
-    console.log(`⚠️ Rejected partial match: "${nt}" inside "${titleNorm}" (not word boundary)`);
+    if (isWordBoundaryBefore && !isWordBoundaryAfter) {
+      const nextSpaceIdx = titleNorm.indexOf(' ', matchIndex + nt.length);
+      const wordEnd = nextSpaceIdx >= 0 ? nextSpaceIdx : titleNorm.length;
+      const suffix = titleNorm.substring(matchIndex + nt.length, wordEnd);
+      const knownSuffixes = ['ه', 'ة', 'ات', 'ين', 'ون', 'ي', 'يه', 'يا'];
+      if (knownSuffixes.includes(suffix)) {
+        return true; // Valid: "برمج" in "برمجة"
+      }
+    }
+    
+    console.log(`⚠️ Rejected partial match: "${nt}" inside "${titleNorm}" (not word boundary, prefix="${titleNorm.substring(titleNorm.lastIndexOf(' ', matchIndex - 1) + 1, matchIndex)}")`);
     return false;
   }
 
@@ -2926,6 +2971,30 @@ c.relevanceScore = (c.relevanceScore || 0) + 400;
       }
     }
   }
+
+
+// 🆕 FIX: Beginner scoring — boost basics, penalize advanced
+  if (userLevel === "مبتدئ") {
+    console.log(`🎓 Beginner mode: adjusting scores for ${courses.length} courses`);
+    for (const c of courses) {
+      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+      const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
+      const combined = titleNorm + " " + subtitleNorm;
+      
+      // Boost beginner-friendly courses
+      if (/اساسيات|مبادئ|مقدم|من الصفر|للمبتدئين|beginner|basics|fundamentals|introduction/.test(combined)) {
+        c.relevanceScore = (c.relevanceScore || 0) + 300;
+        console.log(`   🟢 Beginner boost: "${c.title}" +300`);
+      }
+      
+      // Penalize advanced/specialized courses
+      if (/احتراف|متقدم|advanced|professional|متخصص/.test(combined)) {
+        c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
+        console.log(`   🔴 Advanced penalty: "${c.title}" -400`);
+      }
+    }
+  }
+
 
   courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
@@ -3419,12 +3488,37 @@ let termsToSearch = [...new Set(analysis.search_terms)];
           });
         });
         
-        if (_titleMatchedDiplomas.length > 0) {
+if (_titleMatchedDiplomas.length > 0) {
           console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_titleMatchedDiplomas.length} (title match)`);
           diplomas = _titleMatchedDiplomas;
         } else {
-          console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title match)`);
-          diplomas = [];
+          // 🆕 FIX: Before giving up, try matching by detected_category
+          // Example: user asks about "graphic" → detected_category = "الجرافيكس والتصميم"
+          // Diploma "دبلومة الجرافيك ديزاين" should match!
+          if (analysis.detected_category) {
+            const catNorm = normalizeArabic(analysis.detected_category.toLowerCase());
+            const catWords = catNorm.split(/\s+/).filter(w => w.length > 2);
+            
+            const _catMatchedDiplomas = diplomas.filter(d => {
+              const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+              const descNorm = normalizeArabic(((d.description || '').replace(/<[^>]*>/g, '')).toLowerCase());
+              const fullText = titleNorm + ' ' + descNorm;
+              
+              // Check if diploma is related to the detected category
+              return catWords.some(cw => fullText.includes(cw));
+            });
+            
+            if (_catMatchedDiplomas.length > 0) {
+              console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_catMatchedDiplomas.length} (category match: "${analysis.detected_category}")`);
+              diplomas = _catMatchedDiplomas;
+            } else {
+              console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title or category match)`);
+              diplomas = [];
+            }
+          } else {
+            console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → 0 (no title match, no category)`);
+            diplomas = [];
+          }
         }
       }
     }
@@ -3476,7 +3570,7 @@ let termsToSearch = [...new Set(analysis.search_terms)];
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
-    scoreAndRankCourses(courses, termsToSearch, analysis.search_terms);
+scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
 
 
 // ═══════════════════════════════════════════════════════════
@@ -3728,11 +3822,29 @@ updateSessionMemory(sessionId, {
         verifyCourseRelevance(c, termsToSearch)
       );
 
-// 🆕 FIX #63+#68: Must-show courses with title match
-const titleMatchMustShow = courses.filter(c => {
+// 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
+let titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
         return c._titleMatch === true;
       });
+
+// 🆕 For beginners: don't force advanced/specialized courses
+if (analysis.user_level === "مبتدئ" && titleMatchMustShow.length > 0) {
+  const beforeCount = titleMatchMustShow.length;
+  titleMatchMustShow = titleMatchMustShow.filter(c => {
+    const tNorm = normalizeArabic((c.title || "").toLowerCase());
+    const isAdvanced = /احتراف|متقدم|advanced|professional/.test(tNorm);
+    if (isAdvanced) {
+      console.log(`🎓 Beginner: skipping must-show "${c.title}" (advanced)`);
+      return false;
+    }
+    return true;
+  });
+  if (beforeCount !== titleMatchMustShow.length) {
+    console.log(`🎓 Beginner must-show filter: ${beforeCount} → ${titleMatchMustShow.length}`);
+  }
+}
+
 for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
         console.log("FIX63 Must-show title-match added:", tmc.title);
@@ -3745,6 +3857,14 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
 const allProtectedMatched = courses.filter(c => c._titleMatch === true);
       for (const tm of allProtectedMatched) {
         if (!relevantCourses.find(rc => rc.id === tm.id)) {
+          // 🆕 For beginners: don't force advanced/specialized courses
+          if (analysis.user_level === "مبتدئ") {
+            const tmNorm = normalizeArabic((tm.title || "").toLowerCase());
+            if (/احتراف|متقدم|advanced|professional/.test(tmNorm)) {
+              console.log(`🎓 Beginner: skipping force-include "${tm.title}" (advanced)`);
+              continue;
+            }
+          }
           relevantCourses.push(tm);
           console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
         }
