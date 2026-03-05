@@ -1969,6 +1969,16 @@ detected_category لازم يكون اسم تصنيف بالظبط من القا
 حلل الرسالة → JSON فقط:
 {"action":"SEARCH|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب تصنيف من القائمة فوق يناسب الموضوع (لازم يكون اسم تصنيف من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
 
+═══ 🎯 لو المستخدم مبتدئ ═══
+لو قال "ابدأ" / "مبتدئ" / "اول كورس" / "ابدا منين" / "ابدأ بإيه":
+- user_level = "مبتدئ"
+- ضيف في search_terms كلمات الأساسيات:
+  مثال: "ابدأ جرافيك" → search_terms: ["graphic design", "تصميم جرافيك", "فوتوشوب", "photoshop", "اساسيات التصميم"]
+  مثال: "ابدأ برمجة" → search_terms: ["برمجة", "programming", "اساسيات البرمجة", "python", "بايثون"]
+  ❌ ممنوع ترجع كلمة "جرافيك" لوحدها → هتطابق "إنفوجرافيك"
+  ✅ ابعت "تصميم جرافيك" أو "graphic design" كاملة
+
+
 ═══ search_terms — أهم حاجة ═══
 المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم","دورة","محتاج"
 ✅ اسم الموضوع/التقنية/الأداة فقط
@@ -2414,6 +2424,12 @@ ${followUpContext}
    لو كل الكورسات matchReason="كدرس" → ابدأ بـ "هتلاقي..." مش "عندنا كورس..."
 
 3️⃣ ترتيب الأولوية:
+
+3.5️⃣ لو المستخدم قال "ابدأ" أو "مبتدئ" أو "أول كورس":
+   → رشّح كورسات الأساسيات والمبادئ الأول
+   → متعرضش كورسات متقدمة أو متخصصة (زي إنفوجرافيك) للمبتدئ
+   → رتّب: أساسيات أولاً → متوسط → متقدم
+
    titleMatch=true → أولوية مطلقة (اسم الكورس عن الموضوع)
    titleMatch=false + matchedLessons → أولوية تانية
    ❌ ممنوع تسيب titleMatch=true وتختار titleMatch=false
@@ -2933,6 +2949,7 @@ console.log(`🎯 Relevance filter: top=${topScore}, min=${Math.round(minRelevan
   console.log(`📊 Scored ${courses.length} courses:`,
     courses.slice(0, 5).map(c => `"${c.title}" score=${c.relevanceScore}`));
 }   // ← ده القوس اللي بيقفل scoreAndRankCourses
+
 
 
 function applyQualityFilters(courses) {
