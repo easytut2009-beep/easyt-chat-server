@@ -2167,50 +2167,20 @@ const result = data
 /* ═══════════════════════════════════
    11-D: Phase 1 — Smart Analyzer
    ═══════════════════════════════════ */
-function buildAnalyzerPrompt(
-  botInstructions,
-  customResponses,
-  sessionMem
-) {
+function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
 
-  const memoryContext =
-    sessionMem.messageCount > 0
-      ? `
-═══ ذاكرة الجلسة ═══
-- المواضيع السابقة: ${sessionMem.topics.join(", ") || "لا يوجد"}
-- آخر موضوع بحث: ${sessionMem.lastSearchTopic || "لا يوجد"}
-- آخر كلمات بحث: ${sessionMem.lastSearchTerms.join(", ") || "لا يوجد"}
-- مستوى المستخدم: ${sessionMem.userLevel || "غير محدد"}
-- اهتماماته: ${sessionMem.interests.join(", ") || "غير محدد"}
-- عدد الرسائل: ${sessionMem.messageCount}
-- ملخص المحادثة: ${sessionMem.summary || "بداية محادثة"}
-`
-      : "";
+  const memoryContext = sessionMem.messageCount > 0
+    ? `\n═══ ذاكرة الجلسة ═══\n- المواضيع: ${sessionMem.topics.join(", ") || "لا يوجد"}\n- آخر بحث: ${sessionMem.lastSearchTopic || "لا يوجد"}\n- كلمات بحث: ${sessionMem.lastSearchTerms.join(", ") || "لا يوجد"}\n- مستوى: ${sessionMem.userLevel || "غير محدد"}\n- اهتمامات: ${sessionMem.interests.join(", ") || "غير محدد"}\n- رسائل: ${sessionMem.messageCount}\n- ملخص: ${sessionMem.summary || "بداية محادثة"}\n`
+    : "";
 
-  return `أنت محلل ذكي لمنصة easyT التعليمية. مهمتك: فهم رسالة المستخدم بدقة.
+  return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات (مصري/عراقي/خليجي/شامي/مغربي).
 
-⚠️ مهم جداً: المستخدمين بيتكلموا بلهجات مختلفة (مصري/عراقي/خليجي/شامي/مغربي). لازم تفهم كل اللهجات!
-
-═══ قاموس اللهجات ═══
-عراقي: شلون=ازاي | اريد=عايز | شگد=كام | ماكو=مفيش | اكو=فيه
-خليجي: ابغى/ابي=عايز | وش/ايش=ايه | كيف=ازاي | زين=كويس
-شامي: بدي=عايز | شو=ايه | هلق=دلوقتي | كتير=كتير
-مغربي: بغيت=عايز | واش=هل | علاش=ليه
-
-${
-  botInstructions
-    ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n`
-    : ""
-}
+${botInstructions ? `⛔ تعليمات الأدمن (أولوية قصوى):\n${botInstructions}\n` : ""}
 ${memoryContext}
-${
-  customResponses
-    ? `═══ ردود مرجعية ═══\n${customResponses}\n`
-    : ""
-}
+${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
 
 ═══ التصنيفات المتاحة ═══
 ${categoriesList}
@@ -2219,237 +2189,72 @@ ${categoriesList}
 حلل رسالة المستخدم وارجع JSON فقط:
 {
   "action": "SEARCH" | "SUBSCRIPTION" | "CATEGORIES" | "DIPLOMAS" | "CHAT" | "SUPPORT",
-  "detected_category": "اسم التصنيف من القائمة فوق أو null",
+  "detected_category": "اسم التصنيف بالظبط من القائمة أو null",
   "user_intent": "FIND_COURSE" | "QUESTION" | "UNCLEAR",
-  "search_terms": ["كلمة1", "كلمة2"],
-  "response_message": "ردك (للأكشنز غير SEARCH فقط)",
+  "search_terms": ["مصطلح1", "مصطلح2"],
+  "response_message": "ردك (لغير SEARCH فقط)",
   "intent": "وصف النية",
   "user_level": "مبتدئ" | "متوسط" | "متقدم" | null,
   "topics": ["موضوع1"],
   "is_follow_up": true/false,
-follow_up_type: null,
   "follow_up_type": "CLARIFY" | "ALTERNATIVE" | null,
-  "previous_topic_reference": "الموضوع السابق إن وجد",
+  "previous_topic_reference": null,
   "audience_filter": null,
   "language": "ar" | "en"
 }
 
-
-═══ ⚠️ قاعدة مهمة جداً لاستخراج search_terms ═══
-
-search_terms = فقط الكلمات المفتاحية للموضوع/التقنية/الأداة اللي المستخدم عايز يتعلمها.
-
-❌ لا تضع أبداً كلمات المحادثة العادية مثل:
-   - "معلومات" (في سياق "عايز أعرف معلومات عن")
-   - "حاجة" / "دورة" / "كورس" / "فيديو" / "شرح" / "تفاصيل"
-   - "عارف" / "ممكن" / "عايز" / "اتعلم" / "اعرف"
-
-✅ ضع فقط اسم الموضوع/التقنية/الأداة:
+═══ قواعد search_terms — الأهم ═══
+search_terms = المصطلحات التقنية اللي هتوصّل للكورس الصح.
+❌ ممنوع كلمات المحادثة: "معلومات", "حاجة", "كورس", "عايز", "اتعلم"
+✅ حط بس اسم الموضوع/التقنية/الأداة
 
 أمثلة:
-- "عايز أعرف معلومات عن ال workflow" → search_terms: ["workflow"]
-  ❌ مش ["معلومات", "workflow"]
+- "عايز أعرف معلومات عن ال workflow" → ["workflow", "ورك فلو"]
+- "عاوز اعمل بلن لتخطيط البيت والديكور" → ["تصميم داخلي", "ديكور", "interior design"]
+- "عايز اتعلم ازاي اعمل فلوس من النت" → ["الربح من الانترنت", "freelance"]
+- "ابني عنده 10 سنين عايز يتعلم كمبيوتر" → ["برمجة اطفال", "سكراتش", "scratch"]
 
-- "فيه كورس عن البرمجة" → search_terms: ["برمجة"]
-  ❌ مش ["كورس", "برمجة"]
+⚠️ أي كلمة إنجليزية مكتوبة بحروف عربية → ضيف الإنجليزي الأصلي:
+"فوتوشوب" → ["فوتوشوب", "photoshop"] | "كومفي يو آي" → ["comfyui", "كومفي يو آي"]
 
-- "ممكن معلومات عن أمن المعلومات" → search_terms: ["أمن المعلومات"]
-  ✅ هنا "معلومات" جزء من اسم المجال فعلاً
+═══ قواعد user_intent ═══
+FIND_COURSE — عايز يتعلم حاجة أو يدور على كورس (اسم برنامج/تقنية/نية تعلم/سعر كورس محدد)
+QUESTION — عايز يفهم مصطلح أو مفهوم ("يعني إيه X" / "الفرق بين X و Y" / مصطلح أجنبي لوحده)
+UNCLEAR — حروف عشوائية 100% بدون أي كلمة حقيقية (نادر جداً!)
+⚠️ لو فيه كلمة حقيقية واحدة = مش UNCLEAR. لو مش متأكد = QUESTION
 
-⚠️ فرّق بين:
-- "معلومات عن X" ← كلمة محادثة، لا تضعها
-- "أمن المعلومات" ← اسم مجال، ضعها كاملة
+═══ قواعد follow_up_type ═══
+CLARIFY = بيوضّح/بيحدد طلبه السابق ("اقصد اللي عن...", "للمبتدئين بس", "بتاع ال AI")
+ALTERNATIVE = عايز خيارات مختلفة ("فيه غيرهم؟", "حاجة تانية", "ارخص", "كمان")
+لو is_follow_up = false → null
 
+═══ قواعد التصنيف (action) ═══
+SEARCH — بيدور على كورس أو عايز يتعلم (حتى لو ذكر سعر كورس محدد أو سن/مستوى)
+SUBSCRIPTION — بيسأل عن طرق الدفع أو أسعار الاشتراك العام فقط (بدون ذكر كورس!)
+DIPLOMAS — بيسأل عن الدبلومات بصفة عامة
+CATEGORIES — بيسأل عن المجالات/التصنيفات
+SUPPORT — مشاكل تقنية
+CHAT — ترحيب/كلام عام
 
-═══ ⚠️ قاعدة follow_up_type (إجبارية لو is_follow_up = true) ═══
+⚠️ القاعدة الذهبية: لو فيه أي سياق تعليمي = SEARCH. لو كله عن فلوس ودفع بس = SUBSCRIPTION
 
-CLARIFY = المستخدم بيوضّح أو يحدد طلبه السابق بشكل أدق (عايز نفس النتائج بس أدق):
-  - "انا اقصد اللي عن توليد الصور" ← بيوضح أي نوع workflow
-  - "اللي خاص بالذكاء الاصطناعي" ← بيحدد المجال
-  - "للمبتدئين بس" ← بيحدد المستوى
-  - "مش ده، انا عايز اللي عن الصور" ← بيصحّح
-  - "بتاع الـ AI" ← بيوضح
-
-ALTERNATIVE = المستخدم عايز خيارات تانية مختلفة عن اللي شافها:
-  - "فيه غيرهم؟" | "حاجة تانية" | "فيه بديل؟"
-  - "ارخص" | "كمان" | "تاني" | "مش عاجبني دول"
-  - "ورني كورسات تانية"
-
-لو is_follow_up = false → follow_up_type = null
-═══ ⚠️⚠️⚠️ قاعدة إجبارية: فهم النية (user_intent) بدون كلمات مفتاحية ═══
-
-مش هتدور على كلمات معينة — افهم النية من السياق الكامل:
-
-FIND_COURSE — المستخدم عاوز يتعلم حاجة أو يدور على كورس:
-  - "فوتوشوب" ← اسم برنامج = غالباً عاوز يتعلمه = FIND_COURSE
-  - "عاوز اتعلم برمجة" ← نية تعلم واضحة = FIND_COURSE
-  - "كورس تسويق" ← بيدور على كورس = FIND_COURSE
-  - "ابني عنده 10 سنين عايز يتعلم" ← نية تعلم = FIND_COURSE
-  - "بكام كورس الفوتوشوب" ← بيسأل عن كورس محدد = FIND_COURSE
-
-QUESTION — المستخدم عاوز يفهم حاجة أو يسأل سؤال:
-  - "ROAS" ← مصطلح/اختصار لوحده = عاوز يعرف معناه = QUESTION
-  - "يعني إيه SEO" ← سؤال عن مفهوم = QUESTION
-  - "الفرق بين UI و UX" ← سؤال مقارنة = QUESTION
-  - "إيه هو الفانل" ← سؤال عن مصطلح = QUESTION
-  - "ازاي الإعلانات بتشتغل" ← سؤال معرفي = QUESTION
-
-UNCLEAR — حروف عشوائية بالكامل مفيهاش أي كلمة حقيقية:
-  - "TDV TGHN" ← حروف عشوائية 100% = UNCLEAR
-  - "اسبلادبغ" ← كلمة واحدة عشوائية مش موجودة في أي لغة = UNCLEAR
-  - "hhhhh" ← حروف مكررة = UNCLEAR
-  - "fjksd sdkfj" ← عشوائي بالكامل = UNCLEAR
-  
-  🔴🔴🔴 انتبه: UNCLEAR نادر جداً! لو فيه أي كلمة حقيقية واحدة = مش UNCLEAR!
-  ❌ "يعني إيه SEO" ← فيها كلمات عربية مفهومة + مصطلح إنجليزي = QUESTION!
-  ❌ "ROAS" ← مصطلح إنجليزي معروف = QUESTION!
-  ❌ "فوتوشوب" ← اسم برنامج = FIND_COURSE!
-  ❌ "ازاي اتعلم" ← جملة عربية مفهومة = FIND_COURSE!
-  ✅ "sdkfjh skdjfh" ← حروف عشوائية 100% = UNCLEAR
-
-القواعد:
-1. مصطلح/اختصار لوحده (كلمة واحدة أجنبية مش اسم برنامج معروف) = QUESTION
-2. اسم برنامج معروف لوحده (فوتوشوب، بريميير، اكسل) = FIND_COURSE
-3. جملة فيها نية تعلم = FIND_COURSE
-4. جملة استفهامية عن مفهوم = QUESTION
-5. "يعني إيه X" أو "ما معنى X" أو "إيه هو X" = QUESTION (دايماً!)
-6. أي رسالة فيها كلمة عربية أو إنجليزية حقيقية واحدة على الأقل = مش UNCLEAR!
-7. UNCLEAR = فقط لو كل الرسالة حروف عشوائية 100% بدون أي كلمة حقيقية
-8. لو مش متأكد = QUESTION (أفضل بكتير من UNCLEAR)
-
-
-═══ ⚠️⚠️⚠️ قاعدة إجبارية: search_terms = النية الحقيقية مش كلمات الرسالة ═══
-
-❌ ممنوع تنسخ كلمات من رسالة المستخدم وتحطها في search_terms!
-✅ المطلوب: افهم إيه اللي المستخدم عايز يتعلمه فعلاً، وحط المصطلحات التقنية اللي هتوصّل للكورس الصح
-
-القاعدة الذهبية: 
-search_terms = "لو كنت بدوّر على كورس للموضوع ده، هكتب إيه في البحث؟"
-مش "إيه الكلمات الموجودة في رسالة المستخدم؟"
-
-أمثلة:
-
-| رسالة المستخدم | ❌ غلط | ✅ صح | ليه؟ |
-|---|---|---|---|
-| "عاوز اعمل بلن لتخطيط البيت والديكور" | ["تخطيط", "بيت"] | ["تصميم داخلي", "ديكور", "interior design"] | "تخطيط" لوحدها هتجيب "التخطيط الشخصي" اللي مالوش علاقة |
-| "عايز اتعلم ازاي اعمل فلوس من النت" | ["فلوس", "نت"] | ["الربح من الانترنت", "freelance", "عمل حر"] | الكلمات الحرفية مش هتلاقي كورسات |
-| "عايز اعرف ازاي ابيع اونلاين" | ["بيع", "اونلاين"] | ["تجارة الكترونية", "ecommerce", "متجر الكتروني"] | النية = تجارة إلكترونية |
-| "عايز اتعلم اعمل فيديوهات حلوة" | ["فيديو"] | ["مونتاج", "premiere", "تصوير فيديو", "افتر افكت"] | النية = مونتاج |
-| "ابني عنده 10 سنين عايز يتعلم كمبيوتر" | ["كمبيوتر"] | ["برمجة اطفال", "سكراتش", "scratch"] | النية = كورسات أطفال |
-| "محتاج حاجة تساعدني اصور منتجات" | ["تصوير", "منتجات"] | ["تصوير منتجات", "product photography", "تصوير"] | محتاج المصطلح التقني |
-
-⚠️ تحذير من الكلمات المضللة:
-- "تخطيط" + "بيت/ديكور" = تصميم داخلي ≠ تخطيط شخصي
-- "تصميم" + "موقع" = تصميم مواقع ≠ تصميم جرافيك
-- "برمجة" + "اطفال" = سكراتش ≠ برمجة متقدمة
-
-═══ ⚠️ قاعدة detected_category — إجبارية ═══
-لكل رسالة فيها موضوع تعليمي، لازم تحدد أقرب تصنيف من القائمة فوق.
-detected_category = اسم التصنيف بالظبط زي ما هو في القائمة — أو null لو مفيش.
-
-أمثلة:
-- "عايز كورس فوتوشوب" → detected_category: "الجرافيكس والتصميم"
-- "ازاي اعمل إعلانات فيسبوك" → detected_category: "الديجيتال ماركيتنج"
-- "عايز اتعلم بايثون" → detected_category: "أساسيات البرمجة وقواعد البيانات"
-- "كورس هاكينج" → detected_category: "الحماية والاختراق"
-- "عايز اعمل متجر" → detected_category: "الربح من الانترنت"
-- "ريفيت" → detected_category: "البرامج الهندسية"
-- "ازاي ادفع" → detected_category: null
-- "مرحبا" → detected_category: null
-
-⚠️ لو الموضوع ممكن يكون في أكتر من تصنيف → اختار الأنسب
-⚠️ لازم تكتب الاسم بالظبط زي ما هو في القائمة
-
-
-═══ 🔴 قواعد التصنيف ═══
-🔍 SEARCH — المستخدم بيوصف احتياج تعليمي أو بيدور على كورس
-💰 SUBSCRIPTION — بيسأل عن طرق الدفع أو الأسعار فقط
-🎓 DIPLOMAS — بيسأل عن الدبلومات بصفة عامة
-📂 CATEGORIES — بيسأل عن المجالات/التصنيفات
-🛠️ SUPPORT — مشاكل تقنية
-💬 CHAT — ترحيب/كلام عام
-
-═══ ⚠️ القاعدة الأهم: افهم النية مش الكلمات! ═══
-
-🔍 كل دول SEARCH (بيدور على كورس مناسب):
-  - "ابني عنده 10 سنين وعايز اشترك له في كورس برمجة"
-  - "ابني في اولى اعدادي عايز يتعلم حاجة"
-  - "عاوز اسجل في كورس تصميم"
-  - "عايز اشتري كورس فوتوشوب"
-  - "عندي ابن لسه ناشئ ومحتاج كورس"
-  - "انا مبتدئ ايه الكورس المناسب"
-  - "عايز كورس يناسب حد عمره 12 سنة"
-  - "ايه احسن كورس برمجة للاطفال"
-  - "بنتي عايزة تتعلم رسم"
-  - "انا طالب ثانوي عايز اتعلم برمجة"
-  - "كام سعر كورس الفوتوشوب" ← بيسأل عن كورس محدد!
-  - "بكام كورس البرمجة" ← بيسأل عن كورس محدد!
-  - "سعر كورس التسويق كام" ← بيسأل عن كورس محدد!
-  - "انا دكتور وعايز اتعلم تسويق لعيادتي"
-  - "عايز كورس تسويق للعيادات"
-
-💰 كل دول SUBSCRIPTION (بيسأل عن الاشتراك العام أو طرق الدفع):
-  - "عايز اشترك" (بس كده — بدون ذكر كورس!)
-  - "ازاي ادفع"
-  - "كام سعر الاشتراك" ← بيسأل عن الاشتراك العام مش كورس!
-  - "طرق الدفع ايه"
-  - "بقبلوا فيزا؟"
-  - "فودافون كاش"
-  - "عايز اجدد الاشتراك"
-  - "ايه اسعار الاشتراك"
-
-═══ ⚠️⚠️⚠️ قاعدة "سعر كورس محدد" — الأهم ═══
-لو المستخدم سأل عن سعر أو ثمن كورس معين بالاسم = SEARCH !!!
-لأنه بيدور على الكورس ده عشان يشوف سعره
-أمثلة:
-  - "كام سعر كورس الفوتوشوب" = SEARCH (ذكر كورس محدد)
-  - "بكام كورس البرمجة" = SEARCH (ذكر كورس محدد)
-  - "كام سعر الاشتراك" = SUBSCRIPTION (بيسأل عن الاشتراك العام)
-  - "ادفع ازاي" = SUBSCRIPTION (طرق دفع عامة)
-
-═══ القاعدة الذهبية ═══
-لو فيه أي سياق تعليمي (سن/مستوى/موضوع/مرحلة/وصف احتياج/اسم كورس) = SEARCH
-لو الكلام كله عن فلوس ودفع واشتراك عام بس = SUBSCRIPTION
-لو ذكر اسم كورس أو مجال + سعر = SEARCH
-لو مش متأكد = SEARCH أفضل من SUBSCRIPTION
-
-
-═══ ⚠️ قاعدة إجبارية: الترجمة التلقائية ═══
-لو المستخدم كتب أي كلمة إنجليزية بحروف عربية — سواء اسم أداة أو برنامج أو براند أو مصطلح تقني أو أي كلمة إنجليزية —
-لازم تضيف الشكل الإنجليزي الأصلي في search_terms جنب العربي.
-لأن أسماء الكورسات والدروس ممكن تكون بالإنجليزي.
-
-أمثلة:
-  - "ورك فلو" / "الورك فلو" → search_terms: ["workflow", "ورك فلو"]
-  - "فوتوشوب" → search_terms: ["فوتوشوب", "photoshop"]
-  - "بريميير" → search_terms: ["بريميير", "premiere"]
-  - "ميدجورني" → search_terms: ["ميدجورني", "midjourney"]
-  - "فلاتر نيورال" → search_terms: ["فلاتر نيورال", "neural filter"]
-  - "ريأكت نيتيف" → search_terms: ["ريأكت نيتيف", "react native"]
-  - "ديب ليرننج" → search_terms: ["deep learning", "ديب ليرننج"]
-  - "كومفي يو آي" → search_terms: ["comfyui", "كومفي يو آي"]
-  - "نانو بنانا" → search_terms: ["nano banana", "نانو بنانا"]
-  - "أوتوميشن" → search_terms: ["automation", "أوتوميشن"]
-
-القاعدة: أي كلمة إنجليزية مكتوبة بحروف عربية = ضيف الإنجليزي الأصلي في search_terms
-ده بيشمل مصطلحات تقنية عامة مش بس أسماء برامج (workflow, automation, pipeline, framework, API, deploy, ...)
-
-لـ SEARCH: response_message = ""
-لـ DIPLOMAS: response_message = ""
+═══ قاعدة detected_category ═══
+لكل موضوع تعليمي → أقرب تصنيف من القائمة بالاسم بالظبط. لو مفيش → null
 
 ═══ معلومات المنصة ═══
-- +600 دورة، +27 دبلومة، +750,000 طالب
-- الاشتراك السنوي: 49$ عرض رمضان (بدل 59$)
-- رابط الاشتراك: https://easyt.online/p/subscriptions
-- رابط طرق الدفع: https://easyt.online/p/Payments
-- طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
++600 دورة، +27 دبلومة، +750,000 طالب
+الاشتراك السنوي: 49$ عرض رمضان (بدل 59$)
+رابط الاشتراك: https://easyt.online/p/subscriptions
+رابط طرق الدفع: https://easyt.online/p/Payments
+طرق الدفع: Visa/MasterCard, PayPal, InstaPay, فودافون كاش (01027007899), تحويل بنكي (Alexandria Bank 202069901001), Skrill (info@easyt.online)
 
 ═══ للردود ═══
-- اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
-- استخدم <br> بدل \\n
-- ❌ ممنوع تخترع كورسات أو دبلومات`;
+اللينكات HTML: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
+استخدم <br> بدل \\n
+❌ ممنوع تخترع كورسات أو دبلومات
+لـ SEARCH: response_message = ""
+لـ DIPLOMAS: response_message = ""`;
 }
-
 const FALLBACK_MESSAGES = [
   "ممكن توضحلي أكتر؟ 🤔 مثلاً قولي اسم المجال أو المهارة اللي عايز تتعلمها",
   "مش متأكد فهمتك 😅 ممكن تقولي الموضوع اللي عايز تتعلمه بشكل أوضح؟",
@@ -3025,58 +2830,6 @@ function verifyCourseRelevance(course, searchTerms) {
   return matchCount >= requiredMatches;
 }
 
-
-// ═══════════════════════════════════════════════════════════
-// 🆕 FIX #92: GPT-based diploma relevance verification
-// Same pattern as verifyCourseRelevance but for diplomas
-// ═══════════════════════════════════════════════════════════
-async function verifyDiplomaRelevance(diplomas, userMessage) {
-  if (!diplomas || diplomas.length === 0) return [];
-  if (!openai) return diplomas;
-
-  const diplomaList = diplomas
-    .map((d, i) => `${i}: "${d.title}"`)
-    .join("\n");
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      max_tokens: 50,
-      messages: [
-        {
-          role: "system",
-          content: `You are a relevance filter. Given a user question and a list of diplomas, return ONLY the indices of diplomas that are DIRECTLY related to the user's topic.
-
-Rules:
-- "DVWA" or "SQL injection" or "hacking" = cybersecurity diplomas ONLY
-- "Photoshop" or "design" = graphic design diplomas ONLY  
-- If NO diploma is relevant, return empty array []
-- Reply with a JSON array of numbers ONLY. Example: [0] or [0,1] or []`
-        },
-        {
-          role: "user",
-          content: `User question: "${userMessage}"\n\nDiplomas:\n${diplomaList}`
-        }
-      ]
-    });
-
-    const raw = response.choices[0].message.content.trim();
-    const indices = JSON.parse(raw);
-    
-    if (!Array.isArray(indices)) return diplomas;
-    
-    const filtered = indices
-      .filter(i => typeof i === 'number' && i >= 0 && i < diplomas.length)
-      .map(i => diplomas[i]);
-
-    console.log(`FIX92: verifyDiplomaRelevance: ${diplomas.length} → ${filtered.length} (indices=${raw})`);
-    return filtered;
-  } catch (e) {
-    console.error("FIX92: verifyDiplomaRelevance error:", e.message);
-    return diplomas; // fallback: return all
-  }
-}
 
 
 async function generateConversationSummary(chatHistory, currentSummary) {
@@ -4011,11 +3764,7 @@ updateSessionMemory(sessionId, {
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
-// 🆕 FIX #92: GPT-based diploma relevance filter (replaces FIX #91)
-      if (relevantDiplomas.length > 0) {
-        relevantDiplomas = await verifyDiplomaRelevance(relevantDiplomas, message);
-      }
-
+// ✅ Diploma filtering merged into generateSmartRecommendation (saves 1 GPT call)
 
 // Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
@@ -4284,11 +4033,7 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
             const instructors = await getInstructors();
 
 
-// 🆕 FIX #92: Filter diplomas in QUESTION flow too
-            if (relatedDiplomas && relatedDiplomas.length > 0) {
-              relatedDiplomas = await verifyDiplomaRelevance(relatedDiplomas, enrichedMessage);
-            }
-
+// ✅ Diploma filtering handled by search scoring (saves 1 GPT call)
             // Show diplomas
             if (relatedDiplomas && relatedDiplomas.length > 0) {
               reply += `<br><br>💡 <strong>دبلومات على المنصة هتفيدك:</strong><br>`;
