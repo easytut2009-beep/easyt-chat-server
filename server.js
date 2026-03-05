@@ -145,7 +145,16 @@ const limiter = rateLimit({
    ═══════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
-
+const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
+const PAYMENTS_URL = "https://easyt.online/p/Payments";
+const PRICING = {
+  annual: 49,
+  originalAnnual: 59,
+  promoName: "عرض رمضان",
+  currency: "$",
+};
+const COURSE_EMBEDDING_MODEL = "text-embedding-ada-002";
+const CHUNK_EMBEDDING_MODEL = "text-embedding-3-small";
 const COURSE_SELECT_COLS =
   "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
 
@@ -223,6 +232,14 @@ const CATEGORIES = {
 /* ══════════════════════════════════════════════════════════
    SECTION 6: Arabic Engine + Dialect Support
    ══════════════════════════════════════════════════════════ */
+const BASIC_STOP_WORDS = new Set([
+  "في", "من", "على", "الى", "إلى", "عن", "مع", "هو", "هي",
+  "هذا", "هذه", "و", "أو", "او", "ثم", "لكن", "كل", "بعض",
+  "غير", "لا", "ال", "ان", "إن", "ما", "هل",
+  "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
+  "of", "and", "or", "i",
+]);
+
 function normalizeArabic(text) {
   if (!text) return "";
   return text
@@ -235,6 +252,38 @@ function normalizeArabic(text) {
     .replace(/ـ+/g, "");
 }
 
+function prepareSearchTerms(terms) {
+  const result = new Set();
+  for (const term of terms) {
+    const t = term.toLowerCase().trim();
+    if (t.length <= 1) continue;
+    result.add(t);
+    const normT = normalizeArabic(t);
+    if (normT.length > 1) result.add(normT);
+    for (const word of t.split(/\s+/)) {
+      const w = word.trim();
+      if (w.length <= 1) continue;
+      result.add(w);
+      const nw = normalizeArabic(w);
+      if (nw.length > 1) result.add(nw);
+      if (nw.startsWith("ال") && nw.length > 3) {
+        result.add(nw.substring(2));
+      }
+      for (const cp of ["بال", "وال", "فال", "كال"]) {
+        if (nw.startsWith(cp) && nw.length > cp.length + 2) {
+          result.add(nw.substring(cp.length));
+          result.add("ال" + nw.substring(cp.length));
+        }
+      }
+      if (nw.startsWith("لل") && nw.length > 4) {
+        result.add(nw.substring(2));
+        result.add("ال" + nw.substring(2));
+      }
+    }
+    if (result.size >= 15) break;
+  }
+  return [...result].filter(t => t.length > 1).slice(0, 12);
+}
 
 function similarityRatio(a, b) {
   if (!a || !b) return 0;
@@ -246,177 +295,8 @@ function similarityRatio(a, b) {
 return Math.round(((max - levenshteinDistance(na, nb)) / max) * 100);
 }
 
-const DIALECT_MAP = {
-  شلون: "ازاي",
-  شگد: "كام",
-  شكد: "كام",
-  اريد: "عايز",
-  أريد: "عايز",
-  هواية: "كتير",
-  شكو: "فيه ايه",
-  ماكو: "مفيش",
-  اكو: "فيه",
-  چا: "جا",
-  شسوي: "اعمل ايه",
-  شقصد: "تقصد ايه",
-  ابغى: "عايز",
-  أبغى: "عايز",
-  ابي: "عايز",
-  أبي: "عايز",
-  وش: "ايه",
-  ايش: "ايه",
-  حق: "بتاع",
-  زين: "كويس",
-  مررره: "اوي",
-  مرره: "اوي",
-  حيل: "اوي",
-  يالله: "يلا",
-  بدي: "عايز",
-  شو: "ايه",
-  هلق: "دلوقتي",
-  هلأ: "دلوقتي",
-  كتير: "كتير",
-  هيك: "كده",
-  منيح: "كويس",
-  كيفك: "عامل ايه",
-  شلونك: "عامل ايه",
-  بغيت: "عايز",
-  علاش: "ليه",
-  واش: "هل",
-  فلوس: "فلوس",
-  كيف: "ازاي",
-  حاب: "عايز",
-  حابب: "عايز",
-  اشتي: "عايز",
-  ودي: "عايز",
-};
 
-function normalizeDialect(text) {
-  if (!text) return text;
-  let result = text;
-  const sorted = Object.entries(DIALECT_MAP).sort(
-    (a, b) => b[0].length - a[0].length
-  );
-  for (const [dialect, standard] of sorted) {
-    const regex = new RegExp(`\\b${dialect}\\b`, "gi");
-    result = result.replace(regex, standard);
-  }
-  return result;
-}
 
-const ARABIC_CORRECTIONS = {
-  ماركوتنج: "ماركيتنج",
-  ماركتنج: "ماركيتنج",
-  ماركتينج: "ماركيتنج",
-  مركتنج: "ماركيتنج",
-  دجيتال: "ديجيتال",
-  ديجتال: "ديجيتال",
-  دجتال: "ديجيتال",
-  بروجرامنج: "برمجه",
-  بروغرامنج: "برمجه",
-  بيثون: "بايثون",
-  بايتون: "بايثون",
-  بايسون: "بايثون",
-  جافاسكربت: "جافاسكريبت",
-  جافسكربت: "جافاسكريبت",
-  جرافك: "جرافيك",
-  قرافيك: "جرافيك",
-  غرافيك: "جرافيك",
-  جرفيك: "جرافيك",
-  فتوشوب: "فوتوشوب",
-  فوتشوب: "فوتوشوب",
-  فوطوشوب: "فوتوشوب",
-  اليستريتور: "اليستريتر",
-  السترتور: "اليستريتر",
-  بزنس: "بيزنس",
-  بزنيس: "بيزنس",
-  بيزنيس: "بيزنس",
-  "اس اي او": "سيو",
-  ريفت: "ريفيت",
-  ريفيط: "ريفيت",
-  الريفت: "ريفيت",
-  الريفيت: "ريفيت",
-  دبلومه: "دبلومه",
-  دبلومة: "دبلومه",
-  دبلوما: "دبلومه",
-  اونلين: "اونلاين",
-  "اون لاين": "اونلاين",
-  وردبرس: "ووردبريس",
-  وردبريس: "ووردبريس",
-  "وورد بريس": "ووردبريس",
-};
-
-const SEARCH_SYNONYMS = {
-  "ديجيتال ماركيتنج": [
-    "تسويق رقمي",
-    "تسويق الكتروني",
-    "digital marketing",
-  ],
-  "جرافيك ديزاين": [
-    "تصميم جرافيك",
-    "graphic design",
-  ],
-  برمجه: [
-    "تطوير",
-    "كودنج",
-    "coding",
-    "programming",
-    "برمجة",
-  ],
-  سيو: [
-    "تحسين محركات البحث",
-    "seo",
-  ],
-  فوتوشوب: [
-    "photoshop",
-    "تعديل صور",
-  ],
-  بايثون: [
-    "python",
-    "بايثن",
-  ],
-  ريفيت: [
-    "revit",
-    "ريفت",
-    "برامج هندسية",
-  ],
-  "سوشيال ميديا": [
-    "social media",
-    "منصات التواصل",
-  ],
-  بيزنس: [
-    "business",
-    "ادارة اعمال",
-  ],
-  اكسل: [
-    "excel",
-    "اكسيل",
-  ],
-  ووردبريس: [
-    "wordpress",
-  ],
-  "ذكاء اصطناعي": [
-    "ai",
-    "artificial intelligence",
-    "الذكاء الاصطناعي",
-  ],
-};
-
-const ARABIC_STOP_WORDS = new Set([
-  "في", "من", "على", "الى", "إلى", "عن", "مع", "هل", "ما",
-  "هو", "هي", "هذا", "هذه", "يا", "و", "أو", "او", "ثم",
-  "لكن", "حتى", "اذا", "لو", "كل", "بعض", "غير",
-  "عايز", "عايزه", "عاوز", "عاوزه", "محتاج", "محتاجه", "نفسي",
-  "ممكن", "يعني", "طيب", "اه", "لا", "ايه", "مين", "انا", "انت",
-  "احنا", "عندكم", "فيه", "بس", "خلاص", "ده", "دي", "كده",
-  "ازاي", "ليه", "فين",
-  "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
-  "of", "and", "or", "i", "want", "need", "about",
-  "كورس", "كورسات", "دورة", "دورات", "تعلم", "اتعلم",
-"ابغى", "اريد", "شلون", "كيف", "بدي", "حاب", "شو", "وش", "ابي",
-  "معلومات", "تفاصيل", "اقصد", "قصدي", "الخاص", "خاص",
-  "بتاع", "بتاعت", "بتاعه", "شرح", "اشرح",
-]);
 
 // ═══════════════════════════════════════════════════════
 // 🆕 General Fuzzy Spell Correction (Levenshtein-based)
@@ -444,231 +324,6 @@ function levenshteinDistance(a, b) {
   return matrix[b.length][a.length];
 }
 
-
-function fuzzyCorrectWord(word, vocabulary, maxDistance) {
-  const normalized = normalizeArabic(word.toLowerCase());
-  if (normalized.length < 3) return word;
-
-  // لو الكلمة موجودة بالظبط → مفيش تصحيح
-  if (vocabulary.includes(normalized)) return word;
-
-  // حدد أقصى مسافة بناءً على طول الكلمة
-  const autoMax = normalized.length <= 4 ? 1 : normalized.length <= 7 ? 2 : 3;
-  const effectiveMax = maxDistance !== undefined ? maxDistance : autoMax;
-
-  let bestMatch = null;
-  let bestDist = Infinity;
-
-  for (const vocab of vocabulary) {
-    // تجاهل لو الفرق في الطول أكبر من المسافة المسموحة
-    if (Math.abs(vocab.length - normalized.length) > effectiveMax) continue;
-
-    const dist = levenshteinDistance(normalized, vocab);
-    if (dist < bestDist && dist <= effectiveMax) {
-      bestDist = dist;
-      bestMatch = vocab;
-    }
-  }
-
-  if (bestMatch && bestMatch !== normalized) {
-    console.log(`🔤 Fuzzy correction: "${word}" → "${bestMatch}" (distance: ${bestDist})`);
-    return bestMatch;
-  }
-
-  return word;
-}
-
-
-
-// ═══════════════════════════════════════════════════════
-// 🆕 Static Vocabulary — from CATEGORIES + SYNONYMS
-// No DB needed — corrects search terms BEFORE search
-// ═══════════════════════════════════════════════════════
-let _staticVocabCache = null;
-
-function buildStaticVocabulary() {
-  if (_staticVocabCache) return _staticVocabCache;
-  const vocabSet = new Set();
-
-for (const catName of Object.keys(CATEGORIES)) {
-    normalizeArabic(catName.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-  }
-
-  for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
-    normalizeArabic(canonical.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-    for (const syn of synonyms) {
-      normalizeArabic(syn.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-    }
-  }
-
-  for (const correctWord of Object.values(ARABIC_CORRECTIONS)) {
-    normalizeArabic(correctWord.toLowerCase()).split(/\s+/).forEach(w => { if (w.length >= 3) vocabSet.add(w); });
-  }
-
-  _staticVocabCache = Array.from(vocabSet);
-  console.log(`📚 Static vocabulary built: ${_staticVocabCache.length} words`);
-  return _staticVocabCache;
-}
-
-function fuzzyCorrectTerms(terms) {
-  const vocabulary = buildStaticVocabulary();
-  return terms.map(term => {
-    const words = term.split(/\s+/);
-    const corrected = words.map(w => {
-      if (w.length < 3 || /^\d+$/.test(w) || /^[a-zA-Z]+$/.test(w)) return w;
-      return fuzzyCorrectWord(w, vocabulary);
-    });
-    const result = corrected.join(" ");
-    if (result !== term) {
-      console.log(`🔤 Fuzzy term correction: "${term}" → "${result}"`);
-    }
-    return result;
-  });
-}
-
-
-// ═══════════════════════════════════════════════════════
-// 🆕 Automatic Arabic → English Phonetic Transliteration
-// No dictionary needed — converts letter by letter
-// ═══════════════════════════════════════════════════════
-const ARABIC_PHONETIC_MAP = {
-  'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'a', 'ٱ': 'a',
-  'ب': 'b', 'ت': 't', 'ث': 'th',
-  'ج': 'j', 'ح': 'h', 'خ': 'kh',
-  'د': 'd', 'ذ': 'z', 'ر': 'r',
-  'ز': 'z', 'س': 's', 'ش': 'sh',
-  'ص': 's', 'ض': 'd', 'ط': 't',
-  'ظ': 'z', 'ع': 'a', 'غ': 'gh',
-  'ف': 'f', 'ق': 'q', 'ك': 'k',
-  'ل': 'l', 'م': 'm', 'ن': 'n',
-  'ه': 'h', 'ة': 'a', 'و': 'o',
-  'ي': 'i', 'ى': 'a', 'ئ': 'e', 'ؤ': 'o',
-};
-
-function arabicToPhonetic(arabicText) {
-  if (!arabicText) return "";
-  let result = "";
-  const text = arabicText.replace(/[\u064B-\u065F\u0670]/g, "");
-  for (const char of text) {
-    if (ARABIC_PHONETIC_MAP[char]) {
-      result += ARABIC_PHONETIC_MAP[char];
-    } else if (/\s/.test(char)) {
-      result += " ";
-    } else {
-      result += char;
-    }
-  }
-  return result.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function isArabicText(text) {
-  return /[\u0600-\u06FF]/.test(text);
-}
-
-function addPhoneticTransliterations(terms) {
-  const extra = [];
-  for (const term of terms) {
-    if (!isArabicText(term)) continue;
-    const phonetic = arabicToPhonetic(term);
-    if (phonetic.length >= 3 && /^[a-z\s]+$/.test(phonetic)) {
-      extra.push(phonetic);
-      const words = phonetic.split(/\s+/).filter(w => w.length >= 3);
-      words.forEach(w => extra.push(w));
-    }
-  }
-  if (extra.length > 0) {
-    const unique = [...new Set(extra)];
-    console.log(`🌐 Auto phonetic: [${unique.join(", ")}]`);
-    return unique;
-  }
-  return [];
-}
-
-
-function applyArabicCorrections(text) {
-  if (!text) return "";
-  let c = text.toLowerCase().trim();
-  for (const [wrong, right] of Object.entries(ARABIC_CORRECTIONS)) {
-    c = c.replace(new RegExp(wrong, "gi"), right);
-  }
-  return c;
-}
-
-function expandSynonyms(terms) {
-  const expanded = new Set(terms);
-  for (const t of terms) {
-    const normT = normalizeArabic(t.toLowerCase());
-    if (normT.length <= 1) continue;
-
-    for (const [canonical, synonyms] of Object.entries(SEARCH_SYNONYMS)) {
-      const normC = normalizeArabic(canonical.toLowerCase());
-      if (
-        normT === normC ||
-        (normT.length > 2 && normT.includes(normC)) ||
-        (normC.length > 2 && normC.includes(normT))
-      ) {
-        synonyms.slice(0, 3).forEach((s) => expanded.add(s));
-        expanded.add(canonical);
-        break;
-      }
-      for (const syn of synonyms) {
-        const normS = normalizeArabic(syn.toLowerCase());
-        if (
-          normT === normS ||
-          (normT.length > 2 && normT.includes(normS)) ||
-          (normS.length > 2 && normS.includes(normT))
-        ) {
-          expanded.add(canonical);
-          synonyms.slice(0, 3).forEach((s2) => expanded.add(s2));
-          break;
-        }
-      }
-    }
-  }
-  return [...expanded];
-}
-
-function splitIntoSearchableTerms(terms) {
-  const result = new Set();
-  for (const term of terms) {
-    const t = term.toLowerCase().trim();
-    if (t.length <= 1) continue;
-    result.add(t);
-    const normT = normalizeArabic(t);
-    if (normT.length > 1) result.add(normT);
-
-    for (const word of t.split(/\s+/)) {
-      const w = word.trim();
-      if (w.length <= 1 || ARABIC_STOP_WORDS.has(w)) continue;
-      result.add(w);
-      const nw = normalizeArabic(w);
-      if (nw.length > 1) result.add(nw);
-// Strip "ال" prefix
-        if (w.startsWith("ال") && w.length > 3) {
-          result.add(w.substring(2));
-        }
-
-        // 🆕 FIX #87: Strip Arabic compound prefixes (بال، وال، فال، كال، لل)
-        // "بالذكاء" → "ذكاء" + "الذكاء"
-        // "بالفوتوشوب" → "فوتوشوب" + "الفوتوشوب"
-        const _compoundPrefixes = ["بال", "وال", "فال", "كال"];
-        for (const _cp of _compoundPrefixes) {
-          if (nw.startsWith(_cp) && nw.length > _cp.length + 2) {
-            const _stripped = nw.substring(_cp.length);
-            result.add(_stripped);              // "ذكاء"
-            result.add("ال" + _stripped);       // "الذكاء"
-          }
-        }
-        // Also handle "لل" prefix: "للمبتدئين" → "مبتدئين"
-        if (nw.startsWith("لل") && nw.length > 4) {
-          result.add(nw.substring(2));
-          result.add("ال" + nw.substring(2));
-        }
-    }
-    if (result.size >= 15) break;
-  }
-  return [...result].filter((t) => t.length > 1).slice(0, 12);
-}
 
 /* ═══════════════════════════════════
    HTML Formatter
@@ -891,9 +546,9 @@ function formatDiplomasList(diplomas) {
     const url = d.link || ALL_DIPLOMAS_URL;
     html += `${i + 1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${d.title}</a><br>`;
   });
-  html += `<br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي (<strong>49$ عرض رمضان</strong>)`;
+html += `<br><br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>)`;
   html += `<br><br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة جميع الدبلومات ←</a>`;
-  html += `<br><a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
+  html += `<br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
   return html;
 }
 
@@ -945,15 +600,15 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (cached) return cached;
 
   try {
-    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
-    const expanded = expandSynonyms(corrected);
-    const allTerms = splitIntoSearchableTerms(expanded);
+const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
     console.log("🔍 Search terms:", allTerms);
 
+const limitedTerms = allTerms.slice(0, 6);
+
     const cols =
-      allTerms.length > 8
+      limitedTerms.length > 6
         ? ["title", "subtitle", "description", "domain", "keywords"]
         : [
             "title",
@@ -967,9 +622,10 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
             "keywords",
           ];
 
-    const orFilters = allTerms
+    const orFilters = limitedTerms
       .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
+
 
     const ilikePromise = supabase
       .from("courses")
@@ -981,8 +637,8 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       ? (async () => {
           try {
             const queryText = searchTerms.join(" ");
-            const embResp = await openai.embeddings.create({
-      model: "text-embedding-ada-002",
+const embResp = await openai.embeddings.create({
+      model: COURSE_EMBEDDING_MODEL,
       input: queryText.substring(0, 2000),
     });
             const { data } = await supabase.rpc("match_courses", {
@@ -1142,7 +798,7 @@ async function fuzzySearchFallback(terms) {
       .limit(500);
     if (error || !all) return [];
 
-    const searchable = splitIntoSearchableTerms(terms);
+const searchable = prepareSearchTerms(terms);
     const results = [];
 
     for (const course of all) {
@@ -1222,8 +878,8 @@ async function searchDiplomas(searchTerms) {
     if (openai) {
       try {
         const queryText = searchTerms.join(" ");
-        const embResponse = await openai.embeddings.create({
-          model: "text-embedding-ada-002",
+const embResponse = await openai.embeddings.create({
+          model: COURSE_EMBEDDING_MODEL,
           input: queryText,
         });
         const { data: semanticResults, error: semErr } = await supabase.rpc(
@@ -1244,9 +900,7 @@ async function searchDiplomas(searchTerms) {
 
 // Text search fallback — STRICT: require ALL terms to match
     if (rawResults.length === 0) {
-      const corrected = searchTerms.map((t) => applyArabicCorrections(t));
-      const expanded = expandSynonyms(corrected);
-      const allTerms = splitIntoSearchableTerms(expanded);
+const allTerms = prepareSearchTerms(searchTerms);
       if (allTerms.length === 0) return [];
 
       // Use AND logic: every term must appear in title OR description
@@ -1254,7 +908,7 @@ async function searchDiplomas(searchTerms) {
         .from("diplomas")
         .select("id, title, link, description, price");
 
-      for (const t of allTerms) {
+for (const t of allTerms.slice(0, 4)) {
         query = query.or(`title.ilike.%${t}%,description.ilike.%${t}%`);
       }
 
@@ -1330,9 +984,7 @@ async function searchLessonsInCourses(searchTerms) {
   if (cached) return cached;
 
   try {
-    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
-    const expanded = expandSynonyms(corrected);
-    const allTerms = splitIntoSearchableTerms(expanded);
+const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
     const orFilters = allTerms.map((t) => `title.ilike.%${t}%`).join(",");
@@ -1361,8 +1013,8 @@ async function searchLessonsInCourses(searchTerms) {
     if (openai) {
       try {
         const queryText = searchTerms.join(" ");
-        const embResp = await openai.embeddings.create({
-          model: "text-embedding-3-small",
+const embResp = await openai.embeddings.create({
+          model: CHUNK_EMBEDDING_MODEL,
           input: queryText.substring(0, 2000),
         });
 
@@ -1512,9 +1164,8 @@ async function priorityTitleSearch(searchTerms) {
   if (cached) return cached;
 
   try {
-    const corrected = searchTerms.map((t) => applyArabicCorrections(t));
-    const meaningful = corrected.filter(
-      (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+const meaningful = searchTerms.filter(
+      (t) => t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
     );
     if (meaningful.length === 0) return [];
 
@@ -1757,7 +1408,7 @@ setInterval(() => {
 function extractMainTopic(searchTerms) {
   if (!searchTerms || searchTerms.length === 0) return null;
   const meaningful = searchTerms.filter(
-    (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+    (t) => t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
   );
   return meaningful.length > 0 ? meaningful[0] : searchTerms[0];
 }
@@ -2230,9 +1881,18 @@ detected_category لازم يكون اسم تصنيف بالظبط من القا
 {"action":"SEARCH|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب تصنيف من القائمة فوق يناسب الموضوع (لازم يكون اسم تصنيف من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
 
 ═══ search_terms ═══
-المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم"
+═══ search_terms — أهم حاجة ═══
+المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم","دورة","محتاج"
 ✅ اسم الموضوع/التقنية/الأداة فقط
-⚠️ عربيزي → ضيف الإنجليزي: "فوتوشوب"→["فوتوشوب","photoshop"]
+⚠️ لازم تضيف variants متعددة عشان البحث يشتغل:
+- "ادارة" → ["ادارة", "إدارة أعمال", "management", "ادارة اعمال"]
+- "فوتوشوب" → ["فوتوشوب", "photoshop"]
+- "بايثون" → ["بايثون", "python"]
+- "ماركتنج" → ["ماركيتنج", "تسويق", "digital marketing"]
+- "جرافيك" → ["جرافيك ديزاين", "تصميم جرافيك", "graphic design"]
+⚠️ لهجات مختلفة → صحح: "ابغى بايتون" → ["بايثون","python"]
+⚠️ أخطاء إملائية → صحح: "فوتشوب" → ["فوتوشوب","photoshop"]
+⚠️ عربيزي/إنجليزي → ضيف الاتنين دايماً
 
 ═══ user_intent ═══
 FIND_COURSE=عايز يتعلم/يدور على كورس | QUESTION=عايز يفهم مصطلح ("يعني إيه X") | UNCLEAR=حروف عشوائية 100% فقط
@@ -2785,7 +2445,7 @@ function verifyCourseRelevance(course, searchTerms) {
 
   let matchCount = 0;
   const coreTerms = searchTerms.filter(
-    (t) => t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+    (t) => t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
   );
 
   for (const term of coreTerms) {
@@ -3004,7 +2664,7 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
   );
 
   const GENERIC_WORDS = new Set([
-    "ادارة", "اداره", "مقدمة", "مقدمه", "اساسيات", "مبادئ",
+    "مقدمة", "مقدمه", "اساسيات", "مبادئ",
     "تعلم", "شرح", "كامل", "شامل", "عملي", "تطبيقي",
     "احتراف", "برنامج", "مشروع", "اساس", "دورة", "دوره",
     "كورس", "الكترونيه", "الكتروني", "اونلاين",
@@ -3012,7 +2672,7 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
 
   const specificTerms = termsToSearch.filter(t => {
     const nt = normalizeArabic(t.toLowerCase().trim());
-    return nt.length > 2 && !GENERIC_WORDS.has(nt) && !ARABIC_STOP_WORDS.has(nt);
+    return nt.length > 2 && !GENERIC_WORDS.has(nt) && !BASIC_STOP_WORDS.has(nt);
   });
 
   let bestArabicHits = 0;
@@ -3028,7 +2688,7 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
       const nt = normalizeArabic(t.toLowerCase());
       if (nt.length <= 3) return false;
       if (titleNorm.includes(nt)) return true;
-      const words = nt.split(/\s+/).filter(w => w.length > 3 && !ARABIC_STOP_WORDS.has(w));
+      const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
       if (words.length === 0) return false;
       return words.length === 1 ? titleNorm.includes(words[0]) : words.every(w => titleNorm.includes(w));
     });
@@ -3235,7 +2895,7 @@ async function smartChat(message, sessionId) {
 
 
   // Dialect normalization
-  const dialectNormalized = normalizeDialect(message);
+const dialectNormalized = message;
 
   // Context enrichment
   const contextResult = enrichMessageWithContext(
@@ -3501,40 +3161,8 @@ if (!analysis.is_follow_up && isContextFollowUp
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// 🆕 FIX: CATEGORIES + detected_category → SEARCH
-// "ادارة" = عايز كورسات إدارة، مش عايز يشوف قائمة التصنيفات
-// ═══════════════════════════════════════════════════════════
-if (analysis.action === "CATEGORIES" && analysis.detected_category && !skipUpsell) {
-  console.log(`🔄 FIX: CATEGORIES → SEARCH (detected_category: "${analysis.detected_category}")`);
-  analysis.action = "SEARCH";
-  analysis.user_intent = "FIND_COURSE";
-  if (!analysis.search_terms || analysis.search_terms.length === 0) {
-    const msgWords = enrichedMessage.split(/\s+/).filter(w =>
-      w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
-    );
-    analysis.search_terms = msgWords.length > 0 ? msgWords : [analysis.detected_category];
-  }
-  analysis.response_message = "";
-}
+// GPT handles search term extraction in analyzer
 
-// ═══════════════════════════════════════════════════════════
-// 🆕 FIX: CHAT + FIND_COURSE → SEARCH
-// "كورسات ادارة" = GPT فهم إنه عايز كورس بس حط action غلط
-// ═══════════════════════════════════════════════════════════
-if (analysis.action === "CHAT" && analysis.user_intent === "FIND_COURSE" && !skipUpsell) {
-  const hasTerms = analysis.search_terms && analysis.search_terms.length > 0;
-  const hasCat = !!analysis.detected_category;
-  if (hasTerms || hasCat) {
-    console.log(`🔄 FIX: CHAT+FIND_COURSE → SEARCH (terms=[${(analysis.search_terms||[]).join(',')}], cat="${analysis.detected_category}")`);
-    analysis.action = "SEARCH";
-    if (!hasTerms && hasCat) {
-      const catWords = analysis.detected_category.split(/\s+/).filter(w => w.length > 2);
-      analysis.search_terms = catWords;
-    }
-    analysis.response_message = "";
-  }
-}
 // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #71 + FIX #78c: Intercept vague SEARCH → smart clarification
   // ═══════════════════════════════════════════════════════════
@@ -3580,19 +3208,7 @@ if (analysis.action === "CHAT" && analysis.user_intent === "FIND_COURSE" && !ski
      ACTION: SEARCH
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
-let termsToSearch = fuzzyCorrectTerms(analysis.search_terms);
-
-
-// 🆕 FIX #86: Keep original terms alongside corrected ones
-termsToSearch = [...new Set([...termsToSearch, ...analysis.search_terms])];
-
-
-// 🆕 Auto phonetic transliteration (Arabic brand names → English)
-const phoneticExtra = addPhoneticTransliterations(termsToSearch);
-if (phoneticExtra.length > 0) {
-  termsToSearch = [...new Set([...termsToSearch, ...phoneticExtra])];
-}
-
+let termsToSearch = [...new Set(analysis.search_terms)];
     // Priority title search
 // Main search — courses includes title priority + lessons merged
     let [courses, diplomas] = await Promise.all([
@@ -3705,7 +3321,7 @@ console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarifi
       
       if (filtered.length > 0) {
         const coreTerms = termsToSearch.filter(t => 
-          t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+          t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
         );
         
         const relevantFiltered = filtered.filter(c => {
@@ -3776,7 +3392,7 @@ reply += `لو حابب تشوف المزيد، تقدر تتصفح التصني
     }
     reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
-    reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+reply += `<br><br>💡 مع الاشتراك السنوي (${PRICING.annual}${PRICING.currency} ${PRICING.promoName}) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
@@ -3830,7 +3446,7 @@ if (allPreviouslyShown) {
   if (genuinelyNew.length > 0) {
     // 🆕 FIX #115d: Re-check topic relevance (same strict filter as above)
     const _reCheckTerms = termsToSearch.filter(t => 
-      t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+      t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
     );
 const _topicRelevantNew = genuinelyNew.filter(c => {
       if (c._titleMatch || c._lessonMatch) return true;
@@ -3969,7 +3585,7 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
       // Problem: old FIX #114 used courses.slice(0,3) blindly → showed "المكياج" for "فوتوشوب"
       // Fix: verify topic match in primary fields before showing
       const _topicTerms = termsToSearch.filter(t => 
-        t.length > 2 && !ARABIC_STOP_WORDS.has(t.toLowerCase())
+        t.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
       );
       
 const _topicRelevant = courses.filter(c => {
@@ -4201,11 +3817,11 @@ else if (analysis.action === "SUBSCRIPTION") {
     if (analysis.response_message && analysis.response_message.trim().length > 20) {
       console.log(`💡 SUBSCRIPTION: Using GPT response from bot instructions`);
       reply = analysis.response_message;
-      if (!reply.includes('easyt.online/p/subscriptions')) {
-        reply += `<br><br><a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a>`;
+if (!reply.includes('easyt.online/p/subscriptions')) {
+        reply += `<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a>`;
       }
       if (!reply.includes('easyt.online/p/Payments')) {
-        reply += `<br><a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+        reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
       }
     } else {
       reply = `أهلاً بيك! 🎉<br><br>`;
@@ -4216,10 +3832,10 @@ else if (analysis.action === "SUBSCRIPTION") {
       reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
       reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
       reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      reply += `✨ <strong>الاشتراك السنوي: 49$ فقط</strong> (عرض رمضان بدل 59$)<br>`;
+reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.currency} فقط</strong> (${PRICING.promoName} بدل ${PRICING.originalAnnual}${PRICING.currency})<br>`;
       reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
-      reply += `<a href="https://easyt.online/p/subscriptions" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
-      reply += `<a href="https://easyt.online/p/Payments" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
+      reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
     }
     intent = "SUBSCRIPTION";
   }
@@ -4261,7 +3877,7 @@ else if (analysis.action === "SUBSCRIPTION") {
       let questionTerms = (analysis.search_terms || []).length > 0
         ? analysis.search_terms
         : enrichedMessage.split(/\s+/).filter(w =>
-            w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+            w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
           );
 
       // Answer the question from chunks or GPT knowledge
@@ -4391,11 +4007,13 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
   }
 
 
+const hasSearchResults = reply.includes('border:1px solid') || reply.includes('border:2px solid');
+
 const suggestions = generateChatSuggestions(
     analysis.action,
     analysis,
     analysis.search_terms || [],
-    reply.includes('formatCourseCard') || reply.includes('border:1px solid') || reply.includes('border:2px solid')
+    hasSearchResults
   );
 
   console.log(
@@ -4403,7 +4021,7 @@ const suggestions = generateChatSuggestions(
   );
   
 // Cache the response (only for SEARCH results with courses)
-  if (cacheKey && analysis.action === "SEARCH" && reply.includes('border:1px solid')) {
+if (cacheKey && analysis.action === "SEARCH" && hasSearchResults) {
     setCachedResponse(cacheKey, { reply, intent, suggestions });
   }
 
@@ -4572,7 +4190,13 @@ const { reply, intent, suggestions } = await smartChat(cleanMessage, sessionId);
    ══════════════════════════════════════════════════════════ */
 
 // === Admin Login ===
-app.post("/admin/login", (req, res) => {
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, error: "محاولات كتير — استنى 15 دقيقة" },
+});
+
+app.post("/admin/login", adminLoginLimiter, (req, res) => {
   const { password } = req.body;
   if (!password) {
     return res.status(400).json({ success: false, error: "كلمة السر مطلوبة" });
@@ -5738,8 +5362,8 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
     let chunksCreated = 0;
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const embeddingRes = await openai.embeddings.create({
-        model: "text-embedding-3-small",
+const embeddingRes = await openai.embeddings.create({
+        model: CHUNK_EMBEDDING_MODEL,
         input: chunk.content,
       });
       const embedding = embeddingRes.data[0].embedding;
@@ -5877,8 +5501,8 @@ app.get("/", (req, res) => {
    ══════════════════════════════════════════════════════════ */
 async function generateSingleEmbedding(text) {
   const cleanText = text.substring(0, 8000);
-  const response = await openai.embeddings.create({
-    model: "text-embedding-ada-002",
+const response = await openai.embeddings.create({
+    model: COURSE_EMBEDDING_MODEL,
     input: cleanText,
   });
   return response.data[0].embedding;
@@ -6187,10 +5811,9 @@ const meaningful = terms.filter((t) => t.length > 2);
     if (meaningful.length === 0) return [];
 
     // 🆕 FIX #111: Add normalized Arabic variants for better matching
-    const allVariants = [...new Set([
+const allVariants = [...new Set([
       ...meaningful,
       ...meaningful.map(t => normalizeArabic(t)),
-      ...meaningful.map(t => applyArabicCorrections(t)),
     ])].filter(t => t.length > 2);
 
     const orFilters = allVariants
@@ -6256,8 +5879,8 @@ const meaningful = terms.filter((t) => t.length > 2);
 async function getRelevantChunks(query, courseId = null, limit = 8) {
   if (!supabase || !openai || !query) return [];
   try {
-    const embResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",  // 🔴 FIX: must match upload model!
+const embResponse = await openai.embeddings.create({
+      model: CHUNK_EMBEDDING_MODEL,
       input: query.substring(0, 2000),
     });
     const queryEmbedding = embResponse.data[0].embedding;
@@ -6382,16 +6005,14 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
     try {
       const allWords = searchText.split(/\s+/).filter(w => w.length >= 2);
       const meaningful = allWords.filter(w => 
-        w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase())
+        w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
       );
       const englishTerms = allWords.filter(w => /^[a-zA-Z]{2,}$/.test(w));
       const rawTerms = [...new Set([...meaningful, ...englishTerms])];
       console.log(`   📝 Strategy 1 raw terms: [${rawTerms.join(', ')}]`);
 
       if (rawTerms.length > 0) {
-        const corrected = rawTerms.map(t => applyArabicCorrections(t));
-        const expanded = expandSynonyms(corrected);
-        const searchTerms = splitIntoSearchableTerms(expanded);
+const searchTerms = prepareSearchTerms(rawTerms);
         console.log(`   📝 Strategy 1 expanded terms: [${searchTerms.join(', ')}]`);
 
         if (searchTerms.length > 0) {
@@ -6536,8 +6157,8 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
     if (!result) {
       console.log(`   🔄 Strategy 2: Semantic chunks (FALLBACK)...`);
       try {
-        const embResponse = await openai.embeddings.create({
-          model: "text-embedding-3-small",
+const embResponse = await openai.embeddings.create({
+          model: CHUNK_EMBEDDING_MODEL,
           input: searchText.substring(0, 2000),
         });
         const queryEmbedding = embResponse.data[0].embedding;
@@ -6874,7 +6495,7 @@ function buildGuideSystemPrompt({
   /* ═══════════════════════════════════════════════════════════════
      🆕 FIX #46+#48: /api/guide — Full lesson context + cross-lesson
      ═══════════════════════════════════════════════════════════════ */
-  app.post("/api/guide", async (req, res) => {
+app.post("/api/guide", limiter, async (req, res) => {
     try {
       const {
         message,
@@ -6900,6 +6521,15 @@ function buildGuideSystemPrompt({
       }
 
       consumeGuideMsg(session_id);
+
+
+// Memory protection: limit concurrent guide sessions
+      if (Object.keys(guideConversations).length > MAX_GUIDE_SESSIONS) {
+        const sorted = Object.entries(guideConversations)
+          .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
+        sorted.slice(0, 100).forEach(([sid]) => delete guideConversations[sid]);
+        console.log(`🧹 Guide cleanup: removed 100 oldest sessions`);
+      }
 
 let currentLessonContext = "";
       let otherLessonsContext = "";
@@ -7019,7 +6649,7 @@ const [semanticChunks, _otherCourseRec] = await Promise.all([
           }
 
           // Text search
-          const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !ARABIC_STOP_WORDS.has(w.toLowerCase()));
+          const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase()));
           if (textTerms.length > 0) {
             const textChunks = await searchChunksByText(textTerms, courseId, null, 10);
             ragStats.text = textChunks.length;
@@ -7347,6 +6977,9 @@ res.json({
     });
   });
 
+
+const MAX_GUIDE_SESSIONS = 500;
+
   /* ═══════════════════════════════════
      Guide Cleanup
      ═══════════════════════════════════ */
@@ -7458,7 +7091,7 @@ res.json({
             if (!text.trim()) continue;
 
 const embRes = await openai.embeddings.create({
-              model: "text-embedding-3-small",
+              model: CHUNK_EMBEDDING_MODEL,
               input: text.substring(0, 8000),
             });
             const embedding = embRes.data[0].embedding;
