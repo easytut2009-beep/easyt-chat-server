@@ -331,10 +331,16 @@ function levenshteinDistance(a, b) {
 function finalizeReply(html) {
   if (!html) return "";
   html = html.replace(/\n/g, "<br>");
-  html = html.replace(/([.!؟،])\s*(\d+)\.\s/g, "$1<br>$2. ");
-  // 🆕 FIX: Each emoji number on its own line
-  html = html.replace(/([^\n>])\s*([1-9️⃣0-9️⃣]️⃣)/g, "$1<br>$2");
-  html = html.replace(/([^\n>])\s*([\u2776-\u2793])/g, "$1<br>$2");
+  
+  // 🆕 FIX: Regular numbered items (1. 2. 3.) each on its own line
+  html = html.replace(/([^\n<\d])\s*(\d{1,2})\.\s/g, "$1<br>$2. ");
+  
+  // 🆕 FIX: Emoji numbered items (1️⃣ 2️⃣ 3️⃣) each on its own line
+  html = html.replace(/([^\n<>])\s*([1-9]️⃣)/g, "$1<br>$2");
+  
+  // 🆕 FIX: Bullet points (• ◦ -) each on its own line
+  html = html.replace(/([^\n<>])\s*([•◦])\s/g, "$1<br>$2 ");
+  
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
   html = html.replace(/(<\/div>)\s*<br\s*\/?>/gi, "$1");
