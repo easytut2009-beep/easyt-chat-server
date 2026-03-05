@@ -2719,7 +2719,7 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
       console.log(`🏆 Title-match: "${c.title}" → +500`);
     }
 
-    if (!c._titleMatch && c.matchedLessons && c.matchedLessons.length > 0) {
+if (!c._titleMatch && c.matchedLessons && c.matchedLessons.length > 0) {
       const hasRelevant = c.matchedLessons.some(ml => {
         const ln = normalizeArabic((ml.title || "").toLowerCase());
         return termsToSearch.some(t => {
@@ -2729,8 +2729,23 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
       });
       if (hasRelevant) {
         c._lessonMatch = true;
-        c.relevanceScore = (c.relevanceScore || 0) + 300;
-        console.log(`📖 Lesson-match: "${c.title}" → +300`);
+        
+        // 🔧 FIX: Check if course's OWN title/subtitle/domain also match
+        const courseOwnFieldsMatch = termsToSearch.some(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          if (nt.length <= 2) return false;
+          return titleNorm.includes(nt) || subtitleNorm.includes(nt) || 
+                 normalizeArabic((c.domain || "").toLowerCase()).includes(nt);
+        });
+        
+        if (courseOwnFieldsMatch) {
+          c.relevanceScore = (c.relevanceScore || 0) + 300;
+          console.log(`📖 Lesson-match + course match: "${c.title}" → +300`);
+        } else {
+          c._weakLessonMatch = true;
+          c.relevanceScore = (c.relevanceScore || 0) + 50;
+          console.log(`📖 Lesson-match only (weak): "${c.title}" → +50`);
+        }
       }
     }
 
@@ -2776,7 +2791,11 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
 // === FIX: Minimum relevance score filter ===
 if (courses.length > 0) {
     const topScore = courses[0].relevanceScore || 0;
-    const minRelevantScore = Math.max(400, topScore * 0.3);
+    const hasTitleMatch = courses.some(c => c._titleMatch);
+    // 🔧 FIX: Dynamic threshold — strict when title matches exist, lenient otherwise
+    const minRelevantScore = hasTitleMatch
+        ? Math.max(400, topScore * 0.3)
+        : Math.max(50, topScore * 0.3);
     const beforeCount = courses.length;
     for (let i = courses.length - 1; i >= 0; i--) {
         if ((courses[i].relevanceScore || 0) < minRelevantScore) {
@@ -2803,9 +2822,9 @@ function applyQualityFilters(courses) {
     if (tf.length >= 1) filtered = tf;
   }
 
-  const hasStrongMatch = filtered.some(c =>
-    (c.relevanceScore || 0) >= 200 || c._titleMatch || c._lessonMatch ||
-    (c.matchedLessons && c.matchedLessons.length > 0)
+const hasStrongMatch = filtered.some(c =>
+    (c.relevanceScore || 0) >= 200 || c._titleMatch || 
+    (c._lessonMatch && !c._weakLessonMatch)
   );
 
   if (!hasStrongMatch) {
