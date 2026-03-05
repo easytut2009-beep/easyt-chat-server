@@ -3419,12 +3419,36 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
     }
 
-    // Safeguard 4: Arabic words with 3+ chars → probably not gibberish
+// Safeguard 4: Arabic words → check if meaningful (not gibberish)
+    // 🆕 FIX: Require at least one 4+ char word, OR known intent indicators
     if (!isActuallyRecognizable) {
       const arabicWords = enrichedMessage.match(/[\u0600-\u06FF]{3,}/g);
       if (arabicWords && arabicWords.length >= 2) {
-        isActuallyRecognizable = true;
-        console.log(`🧠 FIX #84 safeguard: multiple Arabic words found`);
+        const meaningfulWords = arabicWords.filter(w => w.length >= 4);
+        if (meaningfulWords.length >= 1) {
+          // At least one real word (4+ chars) → likely meaningful
+          isActuallyRecognizable = true;
+          console.log(`🧠 FIX #84 safeguard: meaningful Arabic words found: [${meaningfulWords.join(', ')}]`);
+        } else {
+          // Only short 3-char words → check for known intent indicators
+          const normMsgInd = normalizeArabic(enrichedMessage.toLowerCase());
+          const intentIndicators = [
+            'ايه', 'ايش', 'شو', 'وش', 'كيف', 'ازاي', 'ليه', 'لماذا', 'فين', 'وين', 'اين',
+            'هل', 'عايز', 'عاوز', 'محتاج', 'ابغي', 'اريد', 'بدي',
+            'اشرح', 'وضح', 'قولي', 'فهمني', 'علمني',
+            'كورس', 'دوره', 'دبلوم', 'درس', 'تعلم', 'اتعلم',
+            'سعر', 'اشتراك', 'ادفع', 'فلوس', 'بكام'
+          ];
+          const hasIndicator = intentIndicators.some(ind =>
+            normMsgInd.includes(normalizeArabic(ind))
+          );
+          if (hasIndicator) {
+            isActuallyRecognizable = true;
+            console.log(`🧠 FIX #84 safeguard: short Arabic words + intent indicator found`);
+          } else {
+            console.log(`🧠 FIX #84 safeguard: only short Arabic words, no indicators → keeping UNCLEAR [${arabicWords.join(', ')}]`);
+          }
+        }
       }
     }
 
@@ -4338,10 +4362,42 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
               }
             }
 
-            // Show courses
+            // 🆕 FIX: For QUESTION intent, require multiple matching terms
+            // Prevents showing "خطة مبيعات" when user asked about "خطة التسعين يوم"
+            const _qFilterTerms = questionTerms.filter(t => {
+              const nt = normalizeArabic(t.toLowerCase());
+              return nt.length > 2
+                && !BASIC_STOP_WORDS.has(t.toLowerCase())
+                && !['ايه', 'ايش', 'يعني', 'معني', 'هيه', 'هيا', 'هو', 'هي', 'شو', 'وش', 'اللي', 'دي', 'ده', 'دى'].includes(nt);
+            });
+            console.log(`🧠 QUESTION filter terms: [${_qFilterTerms.join(', ')}]`);
+
             const topCourses = allCourses
+              .filter(c => {
+                // Build searchable text: title + subtitle + matched lesson titles
+                const _qSearchable = normalizeArabic([
+                  c.title || '',
+                  c.subtitle || '',
+                  ...(c.matchedLessons || []).map(ml => ml.title || '')
+                ].join(' ').toLowerCase());
+
+                // Count how many meaningful terms actually match
+                const _qMatched = _qFilterTerms.filter(t =>
+                  _qSearchable.includes(normalizeArabic(t.toLowerCase()))
+                );
+
+                // Need at least 2 terms to match (or all if only 1 term exists)
+                const _qMinNeeded = Math.min(2, _qFilterTerms.length);
+                const passes = _qMatched.length >= _qMinNeeded;
+
+                if (!passes) {
+                  console.log(`🧠 QUESTION filter: REMOVED "${c.title}" (matched ${_qMatched.length}/${_qFilterTerms.length}: [${_qMatched.join(',')}])`);
+                }
+                return passes;
+              })
               .filter(c => verifyCourseRelevance(c, questionTerms))
               .slice(0, 3);
+
 
             if (topCourses.length > 0) {
               reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
