@@ -582,6 +582,44 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+
+
+
+// ═══ Arabic variant expansion for better search ═══
+function expandArabicVariants(terms) {
+  const variants = new Set();
+  for (const term of terms) {
+    variants.add(term);
+    // إ ↔ ا ↔ أ ↔ آ
+    const normalized = term
+      .replace(/[إأآٱ]/g, 'ا')
+      .replace(/ة$/g, 'ه')
+      .replace(/ى$/g, 'ي');
+    variants.add(normalized);
+    
+    // Add hamza variants
+    if (term.startsWith('ا')) {
+      variants.add('إ' + term.slice(1));
+      variants.add('أ' + term.slice(1));
+    }
+    if (term.startsWith('إ') || term.startsWith('أ')) {
+      variants.add('ا' + term.slice(1));
+    }
+    
+    // ة ↔ ه
+    if (term.endsWith('ة')) variants.add(term.slice(0, -1) + 'ه');
+    if (term.endsWith('ه')) variants.add(term.slice(0, -1) + 'ة');
+    if (normalized.endsWith('ه')) variants.add(normalized.slice(0, -1) + 'ة');
+    
+    // ى ↔ ي  
+    if (term.endsWith('ى')) variants.add(term.slice(0, -1) + 'ي');
+    if (term.endsWith('ي')) variants.add(term.slice(0, -1) + 'ى');
+  }
+  return [...variants].filter(v => v.length > 1);
+}
+
+
+
 /* ══════════════════════════════════════════════════════════
    SECTION 8: Search Engine
    ══════════════════════════════════════════════════════════ */
@@ -607,17 +645,21 @@ const allTerms = prepareSearchTerms(searchTerms);
 
 const limitedTerms = allTerms.slice(0, 6);
 
+// ═══ Expand Arabic variants for ilike matching ═══
+const ilikeTerms = expandArabicVariants(limitedTerms);
+console.log("🔤 Expanded ilike terms:", ilikeTerms);
+
 // 🔧 Phase 1: Search core fields only
-    const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
     const deepCols = [
       "title", "description", "subtitle",
       "full_content", "page_content", "syllabus",
       "objectives", "domain", "keywords",
     ];
 
-    const coreFilters = limitedTerms
-      .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
-      .join(",");
+const coreFilters = ilikeTerms
+  .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
+  .join(",");
 
     const ilikePromise = supabase
       .from("courses")
@@ -666,9 +708,10 @@ const embResp = await openai.embeddings.create({
         "objectives", "domain", "keywords",
       ];
       
-      const deepFilters = limitedTerms
-        .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
-        .join(",");
+const deepIlikeTerms = expandArabicVariants(limitedTerms);
+const deepFilters = deepIlikeTerms
+  .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
+  .join(",");
 
       const { data: deepResults } = await supabase
         .from("courses")
@@ -738,10 +781,11 @@ const embResp = await openai.embeddings.create({
       if (af.length > 0) filtered = af;
     }
 
-    const scored = filtered.map((c) => {
-      let score = 0;
+const scored = filtered.map((c) => {
+    let score = 0;
+    let isTitleMatch = false;
 
-      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+    const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
       const pageNorm = normalizeArabic((c.page_content || "").toLowerCase());
       const syllabusNorm = normalizeArabic((c.syllabus || "").toLowerCase());
@@ -762,7 +806,10 @@ const fullQuery = normalizeArabic(
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-        if (titleNorm.includes(nt)) score += 150;
+if (titleNorm.includes(nt)) {
+  score += 150;
+  isTitleMatch = true;
+}
         if (subtitleNorm.includes(nt)) score += 30;
         if (domainNorm.includes(nt)) score += 10;
         if (keywordsNorm.includes(nt)) score += 5;
@@ -788,7 +835,7 @@ const fullQuery = normalizeArabic(
         }
       }
 
-      return { ...c, relevanceScore: score };
+return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
 
