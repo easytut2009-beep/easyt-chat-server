@@ -3030,6 +3030,15 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms) {
 
   courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
+// === FIX: Minimum relevance score filter ===
+if (scoredCourses.length > 0) {
+    const topScore = scoredCourses[0].score;
+    const minRelevantScore = Math.max(400, topScore * 0.3);
+    const beforeCount = scoredCourses.length;
+    scoredCourses = scoredCourses.filter(c => c.score >= minRelevantScore);
+    console.log(`🎯 Relevance filter: top=${topScore}, min=${Math.round(minRelevantScore)}, ${beforeCount} → ${scoredCourses.length} courses`);
+}
+
   console.log(`📊 Scored ${courses.length} courses:`,
     courses.slice(0, 5).map(c => `"${c.title}" score=${c.relevanceScore}`));
 }
