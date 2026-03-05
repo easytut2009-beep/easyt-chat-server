@@ -3350,7 +3350,9 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   }
 
 // Follow-up handling
-if ((analysis.is_follow_up || isContextFollowUp) && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+const gptSaysNewSearch = !analysis.is_follow_up && analysis.search_terms && analysis.search_terms.length > 0;
+
+if ((analysis.is_follow_up || (isContextFollowUp && !gptSaysNewSearch)) && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
   analysis.is_follow_up = true;
   const prevTerms = sessionMem.lastSearchTerms;
   const newTerms = analysis.search_terms || [];
@@ -3377,8 +3379,9 @@ if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
 
 // Local follow-up fallback: GPT missed it but local detection caught it
 if (!analysis.is_follow_up && isContextFollowUp 
-    && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
-  console.log(`🔄 Local follow-up fallback → restoring context`);
+    && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0
+    && (!analysis.search_terms || analysis.search_terms.length === 0)) {
+  console.log(`🔄 Local follow-up fallback → restoring context (GPT had no search terms)`);
   analysis.is_follow_up = true;
   analysis.search_terms = [...sessionMem.lastSearchTerms];
   if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
@@ -3737,6 +3740,12 @@ if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.len
           relevantCourses = protectedOnly.slice(0, 3);
           if (!recommendationMessage || recommendationMessage.trim().length < 10) {
             recommendationMessage = "إليك الكورسات المتاحة اللي ممكن تناسبك:";
+          }
+} else if (analysis.is_follow_up && !followUpIsClarification && courses.length > 0) {
+          console.log(`ℹ️ FIX #62v3 skipped — ALTERNATIVE follow-up with ${courses.length} courses available`);
+          relevantCourses = courses.slice(0, 3);
+          if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+            recommendationMessage = "كمان عندنا الكورسات دي ممكن تفيدك 👇";
           }
         } else {
           console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
