@@ -2206,6 +2206,25 @@ ${botInstructions ? `⛔ تعليمات الأدمن:\n${botInstructions}\n` : "
 ═══ التصنيفات ═══
 ${categoriesList}
 
+
+═══ قاعدة detected_category ═══
+
+detected_category لازم يكون اسم تصنيف بالظبط من القائمة دي:
+- تعليم أساسيات الكمبيوتر
+- الجرافيكس والتصميم
+- التصوير والمونتاج والأنيميشن
+- الذكاء الاصطناعى وتطبيقاته
+- الاقتصاد والمحاسبة والاحصاء
+- ... (باقي التصنيفات)
+
+❌ ممنوع ترجع اسم أداة أو برنامج كتصنيف
+❌ ممنوع ترجع تصنيف مختصر أو معدّل
+
+أمثلة:
+- "عايز أتعلم فوتوشوب" ← detected_category: "الجرافيكس والتصميم"
+- "كورس إليستريتور" ← detected_category: "الجرافيكس والتصميم"
+- "كورس بريمير" ← detected_category: "التصوير والمونتاج والأنيميشن"
+- "عايز أتعلم إكسيل" ← detected_category: "تعليم أساسيات الكمبيوتر"
 ═══ المطلوب ═══
 حلل الرسالة → JSON فقط:
 {"action":"SEARCH|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب تصنيف من القائمة فوق يناسب الموضوع (لازم يكون اسم تصنيف من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
