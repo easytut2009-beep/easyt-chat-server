@@ -3645,6 +3645,24 @@ if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0)
     }
     }
   
+} else {
+      console.log("FIX93: All courses were prev shown → showing original results");
+      allPreviouslyShown = true;
+  }
+
+  // 🆕 FIX #117: When all prev shown, only re-show title/lesson matches (not weak keyword matches)
+  if (allPreviouslyShown) {
+      const _strongMatches = courses.filter(c => c._titleMatch || c._lessonMatch);
+      console.log(`🆕 FIX #117: Strong matches: ${_strongMatches.length} of ${courses.length}`);
+      if (_strongMatches.length > 0) {
+          courses = _strongMatches;
+          console.log(`🆕 FIX #117: Filtered to title/lesson matches only`);
+      }
+  }
+
+  // 🆕 FIX #115c: Also exclude previously shown DIPLOMAS
+  if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
+
 
 // ══════════════════════════════════════════════════════════════
 // 🆕 FIX #97: EARLY EXIT for follow-ups when all courses shown
