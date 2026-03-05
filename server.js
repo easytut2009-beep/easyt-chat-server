@@ -3576,7 +3576,6 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
     if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
-const filtered = courses.filter(c => !prevIds.has(String(c.id)));
       const beforeCount = courses.length;
 const filtered = courses.filter(c => !prevIds.has(String(c.id)));
 
