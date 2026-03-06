@@ -103,8 +103,6 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .selected-course-badge{display:inline-flex;align-items:center;gap:8px;background:#fde2e4;color:#e63946;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:600;margin-top:10px}
 .selected-course-badge .remove{cursor:pointer;font-size:16px;opacity:.7;transition:.2s}
 .selected-course-badge .remove:hover{opacity:1}
-
-/* ═══ Multi-upload entries ═══ */
 .lesson-entry-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:14px;background:#f8f9fa;border:2px solid #e8e8e8;border-radius:12px;transition:.2s}
 .lesson-entry-row:hover{border-color:#e63946;box-shadow:0 2px 8px rgba(230,57,70,.08)}
 .entry-num{background:#e63946;color:#fff;min-width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
@@ -115,7 +113,6 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 .entry-file-label.has-file{border-color:#28a745;background:#f0fff4}
 .entry-file-name{color:#28a745;font-weight:600;overflow:hidden;text-overflow:ellipsis}
 .entry-status{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#f0f8ff;border:1px solid #bce0fd;border-radius:8px;margin-bottom:12px;font-size:13px;color:#1a73e8;font-weight:600}
-
 @media(max-width:600px){
   .header{padding:14px 16px;flex-direction:column;gap:10px}
   .header h1{font-size:18px}
@@ -189,7 +186,6 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
 
       <div class="card" id="lesson-form-card">
 
-        <!-- ═══ Multi-upload section (default) ═══ -->
         <div id="multi-upload-section">
           <h2>➕ إضافة دروس جديدة</h2>
           <div class="format-hint" style="margin-bottom:16px">
@@ -206,7 +202,6 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
           <div id="upload-progress-text" class="hidden" style="text-align:center;margin-top:8px;font-size:13px;color:#666;font-weight:600"></div>
         </div>
 
-        <!-- ═══ Single re-upload section (hidden) ═══ -->
         <div id="single-upload-section" class="hidden">
           <h2 id="form-title">📁 إعادة رفع</h2>
           <div class="form-group">
@@ -261,7 +256,6 @@ let renamingLessonId = null;
 let highlightedIndex = -1;
 let dropdownOpen = false;
 
-// ═══ Multi-upload state ═══
 let lessonEntries = [];
 let entryCounter = 0;
 
@@ -356,7 +350,6 @@ function selectCourse(id, name) {
     '<span class="remove" onclick="deselectCourse()" title="إزالة">✕</span></div>';
   $('course-content').classList.remove('hidden');
   cancelEdit();
-  // Initialize with one empty entry
   entryCounter = 0;
   lessonEntries = [{ id: ++entryCounter, name: '', transcript: '', fileName: '' }];
   renderLessonEntries();
@@ -591,7 +584,6 @@ function addLessonEntry() {
   entryCounter++;
   lessonEntries.push({ id: entryCounter, name: '', transcript: '', fileName: '' });
   renderLessonEntries();
-  // Focus the new entry name input
   setTimeout(() => {
     const inp = document.getElementById('entry-name-' + entryCounter);
     if (inp) inp.focus();
@@ -610,6 +602,7 @@ function onEntryNameChange(entryId, value) {
   updateBtnCount();
 }
 
+// ✅ Fixed: auto-fill name + auto-add new entry
 function onEntryFileSelect(entryId, event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -617,12 +610,18 @@ function onEntryFileSelect(entryId, event) {
   if (!entry) return;
   entry.fileName = file.name;
 
+  // ✅ لو الاسم فاضي — خده من اسم الملف
+  if (!entry.name.trim()) {
+    entry.name = file.name.replace(/\.[^.]+$/, '');
+    const inp = document.getElementById('entry-name-' + entryId);
+    if (inp) inp.value = entry.name;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
     entry.transcript = e.target.result;
     addLog('File loaded: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)', 'success');
 
-    // Update label visually (no full re-render)
     const label = document.getElementById('entry-file-label-' + entryId);
     if (label) {
       label.classList.add('has-file');
@@ -632,6 +631,13 @@ function onEntryFileSelect(entryId, event) {
         span.textContent = '📄 ' + file.name;
       }
     }
+
+    // ✅ لو ده آخر entry — ضيف واحد جديد فاضي تلقائياً
+    const isLast = lessonEntries[lessonEntries.length - 1]?.id === entryId;
+    if (isLast) {
+      addLessonEntry();
+    }
+
     updateBtnCount();
     updateEntryStatus();
   };
@@ -695,7 +701,6 @@ async function onProcessAll() {
     return;
   }
 
-  // Check for incomplete entries
   const nameOnly = lessonEntries.filter(e => e.name.trim() && !e.transcript.trim());
   const fileOnly = lessonEntries.filter(e => !e.name.trim() && e.transcript.trim());
   if (nameOnly.length > 0 || fileOnly.length > 0) {
@@ -707,14 +712,12 @@ async function onProcessAll() {
     if (!ok) return;
   }
 
-  // Check for entries with short transcripts
   const tooShort = valid.filter(e => e.transcript.trim().length < 50);
   if (tooShort.length > 0) {
     const ok = await showModal('⚠️ محتوى قصير', 'فيه ' + tooShort.length + ' درس الملف بتاعه قصير أوي (أقل من 50 حرف). تكمل؟', 'أيوه كمّل');
     if (!ok) return;
   }
 
-  // Check for duplicates with existing lessons
   const dups = valid.filter(e =>
     existingLessons.some(l => l.title.trim() === e.name.trim())
   );
@@ -728,7 +731,6 @@ async function onProcessAll() {
     if (!ok) return;
   }
 
-  // Start uploading
   processing = true;
   $('btn-process-all').disabled = true;
   $('btn-process-all').innerHTML = '<span class="spinner"></span> جاري الرفع...';
@@ -749,7 +751,6 @@ async function onProcessAll() {
     addLog('(' + (i + 1) + '/' + valid.length + ') رفع: ' + entry.name + ' (' + entry.transcript.length + ' chars)', 'info');
 
     try {
-      // Check if lesson exists
       let lessonId = null;
       const existing = existingLessons.find(l => l.title.trim() === entry.name.trim());
       if (existing) {
@@ -757,12 +758,22 @@ async function onProcessAll() {
         addLog('  ↳ استبدال محتوى درس موجود (id=' + lessonId + ')', 'warn');
       }
 
-      const result = await api('POST', '/api/admin/process-lesson', {
+      // ✅ Fixed: لا تبعت lessonId لو مش موجود
+      const payload = {
         courseId: selectedCourseId,
-        lessonId: lessonId,
         lessonName: entry.name.trim(),
         transcript: entry.transcript
+      };
+      if (lessonId) payload.lessonId = lessonId;
+
+      console.log('📤 Payload:', {
+        courseId: payload.courseId,
+        lessonId: payload.lessonId || '(new lesson)',
+        lessonName: payload.lessonName,
+        transcriptLength: payload.transcript.length
       });
+
+      const result = await api('POST', '/api/admin/process-lesson', payload);
 
       if (result.success) {
         addLog('  ✅ تم! ' + (result.chunksCreated || 0) + ' chunks', 'success');
@@ -783,7 +794,6 @@ async function onProcessAll() {
   $('btn-add-entry').disabled = false;
   $('btn-process-all').innerHTML = '🚀 رفع الكل';
 
-  // Reset entries
   entryCounter = 0;
   lessonEntries = [{ id: ++entryCounter, name: '', transcript: '', fileName: '' }];
   renderLessonEntries();
@@ -802,7 +812,6 @@ async function onProcessAll() {
 // ════════════════════════════════════════════════════════
 function onReupload(id, title) {
   editLessonId = String(id);
-  // Switch to single-upload mode
   $('multi-upload-section').classList.add('hidden');
   $('single-upload-section').classList.remove('hidden');
   $('form-title').textContent = '📁 رفع ملف لدرس: ' + title;
@@ -818,10 +827,8 @@ function onReupload(id, title) {
 function cancelEdit() {
   editLessonId = null;
   renamingLessonId = null;
-  // Switch back to multi-upload mode
   $('multi-upload-section').classList.remove('hidden');
   $('single-upload-section').classList.add('hidden');
-  // Reset single form
   $('inp-lesson-name').value = '';
   $('inp-transcript').value = '';
   $('file-input').value = '';
@@ -866,12 +873,15 @@ async function onProcessLesson() {
     $('progress-fill').style.width = '30%';
     addLog('Processing: ' + lessonName + ' (' + transcript.length + ' chars) [re-upload id=' + editLessonId + ']', 'info');
 
-    const result = await api('POST', '/api/admin/process-lesson', {
+    // ✅ Fixed: لا تبعت lessonId لو null
+    const payload = {
       courseId: selectedCourseId,
-      lessonId: editLessonId || null,
       lessonName: lessonName,
       transcript: transcript
-    });
+    };
+    if (editLessonId) payload.lessonId = editLessonId;
+
+    const result = await api('POST', '/api/admin/process-lesson', payload);
 
     $('progress-fill').style.width = '100%';
 
