@@ -338,8 +338,12 @@ function finalizeReply(html) {
   // 🆕 FIX: Emoji numbered items (1️⃣ 2️⃣ 3️⃣) each on its own line
   html = html.replace(/([^\n<>])\s*([1-9]️⃣)/g, "$1<br>$2");
   
-  // 🆕 FIX: Bullet points (• ◦ -) each on its own line
+// 🆕 FIX: Bullet points (• ◦ -) each on its own line
   html = html.replace(/([^\n<>])\s*([•◦])\s/g, "$1<br>$2 ");
+  
+  // 🆕 FIX: Emoji bullet points (🎨 📢 💻 📊 etc.) each on its own line
+  // Matches non-face emojis (skips 😊😅🤔 range U+1F600-1F64F)
+  html = html.replace(/([\u0600-\u06FF)\]!؟?,،.])\s*([\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}][\u{FE0E}\u{FE0F}]?)\s+([\u0600-\u06FF])/gu, "$1<br>$2 $3");
   
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
