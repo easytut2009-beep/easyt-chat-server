@@ -4087,7 +4087,7 @@ lastShownDiplomaIds: [...new Set([
 } else {
       // No results from courses/diplomas/lessons
 
-      // 🆕 FIX #84: QUESTION intent → answer from chunks or knowledge
+// 🆕 FIX #84: QUESTION intent → answer from chunks or knowledge
       if (analysis.user_intent === "QUESTION") {
         console.log(`🧠 FIX #84: QUESTION intent + no courses → answering from chunks/knowledge`);
         const questionAnswer = await answerFromChunksOrKnowledge(message, termsToSearch);
@@ -4095,7 +4095,6 @@ lastShownDiplomaIds: [...new Set([
         if (questionAnswer && questionAnswer.answer) {
           reply = questionAnswer.answer;
 
-          // Show related courses from chunks if found
           if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
             const instructors = await getInstructors();
             reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
@@ -4109,25 +4108,23 @@ lastShownDiplomaIds: [...new Set([
 
         } else {
           reply = `🤔 معنديش معلومات كافية عن الموضوع ده حالياً.`;
-          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات  ←</a>`;
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
         }
-} else {
-let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
+      } else {
+        let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
 
         if (!outerCat && _topDomainBeforeFilter) {
           outerCat = detectRelevantCategory(_topDomainBeforeFilter);
         }
-if (outerCat) {
+        if (outerCat) {
           reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
         } else {
           reply = `😊 تقدر تتصفح الدورات المتاحة وتلاقي اللي يناسبك 👇`;
         }
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-        }
-        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
       }
 
-updateSessionMemory(sessionId, {
+      updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: extractMainTopic(termsToSearch),
         userLevel: analysis.user_level,
@@ -4137,8 +4134,6 @@ updateSessionMemory(sessionId, {
     }
   }
 } // end if (!earlyExitFollowUp)
-
-
 /* ═══════════════════════════════════
      ACTION: CLARIFY — حوار توضيحي
      ═══════════════════════════════════ */
