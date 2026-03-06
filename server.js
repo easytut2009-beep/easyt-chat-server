@@ -3385,28 +3385,11 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
     }
 
-if (isActuallyRecognizable) {
-      // 🆕 FIX #84b: Check if it's actually a question or just a context statement
-      const _msg84Norm = normalizeArabic(enrichedMessage.toLowerCase());
-      const _hasQuestionWord84 = /(يعني\s*(ايه|ايش|اية)|ايه\s*(هو|هي|يعني)|ما\s*(هو|هي|معنى)|الفرق\s*بين|ازاي|كيف|ليه|لماذا|هل\s|ايش|شو\s*يعني|وش\s*يعني|what|how|why|explain)/i.test(_msg84Norm);
-      
-      if (_hasQuestionWord84) {
-        // Real question like "يعني ايه SEO" → keep as QUESTION
-        console.log(`🧠 FIX #84b: UNCLEAR → QUESTION (has question word)`);
-        analysis.user_intent = "QUESTION";
-      } else if (analysis.action === "CHAT" && (!analysis.search_terms || analysis.search_terms.length === 0)) {
-        // Context statement like "عندي عيادة" — no question word, no search terms → CLARIFY
-        console.log(`🧠 FIX #84b: UNCLEAR → CLARIFY (context statement, not a question)`);
-        analysis.action = "CLARIFY";
-        analysis.user_intent = "FIND_COURSE";
-        if (!analysis.response_message || analysis.response_message.length < 20) {
-          analysis.response_message = getSmartFallback(sessionId);
-        }
-      } else {
-        // Has search terms or non-CHAT action → QUESTION (original behavior)
-        console.log(`🧠 FIX #84b: UNCLEAR → QUESTION (has search_terms=${(analysis.search_terms||[]).length} or action=${analysis.action})`);
-        analysis.user_intent = "QUESTION";
-      }
+    if (isActuallyRecognizable) {
+      // Override: this is a recognizable message, treat as QUESTION
+      console.log(`🧠 FIX #84: UNCLEAR → QUESTION (message has recognizable content)`);
+      analysis.user_intent = "QUESTION";
+      // Don't clear search_terms — let the flow continue
     } else {
       // Truly unintelligible — ask for clarification
       console.log(`🧠 FIX #84: UNCLEAR confirmed → asking for clarification`);
