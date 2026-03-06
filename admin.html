@@ -770,6 +770,7 @@ input:focus, textarea:focus, select:focus {
         <input type="text" id="convSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadConversations(1)" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadConversations(1)">بحث</button>
         <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadConversations(currentConvPage)">🔄</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllConversations()">🗑️ مسح كل المحادثات</button>
       </div>
       <div id="convList" class="card"></div>
       <div id="convPagination" style="display:flex;gap:8px;justify-content:center;margin-top:8px"></div>
@@ -1169,6 +1170,24 @@ async function loadConversations(page) {
   } catch(e) {
     console.error('❌ loadConversations error:', e);
     el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message || 'غير معروف') + '</p>';
+  }
+}
+
+// ═══════════════════════════════════════
+// 🗑️ CLEAR ALL CONVERSATIONS
+// ═══════════════════════════════════════
+async function clearAllConversations() {
+  var ok1 = await showConfirm('⚠️ هل أنت متأكد إنك عايز تمسح كل المحادثات؟ العملية دي مش هتترجع!');
+  if (!ok1) return;
+  var ok2 = await showConfirm('🚨 تأكيد نهائي: كل المحادثات هتتمسح من الداتا بيز نهائياً! متأكد؟');
+  if (!ok2) return;
+  try {
+    await apiCall('/admin/conversations', { method: 'DELETE' });
+    toast('تم مسح كل المحادثات ✅');
+    loadConversations(1);
+  } catch(e) {
+    console.error('❌ clearAllConversations error:', e);
+    toast('خطأ: ' + (e.message || 'غير معروف'), 'error');
   }
 }
 
