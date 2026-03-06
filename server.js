@@ -4015,8 +4015,19 @@ const _topicRelevant = courses.filter(c => {
         // Don't set relevantCourses → falls through to "no results" section below
       }
     
-        } else {
-          console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
+} else {
+          // 🆕 FIX #62v4: Don't discard high-score courses just because titleMatch failed
+          const topScore = courses.length > 0 ? (courses[0].relevanceScore || 0) : 0;
+          if (topScore >= 800) {
+            const highScoreCourses = courses.filter(c => (c.relevanceScore || 0) >= topScore * 0.4);
+            console.log(`✅ FIX #62v4: No protected but ${highScoreCourses.length} high-score courses (top=${topScore}) — showing them`);
+            relevantCourses = highScoreCourses.slice(0, 3);
+            if (!recommendationMessage || recommendationMessage.trim().length < 10) {
+              recommendationMessage = "شوف الكورسات دي 👇";
+            }
+          } else {
+            console.log(`⚠️ FIX #62v3: No protected courses AND top score too low (${topScore}) — showing "no results"`);
+          }
         }
       }
 
