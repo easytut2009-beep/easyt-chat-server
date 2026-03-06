@@ -3194,9 +3194,19 @@ const dialectNormalized = message;
   // ✅ Skip GPT for trivial messages (greetings, casual)
   if (quickCheck && quickCheck.isCasual && quickCheck.confidence >= 0.9) {
     console.log(`⚡ Skipping GPT analyzer — casual message (${quickCheck.intent})`);
-    const quickReply = quickCheck.intent === "GREETING"
-      ? "أهلاً بيك! 😊 أنا زيكو، مرشدك التعليمي في منصة easyT.<br>عندنا +600 دورة ومحتوى تعليمي في كل المجالات 🎓<br><br>قولي عايز تتعلم إيه وأنا أساعدك! 💪"
-      : "تمام 😊 لو محتاج أي حاجة أنا هنا!";
+const quickReply = quickCheck.intent === "GREETING"
+      ? "أهلاً بيك! 😊🎉 <br>نورتنا! قولي أقدر أساعدك إزاي 💪"
+      : quickCheck.intent === "THANKS"
+      ? "العفو! 😊 <br>ده واجبنا! لو محتاج أي حاجة تانية أنا موجود 🤗"
+      : quickCheck.intent === "GOODBYE"
+      ? "مع السلامة! 👋😊 <br>نورتنا! لو احتجت أي حاجة ارجعلنا في أي وقت 💛"
+      : quickCheck.intent === "HOW_ARE_YOU"
+      ? "الحمد لله تمام! 😊 <br>أنا هنا عشان أساعدك، قولي أقدر أخدمك بإيه؟ 💪"
+      : quickCheck.intent === "COMPLIMENT"
+      ? "شكراً ليك! 😊💛 <br>كلامك ده يسعدنا! أنا هنا دايماً لو محتاج أي مساعدة ✨"
+      : quickCheck.intent === "LAUGH"
+      ? "😄😂 <br>حلو إنك مبسوط! قولي أقدر أساعدك في حاجة؟ 💪"
+      : "أهلاً بيك! 😊 <br>أنا هنا عشان أساعدك، قولي محتاج إيه 💪";
     
 const finalQuickReply = finalizeReply(markdownToHtml(quickReply));
     updateSessionMemory(sessionId, { topics: [], interests: [] });
