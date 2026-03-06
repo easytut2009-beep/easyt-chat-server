@@ -2617,14 +2617,14 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
   let relatedCourses = [];
 
   try {
-// ⚡ FIX: Run semantic + text search in PARALLEL (saves ~1-3s)
+    // 1. Semantic search in ALL chunks (no course filter)
+    const semanticChunks = await getRelevantChunks(question, null, 5);
+
+    // 2. Text search in ALL chunks
     const textTerms = (searchTerms || []).filter(t => t.length > 2);
-    const [semanticChunks, textChunks] = await Promise.all([
-      getRelevantChunks(question, null, 5),
-      textTerms.length > 0 
-        ? searchChunksByText(textTerms, null, null, 5) 
-        : Promise.resolve([]),
-    ]);
+    const textChunks = textTerms.length > 0
+      ? await searchChunksByText(textTerms, null, null, 5)
+      : [];
 
     // 3. Merge and deduplicate
     const allChunks = [...semanticChunks];
@@ -3530,13 +3530,10 @@ let reply = "";
 let termsToSearch = [...new Set(analysis.search_terms)];
     // Priority title search
 // Main search — courses includes title priority + lessons merged
-
-let [courses, diplomas, lessonResults] = await Promise.all([
+    let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
-      searchLessonsInCourses(termsToSearch),
     ]);
-
 // 🆕 FIX #115a: Filter diplomas by TITLE topic relevance
     // Problem: searchDiplomas uses semantic search → returns "Robot" diploma for "Photoshop"
     // Fix: diploma title MUST contain at least one search term
@@ -3584,6 +3581,8 @@ if (_titleMatchedDiplomas.length > 0) {
       }
     }
 
+// 🆕 FIX #111: Always search lessons — finds content inside course lessons
+    let lessonResults = await searchLessonsInCourses(termsToSearch);
 
     // Priority title search — only if still no strong matches
     let priorityCourses = [];
@@ -4351,27 +4350,8 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
             w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
           );
 
-// ⚡ FIX: Run answer generation + course searches in PARALLEL (saves ~5-8s)
-      const _searchPromise = questionTerms.length > 0
-        ? (async () => {
-            try {
-              const [c, d, l] = await Promise.all([
-                searchCourses(questionTerms, [], null),
-                searchDiplomas(questionTerms),
-                searchLessonsInCourses(questionTerms),
-              ]);
-              return { courses: c, diplomas: d, lessons: l };
-            } catch (e) {
-              console.error("⚡ Parallel search error:", e.message);
-              return { courses: [], diplomas: [], lessons: [] };
-            }
-          })()
-        : Promise.resolve({ courses: [], diplomas: [], lessons: [] });
-
-      const [questionAnswer, _searchResults] = await Promise.all([
-        answerFromChunksOrKnowledge(enrichedMessage, questionTerms),
-        _searchPromise,
-      ]);
+      // Answer the question from chunks or GPT knowledge
+      const questionAnswer = await answerFromChunksOrKnowledge(enrichedMessage, questionTerms);
 
       if (questionAnswer && questionAnswer.answer) {
         reply = questionAnswer.answer;
@@ -4379,9 +4359,11 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
 // FIX #85 v2: Search ALL sources (courses + lessons + diplomas)
         if (questionTerms.length > 0) {
           try {
-let relatedCourses = _searchResults.courses;
-let relatedDiplomas = _searchResults.diplomas;
-let relatedLessons = _searchResults.lessons;
+let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
+  searchCourses(questionTerms, [], null),
+  searchDiplomas(questionTerms),
+  searchLessonsInCourses(questionTerms),
+]);
 
             // Merge lesson results into courses
             let allCourses = [...relatedCourses];
