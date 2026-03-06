@@ -2423,8 +2423,6 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
    لو مفيش كورس مطابق → relevant_course_indices: [] و relevant_diploma_indices: []
 
 5️⃣ قاعدة "مفيش كورس":
-   ❌ ممنوع تماماً تقول "مفيش كورس" أو "مفيش كورس متخصص" — حتى لو مفيش نتائج مطابقة 100%
-   ✅ بدلاً من كده قول "ممكن تلاقي اللي بتدور عليه في الكورسات دي" أو "شوف الكورسات دي"
    ❌ ممنوع تقول "مفيش" لو فيه كورس عنوانه فيه الموضوع في البيانات
    لو طلب "دبلومة X" ولقيت كورس (مش دبلومة) عن X → اعرضه وقول "عندنا كورس"
    لو سأل "هل X في كورس Y" → دوّر في matchedLessons + الوصف. لو X في كورس Z تاني → اعرض الاتنين
@@ -4021,8 +4019,8 @@ let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch);
           if (noResultCat) console.log(`📂 No-result: used domain "${_topDomainBeforeFilter}" → "${noResultCat.name}"`);
         }
 
-if (noResultCat) {
-          reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇<br><br>`;
+        if (noResultCat) {
+          reply = `🔍 مفيش كورس متخصص حالياً عن <strong>${topicName}</strong>، بس ممكن تلاقي حاجة قريبة في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇<br><br>`;
 
           // جيب أشهر 3 كورسات في نفس التصنيف
           try {
@@ -4034,7 +4032,7 @@ if (noResultCat) {
 
             if (catCourses && catCourses.length > 0) {
               const instr = await getInstructors();
-              reply += `💡 <strong>كورسات في نفس المجال ممكن تفيدك:</strong><br>`;
+              reply += `💡 <strong>كورسات مشهورة في نفس المجال:</strong><br>`;
               catCourses.forEach((c, i) => {
                 reply += formatCourseCard(c, instr, i + 1);
               });
@@ -4043,6 +4041,9 @@ if (noResultCat) {
             console.error("Smart no-results fallback error:", e.message);
           }
         } else {
+          reply = `🔍 مفيش كورس متخصص حالياً عن <strong>${topicName}</strong>.<br><br>`;
+          reply += `💡 جرّب تكتب الموضوع بشكل تاني، أو تصفح التصنيفات 👇<br><br>`;
+
           // عرض أقرب 3 تصنيفات
           const normTopic = normalizeArabic(topicName.toLowerCase());
           const catScores = Object.entries(CATEGORIES).map(([name, info]) => ({
@@ -4051,14 +4052,11 @@ if (noResultCat) {
           })).sort((a, b) => b.score - a.score).slice(0, 3);
 
           if (catScores[0].score >= 30) {
-            reply = `😊 ممكن تلاقي اللي بتدور عليه في التصنيفات دي 👇<br><br>`;
-            reply += `📂 <strong>تصنيفات قريبة من الموضوع:</strong><br>`;
+            reply += `📂 <strong>تصنيفات ممكن تفيدك:</strong><br>`;
             catScores.forEach((cat, i) => {
               reply += `${i + 1}. <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${cat.name}</a><br>`;
             });
             reply += `<br>`;
-          } else {
-            reply = `😊 تقدر تتصفح الدورات المتاحة وتلاقي اللي يناسبك 👇<br><br>`;
           }
         }
 
@@ -4087,7 +4085,7 @@ lastShownDiplomaIds: [...new Set([
 } else {
       // No results from courses/diplomas/lessons
 
-// 🆕 FIX #84: QUESTION intent → answer from chunks or knowledge
+      // 🆕 FIX #84: QUESTION intent → answer from chunks or knowledge
       if (analysis.user_intent === "QUESTION") {
         console.log(`🧠 FIX #84: QUESTION intent + no courses → answering from chunks/knowledge`);
         const questionAnswer = await answerFromChunksOrKnowledge(message, termsToSearch);
@@ -4095,6 +4093,7 @@ lastShownDiplomaIds: [...new Set([
         if (questionAnswer && questionAnswer.answer) {
           reply = questionAnswer.answer;
 
+          // Show related courses from chunks if found
           if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
             const instructors = await getInstructors();
             reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
@@ -4108,23 +4107,23 @@ lastShownDiplomaIds: [...new Set([
 
         } else {
           reply = `🤔 معنديش معلومات كافية عن الموضوع ده حالياً.`;
-          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+          reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات  ←</a>`;
         }
-      } else {
-        let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
+} else {
+let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
 
         if (!outerCat && _topDomainBeforeFilter) {
           outerCat = detectRelevantCategory(_topDomainBeforeFilter);
         }
         if (outerCat) {
-          reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
+          reply = `🔍 ممكن تلاقي كورسات في نفس المجال في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
         } else {
-          reply = `😊 تقدر تتصفح الدورات المتاحة وتلاقي اللي يناسبك 👇`;
+          reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
         }
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
       }
 
-      updateSessionMemory(sessionId, {
+updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
         lastSearchTopic: extractMainTopic(termsToSearch),
         userLevel: analysis.user_level,
@@ -4134,6 +4133,8 @@ lastShownDiplomaIds: [...new Set([
     }
   }
 } // end if (!earlyExitFollowUp)
+
+
 /* ═══════════════════════════════════
      ACTION: CLARIFY — حوار توضيحي
      ═══════════════════════════════════ */
