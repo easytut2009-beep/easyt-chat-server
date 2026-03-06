@@ -3561,10 +3561,9 @@ let reply = "";
 let termsToSearch = [...new Set(analysis.search_terms)];
     // Priority title search
 // Main search — courses includes title priority + lessons merged
-let [courses, diplomas, lessonResults] = await Promise.all([
+    let [courses, diplomas] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
       searchDiplomas(termsToSearch),
-      searchLessonsInCourses(termsToSearch),
     ]);
 // 🆕 FIX #115a: Filter diplomas by TITLE topic relevance
     // Problem: searchDiplomas uses semantic search → returns "Robot" diploma for "Photoshop"
@@ -3613,6 +3612,8 @@ if (_titleMatchedDiplomas.length > 0) {
       }
     }
 
+// 🆕 FIX #111: Always search lessons — finds content inside course lessons
+    let lessonResults = await searchLessonsInCourses(termsToSearch);
 
     // Priority title search — only if still no strong matches
     let priorityCourses = [];
