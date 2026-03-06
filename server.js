@@ -338,12 +338,8 @@ function finalizeReply(html) {
   // 🆕 FIX: Emoji numbered items (1️⃣ 2️⃣ 3️⃣) each on its own line
   html = html.replace(/([^\n<>])\s*([1-9]️⃣)/g, "$1<br>$2");
   
-// 🆕 FIX: Bullet points (• ◦ -) each on its own line
+  // 🆕 FIX: Bullet points (• ◦ -) each on its own line
   html = html.replace(/([^\n<>])\s*([•◦])\s/g, "$1<br>$2 ");
-  
-  // 🆕 FIX: Emoji bullet points (🎨 📢 💻 📊 etc.) each on its own line
-  // Matches non-face emojis (skips 😊😅🤔 range U+1F600-1F64F)
-  html = html.replace(/([\u0600-\u06FF)\]!؟?,،.])\s*([\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}][\u{FE0E}\u{FE0F}]?)\s+([\u0600-\u06FF])/gu, "$1<br>$2 $3");
   
   html = html.replace(/(<br\s*\/?>){4,}/gi, "<br><br>");
   html = html.replace(/<br\s*\/?>\s*(<div)/gi, "$1");
@@ -2427,8 +2423,6 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
    لو مفيش كورس مطابق → relevant_course_indices: [] و relevant_diploma_indices: []
 
 5️⃣ قاعدة "مفيش كورس":
-   ❌ ممنوع تماماً تقول "مفيش كورس" أو "مفيش كورس متخصص" — حتى لو مفيش نتائج مطابقة 100%
-   ✅ بدلاً من كده قول "ممكن تلاقي اللي بتدور عليه في الكورسات دي" أو "شوف الكورسات دي"
    ❌ ممنوع تقول "مفيش" لو فيه كورس عنوانه فيه الموضوع في البيانات
    لو طلب "دبلومة X" ولقيت كورس (مش دبلومة) عن X → اعرضه وقول "عندنا كورس"
    لو سأل "هل X في كورس Y" → دوّر في matchedLessons + الوصف. لو X في كورس Z تاني → اعرض الاتنين
@@ -2662,41 +2656,12 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
               .from("courses")
               .select("id, title, link")
               .in("id", _courseIds);
-
-
-if (_courses) {
+            if (_courses) {
               for (const c of _courses) {
                 _courseNameMap.set(c.id, c.title);
               }
-              
-              // 🆕 FIX: Filter relatedCourses by title relevance
-              const _rcTerms = (searchTerms || []).filter(t => {
-                const nt = normalizeArabic(t.toLowerCase());
-                return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
-              });
-              
-              if (_rcTerms.length > 0) {
-                const _relevantRC = _courses.filter(c => {
-                  const tNorm = normalizeArabic((c.title || '').toLowerCase());
-                  const tLower = (c.title || '').toLowerCase();
-                  return _rcTerms.some(t => {
-                    const nt = normalizeArabic(t.toLowerCase());
-                    if (nt.length <= 2) return false;
-                    if (tNorm.includes(nt)) return true;
-                    if (/^[a-zA-Z]+$/.test(t) && tLower.includes(t.toLowerCase())) return true;
-                    return false;
-                  });
-                });
-                
-                console.log(`🔍 relatedCourses filter: ${_courses.length} → ${_relevantRC.length} (terms: [${_rcTerms.slice(0,5).join(', ')}])`);
-                relatedCourses = _relevantRC.slice(0, 3);
-              } else {
-                relatedCourses = _courses.slice(0, 3);
-              }
+              relatedCourses = _courses.slice(0, 3);
             }
-
-
-
           }
         }
       }
@@ -4055,7 +4020,7 @@ let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch);
         }
 
         if (noResultCat) {
-reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇<br><br>`;
+          reply = `🔍 مفيش كورس متخصص حالياً عن <strong>${topicName}</strong>، بس ممكن تلاقي حاجة قريبة في قسم <a href="${noResultCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${noResultCat.name}</a> 👇<br><br>`;
 
           // جيب أشهر 3 كورسات في نفس التصنيف
           try {
@@ -4067,7 +4032,7 @@ reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a hr
 
             if (catCourses && catCourses.length > 0) {
               const instr = await getInstructors();
-reply += `💡 <strong>كورسات ممكن تفيدك في المجال ده:</strong><br>`;
+              reply += `💡 <strong>كورسات مشهورة في نفس المجال:</strong><br>`;
               catCourses.forEach((c, i) => {
                 reply += formatCourseCard(c, instr, i + 1);
               });
@@ -4076,7 +4041,8 @@ reply += `💡 <strong>كورسات ممكن تفيدك في المجال ده:<
             console.error("Smart no-results fallback error:", e.message);
           }
         } else {
-reply = `😊 تقدر تتصفح التصنيفات دي وتلاقي اللي يناسبك 👇<br><br>`;
+          reply = `🔍 مفيش كورس متخصص حالياً عن <strong>${topicName}</strong>.<br><br>`;
+          reply += `💡 جرّب تكتب الموضوع بشكل تاني، أو تصفح التصنيفات 👇<br><br>`;
 
           // عرض أقرب 3 تصنيفات
           const normTopic = normalizeArabic(topicName.toLowerCase());
@@ -4127,39 +4093,15 @@ lastShownDiplomaIds: [...new Set([
         if (questionAnswer && questionAnswer.answer) {
           reply = questionAnswer.answer;
 
-  // Show related courses from chunks — WITH topic relevance check
-        if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
-          const alreadyShown = reply.toLowerCase();
-          const _dispTerms = (questionTerms || []).filter(t => {
-            const nt = normalizeArabic(t.toLowerCase());
-            return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
-          });
-          
-          for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
-            if (alreadyShown.includes((rc.title || "").toLowerCase().substring(0, 15))) continue;
-            
-            // 🆕 FIX: Verify course title matches at least one search term
-            if (_dispTerms.length > 0) {
-              const rcTitleNorm = normalizeArabic((rc.title || '').toLowerCase());
-              const rcTitleLower = (rc.title || '').toLowerCase();
-              const isRelevant = _dispTerms.some(t => {
-                const nt = normalizeArabic(t.toLowerCase());
-                if (nt.length <= 2) return false;
-                if (rcTitleNorm.includes(nt)) return true;
-                if (/^[a-zA-Z]+$/.test(t) && rcTitleLower.includes(t.toLowerCase())) return true;
-                return false;
-              });
-              
-              if (!isRelevant) {
-                console.log(`🔴 Skipping irrelevant relatedCourse: "${rc.title}" (no term match)`);
-                continue;
-              }
+          // Show related courses from chunks if found
+          if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+            const instructors = await getInstructors();
+            reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
+            for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
+              const rcUrl = rc.link || ALL_COURSES_URL;
+              reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
             }
-            
-            const rcUrl = rc.link || ALL_COURSES_URL;
-            reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
           }
-        }
 
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
@@ -4174,9 +4116,9 @@ let outerCat = detectCategoryFromContext(analysis, courses, termsToSearch);
           outerCat = detectRelevantCategory(_topDomainBeforeFilter);
         }
         if (outerCat) {
-reply = `😊 ممكن تلاقي اللي بتدور عليه في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
+          reply = `🔍 ممكن تلاقي كورسات في نفس المجال في قسم <a href="${outerCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${outerCat.name}</a> 👇`;
         } else {
-reply = `😊 تقدر تتصفح الدورات المتاحة وتلاقي اللي يناسبك 👇`;
+          reply = `🔍 مفيش كورس متخصص حالياً عن الموضوع ده.`;
         }
         reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
       }
@@ -4202,71 +4144,6 @@ else if (analysis.action === "CLARIFY") {
     intent = "CLARIFY";
 
     console.log(`💬 CLARIFY: Question #${currentCount + 1} — "${reply.substring(0, 80)}..."`);
-
-    // 🆕 FIX: Show course/diploma cards when GPT mentions them in CLARIFY
-    try {
-      const _clarifyReply = reply || '';
-      const _mentionedTerms = [];
-
-      // Extract "دبلومة [name]" patterns
-      const _diplomaRegex = /دبلوم[ةه]\s+([^!.،,؟?\n<]+)/gi;
-      let _dMatch;
-      while ((_dMatch = _diplomaRegex.exec(_clarifyReply)) !== null) {
-        const name = _dMatch[1].trim();
-        if (name.length > 3) _mentionedTerms.push(name);
-      }
-
-      // Extract "كورس [name]" patterns
-      const _courseRegex = /كورس\s+([^!.،,؟?\n<]+)/gi;
-      let _cMatch;
-      while ((_cMatch = _courseRegex.exec(_clarifyReply)) !== null) {
-        const name = _cMatch[1].trim();
-        if (name.length > 3) _mentionedTerms.push(name);
-      }
-
-      if (_mentionedTerms.length > 0) {
-        console.log(`🆕 CLARIFY cards: Found mentions: [${_mentionedTerms.join(', ')}]`);
-
-        // Build search words from mentioned terms
-        const _cardSearchWords = [...new Set(
-          _mentionedTerms.flatMap(t =>
-            t.split(/\s+/).filter(w => w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase()))
-          )
-        )];
-
-        if (_cardSearchWords.length > 0) {
-          const [_clarifyDiplomas, _clarifyCourses] = await Promise.all([
-            searchDiplomas(_cardSearchWords),
-            searchCourses(_cardSearchWords, [], null),
-          ]);
-
-          const _clarifyInstructors = await getInstructors();
-          let _cardsHtml = '';
-
-          // Show matching diplomas (max 2)
-          if (_clarifyDiplomas && _clarifyDiplomas.length > 0) {
-            _clarifyDiplomas.slice(0, 2).forEach(d => {
-              _cardsHtml += formatDiplomaCard(d);
-            });
-          }
-
-          // Show matching courses (max 3)
-          if (_clarifyCourses && _clarifyCourses.length > 0) {
-            _clarifyCourses.slice(0, 3).forEach((c, i) => {
-              _cardsHtml += formatCourseCard(c, _clarifyInstructors, i + 1);
-            });
-          }
-
-          if (_cardsHtml) {
-            reply += `<br><br>${_cardsHtml}`;
-            reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-            console.log(`🆕 CLARIFY cards: Added ${(_clarifyDiplomas || []).length} diplomas + ${(_clarifyCourses || []).length} courses`);
-          }
-        }
-      }
-    } catch (_cardErr) {
-      console.error("CLARIFY card display error:", _cardErr.message);
-    }
 
     // 🆕 FIX: Save topics as searchTerms + lastSearchTopic so follow-up context is preserved
     const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.topics : [];
