@@ -4769,6 +4769,41 @@ app.get("/admin/conversations", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════
+// 🗑️ مسح كل المحادثات
+// ═══════════════════════════════════════
+app.delete("/admin/conversations", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("chat_logs")
+      .delete()
+      .not("id", "is", null);
+    if (error) throw error;
+    res.json({ success: true, message: "All conversations deleted" });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════
+// 🗑️ مسح محادثة واحدة بالـ session_id
+// ═══════════════════════════════════════
+app.delete("/admin/conversations/:sessionId", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("chat_logs")
+      .delete()
+      .eq("session_id", req.params.sessionId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 app.get("/admin/conversations/:sessionId", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
