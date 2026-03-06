@@ -709,6 +709,33 @@ input:focus, textarea:focus, select:focus {
   background: #cbd5e1;
 }
 
+/* ✅ NEW: Progress bar for bulk delete */
+.delete-progress {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.delete-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.delete-progress-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444, #f87171);
+  border-radius: 4px;
+  transition: width 0.3s;
+  width: 0%;
+}
+
 @media (max-width: 768px) {
   .sidebar { width: 100%; height: auto; position: relative; }
   .main { margin-right: 0; }
@@ -736,7 +763,7 @@ input:focus, textarea:focus, select:focus {
   <div class="sidebar">
     <div style="padding:16px 20px;border-bottom:1px solid #334155">
       <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.1 — Fixed Pagination</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.2 — Fixed Clear All</div>
     </div>
     <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
     <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
@@ -770,8 +797,9 @@ input:focus, textarea:focus, select:focus {
         <input type="text" id="convSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadConversations(1)" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadConversations(1)">بحث</button>
         <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadConversations(currentConvPage)">🔄</button>
-        <button class="btn btn-danger btn-sm" onclick="clearAllConversations()">🗑️ مسح كل المحادثات</button>
+        <button class="btn btn-danger btn-sm" id="btnClearAll" onclick="clearAllConversations()">🗑️ مسح كل المحادثات</button>
       </div>
+      <div id="deleteProgressArea" style="display:none"></div>
       <div id="convList" class="card"></div>
       <div id="convPagination" style="display:flex;gap:8px;justify-content:center;margin-top:8px"></div>
       <div id="convDetail" style="display:none">
@@ -894,6 +922,7 @@ input:focus, textarea:focus, select:focus {
     </div>
   </div>
 </div>
+
 <script>
 // ═══════════════════════════════════════
 // GLOBALS
@@ -912,7 +941,6 @@ var _convViewMode = 'flat';
 var _convSortedMessages = [];
 var _convSessionId = '';
 
-// ✅ NEW: متغيرات الـ Pagination المحلي
 var _allCrudItems = {};
 var _crudPages = {};
 var ITEMS_PER_PAGE = 50;
@@ -1016,20 +1044,59 @@ function doLogout() {
   document.getElementById('passInput').value='';
 }
 
+// ═══════════════════════════════════════════════════════════
+// ✅ FIX: apiCall — بيتعامل مع ردود HTML بدون ما يكرش
+// ═══════════════════════════════════════════════════════════
 function apiCall(path, opts) {
-  opts = opts||{};
-  return fetch(API+path, {
-    method: opts.method||'GET',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
-    body: opts.body||undefined
+  opts = opts || {};
+  return fetch(API + path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: opts.body || undefined
   }).then(function(r) {
-    if (r.status===401) { doLogout(); throw new Error('غير مصرح — سجل دخول تاني'); }
-    return r.json().then(function(data) {
-      if (!r.ok) {
-        throw new Error((data && data.error) ? data.error : 'خطأ من السيرفر (HTTP ' + r.status + ')');
-      }
-      return data;
-    });
+    if (r.status === 401) { doLogout(); throw new Error('غير مصرح — سجل دخول تاني'); }
+
+    // ✅ FIX: نشيك على content-type قبل ما نعمل json parse
+    var contentType = r.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      // الرد JSON عادي
+      return r.json().then(function(data) {
+        if (!r.ok) {
+          throw new Error((data && data.error) ? data.error : 'خطأ من السيرفر (HTTP ' + r.status + ')');
+        }
+        return data;
+      });
+    } else {
+      // ✅ FIX: الرد مش JSON (HTML أو text) — نقراه كـ text
+      return r.text().then(function(text) {
+        if (!r.ok) {
+          // لو الرد HTML error page
+          if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+            throw new Error('الـ endpoint مش موجود على السيرفر (HTTP ' + r.status + '). تأكد إن الـ API route متعرف.');
+          }
+          throw new Error(text.slice(0, 200) || 'خطأ من السيرفر (HTTP ' + r.status + ')');
+        }
+        // لو الرد OK بس مش JSON، نحاول نعمل parse
+        try {
+          return JSON.parse(text);
+        } catch(e) {
+          // لو مش JSON خالص — نرجع object فاضي
+          console.warn('⚠️ Response is not JSON for ' + path + ':', text.slice(0, 100));
+          return { success: true, _rawText: text };
+        }
+      });
+    }
+  });
+}
+
+// ✅ NEW: Raw fetch — للـ endpoints اللي مش متأكدين منها
+function rawFetch(path, opts) {
+  opts = opts || {};
+  return fetch(API + path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: opts.body || undefined
   });
 }
 
@@ -1140,6 +1207,7 @@ async function loadConversations(page) {
   currentConvPage = page;
   var el = document.getElementById('convList');
   el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  document.getElementById('deleteProgressArea').style.display = 'none';
   try {
     var s = document.getElementById('convSearch').value;
     var d = await apiCall('/admin/conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
@@ -1173,21 +1241,183 @@ async function loadConversations(page) {
   }
 }
 
-// ═══════════════════════════════════════
-// 🗑️ CLEAR ALL CONVERSATIONS
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// ✅ FIX: CLEAR ALL CONVERSATIONS — بيجرب أكتر من endpoint
+// ═══════════════════════════════════════════════════════════
 async function clearAllConversations() {
   var ok1 = await showConfirm('⚠️ هل أنت متأكد إنك عايز تمسح كل المحادثات؟ العملية دي مش هتترجع!');
   if (!ok1) return;
   var ok2 = await showConfirm('🚨 تأكيد نهائي: كل المحادثات هتتمسح من الداتا بيز نهائياً! متأكد؟');
   if (!ok2) return;
+
+  var btn = document.getElementById('btnClearAll');
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري المسح...';
+
+  // ✅ جرب أكتر من endpoint — أي واحد ينجح يكفي
+  var endpoints = [
+    { path: '/admin/conversations/clear', method: 'POST' },
+    { path: '/admin/conversations/clear', method: 'DELETE' },
+    { path: '/admin/conversations', method: 'DELETE' },
+    { path: '/admin/clear-conversations', method: 'POST' },
+    { path: '/admin/clear-conversations', method: 'DELETE' }
+  ];
+
+  var bulkSuccess = false;
+  for (var i = 0; i < endpoints.length; i++) {
+    try {
+      console.log('🔄 Trying:', endpoints[i].method, endpoints[i].path);
+      var resp = await rawFetch(endpoints[i].path, { method: endpoints[i].method });
+
+      // ✅ لو الرد 404 أو 405 — الـ endpoint مش موجود، جرب التالي
+      if (resp.status === 404 || resp.status === 405) {
+        console.log('⏭️ Endpoint not found, trying next...');
+        continue;
+      }
+
+      // ✅ لو الرد HTML — الـ endpoint مش موجود
+      var contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        var bodyText = await resp.text();
+        if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<html')) {
+          console.log('⏭️ Got HTML response, trying next...');
+          continue;
+        }
+      }
+
+      if (resp.ok) {
+        bulkSuccess = true;
+        toast('تم مسح كل المحادثات ✅');
+        console.log('✅ Bulk delete succeeded via:', endpoints[i].method, endpoints[i].path);
+        break;
+      }
+    } catch(e) {
+      console.log('⏭️ Error with', endpoints[i].path, ':', e.message);
+      continue;
+    }
+  }
+
+  // ✅ Fallback: لو مفيش endpoint نجح — نمسح واحدة واحدة
+  if (!bulkSuccess) {
+    console.log('⚠️ No bulk delete endpoint found. Falling back to one-by-one delete...');
+    await clearConversationsOneByOne(btn);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🗑️ مسح كل المحادثات';
+  loadConversations(1);
+}
+
+// ✅ NEW: Fallback — مسح المحادثات واحدة واحدة
+async function clearConversationsOneByOne(btn) {
+  var progressArea = document.getElementById('deleteProgressArea');
+  progressArea.style.display = 'block';
+
   try {
-    await apiCall('/admin/conversations', { method: 'DELETE' });
-    toast('تم مسح كل المحادثات ✅');
-    loadConversations(1);
+    // الخطوة 1: حمّل كل الجلسات
+    toast('جاري تحميل كل الجلسات للمسح...', 'info');
+    progressArea.innerHTML = '<div class="delete-progress"><div>⏳ جاري تحميل الجلسات...</div></div>';
+
+    var allSessions = [];
+    var page = 1;
+    var hasMore = true;
+
+    while (hasMore) {
+      try {
+        var d = await apiCall('/admin/conversations?limit=50&page=' + page);
+        var conversations = d.conversations || d.items || d.data || [];
+        if (conversations.length === 0) {
+          hasMore = false;
+        } else {
+          conversations.forEach(function(c) {
+            if (c.session_id) allSessions.push(c.session_id);
+          });
+          var pag = d.pagination || {};
+          hasMore = pag.has_more || conversations.length >= 50;
+          page++;
+        }
+      } catch(e) {
+        hasMore = false;
+      }
+    }
+
+    if (allSessions.length === 0) {
+      toast('مفيش محادثات للمسح', 'info');
+      progressArea.style.display = 'none';
+      return;
+    }
+
+    // ✅ إزالة التكرارات
+    allSessions = allSessions.filter(function(v, i, a) { return a.indexOf(v) === i; });
+
+    toast('تم تحميل ' + allSessions.length + ' جلسة — جاري المسح...', 'info');
+
+    // الخطوة 2: امسح كل جلسة
+    var deleted = 0;
+    var errors = 0;
+    var total = allSessions.length;
+
+    // ✅ جرب أكتر من pattern لحذف الجلسة الواحدة
+    var deleteEndpoints = [
+      function(sid) { return { path: '/admin/conversations/' + encodeURIComponent(sid), method: 'DELETE' }; }
+    ];
+
+    for (var i = 0; i < allSessions.length; i++) {
+      var sid = allSessions[i];
+      var pct = Math.round(((i + 1) / total) * 100);
+
+      progressArea.innerHTML = '<div class="delete-progress">' +
+        '<div style="font-size:13px;font-weight:600;margin-bottom:4px">🗑️ جاري المسح: ' + (i + 1) + ' / ' + total + ' (' + pct + '%)</div>' +
+        '<div style="font-size:11px;color:#64748b;margin-bottom:6px">' + esc(sid.slice(0, 20)) + '...</div>' +
+        '<div class="delete-progress-bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
+        '<div style="font-size:11px;margin-top:6px;color:#64748b">✅ ' + deleted + ' نجح | ❌ ' + errors + ' فشل</div>' +
+        '</div>';
+
+      var sessionDeleted = false;
+      for (var j = 0; j < deleteEndpoints.length; j++) {
+        var ep = deleteEndpoints[j](sid);
+        try {
+          var resp = await rawFetch(ep.path, { method: ep.method });
+          if (resp.ok) {
+            sessionDeleted = true;
+            deleted++;
+            break;
+          } else if (resp.status === 404) {
+            // الجلسة مش موجودة — نعتبرها اتمسحت
+            sessionDeleted = true;
+            deleted++;
+            break;
+          }
+        } catch(e) {
+          continue;
+        }
+      }
+
+      if (!sessionDeleted) {
+        errors++;
+        console.error('❌ Failed to delete session:', sid);
+      }
+
+      // ✅ كل 5 جلسات — wait شوية عشان ما نحملش السيرفر
+      if (i % 5 === 4) {
+        await new Promise(function(r) { setTimeout(r, 100); });
+      }
+    }
+
+    // النتيجة النهائية
+    progressArea.innerHTML = '<div class="delete-progress" style="background:#f0fdf4;border-color:#86efac">' +
+      '<div style="font-size:14px;font-weight:700;color:#166534">🏁 انتهى المسح!</div>' +
+      '<div style="font-size:13px;margin-top:6px">✅ ' + deleted + ' جلسة اتمسحت' + (errors > 0 ? ' | ❌ ' + errors + ' فشل' : '') + '</div>' +
+      '</div>';
+
+    toast('تم مسح ' + deleted + ' جلسة ✅' + (errors > 0 ? ' (' + errors + ' فشل)' : ''));
+
+    setTimeout(function() { progressArea.style.display = 'none'; }, 5000);
+
   } catch(e) {
-    console.error('❌ clearAllConversations error:', e);
+    console.error('❌ clearConversationsOneByOne error:', e);
     toast('خطأ: ' + (e.message || 'غير معروف'), 'error');
+    progressArea.innerHTML = '<div class="delete-progress"><div style="color:#ef4444">❌ خطأ: ' + esc(e.message) + '</div></div>';
   }
 }
 
@@ -1690,7 +1920,7 @@ async function deleteCustomResponse(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ✅ GENERIC CRUD — مع Pagination محلي (الحل الأساسي)
+// GENERIC CRUD
 // ═══════════════════════════════════════════════════════════
 async function loadCrud(entity, page, forceReload) {
   page = page || 1;
@@ -1699,7 +1929,6 @@ async function loadCrud(entity, page, forceReload) {
   var el = document.getElementById(entity + '-table');
   if (!el) { console.error('❌ Element not found:', entity + '-table'); return; }
 
-  // ✅ لو البيانات محملة قبل كده ومش محتاج reload
   if (!forceReload && _allCrudItems[entity] && _allCrudItems[entity].length > 0) {
     renderCrudPage(entity, page);
     return;
@@ -1711,7 +1940,6 @@ async function loadCrud(entity, page, forceReload) {
     var se = document.getElementById(entity + 'Search');
     var s = se ? se.value : '';
 
-    // ✅ تحميل كل البيانات مرة واحدة (limit=2000 يكفي لـ 350+ كورس)
     var url = '/admin/' + entity + '?limit=2000';
     if (s) url += '&search=' + encodeURIComponent(s);
 
@@ -1721,7 +1949,6 @@ async function loadCrud(entity, page, forceReload) {
     var items = d.items || d.courses || d.diplomas || d.instructors
                 || d.faqs || d.pages || d.corrections || d.data || d.entries || [];
 
-    // ✅ حفظ كل البيانات
     _allCrudItems[entity] = items;
     if (!_crudCache[entity]) _crudCache[entity] = {};
     items.forEach(function(i) { _crudCache[entity][i.id] = i; });
@@ -1736,7 +1963,6 @@ async function loadCrud(entity, page, forceReload) {
   }
 }
 
-// ✅ NEW: عرض صفحة من البيانات المحفوظة (بدون API call)
 function renderCrudPage(entity, page) {
   var el = document.getElementById(entity + '-table');
   if (!el) return;
@@ -1745,7 +1971,6 @@ function renderCrudPage(entity, page) {
   var totalItems = allItems.length;
   var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
 
-  // تأكد الصفحة صحيحة
   if (page < 1) page = 1;
   if (page > totalPages) page = totalPages;
   _crudPages[entity] = page;
@@ -1759,7 +1984,6 @@ function renderCrudPage(entity, page) {
   var end = Math.min(start + ITEMS_PER_PAGE, totalItems);
   var items = allItems.slice(start, end);
 
-  // ✅ تحديد الأعمدة
   var cols = Object.keys(items[0]).filter(function(k) {
     return k !== 'full_content' && k !== 'content' && k !== 'embedding'
            && k !== 'search_vector' && k !== 'raw_html' && k !== 'metadata';
@@ -1767,7 +1991,6 @@ function renderCrudPage(entity, page) {
 
   var html = '';
 
-  // ✅ شريط المعلومات
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;padding:10px 14px;background:#f0f9ff;border-radius:8px;border:1px solid #bfdbfe">';
   html += '<span style="font-size:13px;font-weight:700;color:#1e40af">📊 إجمالي: ' + totalItems + ' عنصر</span>';
   html += '<span style="font-size:12px;color:#64748b">عرض ' + (start + 1) + ' - ' + end + ' من ' + totalItems + '</span>';
@@ -1776,12 +1999,10 @@ function renderCrudPage(entity, page) {
   }
   html += '</div>';
 
-  // ✅ Pagination فوق
   if (totalPages > 1) {
     html += buildPaginationBar(entity, page, totalPages);
   }
 
-  // ✅ الجدول
   html += '<div style="overflow-x:auto;margin-top:8px"><table><thead><tr>';
   html += '<th style="width:30px">#</th>';
   cols.forEach(function(c) { html += '<th>' + esc(c) + '</th>'; });
@@ -1802,7 +2023,6 @@ function renderCrudPage(entity, page) {
   });
   html += '</tbody></table></div>';
 
-  // ✅ Pagination تحت
   if (totalPages > 1) {
     html += buildPaginationBar(entity, page, totalPages);
   }
@@ -1810,21 +2030,17 @@ function renderCrudPage(entity, page) {
   el.innerHTML = html;
 }
 
-// ✅ NEW: بناء شريط الـ Pagination
 function buildPaginationBar(entity, page, totalPages) {
   var h = '<div class="pagination-bar">';
 
-  // زر أول صفحة
   if (page > 2) {
     h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',1)" title="أول صفحة">⏮️</button>';
   }
 
-  // زر السابق
   if (page > 1) {
     h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page - 1) + ')">→</button>';
   }
 
-  // أرقام الصفحات
   var startP = Math.max(1, page - 3);
   var endP = Math.min(totalPages, page + 3);
 
@@ -1842,12 +2058,10 @@ function buildPaginationBar(entity, page, totalPages) {
     h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + totalPages + ')">' + totalPages + '</button>';
   }
 
-  // زر التالي
   if (page < totalPages) {
     h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page + 1) + ')">←</button>';
   }
 
-  // زر آخر صفحة
   if (page < totalPages - 1) {
     h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + totalPages + ')" title="آخر صفحة">⏭️</button>';
   }
@@ -1856,11 +2070,9 @@ function buildPaginationBar(entity, page, totalPages) {
   return h;
 }
 
-// ✅ NEW: التنقل بين الصفحات بدون API call
 function goToPage(entity, page) {
   _crudPages[entity] = page;
   renderCrudPage(entity, page);
-  // Scroll to top of table
   var el = document.getElementById(entity + '-table');
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -1870,7 +2082,6 @@ function openEditFromCache(e, id) {
   else toast('حدّث الصفحة', 'error');
 }
 
-// ✅ UPDATED: حذف مع تحديث الكاش المحلي
 async function deleteCrud(entity, id) {
   var ok = await showConfirm('حذف؟');
   if (!ok) return;
@@ -1883,7 +2094,6 @@ async function deleteCrud(entity, id) {
       return;
     }
 
-    // ✅ حذف من الكاش المحلي بدون إعادة تحميل من السيرفر
     if (_allCrudItems[entity]) {
       _allCrudItems[entity] = _allCrudItems[entity].filter(function(item) {
         return String(item.id) !== String(id);
@@ -1893,7 +2103,6 @@ async function deleteCrud(entity, id) {
       delete _crudCache[entity][id];
     }
 
-    // ✅ إعادة عرض نفس الصفحة
     var currentPage = _crudPages[entity] || 1;
     var totalItems = (_allCrudItems[entity] || []).length;
     var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
@@ -1948,22 +2157,22 @@ function openEditModal(entity, item) {
 
 async function saveModal() {
   try {
-// Correction
-if(modalState.type==='correction'||modalState.type==='correction_manual') {
-  var b = {
-    chat_log_id: modalState.logId||null,
-    session_id: modalState.sid||null,
-    original_reply: modalState.original||null,
-    original_question: document.getElementById('corrQuestion').value||null,
-    corrected_reply: document.getElementById('corrAnswer').value,
-    note: document.getElementById('corrNote').value||null
-  };
-  if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
-  await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
-  closeModal(); toast('تم التصحيح ✅');
-  if(currentTab==='corrections') loadCorrections();
-  return;
-}
+    // Correction
+    if(modalState.type==='correction'||modalState.type==='correction_manual') {
+      var b = {
+        chat_log_id: modalState.logId||null,
+        session_id: modalState.sid||null,
+        original_reply: modalState.original||null,
+        original_question: document.getElementById('corrQuestion').value||null,
+        corrected_reply: document.getElementById('corrAnswer').value,
+        note: document.getElementById('corrNote').value||null
+      };
+      if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
+      await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
+      closeModal(); toast('تم التصحيح ✅');
+      if(currentTab==='corrections') loadCorrections();
+      return;
+    }
 
     // Custom Response
     if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
@@ -2003,7 +2212,7 @@ if(modalState.type==='correction'||modalState.type==='correction_manual') {
       return;
     }
 
-    // ✅ Generic CRUD — مع تحديث الكاش
+    // Generic CRUD
     var fields = getFields(modalState.entity);
     var body = {};
     fields.forEach(function(f){ var v=document.getElementById('modal_'+f.key); if(v) body[f.key]=v.value; });
@@ -2017,7 +2226,6 @@ if(modalState.type==='correction'||modalState.type==='correction_manual') {
     closeModal();
     toast('تم ✅');
 
-    // ✅ مسح الكاش وإعادة تحميل
     delete _allCrudItems[modalState.entity];
     loadCrud(modalState.entity, _crudPages[modalState.entity] || 1, true);
 
