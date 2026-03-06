@@ -2662,12 +2662,41 @@ async function answerFromChunksOrKnowledge(question, searchTerms) {
               .from("courses")
               .select("id, title, link")
               .in("id", _courseIds);
-            if (_courses) {
+
+
+if (_courses) {
               for (const c of _courses) {
                 _courseNameMap.set(c.id, c.title);
               }
-              relatedCourses = _courses.slice(0, 3);
+              
+              // 🆕 FIX: Filter relatedCourses by title relevance
+              const _rcTerms = (searchTerms || []).filter(t => {
+                const nt = normalizeArabic(t.toLowerCase());
+                return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
+              });
+              
+              if (_rcTerms.length > 0) {
+                const _relevantRC = _courses.filter(c => {
+                  const tNorm = normalizeArabic((c.title || '').toLowerCase());
+                  const tLower = (c.title || '').toLowerCase();
+                  return _rcTerms.some(t => {
+                    const nt = normalizeArabic(t.toLowerCase());
+                    if (nt.length <= 2) return false;
+                    if (tNorm.includes(nt)) return true;
+                    if (/^[a-zA-Z]+$/.test(t) && tLower.includes(t.toLowerCase())) return true;
+                    return false;
+                  });
+                });
+                
+                console.log(`🔍 relatedCourses filter: ${_courses.length} → ${_relevantRC.length} (terms: [${_rcTerms.slice(0,5).join(', ')}])`);
+                relatedCourses = _relevantRC.slice(0, 3);
+              } else {
+                relatedCourses = _courses.slice(0, 3);
+              }
             }
+
+
+
           }
         }
       }
@@ -4098,15 +4127,39 @@ lastShownDiplomaIds: [...new Set([
         if (questionAnswer && questionAnswer.answer) {
           reply = questionAnswer.answer;
 
-          // Show related courses from chunks if found
-          if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
-            const instructors = await getInstructors();
-            reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
-            for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
-              const rcUrl = rc.link || ALL_COURSES_URL;
-              reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
+  // Show related courses from chunks — WITH topic relevance check
+        if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+          const alreadyShown = reply.toLowerCase();
+          const _dispTerms = (questionTerms || []).filter(t => {
+            const nt = normalizeArabic(t.toLowerCase());
+            return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
+          });
+          
+          for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
+            if (alreadyShown.includes((rc.title || "").toLowerCase().substring(0, 15))) continue;
+            
+            // 🆕 FIX: Verify course title matches at least one search term
+            if (_dispTerms.length > 0) {
+              const rcTitleNorm = normalizeArabic((rc.title || '').toLowerCase());
+              const rcTitleLower = (rc.title || '').toLowerCase();
+              const isRelevant = _dispTerms.some(t => {
+                const nt = normalizeArabic(t.toLowerCase());
+                if (nt.length <= 2) return false;
+                if (rcTitleNorm.includes(nt)) return true;
+                if (/^[a-zA-Z]+$/.test(t) && rcTitleLower.includes(t.toLowerCase())) return true;
+                return false;
+              });
+              
+              if (!isRelevant) {
+                console.log(`🔴 Skipping irrelevant relatedCourse: "${rc.title}" (no term match)`);
+                continue;
+              }
             }
+            
+            const rcUrl = rc.link || ALL_COURSES_URL;
+            reply += `<br>📘 <a href="${rcUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${rc.title}</a>`;
           }
+        }
 
           reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
