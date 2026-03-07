@@ -2951,6 +2951,34 @@ c._titleMatchStrength = 'none';
       return false;
     });
 
+// === SAFE FIX: Fuzzy titleMatch for spelling variants ===
+    // "ولايت"→"وايت" | "فتوشوب"→"فوتوشوب" | "بريمر"→"بريمير"
+    // Only checks TITLE words (not description) + requires ≥80% similarity
+    if (!c._titleMatch) {
+      const titleWords = titleNorm.split(/\s+/).filter(w => w.length > 2);
+      
+      for (const term of termsToSearch) {
+        if (c._titleMatch) break;
+        const nt = normalizeArabic(term.toLowerCase());
+        if (nt.length <= 3) continue;
+        
+        // Skip generic words
+        if (GENERIC_WORDS.has(nt) || BASIC_STOP_WORDS.has(term.toLowerCase())) continue;
+        
+        for (const tw of titleWords) {
+          if (tw.length <= 2) continue;
+          const sim = similarityRatio(nt, tw);
+          if (sim >= 80 && sim < 100) {
+            c._titleMatch = true;
+            c._titleMatchStrength = 'strong';
+            c.relevanceScore = (c.relevanceScore || 0) + 400;
+            console.log(`🔤 Fuzzy titleMatch: "${term}" ≈ "${tw}" (${sim}%) in "${c.title}" → +400`);
+            break;
+          }
+        }
+      }
+    }
+
     if (c._titleMatch) {
       if (c._titleMatchStrength === 'strong') {
         c.relevanceScore = (c.relevanceScore || 0) + 500;
