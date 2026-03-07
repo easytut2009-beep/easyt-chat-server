@@ -2951,31 +2951,43 @@ c._titleMatchStrength = 'none';
       return false;
     });
 
-// === SAFE FIX: Fuzzy titleMatch for spelling variants ===
-    // "ولايت"→"وايت" | "فتوشوب"→"فوتوشوب" | "بريمر"→"بريمير"
-    // Only checks TITLE words (not description) + requires ≥80% similarity
+// === FIX: Fuzzy titleMatch — word-level comparison ===
     if (!c._titleMatch) {
       const titleWords = titleNorm.split(/\s+/).filter(w => w.length > 2);
       
+      // Split ALL search terms into individual words first
+      const _fuzzyWords = new Set();
       for (const term of termsToSearch) {
+        for (const w of normalizeArabic(term.toLowerCase()).split(/\s+/)) {
+          if (w.length > 3 && !GENERIC_WORDS.has(w) && !BASIC_STOP_WORDS.has(w)) {
+            _fuzzyWords.add(w);
+          }
+        }
+      }
+      
+      let _fuzzyMatchCount = 0;
+      const _fuzzyMatched = [];
+      
+      for (const nt of _fuzzyWords) {
         if (c._titleMatch) break;
-        const nt = normalizeArabic(term.toLowerCase());
-        if (nt.length <= 3) continue;
-        
-        // Skip generic words
-        if (GENERIC_WORDS.has(nt) || BASIC_STOP_WORDS.has(term.toLowerCase())) continue;
-        
         for (const tw of titleWords) {
           if (tw.length <= 2) continue;
+          if (nt === tw) continue; // exact = already handled above
           const sim = similarityRatio(nt, tw);
-          if (sim >= 80 && sim < 100) {
-            c._titleMatch = true;
-            c._titleMatchStrength = 'strong';
-            c.relevanceScore = (c.relevanceScore || 0) + 400;
-            console.log(`🔤 Fuzzy titleMatch: "${term}" ≈ "${tw}" (${sim}%) in "${c.title}" → +400`);
+          if (sim >= 75) {
+            _fuzzyMatchCount++;
+            _fuzzyMatched.push(`"${nt}"≈"${tw}"(${sim}%)`);
             break;
           }
         }
+      }
+      
+      // Need at least 1 fuzzy word match
+      if (_fuzzyMatchCount >= 1) {
+        c._titleMatch = true;
+        c._titleMatchStrength = 'strong';
+        c.relevanceScore = (c.relevanceScore || 0) + 400;
+        console.log(`🔤 Fuzzy titleMatch: ${_fuzzyMatched.join(', ')} in "${c.title}" → +400`);
       }
     }
 
@@ -3603,25 +3615,25 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: GPT يحدد لو السؤال مفاهيمي (بدل regex)
   let _isConceptualQuestion = false;
-  if (analysis.action === "SEARCH" && openai && !_clarifyContextTopics) {
-    try {
-      const _cqResp = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{
-          role: "system",
-          content: `حدد نوع الرسالة:
-QUESTION = بيسأل عن معنى مصطلح أو مفهوم أو شرح حاجة (مش عايز كورس، عايز يفهم)
-COURSE = بيدور على كورس أو دبلومة أو عايز يتعلم مهارة
+  content: `حدد نوع الرسالة:
+QUESTION = بيسأل سؤال أو عايز معلومة أو شرح أو رابط أو أداة أو برنامج
+COURSE = بيدور على كورس أو دبلومة أو عايز يتعلم مهارة جديدة
 
 أمثلة QUESTION:
 - "يعني ايه ROAS" / "عاوز اعرف معلومات عن SEO" / "ايه الفرق بين UI و UX"
 - "اشرحلي CTR" / "معلومات عن التسويق الرقمي" / "افهمني يعني ايه conversion"
+- "رابط البرنامج المستخدم في X" / "ايه البرنامج اللي بيعمل X" / "ايه الأداة المستخدمة في X"
+- "ازاي اعمل X" / "ايه أحسن طريقة لـ X" / "ايه الخطوات لعمل X"
+- "عاوز اعرف عن X" / "ابغى افهم X" / "وضحلي X"
 
 أمثلة COURSE:
 - "عايز كورس تسويق" / "عايز اتعلم فوتوشوب" / "فيه دبلومة برمجة؟"
 - "كورس ROAS" / "رشحلي كورس" / "ابغى اتعلم SEO"
+- "عندكم كورس عن X" / "فيه دورة X"
 
+القاعدة: لو بيسأل سؤال أو عايز معلومة = QUESTION | لو بيدور على كورس يتعلمه = COURSE
 رد بكلمة واحدة: QUESTION أو COURSE`
+
         }, {
           role: "user",
           content: message
