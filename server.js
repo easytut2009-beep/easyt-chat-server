@@ -3875,7 +3875,7 @@ updateSessionMemory(sessionId, {
 
 if (!earlyExitFollowUp) {
 
-const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMatch);
+const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMatch || c._chunkMatch);
 console.log("🛡️ Protected courses (titleMatch + lessonMatch):", savedTitleMatchCourses.length);
 
     if (courses.length === 0) {
@@ -3998,6 +3998,37 @@ updateSessionMemory(sessionId, {
         questionAnswerPromise,
       ]);
 
+
+// 🆕 FIX: SEARCH-QUESTION — chunk-derived courses are the CORRECT courses
+      if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+        const _sqChunkIds = new Set(questionAnswer.relatedCourses.map(c => String(c.id)));
+        
+        // Fetch chunk courses not in search results
+        const _sqExistingIds = new Set(courses.map(c => String(c.id)));
+        const _sqMissingIds = [..._sqChunkIds].filter(id => !_sqExistingIds.has(id));
+        if (_sqMissingIds.length > 0) {
+          try {
+            const { data: _sqMissing } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", _sqMissingIds);
+            if (_sqMissing) {
+              courses.push(..._sqMissing);
+              console.log(`🧠 SEARCH-Q: Added ${_sqMissing.length} chunk courses not in search`);
+            }
+          } catch (_e) { console.error("SEARCH-Q chunk fetch:", _e.message); }
+        }
+        
+        // Boost chunk course scores so they appear FIRST in cards
+        for (const c of courses) {
+          if (_sqChunkIds.has(String(c.id))) {
+            c.relevanceScore = (c.relevanceScore || 0) + 5000;
+            c._chunkMatch = true;
+            console.log(`🧠 SEARCH-Q chunk boost: "${c.title}" → score=${c.relevanceScore}`);
+          }
+        }
+      }
+
       let recommendationMessage = recommendation.message || "";
 
       let relevantCourses = recommendation.relevantCourseIndices
@@ -4018,7 +4049,7 @@ updateSessionMemory(sessionId, {
 // 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
 let titleMatchMustShow = courses.filter(c => {
         if (relevantCourses.find(rc => rc.id === c.id)) return false;
-        return c._titleMatch === true || c._lessonMatch === true;
+        return c._titleMatch === true || c._lessonMatch === true || c._chunkMatch === true;
       });
 
 // 🆕 For beginners: don't force advanced/specialized courses
@@ -4047,7 +4078,7 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
       // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
       // but RAG didn't select
-const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._lessonMatch === true);
+const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._lessonMatch === true || c._chunkMatch === true);
       for (const tm of allProtectedMatched) {
         if (!relevantCourses.find(rc => rc.id === tm.id)) {
           // 🆕 For beginners: don't force advanced/specialized courses
@@ -4067,7 +4098,7 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._les
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
-const protectedOnly = courses.filter((c) => c._titleMatch === true || c._lessonMatch === true);
+const protectedOnly = courses.filter((c) => c._titleMatch === true || c._lessonMatch === true || c._chunkMatch === true);
         
         if (protectedOnly.length > 0) {
           console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
