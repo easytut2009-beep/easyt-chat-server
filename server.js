@@ -2337,10 +2337,13 @@ if (analysis.is_follow_up) {
 
 🔴🔴🔴 لو فيه كورس فيه matchedLessons أو matchReason فيه "كدرس جوه الكورس" عن الموضوع = لازم تختاره!
 
-✅ استخدم جمل زي:
-- "أيوه! هتلاقي الموضوع ده بالظبط في الكورسات دي 👇"
-- "تمام، فهمتك! ده اللي بتدور عليه 🎯"
-- "ممتاز، الكورسات دي فيها بالظبط اللي عايزه 👇"
+✅ ابدأ بجملة قصيرة (جملة واحدة) توضّح الموضوع في السياق اللي المستخدم حدده، وبعدها قوله يشوف الكورسات.
+أمثلة:
+- "الـ Workflow في الأتمتة هو تسلسل خطوات بتتنفذ أوتوماتيك عشان تنجز مهمة 🎯 شوف الكورسات دي 👇"
+- "تمام! SEO هو تحسين ظهور موقعك في نتائج البحث 💡 هتلاقي كورسات عنه 👇"
+- "التصميم الجرافيكي هو تحويل الأفكار لصور ومواد بصرية 🎨 دي أحسن الكورسات 👇"
+❌ ممنوع "هتلاقي الموضوع ده في الكورسات دي" بس من غير أي توضيح عن الموضوع
+✅ لازم تذكر الموضوع بالاسم + جملة شرح قصيرة عنه في السياق المحدد
 `;
   } else {
     followUpContext = `
@@ -3641,13 +3644,11 @@ let reply = "";
   // ═══════════════════════════════════════════════════════════
   // 🆕 CLARIFY: Reset counter when user gets actual results
   // ═══════════════════════════════════════════════════════════
-  if (analysis.action !== "CLARIFY") {
+if (analysis.action !== "CLARIFY") {
     if (sessionMem.clarifyCount > 0) {
       console.log(`🔄 CLARIFY counter reset (was ${sessionMem.clarifyCount})`);
-      if (analysis.user_intent === "QUESTION") {
-        console.log(`🔄 Post-CLARIFY: QUESTION → FIND_COURSE (user wants courses not explanation)`);
-        analysis.user_intent = "FIND_COURSE";
-      }
+      // 🆕 FIX: Don't override QUESTION → FIND_COURSE
+      // Let the natural flow handle it (QUESTION = answer + courses, FIND_COURSE = brief intro + courses)
       sessionMem.clarifyCount = 0;
     }
   }
