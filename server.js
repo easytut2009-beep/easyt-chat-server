@@ -3329,6 +3329,7 @@ setInterval(() => {
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
+async function detectInstructorInMessage() { return null; }
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
