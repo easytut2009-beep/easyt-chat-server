@@ -3814,114 +3814,6 @@ sessionMem.clarifyCount = 0;
   // ═══════════════════════════════════════════════════════════
   let _popularityHandled = false;
 
-
-// ═══════════════════════════════════════════════════════════
-  // 🆕 Instructor Name Detection
-  // Checks raw message against real instructor names in DB
-  // Runs BEFORE all action handlers — GPT's action doesn't matter
-  // ═══════════════════════════════════════════════════════════
-  let _instructorHandled = false;
-
-  {
-    const _rawNorm = normalizeArabic((message || '').trim().toLowerCase());
-    const _rawWords = _rawNorm.split(/\s+/).filter(w => w.length >= 2);
-
-    // Only check if message has 2-8 words (name-like length)
-    if (_rawWords.length >= 2 && _rawWords.length <= 8) {
-      const _allInst = await getInstructors();
-
-      for (const _inst of _allInst) {
-        if (!_inst.name) continue;
-        const _instNorm = normalizeArabic(_inst.name.toLowerCase().trim());
-        const _instClean = _instNorm.replace(/[^\u0600-\u06FF\sa-zA-Z0-9]/g, ' ').trim();
-        const _instWords = _instClean.split(/\s+/).filter(w => w.length >= 2);
-        if (_instWords.length < 2) continue;
-
-        // Match 1: Full phrase match
-        const _phraseMatch = _rawNorm.includes(_instClean)
-                          || _instClean.includes(_rawNorm);
-
-        // Match 2: Name words appear consecutively in message
-        let _consecutiveMatch = false;
-        if (!_phraseMatch && _instWords.length <= _rawWords.length) {
-          for (let _si = 0; _si <= _rawWords.length - _instWords.length; _si++) {
-            let _ok = true;
-            for (let _ni = 0; _ni < _instWords.length; _ni++) {
-              const _mw = _rawWords[_si + _ni];
-              const _nw = _instWords[_ni];
-              if (_mw !== _nw && similarityRatio(_mw, _nw) < 75) {
-                _ok = false;
-                break;
-              }
-            }
-            if (_ok) { _consecutiveMatch = true; break; }
-          }
-        }
-
-        // Match 3: Partial name — at least 2 name words found in order
-        // Handles "احمد خميس" matching "أحمد حسن خميس"
-        let _partialMatch = false;
-        if (!_phraseMatch && !_consecutiveMatch && _instWords.length >= 2) {
-          let _lastIdx = -1;
-          let _matchedInOrder = 0;
-          for (const _nw of _instWords) {
-            for (let _mi = _lastIdx + 1; _mi < _rawWords.length; _mi++) {
-              if (_rawWords[_mi] === _nw || similarityRatio(_rawWords[_mi], _nw) >= 75) {
-                _matchedInOrder++;
-                _lastIdx = _mi;
-                break;
-              }
-            }
-          }
-          // Need at least 2 words AND at least 60% of name words
-          if (_matchedInOrder >= 2 && _matchedInOrder >= Math.ceil(_instWords.length * 0.6)) {
-            _partialMatch = true;
-          }
-        }
-
-        if (_phraseMatch || _consecutiveMatch || _partialMatch) {
-          const _matchType = _phraseMatch ? 'phrase' : _consecutiveMatch ? 'consecutive' : 'partial';
-          console.log(`👨‍🏫 Instructor detected: "${_inst.name}" (id=${_inst.id}) | match: ${_matchType}`);
-
-          try {
-            const { data: _instCourses } = await supabase
-              .from('courses')
-              .select(COURSE_SELECT_COLS)
-              .eq('instructor_id', _inst.id)
-              .limit(20);
-
-            if (_instCourses && _instCourses.length > 0) {
-              reply = `👨‍🏫 <strong>كورسات ${_inst.name} على المنصة (${_instCourses.length} كورس):</strong><br><br>`;
-              _instCourses.forEach((c, i) => {
-                reply += formatCourseCard(c, _allInst, i + 1);
-              });
-              reply += `<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>)`;
-              reply += `<br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
-
-              updateSessionMemory(sessionId, {
-                searchTerms: [_inst.name],
-                lastSearchTopic: _inst.name,
-                topics: [_inst.name],
-                lastShownCourseIds: _instCourses.map(c => String(c.id)),
-              });
-
-              intent = "INSTRUCTOR_SEARCH";
-              analysis.action = "_INSTRUCTOR_HANDLED";
-              _instructorHandled = true;
-              console.log(`👨‍🏫 ✅ ${_instCourses.length} courses by "${_inst.name}"`);
-            } else {
-              console.log(`👨‍🏫 "${_inst.name}" — 0 courses, falling through to normal flow`);
-            }
-          } catch (_instErr) {
-            console.error(`👨‍🏫 Error:`, _instErr.message);
-          }
-          break;
-        }
-      }
-    }
-  }
-
-
   if (analysis.is_popularity_search) {
     console.log(`🏆 Popularity search detected by GPT`);
     try {
@@ -4817,8 +4709,8 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
      ═══════════════════════════════════ */
   else {
     // 🏆 Popularity search already handled above — don't overwrite reply
-if (_popularityHandled || _instructorHandled) {
-      console.log(`🏆 Pre-handled reply (${reply.length} chars) — skipping CHAT handler`);
+    if (_popularityHandled) {
+      console.log(`🏆 Popularity reply already set (${reply.length} chars) — skipping CHAT handler`);
     }
     // 🆕 FIX #85: QUESTION intent in CHAT → answer + show related courses
     else if (_isConceptualQuestion) {
