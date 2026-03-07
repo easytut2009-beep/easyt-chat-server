@@ -1945,11 +1945,6 @@ CLARIFY=بيوضّح ("اقصد...","للمبتدئين") | ALTERNATIVE=عايز
 
 ═══ action — قواعد القسم ═══
 SEARCH = بيدور على كورس أو عايز يتعلم موضوع معين (ذكر مجال/أداة/تخصص محدد)
-⚠️ لو المستخدم ذكر اسم شخص (اسمين أو أكتر = اسم أول + اسم عائلة) → action: "SEARCH" وحط الاسم الكامل في search_terms
-مثال: "عايز كورسات أحمد حسن" → SEARCH, search_terms: ["أحمد حسن"]
-مثال: "محمد علي عنده كورسات؟" → SEARCH, search_terms: ["محمد علي"]
-مثال: "كورسات مصطفى أحمد" → SEARCH, search_terms: ["مصطفى أحمد"]
-⚠️ اسم واحد بس (كلمة واحدة) من غير سياق واضح → ممنوع تفترض إنه محاضر
 
 CLARIFY = الرسالة فيها نية تعلم لكن مفيش موضوع واضح → اسأل سؤال توضيحي واحد مع اقتراحات
 SUBSCRIPTION = أي حاجة عن فلوس/دفع/اشتراك/أسعار — حتى لو مفيش كلمة "اشتراك"
@@ -3818,6 +3813,7 @@ sessionMem.clarifyCount = 0;
   // Bypasses normal search engine (which can't handle marketing phrases)
   // ═══════════════════════════════════════════════════════════
   let _popularityHandled = false;
+let _instructorHandled = false;
 
   if (analysis.is_popularity_search) {
     console.log(`🏆 Popularity search detected by GPT`);
@@ -3877,6 +3873,58 @@ reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المن
     } catch (popErr) {
       console.error(`🏆 Popularity search error:`, popErr.message);
       // Falls through to normal SEARCH
+    }
+  }
+
+
+// ═══ Instructor Name Detection ═══
+  if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
+    const _instPhrase = normalizeArabic(analysis.search_terms.join(' ').toLowerCase().trim());
+    const _instWords = _instPhrase.split(/\s+/).filter(w => w.length >= 2);
+
+    if (_instWords.length >= 2) {
+      const _allInst = await getInstructors();
+
+      for (const _inst of _allInst) {
+        const _instNameNorm = normalizeArabic((_inst.name || '').toLowerCase().trim());
+        if (!_instNameNorm || _instNameNorm.split(/\s+/).length < 2) continue;
+
+        const _isInstMatch = _instPhrase.includes(_instNameNorm)
+                          || _instNameNorm.includes(_instPhrase)
+                          || similarityRatio(_instPhrase, _instNameNorm) >= 75;
+
+        if (_isInstMatch) {
+          console.log(`👨‍🏫 Instructor detected: "${_inst.name}" (id=${_inst.id})`);
+
+          const { data: _instCourses } = await supabase
+            .from('courses')
+            .select(COURSE_SELECT_COLS)
+            .eq('instructor_id', _inst.id)
+            .limit(15);
+
+          if (_instCourses && _instCourses.length > 0) {
+            reply = `👨‍🏫 <strong>كورسات ${_inst.name} (${_instCourses.length} كورس):</strong><br><br>`;
+            _instCourses.forEach((c, i) => {
+              reply += formatCourseCard(c, _allInst, i + 1);
+            });
+            reply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
+            reply += `<br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
+
+            updateSessionMemory(sessionId, {
+              searchTerms: analysis.search_terms,
+              lastSearchTopic: _inst.name,
+              topics: [_inst.name],
+              lastShownCourseIds: _instCourses.map(c => String(c.id)),
+            });
+
+            intent = "INSTRUCTOR_SEARCH";
+            analysis.action = "_INSTRUCTOR_HANDLED";
+            _instructorHandled = true;
+            console.log(`👨‍🏫 ✅ Showing ${_instCourses.length} courses by "${_inst.name}"`);
+          }
+          break;
+        }
+      }
     }
   }
 
@@ -4714,8 +4762,8 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
      ═══════════════════════════════════ */
   else {
     // 🏆 Popularity search already handled above — don't overwrite reply
-    if (_popularityHandled) {
-      console.log(`🏆 Popularity reply already set (${reply.length} chars) — skipping CHAT handler`);
+if (_popularityHandled || _instructorHandled) {
+      console.log(`🏆 Pre-handled reply (${reply.length} chars) — skipping CHAT handler`);
     }
     // 🆕 FIX #85: QUESTION intent in CHAT → answer + show related courses
     else if (_isConceptualQuestion) {
