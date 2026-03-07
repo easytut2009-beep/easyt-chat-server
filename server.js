@@ -3644,6 +3644,10 @@ let reply = "";
   if (analysis.action !== "CLARIFY") {
     if (sessionMem.clarifyCount > 0) {
       console.log(`🔄 CLARIFY counter reset (was ${sessionMem.clarifyCount})`);
+      if (analysis.user_intent === "QUESTION") {
+        console.log(`🔄 Post-CLARIFY: QUESTION → FIND_COURSE (user wants courses not explanation)`);
+        analysis.user_intent = "FIND_COURSE";
+      }
       sessionMem.clarifyCount = 0;
     }
   }
@@ -3658,6 +3662,8 @@ let reply = "";
     if (currentCount >= 1) {
       console.log(`🔄 Anti-CLARIFY-loop: clarifyCount=${currentCount} → forcing SEARCH`);
       analysis.action = "SEARCH";
+      analysis.user_intent = "FIND_COURSE";
+
 
       // Ensure we have search terms (combine previous context + current message)
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
