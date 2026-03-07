@@ -3005,7 +3005,17 @@ c._titleMatchStrength = 'none';
         for (const tw of titleWords) {
           if (tw.length <= 2) continue;
           if (nt === tw) continue; // exact = already handled above
+          
+if (nt === tw) continue; // exact = already handled above
+          
+          // 🆕 FIX: prefix = different word, NOT a typo
+          const _shorter = nt.length <= tw.length ? nt : tw;
+          const _longer = nt.length <= tw.length ? tw : nt;
+          if (_longer.startsWith(_shorter)) continue;
+          
           const sim = similarityRatio(nt, tw);
+
+const sim = similarityRatio(nt, tw);
           if (sim >= 75) {
             _fuzzyMatchCount++;
             _fuzzyMatched.push(`"${nt}"≈"${tw}"(${sim}%)`);
