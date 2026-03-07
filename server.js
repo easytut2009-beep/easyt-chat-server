@@ -3432,12 +3432,12 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: أسئلة شرح مفاهيم (الفرق بين / يعني إيه) → CHAT بدون كورسات
   const _cqNorm = normalizeArabic(message.toLowerCase());
-  const _isConceptualQuestion = (
+const _isConceptualQuestion = (
     /الفرق\s*(بين|ما\s*بين)/.test(_cqNorm) ||
     /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm) ||
     /يعن[يى]\s*(ايه|إيه|اي|إي)/.test(_cqNorm) ||
     /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm)
-) && !/عايز|محتاج|كورس|د
+) && !/عايز|محتاج|كورس|دبلوم|ابدأ|اتعلم/.test(_cqNorm);
 
   if (_isConceptualQuestion && analysis.action === "SEARCH") {
     console.log(`🧠 Conceptual question detected → CHAT (was SEARCH)`);
