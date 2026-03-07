@@ -4297,16 +4297,36 @@ if (_isConceptualQuestion) {
         reply = analysis.response_message || getSmartFallback(sessionId);
       }
 
-      // 2. اقتراح ذكي
+      // 2. اقتراح ذكي — مع fallbacks
       let _smartSuggestion = null;
-      const _sugTerms = (analysis.search_terms || []).filter(t =>
+
+      let _sugTerms = (analysis.search_terms || []).filter(t =>
         t.length >= 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
       );
+
+      // Fallback: لو search_terms فاضية، استخرج كلمات من الرسالة
+      if (_sugTerms.length === 0) {
+        const _questionWords = new Set([
+          'يعني', 'يعنى', 'ايه', 'إيه', 'اي', 'إي', 'ايش', 'شو', 'وش',
+          'معنى', 'معني', 'هو', 'هي', 'هم', 'الفرق', 'بين', 'ما', 'مابين',
+          'ده', 'دي', 'دى', 'اللي', 'عن', 'في', 'فى'
+        ]);
+        _sugTerms = message.split(/\s+/).filter(w => {
+          const wLower = w.toLowerCase().trim();
+          const wNorm = normalizeArabic(wLower);
+          return w.length >= 2
+            && !BASIC_STOP_WORDS.has(wLower)
+            && !_questionWords.has(wNorm)
+            && !_questionWords.has(wLower);
+        });
+        console.log(`🧠 Suggestion fallback: extracted from message → [${_sugTerms.join(', ')}]`);
+      }
 
       console.log(`🧠 Suggestion: terms=[${_sugTerms.join(', ')}], category="${analysis.detected_category || 'none'}"`);
 
       if (_sugTerms.length > 0 && supabase) {
         try {
+          // محاولة 1: بحث مباشر بالكلمات
           const _expanded = expandArabicVariants(_sugTerms).slice(0, 14);
           const _courseFilters = _expanded
             .flatMap(t => [`title.ilike.%${t}%`, `subtitle.ilike.%${t}%`])
@@ -4320,6 +4340,8 @@ if (_isConceptualQuestion) {
             supabase.from("diplomas").select("id, title, link").or(_dipFilters).limit(2),
           ]);
 
+          console.log(`🧠 Direct search: courses=${(_matchedCourses||[]).length}, diplomas=${(_matchedDiplomas||[]).length}`);
+
           if (_matchedDiplomas && _matchedDiplomas.length > 0) {
             const _bestD = _matchedDiplomas[0];
             _smartSuggestion = `<br>🎓 <strong>لو حابب تتعمق:</strong><br>`;
@@ -4330,17 +4352,26 @@ if (_isConceptualQuestion) {
             _smartSuggestion += `<a href="${_bestC.link || ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_bestC.title}</a>`;
           }
 
-          if (!_smartSuggestion) {
-            let _catMatch = null;
-            if (analysis.detected_category) {
-              _catMatch = detectRelevantCategory(analysis.detected_category);
-            }
-            if (!_catMatch) {
-              _catMatch = detectRelevantCategory(_sugTerms.join(' '));
-            }
-            if (_catMatch) {
-              _smartSuggestion = `<br>📂 <strong>لو حابب تتعمق:</strong><br>`;
-              _smartSuggestion += `تصفح قسم <a href="${_catMatch.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_catMatch.name}</a>`;
+          // محاولة 2: لو مفيش نتائج مباشرة → دور بالـ category
+          if (!_smartSuggestion && analysis.detected_category) {
+            console.log(`🧠 No direct match → trying category: "${analysis.detected_category}"`);
+            const _catKeyword = analysis.detected_category.split(/\s+/)[0];
+            
+            const [{ data: _catCourses }, { data: _catDiplomas }] = await Promise.all([
+              supabase.from("courses").select("id, title, link")
+                .ilike("domain", `%${_catKeyword}%`).limit(2),
+              supabase.from("diplomas").select("id, title, link")
+                .ilike("title", `%${_catKeyword}%`).limit(1),
+            ]);
+
+            console.log(`🧠 Category search: courses=${(_catCourses||[]).length}, diplomas=${(_catDiplomas||[]).length}`);
+
+            if (_catDiplomas && _catDiplomas.length > 0) {
+              _smartSuggestion = `<br>🎓 <strong>لو حابب تتعمق:</strong><br>`;
+              _smartSuggestion += `<a href="${_catDiplomas[0].link || ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ${_catDiplomas[0].title}</a>`;
+            } else if (_catCourses && _catCourses.length > 0) {
+              _smartSuggestion = `<br>📘 <strong>لو حابب تتعمق:</strong><br>`;
+              _smartSuggestion += `<a href="${_catCourses[0].link || ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_catCourses[0].title}</a>`;
             }
           }
         } catch (_sugErr) {
@@ -4348,21 +4379,65 @@ if (_isConceptualQuestion) {
         }
       }
 
-      if (!_smartSuggestion && analysis.detected_category) {
-        const _lastCat = detectRelevantCategory(analysis.detected_category);
-        if (_lastCat) {
+// محاولة 3: GPT يختار القسم من الإجابة
+      if (!_smartSuggestion && reply && openai) {
+        try {
+          const _catNames = Object.keys(CATEGORIES).join('\n');
+          const _cleanReply = reply.replace(/<[^>]*>/g, ' ').substring(0, 400);
+          const _catResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `اختار اسم القسم الأنسب من القائمة دي بناءً على السؤال والإجابة.
+رد باسم القسم بالظبط زي ما هو في القائمة. لو مفيش قسم مناسب رد بـ NONE.
+
+الأقسام:
+${_catNames}`
+              },
+              { role: "user", content: `السؤال: ${message}\nالإجابة: ${_cleanReply}` }
+            ],
+            max_tokens: 50,
+            temperature: 0,
+          });
+          const _matchedCatName = _catResp.choices[0].message.content.trim();
+          console.log(`🧠 GPT category pick: "${_matchedCatName}"`);
+          
+          if (_matchedCatName !== "NONE" && CATEGORIES[_matchedCatName]) {
+            const _gptCat = CATEGORIES[_matchedCatName];
+            _smartSuggestion = `<br>📂 <strong>لو حابب تتعمق:</strong><br>`;
+            _smartSuggestion += `تصفح قسم <a href="${_gptCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_matchedCatName}</a>`;
+          }
+        } catch (_catErr) {
+          console.error("GPT category pick error:", _catErr.message);
+        }
+      }
+
+      // محاولة 4 (أخيرة): detected_category أو fuzzy
+      if (!_smartSuggestion) {
+        let _fallbackCat = null;
+        if (analysis.detected_category) {
+          _fallbackCat = detectRelevantCategory(analysis.detected_category);
+        }
+        if (!_fallbackCat && _sugTerms.length > 0) {
+          _fallbackCat = detectRelevantCategory(_sugTerms.join(' '));
+        }
+        if (_fallbackCat) {
+          console.log(`🧠 Category fallback: "${_fallbackCat.name}"`);
           _smartSuggestion = `<br>📂 <strong>لو حابب تتعمق:</strong><br>`;
-          _smartSuggestion += `تصفح قسم <a href="${_lastCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_lastCat.name}</a>`;
+          _smartSuggestion += `تصفح قسم <a href="${_fallbackCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_fallbackCat.name}</a>`;
         }
       }
 
       if (_smartSuggestion) {
         reply += `<br>${_smartSuggestion}`;
+        console.log(`🧠 ✅ Smart suggestion added!`);
+      } else {
+        console.log(`🧠 ❌ No suggestion found for any fallback`);
       }
 
       skipUpsell = true;
     }
-
 
 else if (analysis.user_intent === "QUESTION" && !skipUpsell) {
       console.log(`🧠 FIX #85: QUESTION in CHAT → answering + searching courses`);
