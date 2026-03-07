@@ -2997,7 +2997,7 @@ c._titleMatchStrength = 'none';
         }
       }
       
-      let _fuzzyMatchCount = 0;
+let _fuzzyMatchCount = 0;
       const _fuzzyMatched = [];
       
       for (const nt of _fuzzyWords) {
@@ -3006,16 +3006,12 @@ c._titleMatchStrength = 'none';
           if (tw.length <= 2) continue;
           if (nt === tw) continue; // exact = already handled above
           
-if (nt === tw) continue; // exact = already handled above
-          
-          // 🆕 FIX: prefix = different word, NOT a typo
+          // FIX: prefix = different word, NOT a typo
           const _shorter = nt.length <= tw.length ? nt : tw;
           const _longer = nt.length <= tw.length ? tw : nt;
           if (_longer.startsWith(_shorter)) continue;
           
           const sim = similarityRatio(nt, tw);
-
-const sim = similarityRatio(nt, tw);
           if (sim >= 75) {
             _fuzzyMatchCount++;
             _fuzzyMatched.push(`"${nt}"≈"${tw}"(${sim}%)`);
@@ -3023,6 +3019,7 @@ const sim = similarityRatio(nt, tw);
           }
         }
       }
+
       
       // Need at least 1 fuzzy word match
       if (_fuzzyMatchCount >= 1) {
