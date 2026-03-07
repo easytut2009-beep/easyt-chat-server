@@ -3819,11 +3819,134 @@ sessionMem.clarifyCount = 0;
   // Checks raw message against real instructor names in DB
   // Runs BEFORE all action handlers — GPT's action doesn't matter
   // ═══════════════════════════════════════════════════════════
-  let _instructorHandled = false;
+let _instructorHandled = false;
 
-  {
-    const _rawNorm = normalizeArabic((message || '').trim().toLowerCase());
+  try {
+    console.log(`\n👨‍🏫 ═══ INSTRUCTOR DETECTION START ═══`);
+    
+    // 🔧 Unicode cleanup: remove zero-width chars + normalize spaces
+    const _unicodeClean = (s) => (s || '')
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    const _rawMsg = _unicodeClean(message).toLowerCase();
+    const _rawNorm = normalizeArabic(_rawMsg);
     const _rawWords = _rawNorm.split(/\s+/).filter(w => w.length >= 2);
+    
+    console.log(`👨‍🏫 Message: "${_rawMsg}"`);
+    console.log(`👨‍🏫 Normalized: "${_rawNorm}"`);
+    console.log(`👨‍🏫 Words (${_rawWords.length}): [${_rawWords.join(', ')}]`);
+
+    if (_rawWords.length >= 2 && _rawWords.length <= 10) {
+      const _allInst = await getInstructors();
+      console.log(`👨‍🏫 Instructors loaded: ${_allInst.length}`);
+
+      for (const _inst of _allInst) {
+        if (!_inst.name) continue;
+
+        const _instNorm = normalizeArabic(_unicodeClean(_inst.name).toLowerCase());
+        const _instClean = _instNorm.replace(/[^\u0600-\u06FF\sa-zA-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+        const _instWords = _instClean.split(/\s+/).filter(w => w.length >= 2);
+        if (_instWords.length < 2) continue;
+
+        // DEBUG: log first 5 instructors
+        if (_allInst.indexOf(_inst) < 5) {
+          console.log(`👨‍🏫   [${_inst.id}] "${_inst.name}" → "${_instClean}" → [${_instWords.join(', ')}]`);
+        }
+
+        // Match 1: Phrase
+        const _phraseMatch = _rawNorm.includes(_instClean) || _instClean.includes(_rawNorm);
+
+        // Match 2: Consecutive words
+        let _consecutiveMatch = false;
+        if (!_phraseMatch && _instWords.length <= _rawWords.length) {
+          for (let _si = 0; _si <= _rawWords.length - _instWords.length; _si++) {
+            let _ok = true;
+            for (let _ni = 0; _ni < _instWords.length; _ni++) {
+              const _mw = _rawWords[_si + _ni];
+              const _nw = _instWords[_ni];
+              if (_mw !== _nw && similarityRatio(_mw, _nw) < 75) {
+                _ok = false;
+                break;
+              }
+            }
+            if (_ok) { _consecutiveMatch = true; break; }
+          }
+        }
+
+        // Match 3: Partial (2+ words in order, ≥60%)
+        let _partialMatch = false;
+        if (!_phraseMatch && !_consecutiveMatch && _instWords.length >= 2) {
+          let _lastIdx = -1;
+          let _matchedInOrder = 0;
+          for (const _nw of _instWords) {
+            for (let _mi = _lastIdx + 1; _mi < _rawWords.length; _mi++) {
+              if (_rawWords[_mi] === _nw || similarityRatio(_rawWords[_mi], _nw) >= 75) {
+                _matchedInOrder++;
+                _lastIdx = _mi;
+                break;
+              }
+            }
+          }
+          if (_matchedInOrder >= 2 && _matchedInOrder >= Math.ceil(_instWords.length * 0.6)) {
+            _partialMatch = true;
+          }
+        }
+
+        if (_phraseMatch || _consecutiveMatch || _partialMatch) {
+          const _matchType = _phraseMatch ? 'phrase' : _consecutiveMatch ? 'consecutive' : 'partial';
+          console.log(`👨‍🏫 ✅ MATCH: "${_inst.name}" (id=${_inst.id}) | type=${_matchType}`);
+
+          try {
+            const { data: _instCourses, error: _icErr } = await supabase
+              .from('courses')
+              .select(COURSE_SELECT_COLS)
+              .eq('instructor_id', _inst.id)
+              .limit(20);
+
+            if (_icErr) {
+              console.error(`👨‍🏫 DB error:`, _icErr.message);
+            } else if (_instCourses && _instCourses.length > 0) {
+              const _allInstForCards = _allInst;
+              reply = `👨‍🏫 <strong>كورسات ${_inst.name} على المنصة (${_instCourses.length} كورس):</strong><br><br>`;
+              _instCourses.forEach((c, i) => {
+                reply += formatCourseCard(c, _allInstForCards, i + 1);
+              });
+              reply += `<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>)`;
+              reply += `<br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
+
+              updateSessionMemory(sessionId, {
+                searchTerms: [_inst.name],
+                lastSearchTopic: _inst.name,
+                topics: [_inst.name],
+                lastShownCourseIds: _instCourses.map(c => String(c.id)),
+              });
+
+              intent = "INSTRUCTOR_SEARCH";
+              analysis.action = "_INSTRUCTOR_HANDLED";
+              _instructorHandled = true;
+              console.log(`👨‍🏫 ✅ ${_instCourses.length} courses shown`);
+            } else {
+              console.log(`👨‍🏫 "${_inst.name}" — 0 courses`);
+            }
+          } catch (_dbErr) {
+            console.error(`👨‍🏫 Exception:`, _dbErr.message);
+          }
+          break;
+        }
+      }
+
+      if (!_instructorHandled) {
+        console.log(`👨‍🏫 ❌ No instructor matched`);
+      }
+    } else {
+      console.log(`👨‍🏫 SKIP: ${_rawWords.length} words (need 2-10)`);
+    }
+    console.log(`👨‍🏫 ═══ INSTRUCTOR DETECTION END ═══\n`);
+  } catch (_outerErr) {
+    console.error(`👨‍🏫 ❌ OUTER ERROR:`, _outerErr.message, _outerErr.stack);
+  }    const _rawWords = _rawNorm.split(/\s+/).filter(w => w.length >= 2);
 
     // Only check if message has 2-8 words (name-like length)
     if (_rawWords.length >= 2 && _rawWords.length <= 8) {
