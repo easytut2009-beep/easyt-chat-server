@@ -2972,9 +2972,12 @@ c._titleMatchStrength = 'none';
       if (_checkWords.every(w => isWordBoundaryMatch(titleNorm, w))) {
         // If NO intent words were stripped → all topic words match → STRONG
         // If intent words WERE stripped → reduced specificity → WEAK
-        if (_topicWords.length === words.length) {
+if (_topicWords.length === words.length) {
           c._titleMatchStrength = 'strong';
           console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
+        } else if (_topicWords.length >= 2) {
+          c._titleMatchStrength = 'strong';
+          console.log(`✅ FIX: 2+ topic words matched title after intent-strip (STRONG): "${c.title}" topics=[${_topicWords.join(",")}]`);
         } else if (c._titleMatchStrength !== 'strong') {
           c._titleMatchStrength = 'weak';
         }
