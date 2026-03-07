@@ -3647,14 +3647,29 @@ let reply = "";
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // 🆕 CLARIFY: Max 3 questions — after that, force CATEGORIES
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX: Anti-CLARIFY loop — max 1 CLARIFY, then force SEARCH
+  // Problem: GPT keeps asking clarification questions in a loop
+  // Fix: After 1 CLARIFY, user's next response MUST trigger SEARCH
   // ═══════════════════════════════════════════════════════════
   if (analysis.action === "CLARIFY") {
     const currentCount = sessionMem.clarifyCount || 0;
-    if (currentCount >= 3) {
-      console.log(`🔄 CLARIFY max reached (${currentCount}) → forcing CATEGORIES`);
-      analysis.action = "CATEGORIES";
+    if (currentCount >= 1) {
+      console.log(`🔄 Anti-CLARIFY-loop: clarifyCount=${currentCount} → forcing SEARCH`);
+      analysis.action = "SEARCH";
+
+      // Ensure we have search terms (combine previous context + current message)
+      if (!analysis.search_terms || analysis.search_terms.length === 0) {
+        const prevTerms = sessionMem.lastSearchTerms || [];
+        const currentWords = (message || "").split(/\s+/).filter(w =>
+          w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
+        );
+        analysis.search_terms = [...new Set([...prevTerms, ...currentWords])];
+        console.log(`🔄 Anti-CLARIFY: merged terms → [${analysis.search_terms.join(', ')}]`);
+      }
+
+      // Reset counter so future NEW topics can still get 1 CLARIFY
+      sessionMem.clarifyCount = 0;
     }
   }
 
@@ -4347,12 +4362,19 @@ else if (analysis.action === "CLARIFY") {
     console.log(`💬 CLARIFY: Question #${currentCount + 1} — "${reply.substring(0, 80)}..."`);
 
     // 🆕 FIX: Save topics as searchTerms + lastSearchTopic so follow-up context is preserved
-    const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.topics : [];
+const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.topics : [];
+
+    // 🆕 FIX: Save both topics AND search_terms for better context merge
+    const allClarifyTerms = [...new Set([
+      ...clarifyTopics,
+      ...(analysis.search_terms || []),
+    ])].filter(t => t && t.length > 1);
+
     updateSessionMemory(sessionId, {
       clarifyCount: currentCount + 1,
       topics: clarifyTopics,
       interests: clarifyTopics,
-      searchTerms: clarifyTopics,
+      searchTerms: allClarifyTerms.length > 0 ? allClarifyTerms : clarifyTopics,
       lastSearchTopic: clarifyTopics[0] || null,
     });
   }
