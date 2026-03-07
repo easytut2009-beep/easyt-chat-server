@@ -1945,9 +1945,27 @@ DIPLOMAS = عايز يتصفح أو يشوف قائمة كل الدبلومات 
 • "دبلومة ادارة اعمال" → SEARCH, search_terms: ["ادارة اعمال", "business management", "دبلومة"]
 CATEGORIES = فقط لما يطلب صراحةً عرض/سرد كل الأقسام أو الأقسام
 🔴🔴🔴 قاعدة CLARIFY — متى تسأل ومتى تعرض:
-CLARIFY فقط لما الرسالة فيها نية تعلم/تطوير بدون ذكر موضوع/مجال/أداة محددة.
+CLARIFY فقط لما الرسالة فيها نية تعلم/تطوير بدون ذكر أي موضوع أو مصطلح تقني.
 اسأل سؤال توضيحي واحد مع 2-4 خيارات في response_message.
 
+🔴🔴🔴 قاعدة حاسمة: لو المستخدم ذكر أي مصطلح تقني أو اسم أداة أو تقنية = SEARCH دايماً مش CLARIFY!
+حتى لو المصطلح عام شوية — ابحث عنه واعرض النتائج والمستخدم هيختار.
+CLARIFY بس لما مفيش أي كلمة تقنية خالص.
+
+أمثلة SEARCH (ممنوع CLARIFY!):
+• "عاوز شرح عن ورك فلو" → SEARCH, search_terms: ["workflow", "وورك فلو", "أتمتة"]
+• "عايز اتعلم أتمتة" → SEARCH, search_terms: ["أتمتة", "automation", "أتمتة العمليات"]
+• "اشرحلي الـ API" → SEARCH, search_terms: ["API", "واجهة برمجة التطبيقات"]
+• "عايز أفهم machine learning" → SEARCH, search_terms: ["machine learning", "تعلم الآلة", "ذكاء اصطناعي"]
+• "ابغى اتعلم SEO" → SEARCH, search_terms: ["SEO", "سيو", "تحسين محركات البحث"]
+• "عايز اعرف عن الأتمتة" → SEARCH (أتمتة = مصطلح تقني!)
+• "شرح عن التسويق بالمحتوى" → SEARCH (تسويق بالمحتوى = موضوع محدد!)
+
+أمثلة CLARIFY الصح (مفيش مصطلح تقني خالص):
+• "عايز اتعلم" → CLARIFY (مفيش أي موضوع)
+• "عايز اطور نفسي" → CLARIFY (مش واضح في إيه)
+• "أنا عندي عيادة" → CLARIFY (مش واضح عايز يتعلم إيه)
+• "أنا لسه متخرج" → CLARIFY (مفيش تخصص واضح)
 ⚠️ لو فيه ذاكرة/مواضيع سابقة بتوضح السياق → افهم من السياق واستخدم SEARCH — متسألش تاني!
 ⚠️ لو المستخدم قال "مش عارف"/"كله"/"كل الدورات"/"كل الكورسات"/"جميع الدورات"/"كلهم"/"أي حاجة"/"الكل"/"عايز كله"/"عايز كل حاجة" → action: "CATEGORIES"
 
@@ -3652,6 +3670,33 @@ if (analysis.action !== "CLARIFY") {
       sessionMem.clarifyCount = 0;
     }
   }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX: CLARIFY with technical terms → force SEARCH
+  // If GPT said CLARIFY but returned search_terms with real technical terms,
+  // the user already specified a topic — just search for it!
+  // ═══════════════════════════════════════════════════════════
+  if (analysis.action === "CLARIFY" && analysis.search_terms && analysis.search_terms.length > 0) {
+    const _genericClarifyWords = new Set([
+      'تعلم', 'اتعلم', 'كورس', 'دورة', 'دوره', 'محتاج', 'عايز', 'عاوز',
+      'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب', 'شرح', 'اشرح', 'فهمني',
+      'اعرف', 'معلومات', 'حاجة', 'حاجه', 'موضوع',
+    ]);
+    
+    const _hasTechnicalTerm = analysis.search_terms.some(t => {
+      const nt = normalizeArabic(t.toLowerCase().trim());
+      return nt.length > 2 && !_genericClarifyWords.has(nt) && !BASIC_STOP_WORDS.has(t.toLowerCase());
+    });
+    
+    if (_hasTechnicalTerm) {
+      console.log(`🔄 CLARIFY → SEARCH: GPT said CLARIFY but has technical terms [${analysis.search_terms.join(', ')}]`);
+      analysis.action = "SEARCH";
+      analysis.user_intent = "QUESTION";
+    }
+  }
+
+
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Anti-CLARIFY loop — max 1 CLARIFY, then force SEARCH
