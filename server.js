@@ -3459,6 +3459,14 @@ setInterval(() => {
    ═══════════════════════════════════ */
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
+
+  // 🆕 FIX: Strip leading number prefixes (e.g. "13. الدبلومات" → "الدبلومات")
+  const _numPrefixMatch = message.match(/^\d{1,3}\s*[\.\-\)]\s+([\s\S]+)/);
+  if (_numPrefixMatch && _numPrefixMatch[1].trim().length > 0) {
+    console.log(`🔧 Number prefix stripped: "${message}" → "${_numPrefixMatch[1].trim()}"`);
+    message = _numPrefixMatch[1].trim();
+  }
+
   const sessionMem = getSessionMemory(sessionId);
 
 // Check response cache (skip for follow-ups)
@@ -4147,9 +4155,24 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
     // CLARIFY = user refining same search → keep previous results
     // ALTERNATIVE = user wants different results → exclude previous
     // ═══════════════════════════════════════════════════════════
-    let allPreviouslyShown = false;
+let allPreviouslyShown = false;
 const _altNorm = normalizeArabic((message || "").toLowerCase());
-    const _isClearAlt = ["تاني", "تانى", "غيرهم", "غيرها", "غيره", "كمان", "بديل", "حاجه تانيه", "حاجة تانية", "فيه غير", "في تاني", "فى تانى"].some(w => _altNorm.includes(normalizeArabic(w)));
+    let _isClearAlt = ["تاني", "تانى", "غيرهم", "غيرها", "غيره", "كمان", "بديل", "حاجه تانيه", "حاجة تانية", "فيه غير", "في تاني", "فى تانى"].some(w => _altNorm.includes(normalizeArabic(w)));
+
+    // 🆕 FIX: Negation at start of follow-up = rejection of previous results
+    let _isNegationFollowUp = false;
+    if (!_isClearAlt && analysis.is_follow_up) {
+      const _negationPatterns = [
+        /^لا[ء]?\s+(?!اقصد|قصدي|انا)/,       // "لا رسم يدوي" but NOT "لا اقصد..."
+        /^مش\s+(ده|دي|هو|هي|عايز|كده)/,       // "مش ده" / "مش عايز ده"
+      ];
+      if (_negationPatterns.some(p => p.test(_altNorm))) {
+        _isClearAlt = true;
+        _isNegationFollowUp = true;
+        console.log(`🔄 FIX: Negation at start of follow-up "${message}" → ALTERNATIVE + negation flag`);
+      }
+    }
+
     const followUpIsClarification = analysis.is_follow_up && analysis.follow_up_type === "CLARIFY" && !_isClearAlt;
     if (followUpIsClarification) {
       console.log(`🧠 FIX #103: Follow-up is CLARIFICATION → showing ALL results (no exclusion)`);
@@ -4229,8 +4252,14 @@ if (allPreviouslyShown && analysis.is_follow_up) {
     const topic97 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
 const cat97 = detectCategoryFromContext(analysis, courses, termsToSearch);
 
-reply = `دي أبرز الكورسات اللي رشحتهالك 😊<br>`;
-reply += `لو حابب تشوف المزيد، تقدر تتصفح القسم من اللينك تحت 👇<br><br>`;
+if (_isNegationFollowUp) {
+  // 🆕 FIX: User rejected previous results — honest "not found" reply
+  reply = `فهمتك! 😊 للأسف مفيش كورس متخصص حالياً عن الموضوع ده بالتحديد على المنصة.<br><br>`;
+  reply += `💡 ممكن تلاقي حاجة قريبة لو تصفحت القسم من اللينك تحت 👇<br><br>`;
+} else {
+  reply = `دي أبرز الكورسات اللي رشحتهالك 😊<br>`;
+  reply += `لو حابب تشوف المزيد، تقدر تتصفح القسم من اللينك تحت 👇<br><br>`;
+}
 
     if (cat97) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat97.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat97.name} ←</a></div>`;
@@ -4328,8 +4357,13 @@ if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
 const cat93 = detectCategoryFromContext(analysis, courses, termsToSearch);
 
 
-      reply = `دول كل الكورسات اللي عندنا عن ${topic93 || "الموضوع ده"} 😊<br>`;
-      reply += `لو عايز تتعلم حاجة تانية، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+if (_isNegationFollowUp) {
+        reply = `فهمتك! 😊 للأسف مفيش كورس متخصص حالياً عن الموضوع ده بالتحديد على المنصة.<br><br>`;
+        reply += `💡 ممكن تلاقي حاجة قريبة لو تصفحت القسم من اللينك تحت 👇<br><br>`;
+      } else {
+        reply = `دول كل الكورسات اللي عندنا عن ${topic93 || "الموضوع ده"} 😊<br>`;
+        reply += `لو عايز تتعلم حاجة تانية، قولي الموضوع وأنا أبحثلك! 🎯<br><br>`;
+      }
 
       if (cat93) {
         reply += `<div style="text-align:center;margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff5f5,#ffe0e0);border-radius:10px"><a href="${cat93.url}" target="_blank" style="color:#e63946;font-size:14px;font-weight:700;text-decoration:none">📂 تصفح كل كورسات ${cat93.name} ←</a></div>`;
