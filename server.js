@@ -3434,8 +3434,11 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
   const _cqNorm = normalizeArabic(message.toLowerCase());
   const _isConceptualQuestion = (
     /الفرق\s*(بين|ما\s*بين)/.test(_cqNorm) ||
-    /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm)
-  ) && !/عايز|محتاج|كورس|دوره|دورة|رشحلي|ابغ|ادور/.test(_cqNorm);
+    /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm) ||
+    /يعن[يى]\s*(ايه|إيه|اي|إي)/.test(_cqNorm) ||
+    /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm)
+) && !/عايز|محتاج|كورس|دوره|دورة|رشحلي|ابغ|ادور/.test(_cqNorm);
+
 
   if (_isConceptualQuestion && analysis.action === "SEARCH") {
     console.log(`🧠 Conceptual question detected → CHAT (was SEARCH)`);
@@ -4260,8 +4263,30 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
   else {
     // 🆕 FIX #85: QUESTION intent in CHAT → answer + show related courses
 if (_isConceptualQuestion) {
-      // 🆕 FIX: إجابة سؤال مفاهيمي بدون كورسات
-      console.log(`🧠 Conceptual Q → answering WITHOUT courses`);
+      // 🆕 FIX: إجابة سؤال مفاهيمي + اقتراح ذكي لو فيه كورس/دبلومة
+      console.log(`🧠 Conceptual Q → answering with smart suggestion`);
+
+      // ===== 1. استخرج الموضوع من السؤال =====
+      const _topicRaw = _cqNorm
+        .replace(/يعن[يى]\s*(ايه|إيه|اي|إي)/gi, '')
+        .replace(/(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/gi, '')
+        .replace(/الفرق\s*(بين|ما\s*بين)/gi, '')
+        .replace(/[؟?\.،,]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const _topicEn = (message.match(/[a-zA-Z]{2,}/g) || []);
+      const _topicWords = _topicRaw.split(/\s+/).filter(w =>
+        w.length >= 2 && !/^(و|في|من|على|عن|هو|هي|هم|ال|بين|يعني|ايه)$/.test(w)
+      );
+      const _searchTopics = [...new Set([
+        ...(_topicRaw.length >= 3 ? [_topicRaw] : []),
+        ..._topicWords,
+        ..._topicEn
+      ])].filter(t => t.length >= 2);
+
+      console.log(`🧠 Topic: "${_topicRaw}" | Words: [${_topicWords.join(', ')}] | En: [${_topicEn.join(', ')}]`);
+
+      // ===== 2. جاوب على السؤال (GPT) =====
       try {
         const _cqResp = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -4271,17 +4296,16 @@ if (_isConceptualQuestion) {
               content: `أنت "زيكو" المرشد التعليمي في منصة easyT.
 
 ═══ معلومات المنصة ═══
-- الدبلومات: مسار تعليمي متكامل = مجموعة كورسات مرتبة ورا بعض بتغطي مجال من الصفر للاحتراف. أطول وأشمل .
-- الكورسات (الدورات): دروس منفصلة بتركز على مهارة أو موضوع محدد. ممكن تكون جزء من دبلومة أو مستقلة.
-- الخلاصة: الدبلومة = كذا كورس مرتبين في مسار تعليمي واحد.
+- الدبلومات: مسار تعليمي متكامل = مجموعة كورسات مرتبة بتغطي مجال من الصفر للاحتراف.
+- الكورسات (الدورات): دروس منفصلة بتركز على مهارة أو موضوع محدد.
 - المنصة فيها +600 كورس و +27 دبلومة و +750,000 طالب.
-- الاشتراك السنوي 49$ يشمل كل الكورسات والدبلومات.
+- الاشتراك السنوي ${PRICING.annual}${PRICING.currency} يشمل كل الكورسات والدبلومات.
 
-لو السؤال عن حاجة خاصة بالمنصة (زي الفرق بين الدبلومات والكورسات) → جاوب بناءً على المعلومات دي.
-لو السؤال عام → جاوب من معرفتك.
+لو السؤال عن حاجة خاصة بالمنصة → جاوب بناءً على المعلومات دي.
+لو السؤال عام → جاوب من معرفتك مع مثال عملي بسيط.
 جاوب بالعامية المصرية بشكل مختصر ومفيد.
 استخدم <br> للأسطر و <strong> للعناوين.
-ممنوع تقترح كورسات أو تعرض روابط أو cards. بس جاوب على السؤال.`
+ممنوع تقترح كورسات أو تعرض روابط. بس جاوب على السؤال.`
             },
             { role: "user", content: message }
           ],
@@ -4293,7 +4317,104 @@ if (_isConceptualQuestion) {
         console.error("Conceptual Q error:", _cqErr.message);
         reply = analysis.response_message || getSmartFallback(sessionId);
       }
-    } else if (analysis.user_intent === "QUESTION" && !skipUpsell) {
+
+      // ===== 3. بحث ذكي عن كورس/دبلومة مناسبة =====
+      let _smartSuggestion = null;
+
+      if (_searchTopics.length > 0 && supabase) {
+        try {
+          const _expanded = expandArabicVariants(_searchTopics).slice(0, 12);
+          console.log(`🔍 Smart search terms: [${_expanded.slice(0, 5).join(', ')}...]`);
+
+          // --- 3a+3b: بحث في الكورسات والدبلومات بالتوازي ---
+          const _courseFilters = _expanded
+            .flatMap(t => [`title.ilike.%${t}%`, `subtitle.ilike.%${t}%`])
+            .join(',');
+          const _dipFilters = _expanded
+            .map(t => `title.ilike.%${t}%`)
+            .join(',');
+
+          const [{ data: _matchedCourses }, { data: _matchedDiplomas }] = await Promise.all([
+            supabase.from("courses").select("id, title, link").or(_courseFilters).limit(3),
+            supabase.from("diplomas").select("id, title, link").or(_dipFilters).limit(2),
+          ]);
+
+          // اختار الأنسب: دبلومة الأول لو موجودة، بعدين كورس
+          if (_matchedDiplomas && _matchedDiplomas.length > 0) {
+            const _bestD = _matchedDiplomas[0];
+            const _dUrl = _bestD.link || ALL_DIPLOMAS_URL;
+            _smartSuggestion = `🎓 <strong>لو عايز تتعمق، عندنا دبلومة:</strong><br>`;
+            _smartSuggestion += `<a href="${_dUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ${_bestD.title}</a>`;
+            console.log(`🧠 Smart suggestion: diploma "${_bestD.title}"`);
+          } else if (_matchedCourses && _matchedCourses.length > 0) {
+            const _bestC = _matchedCourses[0];
+            const _cUrl = _bestC.link || ALL_COURSES_URL;
+            _smartSuggestion = `📚 <strong>لو عايز تتعمق، عندنا كورس:</strong><br>`;
+            _smartSuggestion += `<a href="${_cUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_bestC.title}</a>`;
+            console.log(`🧠 Smart suggestion: course "${_bestC.title}"`);
+          }
+
+          // --- 3c: لو ملقاش في العناوين → بحث في الـ chunks ---
+          if (!_smartSuggestion && openai) {
+            const _chunkResults = await getRelevantChunks(_searchTopics.join(' '), null, 3);
+            const _goodChunks = (_chunkResults || []).filter(c => c.similarity >= 0.82);
+
+            if (_goodChunks.length > 0 && _goodChunks[0].lesson_id) {
+              const { data: _lessonInfo } = await supabase
+                .from("lessons")
+                .select("course_id, title")
+                .eq("id", _goodChunks[0].lesson_id)
+                .single();
+
+              if (_lessonInfo && _lessonInfo.course_id) {
+                const { data: _courseInfo } = await supabase
+                  .from("courses")
+                  .select("id, title, link")
+                  .eq("id", _lessonInfo.course_id)
+                  .single();
+
+                if (_courseInfo) {
+                  const _cUrl = _courseInfo.link || ALL_COURSES_URL;
+                  _smartSuggestion = `📚 <strong>الموضوع ده متشرح في كورس:</strong><br>`;
+                  _smartSuggestion += `<a href="${_cUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_courseInfo.title}</a>`;
+                  const _lTitle = _goodChunks[0].lesson_title || _lessonInfo.title;
+                  if (_lTitle) {
+                    _smartSuggestion += `<br>📖 في درس: <strong>${_lTitle}</strong>`;
+                  }
+                  if (_goodChunks[0].timestamp_start) {
+                    _smartSuggestion += ` <span style="color:#e63946;font-weight:600">⏱️ ${_goodChunks[0].timestamp_start}</span>`;
+                  }
+                  console.log(`🧠 Smart suggestion: chunk → "${_courseInfo.title}"`);
+                }
+              }
+            }
+          }
+
+          // --- 3d: لو ملقاش خالص → اقترح كاتيجوري ---
+          if (!_smartSuggestion) {
+            const _catMatch = detectRelevantCategory(_searchTopics.join(' '));
+            if (_catMatch) {
+              _smartSuggestion = `📂 <strong>لو عايز تتعمق أكتر:</strong><br>`;
+              _smartSuggestion += `تقدر تتصفح قسم <a href="${_catMatch.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_catMatch.name}</a>`;
+              console.log(`🧠 Smart suggestion: category "${_catMatch.name}"`);
+            }
+          }
+
+        } catch (_sugErr) {
+          console.error("Smart suggestion error:", _sugErr.message);
+        }
+      }
+
+      // ===== 4. ضيف الاقتراح على الرد =====
+      if (_smartSuggestion) {
+        reply += `<br><br>${_smartSuggestion}`;
+      }
+
+      skipUpsell = true;
+    }
+
+
+else if (analysis.user_intent === "QUESTION" && !skipUpsell) {
       console.log(`🧠 FIX #85: QUESTION in CHAT → answering + searching courses`);
 
       // Extract search terms from message
