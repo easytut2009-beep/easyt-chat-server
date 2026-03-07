@@ -144,6 +144,7 @@ const limiter = rateLimit({
    SECTION 5: Constants
    ═══════════════════════════════════ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
+const AUTHORS_URL = "https://easyt.online/p/authors";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
 const PAYMENTS_URL = "https://easyt.online/p/Payments";
@@ -423,9 +424,9 @@ async function getInstructors() {
     return instructorCache.data;
   }
   try {
-    const { data } = await supabase
+const { data } = await supabase
       .from("instructors")
-      .select("id, name, avatar_url");
+      .select("id, name, avatar_url, title, image, courses_link");
     if (data) {
       instructorCache.data = data;
       instructorCache.ts = Date.now();
@@ -3324,50 +3325,94 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
+// ═══ Instructor Detection — مطابقة مباشرة بالاسم بدون كيوورد ═══
+async function detectInstructorInMessage(rawMessage) {
+  if (!supabase) return null;
+  try {
+    const instructors = await getInstructors();
+    if (!instructors || instructors.length === 0) return null;
 
-// ═══ Instructor Search — البحث بالمدرس ═══
-async function searchCoursesByInstructor(searchTerms) {
-  if (!supabase) return { instructor: null, courses: [] };
-  
-  const instructors = await getInstructors();
-  if (!instructors || instructors.length === 0) return { instructor: null, courses: [] };
-  
-  const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase().trim());
-  if (fullQuery.length < 3) return { instructor: null, courses: [] };
-  
-  let bestInstructor = null;
-  let bestScore = 0;
-  
-  for (const inst of instructors) {
-    const instName = normalizeArabic((inst.name || "").toLowerCase().trim());
-    if (!instName || instName.length < 3) continue;
-    
-    if (fullQuery.includes(instName) || instName.includes(fullQuery)) {
-      const score = 100;
-      if (score > bestScore) { bestScore = score; bestInstructor = inst; }
-      continue;
+    const msgNorm = normalizeArabic(rawMessage.toLowerCase().trim());
+    if (msgNorm.length < 2) return null;
+
+    console.log(`👨‍🏫 Checking name: "${msgNorm}"`);
+
+    const matches = [];
+
+    for (const inst of instructors) {
+      const rawName = (inst.name || "").trim();
+      const cleanName = rawName.replace(/^ا\//, '').trim();
+      if (!cleanName || cleanName.length < 2) continue;
+
+      const nameNorm = normalizeArabic(cleanName.toLowerCase());
+      const nameWords = nameNorm.split(/\s+/).filter(w => w.length >= 2);
+
+      let score = 0;
+      let matchType = "";
+
+      // 1: تطابق كامل أو الاسم موجود في الرسالة
+      if (msgNorm === nameNorm) {
+        score = 300;
+        matchType = "exact";
+      } else if (msgNorm.includes(nameNorm)) {
+        score = nameNorm.length + 200;
+        matchType = "full_in_msg";
+      } else if (nameNorm.includes(msgNorm) && msgNorm.length >= 4) {
+        score = msgNorm.length + 150;
+        matchType = "msg_in_name";
+      }
+      // 2: كل كلمات الاسم موجودة في الرسالة
+      else if (nameWords.length >= 2) {
+        const matchedWords = nameWords.filter(w => msgNorm.includes(w));
+        if (matchedWords.length === nameWords.length) {
+          score = matchedWords.length * 40 + 100;
+          matchType = "all_words";
+        }
+      }
+
+      // 3: كلمة واحدة → تطابق أول كلمة أو أي كلمة من الاسم
+      if (score === 0) {
+        const msgWords = msgNorm.split(/\s+/).filter(w => w.length >= 2);
+        if (msgWords.length <= 2) {
+          for (const mw of msgWords) {
+            if (nameWords[0] === mw) {
+              score = Math.max(score, 80);
+              matchType = "first_name";
+            } else if (nameWords.some(w => w === mw)) {
+              score = Math.max(score, 60);
+              matchType = "partial_name";
+            }
+          }
+        }
+      }
+
+      // 4: Fuzzy match
+      if (score === 0 && msgNorm.length >= 4 && nameNorm.length >= 4) {
+        const sim = similarityRatio(msgNorm, nameNorm);
+        if (sim >= 75) {
+          score = sim;
+          matchType = "fuzzy";
+        }
+      }
+
+      if (score >= 60) {
+        matches.push({ ...inst, cleanName, _score: score, _matchType: matchType });
+      }
     }
-    
-    const sim = similarityRatio(fullQuery, instName);
-    if (sim > bestScore && sim >= 65) {
-      bestScore = sim;
-      bestInstructor = inst;
+
+    matches.sort((a, b) => b._score - a._score);
+
+    if (matches.length > 0) {
+      console.log(`👨‍🏫 ✅ FOUND ${matches.length}:`, matches.map(m => `${m.cleanName}(${m._score}/${m._matchType})`).join(", "));
+      return { found: true, instructors: matches };
     }
+
+    console.log(`👨‍🏫 ⏭️ No instructor match → continue normal search`);
+    return null;
+  } catch (e) {
+    console.error("👨‍🏫 detectInstructor error:", e.message);
+    return null;
   }
-  
-  if (!bestInstructor) return { instructor: null, courses: [] };
-  
-  console.log(`👨‍🏫 Instructor match: "${fullQuery}" → "${bestInstructor.name}" (score=${bestScore})`);
-  
-  const { data: courses, error } = await supabase
-    .from("courses")
-    .select(COURSE_SELECT_COLS)
-    .eq("instructor_id", bestInstructor.id)
-    .limit(20);
-  
-  if (error || !courses) return { instructor: bestInstructor, courses: [] };
-  
-  return { instructor: bestInstructor, courses };
 }
 
 
@@ -3926,35 +3971,70 @@ reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المن
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
 let termsToSearch = [...new Set(analysis.search_terms)];
- 
 
-// ═══ Check if searching by instructor name ═══
-    const instructorResult = await searchCoursesByInstructor(termsToSearch);
-    if (instructorResult.instructor && instructorResult.courses.length > 0) {
-      console.log(`👨‍🏫 Found ${instructorResult.courses.length} courses by "${instructorResult.instructor.name}"`);
-      const instructors = await getInstructors();
-      
-      reply = `👨‍🏫 <strong>كورسات ${instructorResult.instructor.name}:</strong><br><br>`;
-      
-      instructorResult.courses.forEach((c, i) => {
-        reply += formatCourseCard(c, instructors, i + 1);
-      });
-      
-      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-      
-      updateSessionMemory(sessionId, {
-        searchTerms: termsToSearch,
-        lastSearchTopic: instructorResult.instructor.name,
-        topics: [instructorResult.instructor.name],
-        lastShownCourseIds: instructorResult.courses.map(c => String(c.id)),
-      });
-      
-      const finalReply = finalizeReply(markdownToHtml(reply));
-      return { reply: finalReply, intent: "INSTRUCTOR_SEARCH", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "ازاي ادفع؟ 💳"] };
+
+
+// ═══ Instructor Detection ═══
+    const _instResult = await detectInstructorInMessage(message);
+
+    if (_instResult && _instResult.found && _instResult.instructors.length > 0) {
+      const _insts = _instResult.instructors;
+
+      // ═══ محاضر واحد بس → كارد واحد ═══
+      if (_insts.length === 1) {
+        const _inst = _insts[0];
+        const _instLink = _inst.courses_link || ALL_COURSES_URL;
+        const _instName = _inst.cleanName;
+        const _instTitle = _inst.title || "";
+        const _instImage = _inst.image || _inst.avatar_url || "";
+
+        let _r = `<div style="border:2px solid #e63946;border-radius:12px;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.15);padding:20px;text-align:center">`;
+        if (_instImage) {
+          _r += `<img src="${_instImage}" style="width:80px;height:80px;border-radius:50%;margin-bottom:10px;border:3px solid #e63946;object-fit:cover" alt="${_instName}"><br>`;
+        }
+        _r += `<div style="font-weight:700;font-size:17px;color:#1a1a2e;margin-bottom:6px">👨‍🏫 ${_instName}</div>`;
+        if (_instTitle) _r += `<div style="font-size:13px;color:#666;margin-bottom:12px">${_instTitle}</div>`;
+        _r += `<a href="${_instLink}" target="_blank" style="display:inline-block;background:#e63946;color:#fff !important;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">📚 تصفح كل كورسات ${_instName} ←</a>`;
+        _r += `</div>`;
+        _r += `<div style="text-align:center;margin-top:12px;padding-top:10px;border-top:1px solid #eee">`;
+        _r += `<a href="${AUTHORS_URL}" target="_blank" style="color:#e63946;font-weight:600;font-size:13px;text-decoration:none">👥 تعرّف على قائمة كل المحاضرين ←</a></div>`;
+
+        updateSessionMemory(sessionId, { searchTerms: termsToSearch, lastSearchTopic: _instName, topics: [_instName], lastShownCourseIds: [] });
+        return { reply: finalizeReply(_r), intent: "INSTRUCTOR_SEARCH", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "ازاي ادفع؟ 💳"] };
+      }
+
+      // ═══ أكتر من محاضر → يختار ═══
+      let _r = `<div style="text-align:center;margin-bottom:12px;font-weight:700;font-size:16px;color:#1a1a2e">👨‍🏫 لقيت <span style="color:#e63946">${_insts.length}</span> محاضرين — اختار اللي تقصده:</div>`;
+
+      for (const _inst of _insts.slice(0, 6)) {
+        const _instLink = _inst.courses_link || ALL_COURSES_URL;
+        const _instName = _inst.cleanName;
+        const _instTitle = _inst.title || "";
+        const _instImage = _inst.image || _inst.avatar_url || "";
+
+        _r += `<div style="border:1.5px solid #e8e8e8;border-radius:10px;margin:8px 0;padding:12px;display:flex;align-items:center;gap:12px;background:#fff">`;
+        if (_instImage) {
+          _r += `<img src="${_instImage}" style="width:50px;height:50px;border-radius:50%;border:2px solid #e63946;object-fit:cover;flex-shrink:0" alt="${_instName}">`;
+        } else {
+          _r += `<div style="width:50px;height:50px;border-radius:50%;background:#e63946;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;flex-shrink:0">👨‍🏫</div>`;
+        }
+        _r += `<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px;color:#1a1a2e">${_instName}</div>`;
+        if (_instTitle) _r += `<div style="font-size:12px;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_instTitle}</div>`;
+        _r += `</div>`;
+        _r += `<a href="${_instLink}" target="_blank" style="background:#e63946;color:#fff !important;padding:6px 14px;border-radius:6px;text-decoration:none;font-weight:700;font-size:12px;flex-shrink:0">كورساته ←</a></div>`;
+      }
+
+      if (_insts.length > 6) _r += `<div style="text-align:center;color:#888;font-size:13px;margin-top:8px">... و${_insts.length - 6} محاضرين تانيين. حاول تكتب الاسم كامل.</div>`;
+      _r += `<div style="text-align:center;margin-top:14px;padding-top:10px;border-top:1px solid #eee">`;
+      _r += `<a href="${AUTHORS_URL}" target="_blank" style="color:#e63946;font-weight:600;font-size:13px;text-decoration:none">👥 تعرّف على قائمة كل المحاضرين ←</a></div>`;
+
+      updateSessionMemory(sessionId, { searchTerms: termsToSearch, lastSearchTopic: "محاضرين", topics: ["محاضرين"], lastShownCourseIds: [] });
+      return { reply: finalizeReply(_r), intent: "INSTRUCTOR_LIST", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "عايز كورس 📘"] };
     }
+    // لو _instResult === null → مش محاضر → يكمّل البحث العادي ↓
 
 
-   // Priority title search
+    // Priority title search
 // Main search — courses includes title priority + lessons merged
     let [courses, diplomas, lessonResults] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
