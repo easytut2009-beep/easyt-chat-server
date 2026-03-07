@@ -2012,6 +2012,25 @@ CLARIFY فقط لو قال "عايز اتعلم" بدون أي موضوع نها
 
 القاعدة: لو تقدر تبحث بكلمة محددة → SEARCH | لو مش عارف تبحث عن إيه → CLARIFY
 
+🔴🔴🔴 القاعدة الأهم — اسأل نفسك:
+"لو رحت مكتبة وقولت للموظف نفس الجملة دي — هيقدر يوديني على رف معين؟"
+لو أيوا → SEARCH
+لو لا → CLARIFY
+
+أمثلة:
+"عايز اتعلم" → المكتبجي هيقولك "تتعلم إيه؟" → CLARIFY
+"عايز اتعلم PHP" → المكتبجي هيوديك رف البرمجة → SEARCH
+"عايز كورس" → المكتبجي هيقولك "كورس في إيه؟" → CLARIFY
+"عايز كورس تسويق" → المكتبجي هيوديك رف التسويق → SEARCH
+"محتاج مساعدة" → المكتبجي هيقولك "مساعدة في إيه؟" → CLARIFY
+"عايز أطور نفسي" → المكتبجي هيقولك "في أي مجال؟" → CLARIFY
+"أنا تايه" → CLARIFY
+"رشحلي حاجة" → CLARIFY
+
+⚠️ لما تختار CLARIFY:
+- search_terms = [] فاضية دايماً
+- response_message = سؤال لطيف بيسأل المستخدم عايز إيه + اقتراح مجالات
+
 🔴 أسلوب سؤال CLARIFY:
 - ابدأ بجملة ودودة تعترف بكلام المستخدم
 - اعرض 2-4 خيارات بإيموجي
@@ -3613,71 +3632,40 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
     skipUpsell = true;
   }
 
-// 🆕 FIX: GPT يحدد لو السؤال مفاهيمي (بدل regex)
+// الـ Analyzer أصلاً بيرجع user_intent — مش محتاجين GPT call تاني
   let _isConceptualQuestion = false;
-  if (analysis.action === "SEARCH" && openai && !_clarifyContextTopics) {
-    try {
-      const _cqResp = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{
-          role: "system",
-          content: `حدد نوع الرسالة:
-QUESTION = بيسأل سؤال أو عايز معلومة أو شرح أو رابط أو أداة أو برنامج
-COURSE = بيدور على كورس أو دبلومة أو عايز يتعلم مهارة جديدة
+  if (analysis.action === "SEARCH" && !_clarifyContextTopics) {
+    _isConceptualQuestion = analysis.user_intent === "QUESTION";
+    console.log(`🧠 Conceptual check (from analyzer): "${analysis.user_intent}" → isConceptual=${_isConceptualQuestion}`);
+  }
 
-أمثلة QUESTION:
-- "يعني ايه ROAS" / "عاوز اعرف معلومات عن SEO" / "ايه الفرق بين UI و UX"
-- "اشرحلي CTR" / "معلومات عن التسويق الرقمي" / "افهمني يعني ايه conversion"
-- "رابط البرنامج المستخدم في X" / "ايه البرنامج اللي بيعمل X" / "ايه الأداة المستخدمة في X"
-- "ازاي اعمل X" / "ايه أحسن طريقة لـ X" / "ايه الخطوات لعمل X"
-- "عاوز اعرف عن X" / "ابغى افهم X" / "وضحلي X"
-
-أمثلة COURSE:
-- "عايز كورس تسويق" / "عايز اتعلم فوتوشوب" / "فيه دبلومة برمجة؟"
-- "كورس ROAS" / "رشحلي كورس" / "ابغى اتعلم SEO"
-- "عندكم كورس عن X" / "فيه دورة X"
-
-القاعدة: لو بيسأل سؤال أو عايز معلومة = QUESTION | لو بيدور على كورس يتعلمه = COURSE
-رد بكلمة واحدة: QUESTION أو COURSE`
-        }, {
-          role: "user",
-          content: message
-        }],
-        max_tokens: 5,
-        temperature: 0,
-      });
-      const _cqType = _cqResp.choices[0].message.content.trim();
-      _isConceptualQuestion = _cqType === "QUESTION";
-      console.log(`🧠 GPT question check: "${message}" → ${_cqType}`);
-    } catch (_cqCheckErr) {
-      console.error("GPT question check error:", _cqCheckErr.message);
+  // 🛡️ Safety Net: لو SEARCH بدون search_terms → CLARIFY
+  if (analysis.action === "SEARCH" && (!analysis.search_terms || analysis.search_terms.length === 0)) {
+    console.log("🛡️ Safety Net: SEARCH with empty terms → CLARIFY");
+    analysis.action = "CLARIFY";
+    if (!analysis.response_message || analysis.response_message.length < 10) {
+      analysis.response_message = "أهلاً! 😊 عايز تتعلم إيه بالظبط؟ قولي المجال اللي يهمك وأنا أرشحلك أحسن كورس!";
     }
   }
 
-// === MASTER FIX: CHAT with search_terms = SEARCH ===
-// If GPT said CHAT but returned meaningful search_terms, it means
-// there IS a topic → should be SEARCH (catches ALL future edge cases)
-if (analysis.action === "CHAT" && analysis.search_terms && analysis.search_terms.length > 0) {
-  const _genericChatWords = new Set([
-    'تعلم', 'اتعلم', 'كورس', 'دورة', 'دوره', 'محتاج', 'عايز', 'عاوز',
-    'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب', 'شرح', 'اشرح', 'فهمني',
-    'اعرف', 'معلومات', 'حاجة', 'حاجه', 'موضوع', 'رابط', 'لينك',
-    'برنامج', 'اداه', 'أداة', 'تطبيق', 'ادوات',
-  ]);
-  
-  const _hasMeaningfulTerm = analysis.search_terms.some(t => {
-    const nt = normalizeArabic(t.toLowerCase().trim());
-    return nt.length > 2 
-      && !_genericChatWords.has(nt) 
-      && !BASIC_STOP_WORDS.has(t.toLowerCase());
-  });
-  
-  if (_hasMeaningfulTerm) {
-    console.log(`🔄 MASTER FIX: CHAT → SEARCH (has meaningful terms: [${analysis.search_terms.join(', ')}])`);
-    analysis.action = "SEARCH";
-    analysis.user_intent = "QUESTION";
+// لو GPT قال CHAT بس حط search_terms — نشيك هل الـ terms محددة ولا عامة
+  // بدون أي keyword list — بنشيك بطول الكلمة وعدد الـ terms بس
+  if (analysis.action === "CHAT" && analysis.search_terms && analysis.search_terms.length > 0) {
+    const hasSpecificTopic = analysis.search_terms.some(t => t.trim().length > 4) 
+                          || analysis.search_terms.length > 1;
+    
+    if (hasSpecificTopic) {
+      console.log(`🔄 CHAT → SEARCH (specific terms: [${analysis.search_terms.join(', ')}])`);
+      analysis.action = "SEARCH";
+      analysis.user_intent = "QUESTION";
+    } else {
+      console.log(`⚡ CHAT → CLARIFY (generic terms: [${analysis.search_terms.join(', ')}])`);
+      analysis.action = "CLARIFY";
+      if (!analysis.response_message || analysis.response_message.length < 10) {
+        analysis.response_message = "أهلاً! 😊 عايز تتعلم إيه بالظبط؟ قولي المجال اللي يهمك وأنا أرشحلك أحسن كورس!";
+      }
+    }
   }
-}
 
 if (_isConceptualQuestion && analysis.action === "SEARCH") {
     console.log(`ℹ️ Conceptual question detected — keeping SEARCH (FIX #86: SEARCH handler answers + shows course cards)`);
@@ -3770,25 +3758,12 @@ if (analysis.action !== "CLARIFY") {
   // If GPT said CLARIFY but returned search_terms with real technical terms,
   // the user already specified a topic — just search for it!
   // ═══════════════════════════════════════════════════════════
-  if (analysis.action === "CLARIFY" && analysis.search_terms && analysis.search_terms.length > 0) {
-    const _genericClarifyWords = new Set([
-      'تعلم', 'اتعلم', 'كورس', 'دورة', 'دوره', 'محتاج', 'عايز', 'عاوز',
-      'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب', 'شرح', 'اشرح', 'فهمني',
-      'اعرف', 'معلومات', 'حاجة', 'حاجه', 'موضوع',
-    ]);
-    
-    const _hasTechnicalTerm = analysis.search_terms.some(t => {
-      const nt = normalizeArabic(t.toLowerCase().trim());
-      return nt.length > 2 && !_genericClarifyWords.has(nt) && !BASIC_STOP_WORDS.has(t.toLowerCase());
-    });
-    
-    if (_hasTechnicalTerm) {
-      console.log(`🔄 CLARIFY → SEARCH: GPT said CLARIFY but has technical terms [${analysis.search_terms.join(', ')}]`);
-      analysis.action = "SEARCH";
-      analysis.user_intent = "QUESTION";
+// GPT قرر CLARIFY — نثق في قراره بدون keyword override
+  if (analysis.action === "CLARIFY") {
+    if (!analysis.response_message || analysis.response_message.length < 10) {
+      analysis.response_message = "أهلاً! 😊 عايز تتعلم إيه بالظبط؟ قولي المجال اللي يهمك وأنا أرشحلك أحسن كورس!";
     }
   }
-
 
 
 // ═══════════════════════════════════════════════════════════
