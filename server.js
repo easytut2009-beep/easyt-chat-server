@@ -1811,16 +1811,7 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
 
   return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات.
 
-${botInstructions ? `🔴🔴🔴 تعليمات الأدمن — أعلى أولوية (تتغلب على كل القواعد التانية بدون استثناء):
-${botInstructions}
-
-⚠️ قاعدة تنفيذ التعليمات:
-- لو تعليمة بتقول "اعرضله" أو "وريه" أو "ابحثله عن" شيء معين → action = "SEARCH" + search_terms = العبارة المذكورة في التعليمة
-- لو تعليمة بتقول "وجّهه لـ" صفحة → action المناسب + الرابط
-- التعليمات دي أهم من قاعدة CLARIFY — يعني حتى لو المستخدم مش محدد مجال، لو التعليمة بتقول اعرضله حاجة → اعرضها!
-` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
-
-
+${botInstructions ? `⛔ تعليمات الأدمن:\n${botInstructions}\n` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
 ═══ الأقسام ═══
 ${categoriesList}
 
@@ -1845,7 +1836,12 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 - "عايز أتعلم إكسيل" ← detected_category: "تعليم أساسيات الكمبيوتر"
 ═══ المطلوب ═══
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en"}
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
+
+═══ is_popularity_search ═══
+true فقط لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات أو الدورات طلباً أو مبيعاً على المنصة بشكل عام (بدون ذكر مجال محدد).
+أمثلة true: "افضل دورة الناس طالبينها" / "أقوى كورس عندكم" / "الكورسات الأكثر مبيعاً" / "إيه أكتر حاجة الناس بتشتريها"
+أمثلة false: "افضل كورس فوتوشوب" (ده SEARCH عادي بموضوع محدد) / "عايز كورس تسويق" (موضوع محدد)
 
 ═══ 🎯 لو المستخدم مبتدئ ═══
 لو قال "ابدأ" / "مبتدئ" / "اول كورس" / "ابدا منين" / "ابدأ بإيه":
@@ -2254,6 +2250,7 @@ follow_up_type: result.follow_up_type || null,
       previous_topic_reference: result.previous_topic_reference || null,
       audience_filter: result.audience_filter || null,
       language: result.language || "ar",
+      is_popularity_search: !!result.is_popularity_search,
     };
 
   } catch (e) {
@@ -3802,6 +3799,51 @@ if (analysis.action !== "CLARIFY") {
       sessionMem.clarifyCount = 0;
     }
   }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🏆 POPULARITY SEARCH — GPT detected "best/popular courses" request
+  // Bot instruction #18: "اعرضله الكورسات الاكثر مبيعا"
+  // Normal search can't handle this because "الأكثر مبيعاً" is a
+  // marketing phrase in description, not a course topic
+  // Fix: Direct DB query + skip scoring/RAG
+  // ═══════════════════════════════════════════════════════════
+  if (analysis.action === "SEARCH" && analysis.is_popularity_search) {
+    console.log(`🏆 Popularity search detected by GPT → direct DB query`);
+    try {
+      const { data: popularCourses } = await supabase
+        .from("courses")
+        .select(COURSE_SELECT_COLS)
+        .or("description.ilike.%الأكثر مبيع%,description.ilike.%الاكثر مبيع%")
+        .limit(10);
+
+      if (popularCourses && popularCourses.length > 0) {
+        const instructors = await getInstructors();
+        reply = `🏆 <strong>دي الكورسات الأكثر طلباً على المنصة:</strong><br><br>`;
+        popularCourses.slice(0, 5).forEach((c, i) => {
+          reply += formatCourseCard(c, instructors, i + 1);
+        });
+        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+        reply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+        updateSessionMemory(sessionId, {
+          searchTerms: ["الأكثر مبيعاً"],
+          lastSearchTopic: "الأكثر مبيعاً",
+          topics: ["الأكثر مبيعاً"],
+          lastShownCourseIds: popularCourses.slice(0, 5).map(c => String(c.id)),
+        });
+
+        console.log(`🏆 Showing ${Math.min(popularCourses.length, 5)} popular courses`);
+        analysis.action = "_POPULARITY_HANDLED";
+      } else {
+        console.log(`🏆 No courses with "الأكثر مبيعاً" in description — falling through to normal search`);
+      }
+    } catch (popErr) {
+      console.error(`🏆 Popularity search error:`, popErr.message);
+    }
+  }
+
+
 
   /* ═══════════════════════════════════
      ACTION: SEARCH
