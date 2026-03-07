@@ -4605,32 +4605,62 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
               }
             }
 
-            // 🆕 FIX: For QUESTION intent, require multiple matching terms
-            // Prevents showing "خطة مبيعات" when user asked about "خطة التسعين يوم"
+// 🆕 FIX: Enhanced QUESTION filter — exclude intent words + semantic match passthrough
+            const _qIntentWords = new Set([
+              'عاوز', 'عايز', 'عاوزه', 'عايزه', 'محتاج', 'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب',
+              'شرح', 'اشرح', 'اشرحلي', 'وضح', 'وضحلي', 'فهمني', 'علمني',
+              'تعلم', 'اتعلم', 'تعليم', 'كورس', 'دوره', 'دورة', 'درس', 'دروس',
+              'معلومات', 'معلومه', 'اعرف', 'عرفني', 'قولي',
+            ]);
             const _qFilterTerms = questionTerms.filter(t => {
               const nt = normalizeArabic(t.toLowerCase());
               return nt.length > 2
                 && !BASIC_STOP_WORDS.has(t.toLowerCase())
-                && !['ايه', 'ايش', 'يعني', 'معني', 'هيه', 'هيا', 'هو', 'هي', 'شو', 'وش', 'اللي', 'دي', 'ده', 'دى'].includes(nt);
+                && !_qIntentWords.has(nt)
+                && !['ايه', 'ايش', 'يعني', 'معني', 'معنى', 'هيه', 'هيا', 'هو', 'هي', 'شو', 'وش', 'اللي', 'دي', 'ده', 'دى'].includes(nt);
             });
-            console.log(`🧠 QUESTION filter terms: [${_qFilterTerms.join(', ')}]`);
+            console.log(`🧠 QUESTION filter terms (after intent removal): [${_qFilterTerms.join(', ')}]`);
 
             const topCourses = allCourses
               .filter(c => {
-                // Build searchable text: title + subtitle + matched lesson titles
+                // 🆕 FIX: If no topic terms remain → rely on search engine scoring
+                if (_qFilterTerms.length === 0) {
+                  console.log(`🧠 QUESTION filter: PASS "${c.title}" (no topic terms to filter)`);
+                  return true;
+                }
+
+                // 🆕 FIX: Auto-pass courses with high-similarity semantic lesson matches
+                // Semantic search understands Arabic↔English (e.g. "ورك فلو" = "Workflow")
+                if (c.matchedLessons && c.matchedLessons.length > 0) {
+                  const semanticLesson = c.matchedLessons.find(ml => ml.similarity && ml.similarity >= 0.65);
+                  if (semanticLesson) {
+                    console.log(`🧠 QUESTION filter: AUTO-PASS "${c.title}" (semantic lesson: "${semanticLesson.title}", sim=${semanticLesson.similarity.toFixed(2)})`);
+                    return true;
+                  }
+                }
+
+                // Build searchable text
                 const _qSearchable = normalizeArabic([
                   c.title || '',
                   c.subtitle || '',
                   ...(c.matchedLessons || []).map(ml => ml.title || '')
                 ].join(' ').toLowerCase());
 
-                // Count how many meaningful terms actually match
-                const _qMatched = _qFilterTerms.filter(t =>
-                  _qSearchable.includes(normalizeArabic(t.toLowerCase()))
-                );
+                // Also check raw text for cross-script matching
+                const _qSearchableRaw = [
+                  c.title || '',
+                  c.subtitle || '',
+                  ...(c.matchedLessons || []).map(ml => ml.title || '')
+                ].join(' ').toLowerCase();
 
-                // Need at least 2 terms to match (or all if only 1 term exists)
-                const _qMinNeeded = Math.min(2, _qFilterTerms.length);
+                // Count topic term matches
+                const _qMatched = _qFilterTerms.filter(t => {
+                  const nt = normalizeArabic(t.toLowerCase());
+                  return _qSearchable.includes(nt) || _qSearchableRaw.includes(t.toLowerCase());
+                });
+
+                // 🆕 FIX: Need only 1 topic term (was min 2 — too strict after intent removal)
+                const _qMinNeeded = 1;
                 const passes = _qMatched.length >= _qMinNeeded;
 
                 if (!passes) {
