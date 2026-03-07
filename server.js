@@ -3529,7 +3529,7 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: GPT يحدد لو السؤال مفاهيمي (بدل regex)
   let _isConceptualQuestion = false;
-  if (analysis.action === "SEARCH" && openai) {
+  if (analysis.action === "SEARCH" && openai && !_clarifyContextTopics) {
     try {
       const _cqResp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
