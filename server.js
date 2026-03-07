@@ -3325,96 +3325,6 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
-// ═══ Instructor Detection — مطابقة مباشرة بالاسم بدون كيوورد ═══
-async function detectInstructorInMessage(rawMessage) {
-  if (!supabase) return null;
-  try {
-    const instructors = await getInstructors();
-    if (!instructors || instructors.length === 0) return null;
-
-    const msgNorm = normalizeArabic(rawMessage.toLowerCase().trim());
-    if (msgNorm.length < 2) return null;
-
-    console.log(`👨‍🏫 Checking name: "${msgNorm}"`);
-
-    const matches = [];
-
-    for (const inst of instructors) {
-      const rawName = (inst.name || "").trim();
-      const cleanName = rawName.replace(/^ا\//, '').trim();
-      if (!cleanName || cleanName.length < 2) continue;
-
-      const nameNorm = normalizeArabic(cleanName.toLowerCase());
-      const nameWords = nameNorm.split(/\s+/).filter(w => w.length >= 2);
-
-      let score = 0;
-      let matchType = "";
-
-      // 1: تطابق كامل أو الاسم موجود في الرسالة
-      if (msgNorm === nameNorm) {
-        score = 300;
-        matchType = "exact";
-      } else if (msgNorm.includes(nameNorm)) {
-        score = nameNorm.length + 200;
-        matchType = "full_in_msg";
-      } else if (nameNorm.includes(msgNorm) && msgNorm.length >= 4) {
-        score = msgNorm.length + 150;
-        matchType = "msg_in_name";
-      }
-      // 2: كل كلمات الاسم موجودة في الرسالة
-      else if (nameWords.length >= 2) {
-        const matchedWords = nameWords.filter(w => msgNorm.includes(w));
-        if (matchedWords.length === nameWords.length) {
-          score = matchedWords.length * 40 + 100;
-          matchType = "all_words";
-        }
-      }
-
-      // 3: كلمة واحدة → تطابق أول كلمة أو أي كلمة من الاسم
-      if (score === 0) {
-        const msgWords = msgNorm.split(/\s+/).filter(w => w.length >= 2);
-        if (msgWords.length <= 2) {
-          for (const mw of msgWords) {
-            if (nameWords[0] === mw) {
-              score = Math.max(score, 80);
-              matchType = "first_name";
-            } else if (nameWords.some(w => w === mw)) {
-              score = Math.max(score, 60);
-              matchType = "partial_name";
-            }
-          }
-        }
-      }
-
-      // 4: Fuzzy match
-      if (score === 0 && msgNorm.length >= 4 && nameNorm.length >= 4) {
-        const sim = similarityRatio(msgNorm, nameNorm);
-        if (sim >= 75) {
-          score = sim;
-          matchType = "fuzzy";
-        }
-      }
-
-      if (score >= 60) {
-        matches.push({ ...inst, cleanName, _score: score, _matchType: matchType });
-      }
-    }
-
-    matches.sort((a, b) => b._score - a._score);
-
-    if (matches.length > 0) {
-      console.log(`👨‍🏫 ✅ FOUND ${matches.length}:`, matches.map(m => `${m.cleanName}(${m._score}/${m._matchType})`).join(", "));
-      return { found: true, instructors: matches };
-    }
-
-    console.log(`👨‍🏫 ⏭️ No instructor match → continue normal search`);
-    return null;
-  } catch (e) {
-    console.error("👨‍🏫 detectInstructor error:", e.message);
-    return null;
-  }
-}
-
 
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
@@ -4030,6 +3940,13 @@ let termsToSearch = [...new Set(analysis.search_terms)];
 
       updateSessionMemory(sessionId, { searchTerms: termsToSearch, lastSearchTopic: "محاضرين", topics: ["محاضرين"], lastShownCourseIds: [] });
       return { reply: finalizeReply(_r), intent: "INSTRUCTOR_LIST", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "عايز كورس 📘"] };
+} else if (_instResult && !_instResult.found) {
+      let _r = `<div style="text-align:center;padding:16px">`;
+      _r += `<div style="font-size:40px;margin-bottom:8px">🔍</div>`;
+      _r += `<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:8px">مفيش محاضر بالاسم ده على المنصة</div>`;
+      _r += `<div style="font-size:13px;color:#888;margin-bottom:14px">💡 حاول تكتب الاسم صح أو تصفح قائمة المحاضرين</div>`;
+      _r += `<a href="${AUTHORS_URL}" target="_blank" style="display:inline-block;background:#e63946;color:#fff !important;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">👥 تصفح قائمة كل المحاضرين ←</a></div>`;
+      return { reply: finalizeReply(_r), intent: "INSTRUCTOR_NOT_FOUND", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "عايز كورس 📘"] };
     }
     // لو _instResult === null → مش محاضر → يكمّل البحث العادي ↓
 
