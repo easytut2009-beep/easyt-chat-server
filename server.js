@@ -3084,7 +3084,8 @@ if (courses.length > 0) {
         : Math.max(50, topScore * 0.3);
     const beforeCount = courses.length;
 for (let i = courses.length - 1; i >= 0; i--) {
-        if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMatch) {
+if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMatch && !courses[i]._lessonMatch && !courses[i]._chunkMatch) {
+
             courses.splice(i, 1);
         }
     }
@@ -3105,12 +3106,12 @@ function applyQualityFilters(courses) {
   if (filtered.length > 3) {
     const maxScore = Math.max(...filtered.map(c => c.relevanceScore || 0));
     const threshold = maxScore > 100 ? maxScore * 0.1 : Math.max(maxScore * 0.3, 5);
-const tf = filtered.filter(c => (c.relevanceScore || 0) >= threshold || c._titleMatch);
+const tf = filtered.filter(c => (c.relevanceScore || 0) >= threshold || c._titleMatch || c._lessonMatch || c._chunkMatch);
     if (tf.length >= 1) filtered = tf;
   }
 
 const hasStrongMatch = filtered.some(c =>
-    (c.relevanceScore || 0) >= 200 || c._titleMatch
+    (c.relevanceScore || 0) >= 200 || c._titleMatch || c._lessonMatch || c._chunkMatch
   );
 
   if (!hasStrongMatch) {
