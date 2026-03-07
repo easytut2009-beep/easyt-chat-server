@@ -3430,17 +3430,41 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
     skipUpsell = true;
   }
 
-// 🆕 FIX: أسئلة شرح مفاهيم (الفرق بين / يعني إيه) → CHAT بدون كورسات
-  const _cqNorm = normalizeArabic(message.toLowerCase());
-const _isConceptualQuestion = (
-    /الفرق\s*(بين|ما\s*بين)/.test(_cqNorm) ||
-    /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm) ||
-    /يعن[يى]\s*(ايه|إيه|اي|إي)/.test(_cqNorm) ||
-    /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm) ||
-    /(اعرف|افهم|فهمني|اعرفني)\s*(معلومات\s*)?(عن|حول)/.test(_cqNorm) ||
-    /معلومات\s*(عن|حول)/.test(_cqNorm)
-  ) && !/كورس|دوره|دورة|رشحلي|ابغ|ادور|اتعلم|تعلم/.test(_cqNorm);
+// 🆕 FIX: GPT يحدد لو السؤال مفاهيمي (بدل regex)
+  let _isConceptualQuestion = false;
+  if (analysis.action === "SEARCH" && openai) {
+    try {
+      const _cqResp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: `حدد نوع الرسالة:
+QUESTION = بيسأل عن معنى مصطلح أو مفهوم أو شرح حاجة (مش عايز كورس، عايز يفهم)
+COURSE = بيدور على كورس أو دبلومة أو عايز يتعلم مهارة
 
+أمثلة QUESTION:
+- "يعني ايه ROAS" / "عاوز اعرف معلومات عن SEO" / "ايه الفرق بين UI و UX"
+- "اشرحلي CTR" / "معلومات عن التسويق الرقمي" / "افهمني يعني ايه conversion"
+
+أمثلة COURSE:
+- "عايز كورس تسويق" / "عايز اتعلم فوتوشوب" / "فيه دبلومة برمجة؟"
+- "كورس ROAS" / "رشحلي كورس" / "ابغى اتعلم SEO"
+
+رد بكلمة واحدة: QUESTION أو COURSE`
+        }, {
+          role: "user",
+          content: message
+        }],
+        max_tokens: 5,
+        temperature: 0,
+      });
+      const _cqType = _cqResp.choices[0].message.content.trim();
+      _isConceptualQuestion = _cqType === "QUESTION";
+      console.log(`🧠 GPT question check: "${message}" → ${_cqType}`);
+    } catch (_cqCheckErr) {
+      console.error("GPT question check error:", _cqCheckErr.message);
+    }
+  }
 
   if (_isConceptualQuestion && analysis.action === "SEARCH") {
     console.log(`🧠 Conceptual question detected → CHAT (was SEARCH)`);
