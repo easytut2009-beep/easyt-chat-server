@@ -3432,12 +3432,13 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: أسئلة شرح مفاهيم (الفرق بين / يعني إيه) → CHAT بدون كورسات
   const _cqNorm = normalizeArabic(message.toLowerCase());
-const _isConceptualQuestion = (
+  const _isConceptualQuestion = (
     /الفرق\s*(بين|ما\s*بين)/.test(_cqNorm) ||
     /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm) ||
     /يعن[يى]\s*(ايه|إيه|اي|إي)/.test(_cqNorm) ||
     /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm)
-) && !/عايز|محتاج|كورس|دبلوم|ابدأ|اتعلم/.test(_cqNorm);
+  ) && !/عايز|محتاج|كورس|دوره|دورة|رشحلي|ابغ|ادور/.test(_cqNorm);
+
 
   if (_isConceptualQuestion && analysis.action === "SEARCH") {
     console.log(`🧠 Conceptual question detected → CHAT (was SEARCH)`);
@@ -4264,7 +4265,7 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
 if (_isConceptualQuestion) {
       console.log(`🧠 Conceptual Q → answering with smart suggestion`);
 
-      // ===== 1. جاوب على السؤال =====
+      // 1. جاوب على السؤال
       try {
         const _cqResp = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -4274,12 +4275,13 @@ if (_isConceptualQuestion) {
               content: `أنت "زيكو" المرشد التعليمي في منصة easyT.
 
 ═══ معلومات المنصة ═══
-- الدبلومات: مسار تعليمي متكامل = مجموعة كورسات مرتبة بتغطي مجال من الصفر للاحتراف.
-- الكورسات: دروس منفصلة بتركز على مهارة أو موضوع محدد.
+- الدبلومات: مسار تعليمي متكامل = مجموعة كورسات مرتبة ورا بعض بتغطي مجال من الصفر للاحتراف.
+- الكورسات (الدورات): دروس منفصلة بتركز على مهارة أو موضوع محدد.
+- الخلاصة: الدبلومة = كذا كورس مرتبين في مسار تعليمي واحد.
 - المنصة فيها +600 كورس و +27 دبلومة و +750,000 طالب.
 - الاشتراك السنوي ${PRICING.annual}${PRICING.currency} يشمل كل الكورسات والدبلومات.
 
-لو السؤال عن المنصة → جاوب من المعلومات دي.
+لو السؤال عن حاجة خاصة بالمنصة → جاوب بناءً على المعلومات دي.
 لو السؤال عام → جاوب من معرفتك + مثال عملي.
 بالعامية المصرية. <br> للأسطر و <strong> للعناوين.
 ممنوع تقترح كورسات أو تعرض روابط.`
@@ -4295,19 +4297,17 @@ if (_isConceptualQuestion) {
         reply = analysis.response_message || getSmartFallback(sessionId);
       }
 
-      // ===== 2. اقتراح ذكي باستخدام analysis من GPT =====
+      // 2. اقتراح ذكي
       let _smartSuggestion = null;
-
       const _sugTerms = (analysis.search_terms || []).filter(t =>
         t.length >= 2 && !BASIC_STOP_WORDS.has(t.toLowerCase())
       );
 
-      console.log(`🧠 Suggestion search: terms=[${_sugTerms.join(', ')}], category="${analysis.detected_category || 'none'}"`);
+      console.log(`🧠 Suggestion: terms=[${_sugTerms.join(', ')}], category="${analysis.detected_category || 'none'}"`);
 
       if (_sugTerms.length > 0 && supabase) {
         try {
           const _expanded = expandArabicVariants(_sugTerms).slice(0, 14);
-
           const _courseFilters = _expanded
             .flatMap(t => [`title.ilike.%${t}%`, `subtitle.ilike.%${t}%`])
             .join(',');
@@ -4322,72 +4322,27 @@ if (_isConceptualQuestion) {
 
           if (_matchedDiplomas && _matchedDiplomas.length > 0) {
             const _bestD = _matchedDiplomas[0];
-            const _dUrl = _bestD.link || ALL_DIPLOMAS_URL;
             _smartSuggestion = `<br>🎓 <strong>لو حابب تتعمق:</strong><br>`;
-            _smartSuggestion += `<a href="${_dUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ${_bestD.title}</a>`;
-            console.log(`🧠 Suggestion: diploma "${_bestD.title}"`);
+            _smartSuggestion += `<a href="${_bestD.link || ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ${_bestD.title}</a>`;
           } else if (_matchedCourses && _matchedCourses.length > 0) {
             const _bestC = _matchedCourses[0];
-            const _cUrl = _bestC.link || ALL_COURSES_URL;
             _smartSuggestion = `<br>📘 <strong>لو حابب تتعمق:</strong><br>`;
-            _smartSuggestion += `<a href="${_cUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_bestC.title}</a>`;
-            console.log(`🧠 Suggestion: course "${_bestC.title}"`);
-          }
-
-          if (!_smartSuggestion && openai) {
-            const _chunkResults = await getRelevantChunks(_sugTerms.join(' '), null, 3);
-            const _goodChunks = (_chunkResults || []).filter(c => c.similarity >= 0.65);
-
-            if (_goodChunks.length > 0 && _goodChunks[0].lesson_id) {
-              const { data: _lessonInfo } = await supabase
-                .from("lessons")
-                .select("course_id, title")
-                .eq("id", _goodChunks[0].lesson_id)
-                .single();
-
-              if (_lessonInfo && _lessonInfo.course_id) {
-                const { data: _courseInfo } = await supabase
-                  .from("courses")
-                  .select("id, title, link")
-                  .eq("id", _lessonInfo.course_id)
-                  .single();
-
-                if (_courseInfo) {
-                  const _cUrl = _courseInfo.link || ALL_COURSES_URL;
-                  _smartSuggestion = `<br>📘 <strong>الموضوع ده متشرح في:</strong><br>`;
-                  _smartSuggestion += `<a href="${_cUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_courseInfo.title}</a>`;
-                  const _lTitle = _goodChunks[0].lesson_title || _lessonInfo.title;
-                  if (_lTitle) {
-                    _smartSuggestion += `<br>📖 درس: <strong>${_lTitle}</strong>`;
-                  }
-                  if (_goodChunks[0].timestamp_start) {
-                    _smartSuggestion += ` <span style="color:#e63946;font-weight:600">⏱️ ${_goodChunks[0].timestamp_start}</span>`;
-                  }
-                  console.log(`🧠 Suggestion: chunk → "${_courseInfo.title}"`);
-                }
-              }
-            }
+            _smartSuggestion += `<a href="${_bestC.link || ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📘 ${_bestC.title}</a>`;
           }
 
           if (!_smartSuggestion) {
             let _catMatch = null;
-
             if (analysis.detected_category) {
               _catMatch = detectRelevantCategory(analysis.detected_category);
-              if (_catMatch) console.log(`🧠 Suggestion: GPT category "${_catMatch.name}"`);
             }
-
             if (!_catMatch) {
               _catMatch = detectRelevantCategory(_sugTerms.join(' '));
-              if (_catMatch) console.log(`🧠 Suggestion: term category "${_catMatch.name}"`);
             }
-
             if (_catMatch) {
               _smartSuggestion = `<br>📂 <strong>لو حابب تتعمق:</strong><br>`;
               _smartSuggestion += `تصفح قسم <a href="${_catMatch.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_catMatch.name}</a>`;
             }
           }
-
         } catch (_sugErr) {
           console.error("Smart suggestion error:", _sugErr.message);
         }
@@ -4398,7 +4353,6 @@ if (_isConceptualQuestion) {
         if (_lastCat) {
           _smartSuggestion = `<br>📂 <strong>لو حابب تتعمق:</strong><br>`;
           _smartSuggestion += `تصفح قسم <a href="${_lastCat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${_lastCat.name}</a>`;
-          console.log(`🧠 Final fallback: category "${_lastCat.name}"`);
         }
       }
 
@@ -4408,7 +4362,6 @@ if (_isConceptualQuestion) {
 
       skipUpsell = true;
     }
-
 
 
 else if (analysis.user_intent === "QUESTION" && !skipUpsell) {
