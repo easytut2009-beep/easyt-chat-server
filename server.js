@@ -1834,14 +1834,16 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 - "كورس إليستريتور" ← detected_category: "الجرافيكس والتصميم"
 - "كورس بريمير" ← detected_category: "التصوير والمونتاج والأنيميشن"
 - "عايز أتعلم إكسيل" ← detected_category: "تعليم أساسيات الكمبيوتر"
+
 ═══ المطلوب ═══
 حلل الرسالة → JSON فقط:
 {"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
-true فقط لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات أو الدورات طلباً أو مبيعاً على المنصة بشكل عام (بدون ذكر مجال محدد).
-أمثلة true: "افضل دورة الناس طالبينها" / "أقوى كورس عندكم" / "الكورسات الأكثر مبيعاً" / "إيه أكتر حاجة الناس بتشتريها"
-أمثلة false: "افضل كورس فوتوشوب" (ده SEARCH عادي بموضوع محدد) / "عايز كورس تسويق" (موضوع محدد)
+true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
+⚠️ لما is_popularity_search=true → لازم action="SEARCH" و search_terms=["الأكثر مبيعاً"] و response_message="" فاضي
+أمثلة true: "افضل دورة الناس طالبينها" / "أقوى كورس عندكم" / "الكورسات الأكثر مبيعاً" / "إيه أكتر حاجة الناس بتشتريها" / "أشهر كورسات" / "أحسن كورس"
+أمثلة false: "افضل كورس فوتوشوب" (موضوع محدد=SEARCH عادي) / "عايز كورس تسويق" (موضوع محدد)
 
 ═══ 🎯 لو المستخدم مبتدئ ═══
 لو قال "ابدأ" / "مبتدئ" / "اول كورس" / "ابدا منين" / "ابدأ بإيه":
@@ -2217,7 +2219,7 @@ const resp = await gptWithRetry(() => openai.chat.completions.create({
       result = match ? JSON.parse(match[0]) : null;
     }
 
-    if (!result) {
+if (!result) {
 return {
         action: "CHAT",
         user_intent: "UNCLEAR",
@@ -2231,6 +2233,7 @@ detected_category: null,
         previous_topic_reference: null,
         audience_filter: null,
         language: "ar",
+        is_popularity_search: false,
       };
     }
 
@@ -2248,13 +2251,15 @@ return {
       is_follow_up: !!result.is_follow_up,
 follow_up_type: result.follow_up_type || null, 
       previous_topic_reference: result.previous_topic_reference || null,
-      audience_filter: result.audience_filter || null,
+
+audience_filter: result.audience_filter || null,
       language: result.language || "ar",
       is_popularity_search: !!result.is_popularity_search,
     };
 
   } catch (e) {
     console.error("❌ Analyzer error:", e.message);
+
 return {
       action: "CHAT",
       user_intent: "UNCLEAR",
@@ -2269,6 +2274,7 @@ follow_up_type: null,
       previous_topic_reference: null,
       audience_filter: null,
       language: "ar",
+      is_popularity_search: false,
     };
   }
 }
@@ -3796,33 +3802,54 @@ if (analysis.action !== "CLARIFY") {
       }
 
       // Reset counter so future NEW topics can still get 1 CLARIFY
-      sessionMem.clarifyCount = 0;
+sessionMem.clarifyCount = 0;
     }
   }
 
-
-// ═══════════════════════════════════════════════════════════
-  // 🏆 POPULARITY SEARCH — GPT detected "best/popular courses" request
-  // Bot instruction #18: "اعرضله الكورسات الاكثر مبيعا"
-  // Normal search can't handle this because "الأكثر مبيعاً" is a
-  // marketing phrase in description, not a course topic
-  // Fix: Direct DB query + skip scoring/RAG
   // ═══════════════════════════════════════════════════════════
-  if (analysis.action === "SEARCH" && analysis.is_popularity_search) {
-    console.log(`🏆 Popularity search detected by GPT → direct DB query`);
+  // 🏆 POPULARITY SEARCH — "افضل دورة الناس طالبينها"
+  // Direct DB query for courses with "الأكثر مبيعاً" in description
+  // Bypasses normal search engine (which can't handle marketing phrases)
+  // ═══════════════════════════════════════════════════════════
+  let _popularityHandled = false;
+
+  if (analysis.is_popularity_search) {
+    console.log(`🏆 Popularity search detected by GPT`);
     try {
-      const { data: popularCourses } = await supabase
+      // Query 1: with hamza أ
+      let { data: popCourses, error: popErr } = await supabase
         .from("courses")
         .select(COURSE_SELECT_COLS)
-        .or("description.ilike.%الأكثر مبيع%,description.ilike.%الاكثر مبيع%")
-        .limit(10);
+        .ilike("description", "%الأكثر مبيع%")
+        .limit(20);
 
-      if (popularCourses && popularCourses.length > 0) {
+      console.log(`🏆 Query1 (hamza): ${popCourses?.length || 0} results, error: ${popErr?.message || 'none'}`);
+
+      // Query 2: fallback without hamza ا
+      if ((!popCourses || popCourses.length === 0) && !popErr) {
+        const res2 = await supabase
+          .from("courses")
+          .select(COURSE_SELECT_COLS)
+          .ilike("description", "%الاكثر مبيع%")
+          .limit(20);
+        popCourses = res2.data || [];
+        console.log(`🏆 Query2 (no hamza): ${popCourses?.length || 0} results`);
+      }
+
+      if (popCourses && popCourses.length > 0) {
         const instructors = await getInstructors();
-        reply = `🏆 <strong>دي الكورسات الأكثر طلباً على المنصة:</strong><br><br>`;
-        popularCourses.slice(0, 5).forEach((c, i) => {
-          reply += formatCourseCard(c, instructors, i + 1);
-        });
+        const showCount = Math.min(popCourses.length, 8);
+
+        reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المنصة (${popCourses.length} كورس):</strong><br><br>`;
+
+        for (let i = 0; i < showCount; i++) {
+          reply += formatCourseCard(popCourses[i], instructors, i + 1);
+        }
+
+        if (popCourses.length > showCount) {
+          reply += `<br>📌 وفيه كمان <strong>${popCourses.length - showCount}</strong> كورسات تانية من الأكثر مبيعاً!`;
+        }
+
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
         reply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
 
@@ -3830,20 +3857,22 @@ if (analysis.action !== "CLARIFY") {
           searchTerms: ["الأكثر مبيعاً"],
           lastSearchTopic: "الأكثر مبيعاً",
           topics: ["الأكثر مبيعاً"],
-          lastShownCourseIds: popularCourses.slice(0, 5).map(c => String(c.id)),
+          lastShownCourseIds: popCourses.slice(0, showCount).map(c => String(c.id)),
         });
 
-        console.log(`🏆 Showing ${Math.min(popularCourses.length, 5)} popular courses`);
+        intent = "POPULARITY_SEARCH";
         analysis.action = "_POPULARITY_HANDLED";
+        _popularityHandled = true;
+
+        console.log(`🏆 ✅ Showing ${showCount}/${popCourses.length} popular courses as cards`);
       } else {
-        console.log(`🏆 No courses with "الأكثر مبيعاً" in description — falling through to normal search`);
+        console.log(`🏆 ❌ No popular courses found — falling through to normal SEARCH`);
       }
     } catch (popErr) {
       console.error(`🏆 Popularity search error:`, popErr.message);
+      // Falls through to normal SEARCH
     }
   }
-
-
 
   /* ═══════════════════════════════════
      ACTION: SEARCH
@@ -4680,8 +4709,12 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
      ACTION: CHAT (default) — FIX #70 + FIX #85
      ═══════════════════════════════════ */
   else {
+    // 🏆 Popularity search already handled above — don't overwrite reply
+    if (_popularityHandled) {
+      console.log(`🏆 Popularity reply already set (${reply.length} chars) — skipping CHAT handler`);
+    }
     // 🆕 FIX #85: QUESTION intent in CHAT → answer + show related courses
-if (_isConceptualQuestion) {
+    else if (_isConceptualQuestion) {
       console.log(`🧠 Conceptual Q → answering with smart suggestion`);
 
       // 1. جاوب على السؤال
