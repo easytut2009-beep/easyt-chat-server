@@ -3329,7 +3329,88 @@ setInterval(() => {
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
-async function detectInstructorInMessage() { return null; }
+async function detectInstructorInMessage(rawMessage) {
+  if (!supabase || !rawMessage) return null;
+  try {
+    const instructors = await getInstructors();
+    if (!instructors || instructors.length === 0) return null;
+
+    const msgNorm = normalizeArabic(rawMessage.toLowerCase().trim());
+
+    // شيل كلمات الطلب عشان يفضل اسم المحاضر بس
+    const cleanMsg = msgNorm
+      .replace(/(ايه|ايش|شو|وش|عايز|عاوز|محتاج|ابغي|ابغى|اعرف|قولي|ورين|وريني|فين|مين|هات|هاتلي)/g, '')
+      .replace(/(كورسات?|دورات?|محاضرات?|دروس|فيديوهات?|شروحات?)/g, '')
+      .replace(/(المحاضر|المدرس|الاستاذ|الدكتور|محاضر|مدرس|استاذ|دكتور|باشمهندس|مهندس)/g, '')
+      .replace(/(بتاع|حق|تبع|مال|مع|عند|اللي اسمه|اسمه|اسمها)/g, '')
+      .replace(/\s+/g, ' ').trim();
+
+    if (cleanMsg.length < 2) return null;
+
+    const matches = [];
+
+    for (const inst of instructors) {
+      const rawName = (inst.name || "").trim();
+      const cleanName = rawName.replace(/^ا\//, '').trim();
+      if (!cleanName || cleanName.length < 2) continue;
+
+      const nameNorm = normalizeArabic(cleanName.toLowerCase());
+      const nameWords = nameNorm.split(/\s+/).filter(w => w.length >= 2);
+      let score = 0;
+
+      // مطابقة كاملة
+      if (cleanMsg === nameNorm) score = 300;
+      else if (cleanMsg.includes(nameNorm)) score = 250;
+      else if (nameNorm.includes(cleanMsg) && cleanMsg.length >= 4) score = 200;
+      // كل كلمات الاسم موجودة
+      else if (nameWords.length >= 2) {
+        const matched = nameWords.filter(w => cleanMsg.includes(w));
+        if (matched.length === nameWords.length) score = 180;
+        else if (matched.length >= 2) score = 120;
+      }
+      // كلمة واحدة بس (اسم أول)
+      if (score === 0) {
+        const msgWords = cleanMsg.split(/\s+/).filter(w => w.length >= 2);
+        if (msgWords.length <= 2 && nameWords[0] && msgWords.some(w => w === nameWords[0])) {
+          score = 80;
+        }
+      }
+      // fuzzy
+      if (score === 0 && cleanMsg.length >= 4) {
+        const sim = similarityRatio(cleanMsg, nameNorm);
+        if (sim >= 75) score = sim;
+      }
+
+      if (score >= 60) matches.push({ ...inst, cleanName, _score: score });
+    }
+
+    matches.sort((a, b) => b._score - a._score);
+
+    if (matches.length > 0) {
+      console.log(`👨‍🏫 Found ${matches.length}: ${matches.map(m => m.cleanName).join(', ')}`);
+      return { found: true, instructors: matches };
+    }
+
+    // شيك لو الكلام فيه اسم أول بتاع محاضر بس الاسم الكامل مش مطابق
+    const msgWords = cleanMsg.split(/\s+/).filter(w => w.length >= 2);
+    if (msgWords.length >= 2) {
+      const firstNames = new Set();
+      for (const inst of instructors) {
+        const cn = normalizeArabic((inst.name || "").replace(/^ا\//, '').trim().toLowerCase());
+        const parts = cn.split(/\s+/);
+        if (parts[0] && parts[0].length >= 2) firstNames.add(parts[0]);
+      }
+      if (firstNames.has(msgWords[0])) {
+        return { found: false };
+      }
+    }
+
+    return null;
+  } catch (e) {
+    console.error("detectInstructor error:", e.message);
+    return null;
+  }
+}
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
   const sessionMem = getSessionMemory(sessionId);
