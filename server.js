@@ -1811,7 +1811,16 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
 
   return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات.
 
-${botInstructions ? `⛔ تعليمات الأدمن:\n${botInstructions}\n` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+${botInstructions ? `🔴🔴🔴 تعليمات الأدمن — أعلى أولوية (تتغلب على كل القواعد التانية بدون استثناء):
+${botInstructions}
+
+⚠️ قاعدة تنفيذ التعليمات:
+- لو تعليمة بتقول "اعرضله" أو "وريه" أو "ابحثله عن" شيء معين → action = "SEARCH" + search_terms = العبارة المذكورة في التعليمة
+- لو تعليمة بتقول "وجّهه لـ" صفحة → action المناسب + الرابط
+- التعليمات دي أهم من قاعدة CLARIFY — يعني حتى لو المستخدم مش محدد مجال، لو التعليمة بتقول اعرضله حاجة → اعرضها!
+` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+
+
 ═══ الأقسام ═══
 ${categoriesList}
 
