@@ -2484,7 +2484,7 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
   "has_exact_match": true/false,
   "suggestion": ""
 }
-ممنوع أسعار | ممنوع اختراع كورسات | أقصى 3 كورسات + 1 دبلومة
+ممنوع أسعار | ممنوع اختراع كورسات | أقصى 3 كورسات + 2 دبلومات
 
 ═══ 🔴🔴🔴 قاعدة الرد الأهم ═══
 الـ message لازم يكون مقدمة قصيرة فقط (سطر أو اتنين).
@@ -4188,6 +4188,29 @@ updateSessionMemory(sessionId, {
         .map((i) => diplomas[i]);
 
 // ✅ Diploma filtering merged into generateSmartRecommendation (saves 1 GPT call)
+
+// === FIX: Force-include high-score diplomas (like titleMatch for courses) ===
+if (diplomas.length > 0 && relevantDiplomas.length < 2) {
+  const _missingDiplomas = diplomas.filter(d => 
+    !relevantDiplomas.find(rd => rd.id === d.id)
+  );
+  
+  for (const md of _missingDiplomas) {
+    if (relevantDiplomas.length >= 2) break;
+    
+    // Force-include if diploma has high beginner score OR title matches search terms
+    const _dTitleNorm = normalizeArabic((md.title || '').toLowerCase());
+    const _dHasTopicMatch = termsToSearch.some(t => {
+      const nt = normalizeArabic(t.toLowerCase());
+      return nt.length > 2 && _dTitleNorm.includes(nt);
+    });
+    
+    if (_dHasTopicMatch || (md._diplomaScore && md._diplomaScore >= 50)) {
+      relevantDiplomas.push(md);
+      console.log(`🎓 Force-include diploma: "${md.title}" (score=${md._diplomaScore || 0}, topicMatch=${_dHasTopicMatch})`);
+    }
+  }
+}
 
 // Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
