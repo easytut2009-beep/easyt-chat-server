@@ -3232,7 +3232,7 @@ const dialectNormalized = message;
     dialectNormalized,
     sessionMem
   );
-  const enrichedMessage = contextResult.enriched;
+  let enrichedMessage = contextResult.enriched;
   const isContextFollowUp = contextResult.isFollowUp;
   const previousTopic = contextResult.previousTopic || null;
 
@@ -3242,6 +3242,48 @@ const dialectNormalized = message;
     loadRecentHistory(sessionId, 10),
     loadCustomResponsesSummary(),
   ]);
+
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX: CLARIFY follow-up context merge
+  // Problem: After CLARIFY, user picks option like "استخدامه في الأتمتة"
+  // but the original topic "ورك فلو" is lost → wrong search results
+  // Fix: Detect CLARIFY follow-up and merge original topic into message
+  // ═══════════════════════════════════════════════════════════
+  let _clarifyContextTopics = null;
+
+  if (sessionMem.clarifyCount > 0
+      && sessionMem.lastSearchTerms
+      && sessionMem.lastSearchTerms.length > 0) {
+
+    const _origTopics = sessionMem.lastSearchTerms;
+    const _msgNorm = normalizeArabic(enrichedMessage.toLowerCase());
+
+    // Check if original topic is already in the current message
+    const _topicAlreadyPresent = _origTopics.some(t => {
+      const nt = normalizeArabic(t.toLowerCase());
+      return nt.length > 2 && _msgNorm.includes(nt);
+    });
+
+    // Check if user is asking about something completely new
+    const _hasNewTopic = hasNewExplicitTopic(enrichedMessage);
+
+    if (!_topicAlreadyPresent && !_hasNewTopic) {
+      _clarifyContextTopics = _origTopics;
+      const _topicStr = _origTopics.join(' ');
+      enrichedMessage = _topicStr + ' ' + enrichedMessage;
+      console.log(`🔗 CLARIFY context merge:`);
+      console.log(`   Original topics: [${_origTopics.join(', ')}]`);
+      console.log(`   Current message: "${message}"`);
+      console.log(`   Merged message: "${enrichedMessage}"`);
+    } else if (_hasNewTopic) {
+      console.log(`🔗 CLARIFY: New topic detected ("${_hasNewTopic}") — skipping merge`);
+    } else {
+      console.log(`🔗 CLARIFY: Topic already in message — no merge needed`);
+    }
+  }
+
 
 // Quick intent check
   const quickCheck = quickIntentCheck(enrichedMessage);
@@ -4536,6 +4578,22 @@ else if (analysis.user_intent === "QUESTION" && !skipUpsell) {
             w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
           );
 
+
+// 🆕 FIX: Safety net — ensure CLARIFY topics are in questionTerms
+      if (_clarifyContextTopics && _clarifyContextTopics.length > 0) {
+        const _existingNorms = new Set(questionTerms.map(t => normalizeArabic(t.toLowerCase())));
+        for (const topic of _clarifyContextTopics) {
+          const nt = normalizeArabic(topic.toLowerCase());
+          if (nt.length > 2 && !_existingNorms.has(nt)) {
+            questionTerms.unshift(topic);
+            _existingNorms.add(nt);
+            console.log(`🔗 CLARIFY safety net: added "${topic}" to questionTerms`);
+          }
+        }
+      }
+
+
+
       // Answer the question from chunks or GPT knowledge
       const questionAnswer = await answerFromChunksOrKnowledge(enrichedMessage, questionTerms);
 
@@ -4607,18 +4665,41 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
 
 // 🆕 FIX: Enhanced QUESTION filter — exclude intent words + semantic match passthrough
             const _qIntentWords = new Set([
-              'عاوز', 'عايز', 'عاوزه', 'عايزه', 'محتاج', 'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب',
-              'شرح', 'اشرح', 'اشرحلي', 'وضح', 'وضحلي', 'فهمني', 'علمني',
-              'تعلم', 'اتعلم', 'تعليم', 'كورس', 'دوره', 'دورة', 'درس', 'دروس',
-              'معلومات', 'معلومه', 'اعرف', 'عرفني', 'قولي',
-            ]);
-            const _qFilterTerms = questionTerms.filter(t => {
-              const nt = normalizeArabic(t.toLowerCase());
-              return nt.length > 2
-                && !BASIC_STOP_WORDS.has(t.toLowerCase())
-                && !_qIntentWords.has(nt)
-                && !['ايه', 'ايش', 'يعني', 'معني', 'معنى', 'هيه', 'هيا', 'هو', 'هي', 'شو', 'وش', 'اللي', 'دي', 'ده', 'دى'].includes(nt);
-            });
+  // intent verbs
+  'عاوز', 'عايز', 'عاوزه', 'عايزه', 'محتاج', 'ابغي', 'ابغى', 'اريد', 'بدي', 'حاب',
+  // explanation words
+  'شرح', 'اشرح', 'اشرحلي', 'وضح', 'وضحلي', 'فهمني', 'علمني',
+  // learning words
+  'تعلم', 'اتعلم', 'تعليم', 'كورس', 'دوره', 'دورة', 'درس', 'دروس',
+  // info words
+  'معلومات', 'معلومه', 'اعرف', 'عرفني', 'قولي',
+  // pronouns (ضمائر) - not topic words
+  'استخدامه', 'استخدامها', 'استخدامهم',
+  'تطبيقه', 'تطبيقها', 'تطبيقاته', 'تطبيقاتها',
+  'فيه', 'فيها', 'عنه', 'عنها', 'منه', 'منها',
+  'بتاعه', 'بتاعها', 'بتاعته', 'بتاعتها',
+  'ليه', 'ليها', 'معاه', 'معاها',
+  'عليه', 'عليها', 'بيه', 'بيها',
+  'كيفيه', 'كيفية', 'طريقة', 'طريقه',
+  'ازاي', 'كيف', 'ابدا', 'ابدأ',
+]);
+
+            const _emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{2702}-\u{27B0}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+
+const _qFilterTerms = questionTerms.filter(t => {
+  // Remove emojis first
+  const cleaned = t.replace(_emojiRegex, '').trim();
+  if (!cleaned || cleaned.length < 2) return false;
+  
+  const nt = normalizeArabic(cleaned.toLowerCase());
+  if (!nt || nt.length < 2) return false;
+  
+  return nt.length > 2
+    && !BASIC_STOP_WORDS.has(cleaned.toLowerCase())
+    && !_qIntentWords.has(nt)
+    && !['ايه', 'ايش', 'يعني', 'معني', 'معنى', 'هيه', 'هيا', 'هو', 'هي', 'شو', 'وش', 'اللي', 'دي', 'ده', 'دى'].includes(nt);
+});
+
             console.log(`🧠 QUESTION filter terms (after intent removal): [${_qFilterTerms.join(', ')}]`);
 
             const topCourses = allCourses
