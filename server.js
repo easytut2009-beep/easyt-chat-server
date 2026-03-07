@@ -2884,7 +2884,7 @@ c._titleMatchStrength = 'none';
         return false;
       }
       
-      // 🆕 FIX: Intent words won't appear in course titles — skip them
+// 🆕 FIX: Intent words won't appear in course titles — skip them
       const _intentSkip = new Set([
         'تعليم', 'كورس', 'دوره', 'دورة', 'شرح', 'اتعلم', 'تعلم',
         'دروس', 'محتاج', 'عاوز', 'عايز', 'ابغي', 'ابغى',
@@ -2893,7 +2893,12 @@ c._titleMatchStrength = 'none';
       const _checkWords = _topicWords.length > 0 ? _topicWords : words;
       
       if (_checkWords.every(w => isWordBoundaryMatch(titleNorm, w))) {
-        if (c._titleMatchStrength !== 'strong') {
+        // If NO intent words were stripped → all topic words match → STRONG
+        // If intent words WERE stripped → reduced specificity → WEAK
+        if (_topicWords.length === words.length) {
+          c._titleMatchStrength = 'strong';
+          console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
+        } else if (c._titleMatchStrength !== 'strong') {
           c._titleMatchStrength = 'weak';
         }
         return true;
