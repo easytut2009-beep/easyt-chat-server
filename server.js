@@ -3324,6 +3324,53 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
+
+// ═══ Instructor Search — البحث بالمدرس ═══
+async function searchCoursesByInstructor(searchTerms) {
+  if (!supabase) return { instructor: null, courses: [] };
+  
+  const instructors = await getInstructors();
+  if (!instructors || instructors.length === 0) return { instructor: null, courses: [] };
+  
+  const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase().trim());
+  if (fullQuery.length < 3) return { instructor: null, courses: [] };
+  
+  let bestInstructor = null;
+  let bestScore = 0;
+  
+  for (const inst of instructors) {
+    const instName = normalizeArabic((inst.name || "").toLowerCase().trim());
+    if (!instName || instName.length < 3) continue;
+    
+    if (fullQuery.includes(instName) || instName.includes(fullQuery)) {
+      const score = 100;
+      if (score > bestScore) { bestScore = score; bestInstructor = inst; }
+      continue;
+    }
+    
+    const sim = similarityRatio(fullQuery, instName);
+    if (sim > bestScore && sim >= 65) {
+      bestScore = sim;
+      bestInstructor = inst;
+    }
+  }
+  
+  if (!bestInstructor) return { instructor: null, courses: [] };
+  
+  console.log(`👨‍🏫 Instructor match: "${fullQuery}" → "${bestInstructor.name}" (score=${bestScore})`);
+  
+  const { data: courses, error } = await supabase
+    .from("courses")
+    .select(COURSE_SELECT_COLS)
+    .eq("instructor_id", bestInstructor.id)
+    .limit(20);
+  
+  if (error || !courses) return { instructor: bestInstructor, courses: [] };
+  
+  return { instructor: bestInstructor, courses };
+}
+
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
@@ -3879,7 +3926,35 @@ reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المن
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
 let termsToSearch = [...new Set(analysis.search_terms)];
-    // Priority title search
+ 
+
+// ═══ Check if searching by instructor name ═══
+    const instructorResult = await searchCoursesByInstructor(termsToSearch);
+    if (instructorResult.instructor && instructorResult.courses.length > 0) {
+      console.log(`👨‍🏫 Found ${instructorResult.courses.length} courses by "${instructorResult.instructor.name}"`);
+      const instructors = await getInstructors();
+      
+      reply = `👨‍🏫 <strong>كورسات ${instructorResult.instructor.name}:</strong><br><br>`;
+      
+      instructorResult.courses.forEach((c, i) => {
+        reply += formatCourseCard(c, instructors, i + 1);
+      });
+      
+      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+      
+      updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: instructorResult.instructor.name,
+        topics: [instructorResult.instructor.name],
+        lastShownCourseIds: instructorResult.courses.map(c => String(c.id)),
+      });
+      
+      const finalReply = finalizeReply(markdownToHtml(reply));
+      return { reply: finalReply, intent: "INSTRUCTOR_SEARCH", suggestions: ["📂 الأقسام", "🎓 الدبلومات", "ازاي ادفع؟ 💳"] };
+    }
+
+
+   // Priority title search
 // Main search — courses includes title priority + lessons merged
     let [courses, diplomas, lessonResults] = await Promise.all([
       searchCourses(termsToSearch, [], analysis.audience_filter),
