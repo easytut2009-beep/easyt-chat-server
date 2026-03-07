@@ -3432,12 +3432,14 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: أسئلة شرح مفاهيم (الفرق بين / يعني إيه) → CHAT بدون كورسات
   const _cqNorm = normalizeArabic(message.toLowerCase());
-  const _isConceptualQuestion = (
+const _isConceptualQuestion = (
     /الفرق\s*(بين|ما\s*بين)/.test(_cqNorm) ||
     /(ايه|إيه|ما)\s*(هو|هي|هم|معنى)/.test(_cqNorm) ||
     /يعن[يى]\s*(ايه|إيه|اي|إي)/.test(_cqNorm) ||
-    /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm)
-  ) && !/عايز|محتاج|كورس|دوره|دورة|رشحلي|ابغ|ادور/.test(_cqNorm);
+    /(ايه|إيه)\s*يعن[يى]/.test(_cqNorm) ||
+    /(اعرف|افهم|فهمني|اعرفني)\s*(معلومات\s*)?(عن|حول)/.test(_cqNorm) ||
+    /معلومات\s*(عن|حول)/.test(_cqNorm)
+  ) && !/كورس|دوره|دورة|رشحلي|ابغ|ادور|اتعلم|تعلم/.test(_cqNorm);
 
 
   if (_isConceptualQuestion && analysis.action === "SEARCH") {
@@ -4284,7 +4286,8 @@ if (_isConceptualQuestion) {
 لو السؤال عن حاجة خاصة بالمنصة → جاوب بناءً على المعلومات دي.
 لو السؤال عام → جاوب من معرفتك + مثال عملي.
 بالعامية المصرية. <br> للأسطر و <strong> للعناوين.
-ممنوع تقترح كورسات أو تعرض روابط.`
+ممنوع تقترح كورسات أو تعرض روابط.
+ممنوع LaTeX أو math notation أو \\frac أو \\text. المعادلات اكتبها بالعربي عادي (مثال: ROAS = الإيرادات ÷ التكلفة = 5000 ÷ 1000 = 5).`
             },
             { role: "user", content: message }
           ],
@@ -4388,9 +4391,14 @@ if (_isConceptualQuestion) {
             model: "gpt-4o-mini",
             messages: [
               {
-                role: "system",
+role: "system",
                 content: `اختار اسم القسم الأنسب من القائمة دي بناءً على السؤال والإجابة.
 رد باسم القسم بالظبط زي ما هو في القائمة. لو مفيش قسم مناسب رد بـ NONE.
+
+⚠️ قواعد مهمة:
+- إعلانات/حملات إعلانية/ROAS/CTR/CPC/SEO/سوشيال ميديا/ديجيتال = "الديجيتال ماركيتنج" (مش التسويق والمبيعات)
+- "التسويق والمبيعات" = بيع مباشر/مندوبين/خدمة عملاء/CRM فقط
+- لو الموضوع أونلاين أو رقمي → "الديجيتال ماركيتنج" دايماً
 
 الأقسام:
 ${_catNames}`
