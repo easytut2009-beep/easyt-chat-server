@@ -4187,12 +4187,26 @@ updateSessionMemory(sessionId, {
           } catch (_e) { console.error("SEARCH-Q chunk fetch:", _e.message); }
         }
         
-        // Boost chunk course scores so they appear FIRST in cards
+// Smart chunk boost: لو فيه كورس متخصص (titleMatch) → الـ chunk boost يبقى صغير
+        // لو مفيش كورس متخصص → الـ chunks هي الإشارة الأساسية → boost كبير
+        const _hasDedicatedCourse = courses.some(c => c._titleMatch && !_sqChunkIds.has(String(c.id)));
+        
         for (const c of courses) {
           if (_sqChunkIds.has(String(c.id))) {
-            c.relevanceScore = (c.relevanceScore || 0) + 5000;
+            let _boost;
+            if (_hasDedicatedCourse) {
+              // فيه كورس متخصص في الموضوع → chunk boost صغير عشان الكورس المتخصص يفضل أول
+              _boost = 200;
+            } else if (c._titleMatch) {
+              // الكورس ده chunk match + title match ومفيش منافس → boost متوسط
+              _boost = 800;
+            } else {
+              // مفيش أي كورس title match → chunks هي الإشارة الوحيدة → boost كبير
+              _boost = 2000;
+            }
+            c.relevanceScore = (c.relevanceScore || 0) + _boost;
             c._chunkMatch = true;
-            console.log(`🧠 SEARCH-Q chunk boost: "${c.title}" → score=${c.relevanceScore}`);
+            console.log(`🧠 SEARCH-Q chunk boost: "${c.title}" → +${_boost} (dedicated=${_hasDedicatedCourse}, titleMatch=${!!c._titleMatch}) → score=${c.relevanceScore}`);
           }
         }
       }
@@ -4881,12 +4895,22 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
                 }
               }
 
-              // Boost chunk course scores so they appear first
+// Smart chunk boost: respect title-matched courses
+              const _hasDedicatedCourse2 = allCourses.some(c => c._titleMatch && !_chunkIds.has(String(c.id)));
+              
               for (const c of allCourses) {
                 if (_chunkIds.has(String(c.id))) {
-                  c.relevanceScore = (c.relevanceScore || 0) + 5000;
+                  let _boost2;
+                  if (_hasDedicatedCourse2) {
+                    _boost2 = 200;
+                  } else if (c._titleMatch) {
+                    _boost2 = 800;
+                  } else {
+                    _boost2 = 2000;
+                  }
+                  c.relevanceScore = (c.relevanceScore || 0) + _boost2;
                   c._chunkMatch = true;
-                  console.log(`🧠 QUESTION chunk boost: "${c.title}" → score=${c.relevanceScore}`);
+                  console.log(`🧠 QUESTION chunk boost: "${c.title}" → +${_boost2} → score=${c.relevanceScore}`);
                 }
               }
               allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
