@@ -2812,52 +2812,77 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLe
     const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
     const fullText = titleNorm + " " + subtitleNorm + " " + descNorm + " " + keywordsNorm;
 
+c._titleMatchStrength = 'none';
     c._titleMatch = termsToSearch.some(t => {
-  const nt = normalizeArabic(t.toLowerCase());
-  if (nt.length <= 3) return false;
-  if (titleNorm.includes(nt)) {
-    // 🆕 FIX: Verify it's a real word match, not a substring of a different word
-    // Example: "وورك" matching inside "ووركس" = FALSE match
-    const matchIndex = titleNorm.indexOf(nt);
-    const charBefore = matchIndex > 0 ? titleNorm[matchIndex - 1] : ' ';
-    const charAfter = matchIndex + nt.length < titleNorm.length ? titleNorm[matchIndex + nt.length] : ' ';
-    const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
-    const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + nt.length) === titleNorm.length;
-    
-// If both boundaries match → real word match
-    if (isWordBoundaryBefore && isWordBoundaryAfter) return true;
-    
-    // 🆕 FIX: Check if the non-matching boundary is just a known Arabic prefix
-    // "فوتوشوب" inside "الفوتوشوب" → prefix "ال" → VALID ✅
-    // "جرافيك" inside "الانفوجرافيك" → prefix "الانفو" → INVALID ❌
-    // "graphic" inside "infographic" → prefix "info" → INVALID ❌
-    if (!isWordBoundaryBefore && isWordBoundaryAfter) {
-      const lastSpaceIdx = titleNorm.lastIndexOf(' ', matchIndex - 1);
-      const wordStart = lastSpaceIdx >= 0 ? lastSpaceIdx + 1 : 0;
-      const prefix = titleNorm.substring(wordStart, matchIndex);
-      const knownPrefixes = ['ال', 'بال', 'وال', 'فال', 'كال', 'لل', 'و', 'ف', 'ب', 'ل', 'ك'];
-      if (knownPrefixes.includes(prefix)) {
-        return true; // Valid: "فوتوشوب" in "الفوتوشوب"
-      }
-    }
-    
-    if (isWordBoundaryBefore && !isWordBoundaryAfter) {
-      const nextSpaceIdx = titleNorm.indexOf(' ', matchIndex + nt.length);
-      const wordEnd = nextSpaceIdx >= 0 ? nextSpaceIdx : titleNorm.length;
-      const suffix = titleNorm.substring(matchIndex + nt.length, wordEnd);
-      const knownSuffixes = ['ه', 'ة', 'ات', 'ين', 'ون', 'ي', 'يه', 'يا'];
-      if (knownSuffixes.includes(suffix)) {
-        return true; // Valid: "برمج" in "برمجة"
-      }
-    }
-    
-    console.log(`⚠️ Rejected partial match: "${nt}" inside "${titleNorm}" (not word boundary, prefix="${titleNorm.substring(titleNorm.lastIndexOf(' ', matchIndex - 1) + 1, matchIndex)}")`);
-    return false;
-  }
+      const nt = normalizeArabic(t.toLowerCase());
+      if (nt.length <= 3) return false;
 
-const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
+      // 🆕 FIX: ال-tolerant phrase matching
+      // "تحليل بيانات" should match "تحليل البيانات"
+      if (nt.includes(' ') && nt.length > 6) {
+        const _stripAl = (s) => s.split(/\s+/).map(w => {
+          const nw = normalizeArabic(w);
+          return nw.startsWith('ال') && nw.length > 3 ? nw.substring(2) : nw;
+        }).join(' ');
+        const _titleStripped = _stripAl(titleNorm);
+        const _ntStripped = _stripAl(nt);
+        if (_titleStripped.includes(_ntStripped)) {
+          c._titleMatchStrength = 'strong';
+          console.log(`✅ ال-tolerant match: "${nt}" → "${c.title || ''}"`);
+          return true;
+        }
+      }
+
+      // Full phrase match in title
+      if (titleNorm.includes(nt)) {
+        const matchIndex = titleNorm.indexOf(nt);
+        const charBefore = matchIndex > 0 ? titleNorm[matchIndex - 1] : ' ';
+        const charAfter = matchIndex + nt.length < titleNorm.length ? titleNorm[matchIndex + nt.length] : ' ';
+        const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
+        const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + nt.length) === titleNorm.length;
+        
+        if (isWordBoundaryBefore && isWordBoundaryAfter) {
+          c._titleMatchStrength = 'strong';
+          return true;
+        }
+        
+        if (!isWordBoundaryBefore && isWordBoundaryAfter) {
+          const lastSpaceIdx = titleNorm.lastIndexOf(' ', matchIndex - 1);
+          const wordStart = lastSpaceIdx >= 0 ? lastSpaceIdx + 1 : 0;
+          const prefix = titleNorm.substring(wordStart, matchIndex);
+          const knownPrefixes = ['ال', 'بال', 'وال', 'فال', 'كال', 'لل', 'و', 'ف', 'ب', 'ل', 'ك'];
+          if (knownPrefixes.includes(prefix)) {
+            c._titleMatchStrength = 'strong';
+            return true;
+          }
+        }
+        
+        if (isWordBoundaryBefore && !isWordBoundaryAfter) {
+          const nextSpaceIdx = titleNorm.indexOf(' ', matchIndex + nt.length);
+          const wordEnd = nextSpaceIdx >= 0 ? nextSpaceIdx : titleNorm.length;
+          const suffix = titleNorm.substring(matchIndex + nt.length, wordEnd);
+          const knownSuffixes = ['ه', 'ة', 'ات', 'ين', 'ون', 'ي', 'يه', 'يا'];
+          if (knownSuffixes.includes(suffix)) {
+            c._titleMatchStrength = 'strong';
+            return true;
+          }
+        }
+        
+        console.log(`⚠️ Rejected partial match: "${nt}" inside "${titleNorm}"`);
+        return false;
+      }
+
+      // Word-split matching
+      const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
       if (words.length === 0) return false;
-      if (words.length === 1) return isWordBoundaryMatch(titleNorm, words[0]);
+      
+      if (words.length === 1) {
+        if (isWordBoundaryMatch(titleNorm, words[0])) {
+          c._titleMatchStrength = 'strong';
+          return true;
+        }
+        return false;
+      }
       
       // 🆕 FIX: Intent words won't appear in course titles — skip them
       const _intentSkip = new Set([
@@ -2866,11 +2891,27 @@ const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(
       ]);
       const _topicWords = words.filter(w => !_intentSkip.has(normalizeArabic(w)));
       const _checkWords = _topicWords.length > 0 ? _topicWords : words;
-      return _checkWords.every(w => isWordBoundaryMatch(titleNorm, w));
+      
+      if (_checkWords.every(w => isWordBoundaryMatch(titleNorm, w))) {
+        if (c._titleMatchStrength !== 'strong') {
+          c._titleMatchStrength = 'weak';
+        }
+        return true;
+      }
+      return false;
     });
+
     if (c._titleMatch) {
-      c.relevanceScore = (c.relevanceScore || 0) + 500;
-      console.log(`🏆 Title-match: "${c.title}" → +500`);
+      if (c._titleMatchStrength === 'strong') {
+        c.relevanceScore = (c.relevanceScore || 0) + 500;
+        console.log(`🏆 Title-match (STRONG): "${c.title}" → +500`);
+      } else {
+        // Weak match = word-split from generic terms — not protected
+        c._titleMatch = false;
+        c._weakTitleMatch = true;
+        c.relevanceScore = (c.relevanceScore || 0) + 100;
+        console.log(`📋 Title-match (WEAK): "${c.title}" → +100 (not protected)`);
+      }
     }
 
 if (!c._titleMatch && c.matchedLessons && c.matchedLessons.length > 0) {
