@@ -3840,7 +3840,7 @@ sessionMem.clarifyCount = 0;
         const instructors = await getInstructors();
         const showCount = Math.min(popCourses.length, 8);
 
-        reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المنصة (${popCourses.length} كورس):</strong><br><br>`;
+reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المنصة:</strong><br><br>`;
 
         for (let i = 0; i < showCount; i++) {
           reply += formatCourseCard(popCourses[i], instructors, i + 1);
