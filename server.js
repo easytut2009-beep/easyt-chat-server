@@ -3807,6 +3807,38 @@ if (_titleMatchedDiplomas.length > 0) {
       }
     }
 
+// === FIX: Beginner mode boost for DIPLOMAS ===
+if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
+  console.log(`🎓 Beginner diploma boost: adjusting ${diplomas.length} diplomas`);
+  
+  for (const d of diplomas) {
+    const titleNorm = normalizeArabic((d.title || '').toLowerCase());
+    const descNorm = normalizeArabic(
+      ((d.description || '').replace(/<[^>]*>/g, '')).toLowerCase()
+    );
+    const combined = titleNorm + ' ' + descNorm;
+    
+    // Boost diplomas with beginner keywords
+    if (/مبتدئ|مبتدأ|اساسيات|أساسيات|من الصفر|beginner|basics|fundamentals|مقدم/.test(combined)) {
+      const oldScore = d._diplomaScore || 0;
+      d._diplomaScore = oldScore + 1500;
+      console.log(`   🟢 Diploma beginner boost: "${d.title}" +1500 (${oldScore} → ${d._diplomaScore})`);
+    }
+    
+    // Penalize advanced diplomas for beginners
+    if (/احتراف|احترافي|متقدم|advanced|professional|متخصص/.test(titleNorm)) {
+      const oldScore = d._diplomaScore || 0;
+      d._diplomaScore = Math.max(0, oldScore - 500);
+      console.log(`   🔴 Diploma advanced penalty: "${d.title}" -500 (${oldScore} → ${d._diplomaScore})`);
+    }
+  }
+  
+  // Re-sort diplomas by score (beginner-friendly first)
+  diplomas.sort((a, b) => (b._diplomaScore || 0) - (a._diplomaScore || 0));
+  console.log(`🎓 Diploma order after beginner boost:`, diplomas.slice(0, 3).map(d => `"${d.title}" score=${d._diplomaScore || 0}`));
+}
+
+
 // 🆕 FIX #111: Always search lessons — finds content inside course lessons
     let lessonResults = await searchLessonsInCourses(termsToSearch);
 
