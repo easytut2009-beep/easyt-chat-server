@@ -627,6 +627,82 @@ function expandArabicVariants(terms) {
 return [...variants].filter(v => v.length > 1).slice(0, 20);
 }
 
+// ===================================================
+// Arabic Root Extraction — شبكة أمان للمطابقة الصرفية
+// ===================================================
+
+function getArabicRoot(word) {
+  if (!word) return '';
+  let w = normalizeArabic(word).trim().toLowerCase();
+  if (w.length < 3) return w;
+
+  // ---------- 1) شيل أدوات التعريف ----------
+  const articles = ['وبال', 'وال', 'بال', 'فال', 'كال', 'لل', 'ال'];
+  for (const art of articles) {
+    if (w.startsWith(art) && w.length - art.length >= 3) {
+      w = w.slice(art.length);
+      break;
+    }
+  }
+
+  // ---------- 2) شيل اللواحق (من الأطول للأقصر) ----------
+  const suffixes = [
+    'يه', 'يا', 'وي',
+    'ات', 'ون', 'ين', 'تين', 'ان',
+    'وا', 'نا', 'تم', 'تن',
+    'ه', 'ي',
+  ];
+  for (const s of suffixes) {
+    if (w.endsWith(s) && w.length - s.length >= 3) {
+      w = w.slice(0, -s.length);
+      break;
+    }
+  }
+
+  // ---------- 3) شيل السوابق الاشتقاقية ----------
+  if (w.startsWith('مست') && w.length >= 6) {
+    w = w.slice(3);
+  } else if (w.startsWith('است') && w.length >= 6) {
+    w = w.slice(3);
+  } else if (w.startsWith('مت') && w.length >= 5) {
+    w = w.slice(2);
+  } else if (w.startsWith('م') && w.length >= 4) {
+    w = w.slice(1);
+  } else if (w.startsWith('ت') && w.length >= 4) {
+    w = w.slice(1);
+  } else if (w.startsWith('ا') && w.length >= 4) {
+    w = w.slice(1);
+  }
+
+  // ---------- 4) استخرج الحروف الساكنة ----------
+  const weakLetters = new Set(['ا', 'و', 'ي', 'ى', 'آ', 'أ', 'إ', 'ئ', 'ؤ']);
+  let consonants = '';
+  for (const ch of w) {
+    if (!weakLetters.has(ch)) {
+      consonants += ch;
+    }
+  }
+
+  // ---------- 5) الجذر = أول 3 حروف ساكنة ----------
+  if (consonants.length >= 3) {
+    return consonants.slice(0, 3);
+  }
+  return consonants;
+}
+
+function shareArabicRoot(word1, word2) {
+  if (!word1 || !word2) return false;
+  const w1 = normalizeArabic(word1).trim();
+  const w2 = normalizeArabic(word2).trim();
+  if (w1.length < 3 || w2.length < 3) return false;
+
+  const r1 = getArabicRoot(w1);
+  const r2 = getArabicRoot(w2);
+
+  if (r1.length < 3 || r2.length < 3) return false;
+
+  return r1 === r2;
+}
 
 
 /* ══════════════════════════════════════════════════════════
@@ -830,6 +906,17 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
   score += 150;
   isTitleMatch = true;
 }
+        // 🌿 Root matching fallback for Arabic terms
+        if (!isTitleMatch && /[\u0600-\u06FF]/.test(nt) && nt.length >= 3) {
+          const _titleWords = titleNorm.split(/\s+/);
+          for (const _tw of _titleWords) {
+            if (_tw.length >= 3 && shareArabicRoot(nt, _tw)) {
+              score += 80;
+              console.log(`🌿 Root match in search: "${nt}" ↔ "${_tw}" in "${c.title || ''}"`);
+              break;
+            }
+          }
+        }
         if (subtitleNorm.includes(nt)) score += 30;
         if (domainNorm.includes(nt)) score += 10;
         if (keywordsNorm.includes(nt)) score += 5;
@@ -928,12 +1015,20 @@ const searchable = prepareSearchTerms(terms);
           matched = true;
         }
 
-        if (!matched) {
+if (!matched) {
           for (const tw of titleN.split(/\s+/)) {
             const sim = similarityRatio(nt, tw);
             if (sim >= 70) {
               bestSim = Math.max(bestSim, sim);
               matched = true;
+              break;
+            }
+            // 🌿 Root matching fallback
+            if (tw.length >= 3 && shareArabicRoot(nt, tw)) {
+              bestSim = Math.max(bestSim, 73);
+              matched = true;
+              console.log(`🌿 Root match in fuzzy fallback: "${nt}" ↔ "${tw}"`);
+              break;
             }
           }
         }
@@ -1886,6 +1981,24 @@ true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر
   ✅ ["إدارة مطاعم", "restaurant management", "ادارة اعمال", "إدارة مشاريع"]
 
 القاعدة العامة: افهم مين المستخدم (بيزنس إيه) + عايز يعمل إيه → ولّد search_terms تخدم احتياجه الفعلي
+
+═══ توليد الأشكال الصرفية العربية في search_terms ═══
+
+لكل كلمة موضوع عربية، لازم تولّد كل الأشكال الصرفية:
+أ) المفرد/الجمع: مشاريع↔مشروع↔مشروعات | محاسب↔محاسبين | كورس↔كورسات
+ب) المصدر: (إدارة، تسويق، تعليم، تدريب، برمجة، تصميم، هندسة)
+ج) اسم الفاعل: (مدير، مسوّق، معلّم، مدرّب، مبرمج، مصمم، مهندس)
+د) بال وبدونها: (تسويق / التسويق)
+ه) تهجئات (ة/ه): برمجة + برمجه
+و) الترجمة الإنجليزية + الاختصارات: (PMP, HR, SEO, SQL)
+ز) الاسم بالعربي والإنجليزي: فوتوشوب + Photoshop
+
+مثال: المستخدم كتب "ادارة مشاريع" → search_terms يشمل:
+["ادارة", "الاداره", "اداره", "مشاريع", "مشروعات", "مشروع", "المشروعات", "المشاريع", "ادارة مشاريع", "ادارة المشروعات", "مدير مشاريع", "project management", "PMP"]
+
+مثال: "محاسبة" → ["محاسبة", "المحاسبة", "محاسبه", "حسابات", "محاسب", "accounting"]
+
+⚠️ الهدف: لو فيه كورس اسمه فيه أي شكل من أشكال الكلمة — لازم search_terms تمسكه!
 
 ═══ search_terms — أهم حاجة ═══
 المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم","دورة","محتاج"
@@ -3014,10 +3127,16 @@ let _fuzzyMatchCount = 0;
           const _longer = nt.length <= tw.length ? tw : nt;
           if (_longer.startsWith(_shorter)) continue;
           
-          const sim = similarityRatio(nt, tw);
-          if (sim >= 75) {
+const sim = similarityRatio(nt, tw);
+          const rootMatch = shareArabicRoot(nt, tw);
+          if (sim >= 75 || rootMatch) {
             _fuzzyMatchCount++;
-            _fuzzyMatched.push(`"${nt}"≈"${tw}"(${sim}%)`);
+            _fuzzyMatched.push(rootMatch && sim < 75 
+                ? `"${nt}"~root~"${tw}"` 
+                : `"${nt}"≈"${tw}"(${sim}%)`);
+            if (rootMatch && sim < 75) {
+              console.log(`🌿 Root match in titleScore: "${nt}" ↔ "${tw}" in "${c.title || ''}"`);
+            }
             break;
           }
         }
