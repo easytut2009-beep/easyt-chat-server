@@ -2855,9 +2855,18 @@ function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLe
     return false;
   }
 
-      const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
+const words = nt.split(/\s+/).filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w));
       if (words.length === 0) return false;
-      return words.length === 1 ? isWordBoundaryMatch(titleNorm, words[0]) : words.every(w => isWordBoundaryMatch(titleNorm, w));
+      if (words.length === 1) return isWordBoundaryMatch(titleNorm, words[0]);
+      
+      // 🆕 FIX: Intent words won't appear in course titles — skip them
+      const _intentSkip = new Set([
+        'تعليم', 'كورس', 'دوره', 'دورة', 'شرح', 'اتعلم', 'تعلم',
+        'دروس', 'محتاج', 'عاوز', 'عايز', 'ابغي', 'ابغى',
+      ]);
+      const _topicWords = words.filter(w => !_intentSkip.has(normalizeArabic(w)));
+      const _checkWords = _topicWords.length > 0 ? _topicWords : words;
+      return _checkWords.every(w => isWordBoundaryMatch(titleNorm, w));
     });
     if (c._titleMatch) {
       c.relevanceScore = (c.relevanceScore || 0) + 500;
