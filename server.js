@@ -2555,6 +2555,7 @@ function verifyCourseRelevance(course, searchTerms) {
 
   // 🆕 FIX: Lesson-matched courses also pass — the lesson match IS the relevance proof
   if (course._lessonMatch) return true;
+  if (course._chunkMatch) return true;
 
 
   const courseText = normalizeArabic(
@@ -4626,8 +4627,41 @@ let [relatedCourses, relatedDiplomas, relatedLessons] = await Promise.all([
               }
             }
 
-            // Sort by score
+// Sort by score
             allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+            // 🆕 FIX: Boost chunk-derived courses (these are the CORRECT related courses)
+            if (questionAnswer && questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
+              const _chunkIds = new Set(questionAnswer.relatedCourses.map(c => String(c.id)));
+              
+              // Add missing chunk courses that general search didn't find
+              const _existingIds = new Set(allCourses.map(c => String(c.id)));
+              const _missingIds = [..._chunkIds].filter(id => !_existingIds.has(id));
+              if (_missingIds.length > 0) {
+                try {
+                  const { data: _missingCourses } = await supabase
+                    .from("courses")
+                    .select(COURSE_SELECT_COLS)
+                    .in("id", _missingIds);
+                  if (_missingCourses) {
+                    allCourses.push(..._missingCourses);
+                    console.log(`🧠 QUESTION: Added ${_missingCourses.length} chunk courses not in search results`);
+                  }
+                } catch (_mcErr) {
+                  console.error("Chunk course fetch error:", _mcErr.message);
+                }
+              }
+
+              // Boost chunk course scores so they appear first
+              for (const c of allCourses) {
+                if (_chunkIds.has(String(c.id))) {
+                  c.relevanceScore = (c.relevanceScore || 0) + 5000;
+                  c._chunkMatch = true;
+                  console.log(`🧠 QUESTION chunk boost: "${c.title}" → score=${c.relevanceScore}`);
+                }
+              }
+              allCourses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+            }
 
             const instructors = await getInstructors();
 
@@ -4704,7 +4738,13 @@ const _qFilterTerms = questionTerms.filter(t => {
             console.log(`🧠 QUESTION filter terms (after intent removal): [${_qFilterTerms.join(', ')}]`);
 
             const topCourses = allCourses
-              .filter(c => {
+.filter(c => {
+                // 🆕 FIX: Chunk-derived courses always pass (they're proven relevant)
+                if (c._chunkMatch) {
+                  console.log(`🧠 QUESTION filter: AUTO-PASS "${c.title}" (chunk match)`);
+                  return true;
+                }
+
                 // 🆕 FIX: If no topic terms remain → rely on search engine scoring
                 if (_qFilterTerms.length === 0) {
                   console.log(`🧠 QUESTION filter: PASS "${c.title}" (no topic terms to filter)`);
