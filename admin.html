@@ -236,6 +236,16 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
   .sidebar { width: 100%; height: auto; position: relative; }
   .main { margin-right: 0; }
   .flat-bubble { max-width: 90%; }
+
+
+.target-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.target-sales { background: #dbeafe; color: #1d4ed8; }
+.target-guide { background: #f3e8ff; color: #7c3aed; }
+.target-both { background: #dcfce7; color: #166534; }
+.target-filter-btn { padding: 6px 14px; border-radius: 8px; border: 2px solid #e2e8f0; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+.target-filter-btn.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+.target-filter-btn:hover { border-color: #93c5fd; }
+
 }
 </style>
 </head>
@@ -1364,6 +1374,8 @@ var BOT_INSTRUCTION_CATEGORIES = [
   { value: 'ACCESS', label: '🔐 وصول', desc: 'دخول' }, { value: 'GREETING', label: '👋 ترحيب', desc: 'أول رسالة' }
 ];
 
+var _biFilterTarget = 'all';
+
 async function loadBotInstructions() {
   var el = document.getElementById('botInstructionsList');
   el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
@@ -1373,11 +1385,29 @@ async function loadBotInstructions() {
     var items = d.instructions || d.items || d.data || [];
     _botInstructionsCache = items.slice();
     if (!items.length) { el.innerHTML = '<div class="card" style="text-align:center;padding:30px"><p style="color:#94a3b8">مفيش تعليمات</p><button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف</button></div>'; return; }
+
+    // Filter by target
+    var filtered = items;
+    if (_biFilterTarget !== 'all') {
+      filtered = items.filter(function(i) { return (i.target || 'both') === _biFilterTarget || (i.target || 'both') === 'both'; });
+    }
+
     var grouped = {};
-    items.forEach(function(item) { var cat = item.category || 'GENERAL'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(item); });
+    filtered.forEach(function(item) { var cat = item.category || 'GENERAL'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(item); });
     var html = '';
-    var activeCount = items.filter(function(i) { return i.is_active !== false; }).length;
-    html += '<div class="card" style="display:flex;gap:16px;padding:12px 16px;margin-bottom:12px"><span><b>' + items.length + '</b> تعليمة</span><span style="color:#16a34a"><b>' + activeCount + '</b> مفعّلة</span><span style="color:#dc2626"><b>' + (items.length - activeCount) + '</b> موقفة</span></div>';
+
+    // Target filter buttons
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">';
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'all' ? ' active' : '') + '" onclick="_biFilterTarget=\'all\';loadBotInstructions()">📋 الكل (' + items.length + ')</button>';
+    var salesCount = items.filter(function(i) { var t = i.target || 'both'; return t === 'sales' || t === 'both'; }).length;
+    var guideCount = items.filter(function(i) { var t = i.target || 'both'; return t === 'guide' || t === 'both'; }).length;
+    var bothCount = items.filter(function(i) { return (i.target || 'both') === 'both'; }).length;
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'sales' ? ' active' : '') + '" onclick="_biFilterTarget=\'sales\';loadBotInstructions()">🛒 المساعد البيعي (' + salesCount + ')</button>';
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'guide' ? ' active' : '') + '" onclick="_biFilterTarget=\'guide\';loadBotInstructions()">🎓 المرشد التعليمي (' + guideCount + ')</button>';
+    html += '</div>';
+
+    var activeCount = filtered.filter(function(i) { return i.is_active !== false; }).length;
+    html += '<div class="card" style="display:flex;gap:16px;padding:12px 16px;margin-bottom:12px"><span><b>' + filtered.length + '</b> تعليمة</span><span style="color:#16a34a"><b>' + activeCount + '</b> مفعّلة</span><span style="color:#dc2626"><b>' + (filtered.length - activeCount) + '</b> موقفة</span></div>';
     for (var catKey in grouped) {
       var catItems = grouped[catKey];
       var catInfo = BOT_INSTRUCTION_CATEGORIES.find(function(c) { return c.value === catKey; });
@@ -1385,7 +1415,10 @@ async function loadBotInstructions() {
       catItems.forEach(function(item) {
         var ia = item.is_active !== false;
         var gi = _botInstructionsCache.indexOf(item);
-        html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;gap:8px"><span style="font-size:11px;color:#94a3b8">#' + item.id + '</span><div class="priority-bar"><span>' + (item.priority||0) + '</span>' + renderPriorityDots(item.priority) + '</div></div><span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + '">' + (ia ? '✅' : '❌') + '</span></div>';
+        var tgt = item.target || 'both';
+        var tgtLabel = tgt === 'sales' ? '🛒 بيعي' : tgt === 'guide' ? '🎓 مرشد' : '🔄 الاتنين';
+        var tgtClass = tgt === 'sales' ? 'target-sales' : tgt === 'guide' ? 'target-guide' : 'target-both';
+        html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:#94a3b8">#' + item.id + '</span><span class="target-badge ' + tgtClass + '">' + tgtLabel + '</span><div class="priority-bar"><span>' + (item.priority||0) + '</span>' + renderPriorityDots(item.priority) + '</div></div><span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + '">' + (ia ? '✅' : '❌') + '</span></div>';
         html += '<div class="instruction-text">' + esc(item.instruction || '') + '</div>';
         html += '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + gi + ')">✏️</button><button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️' : '▶️') + '</button><button class="btn btn-danger btn-sm" onclick="deleteBotInstruction(\'' + item.id + '\')">🗑️</button></div></div>';
       });
@@ -1413,10 +1446,14 @@ function openEditBotInstruction(idx) {
 function buildBIForm(item) {
   var inst = item ? esc(item.instruction || '') : '', cat = item ? (item.category || 'GENERAL') : 'GENERAL';
   var p = item ? (item.priority != null ? item.priority : 10) : 10, a = item ? (item.is_active !== false) : true;
+  var tgt = item ? (item.target || 'both') : 'both';
   var h = '<textarea id="bi_instruction" rows="6" style="margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="اكتب التعليمة...">' + inst + '</textarea>';
-  h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap"><div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">التصنيف:</label><select id="bi_category" style="margin-top:4px">';
+  h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+  h += '<div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">التصنيف:</label><select id="bi_category" style="margin-top:4px">';
   BOT_INSTRUCTION_CATEGORIES.forEach(function(c) { h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + '</option>'; });
-  h += '</select></div><div style="flex:0 0 120px"><label style="font-size:12px;font-weight:600">الأولوية:</label><input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px"></div></div>';
+  h += '</select></div>';
+  h += '<div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">🎯 الهدف:</label><select id="bi_target" style="margin-top:4px"><option value="both"' + (tgt === 'both' ? ' selected' : '') + '>🔄 الاتنين (بيعي + مرشد)</option><option value="sales"' + (tgt === 'sales' ? ' selected' : '') + '>🛒 المساعد البيعي فقط</option><option value="guide"' + (tgt === 'guide' ? ' selected' : '') + '>🎓 المرشد التعليمي فقط</option></select></div>';
+  h += '<div style="flex:0 0 120px"><label style="font-size:12px;font-weight:600">الأولوية:</label><input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px"></div></div>';
   h += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#f8fafc;border-radius:8px"><label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label><span style="font-size:13px">مفعّل</span></div>';
   return h;
 }
@@ -1605,8 +1642,8 @@ async function saveModal() {
       else await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
       closeModal(); toast('تم ✅'); loadCustomResponses(); return;
     }
-    if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
-      var bi = { instruction: document.getElementById('bi_instruction').value, category: document.getElementById('bi_category').value, priority: parseInt(document.getElementById('bi_priority').value)||0, is_active: document.getElementById('bi_active').checked };
+if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
+      var bi = { instruction: document.getElementById('bi_instruction').value, category: document.getElementById('bi_category').value, priority: parseInt(document.getElementById('bi_priority').value)||0, is_active: document.getElementById('bi_active').checked, target: document.getElementById('bi_target').value };
       if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة!','error'); return; }
       if(modalState.type==='bot_instruction_add') await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
       else await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
