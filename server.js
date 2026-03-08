@@ -1528,6 +1528,24 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
   }
 }
 
+async function logGuide(sessionId, role, message, courseName, lectureTitle, remaining, extra = {}) {
+  if (!supabase) return;
+  try {
+    await supabase.from("guide_logs").insert({
+      session_id: sessionId || "unknown",
+      role,
+      message: (message || "").substring(0, 10000),
+      course_name: courseName || null,
+      lecture_title: lectureTitle || null,
+      remaining_messages: remaining != null ? remaining : null,
+      metadata: extra,
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("logGuide error:", e.message);
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
    SECTION 11: 🧠 THE BRAIN v10.9
    ══════════════════════════════════════════════════════════ */
@@ -6371,6 +6389,115 @@ app.delete("/admin/site-pages/:id", adminAuth, async (req, res) => {
   }
 });
 
+
+// ═══════════════════════════════════════
+// 🎓 Guide Logs — محادثات المرشد التعليمي
+// ═══════════════════════════════════════
+
+app.get("/admin/guide-conversations", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const search = req.query.search || "";
+
+    let query = supabase
+      .from("guide_logs")
+      .select("session_id, message, course_name, lecture_title, role, created_at")
+      .order("created_at", { ascending: false });
+
+    if (search) query = query.ilike("message", `%${search}%`);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const sessions = {};
+    (data || []).forEach((row) => {
+      if (!sessions[row.session_id]) {
+        sessions[row.session_id] = {
+          session_id: row.session_id,
+          last_message: row.message,
+          course_name: row.course_name,
+          lecture_title: row.lecture_title,
+          last_time: row.created_at,
+          message_count: 0,
+        };
+      }
+      sessions[row.session_id].message_count++;
+      if (!sessions[row.session_id].course_name && row.course_name) {
+        sessions[row.session_id].course_name = row.course_name;
+      }
+      if (!sessions[row.session_id].lecture_title && row.lecture_title) {
+        sessions[row.session_id].lecture_title = row.lecture_title;
+      }
+    });
+
+    const sorted = Object.values(sessions).sort(
+      (a, b) => new Date(b.last_time) - new Date(a.last_time)
+    );
+
+    const offset = (page - 1) * limit;
+    res.json({
+      success: true,
+      conversations: sorted.slice(offset, offset + limit),
+      total: sorted.length,
+      page,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get("/admin/guide-conversations/:sessionId", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("guide_logs")
+      .select("*")
+      .eq("session_id", req.params.sessionId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    res.json({
+      success: true,
+      messages: (data || []).map((m) => ({
+        ...m,
+        content: m.message,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/guide-conversations", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("guide_logs")
+      .delete()
+      .not("id", "is", null);
+    if (error) throw error;
+    res.json({ success: true, message: "All guide logs deleted" });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete("/admin/guide-conversations/:sessionId", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("guide_logs")
+      .delete()
+      .eq("session_id", req.params.sessionId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+
 // === Logs Admin ===
 app.get("/admin/logs", async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
@@ -7898,6 +8025,11 @@ app.post("/api/guide", limiter, async (req, res) => {
 
       consumeGuideMsg(session_id);
 
+// ═══ تسجيل رسالة المستخدم في guide_logs ═══
+      await logGuide(session_id, "user", message, course_name, lecture_title, remaining - 1, {
+        version: "10.9",
+      });
+
 
 // Memory protection: limit concurrent guide sessions
       if (Object.keys(guideConversations).length > MAX_GUIDE_SESSIONS) {
@@ -8313,17 +8445,36 @@ if (newRemaining > 0) {
         } catch (e) {}
     }
 }
+
+// ═══ تسجيل رد المرشد في guide_logs ═══
+      await logGuide(session_id, "assistant", finalReply, course_name, lecture_title, newRemaining, {
+        version: "10.9",
+        rag_stats: ragStats,
+        lesson_found: !!lessonMatch,
+        other_course: otherCourseRecommendation ? otherCourseRecommendation.courseTitle : null,
+        suggestions_count: suggestions.length,
+      });
+
 res.json({
     reply: finalReply,
     remaining_messages: newRemaining,
     suggestions: suggestions,
 });
 
-    } catch (error) {
+} catch (error) {
       console.error("❌ Guide Error:", error.message);
-      res.status(500).json({
+
+      // ═══ تسجيل الخطأ في guide_logs ═══
+      const errSessionId = req.body?.session_id || "unknown";
+      await logGuide(errSessionId, "assistant", "❌ ERROR: " + error.message, req.body?.course_name, req.body?.lecture_title, null, {
+        version: "10.9",
+        error: true,
+        error_message: error.message,
+      });
+
+res.status(500).json({
         reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
-        remaining_messages: getGuideRemaining(req.body?.session_id || ""),
+        remaining_messages: getGuideRemaining(errSessionId),
         error: true,
       });
     }
