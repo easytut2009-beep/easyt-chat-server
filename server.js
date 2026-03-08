@@ -1809,17 +1809,20 @@ function enrichMessageWithContext(message, sessionMem) {
 /* ═══════════════════════════════════
    11-C: Bot Instructions & History
    ═══════════════════════════════════ */
-let _botInstructionsCache = { data: null, ts: 0 };
-async function loadBotInstructions() {
-  if (_botInstructionsCache.data && Date.now() - _botInstructionsCache.ts < CACHE_TTL) {
-    return _botInstructionsCache.data;
+let _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
+async function loadBotInstructions(target = "sales") {
+  const cacheKey = target;
+  const tsKey = "ts_" + target;
+  if (_botInstructionsCache[cacheKey] && Date.now() - _botInstructionsCache[tsKey] < CACHE_TTL) {
+    return _botInstructionsCache[cacheKey];
   }
   if (!supabase) return "";
   try {
     const { data, error } = await supabase
       .from("bot_instructions")
-      .select("instruction, priority, category")
+      .select("instruction, priority, category, target")
       .eq("is_active", true)
+      .in("target", [target, "both"])
       .order("priority", { ascending: false });
 
     if (error || !data || data.length === 0) return "";
@@ -1832,7 +1835,8 @@ const result = data
         return `[${prefix}] ${r.instruction}`;
       })
       .join("\n");
-    _botInstructionsCache = { data: result, ts: Date.now() };
+ _botInstructionsCache[cacheKey] = result;
+    _botInstructionsCache[tsKey] = Date.now();
     return result;
   } catch (e) {
     return "";
@@ -3510,8 +3514,8 @@ const dialectNormalized = message;
   const previousTopic = contextResult.previousTopic || null;
 
   // Load bot instructions, history, and custom responses
-  const [botInstructions, chatHistory, customResponses] = await Promise.all([
-    loadBotInstructions(),
+const [botInstructions, chatHistory, customResponses] = await Promise.all([
+    loadBotInstructions("sales"),
 loadRecentHistory(sessionId, 6),
     loadCustomResponsesSummary(),
   ]);
@@ -5877,14 +5881,15 @@ app.get("/admin/bot-instructions", async (req, res) => {
 app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
-    const { instruction, label, category, priority, is_active } = req.body;
+    const { instruction, label, category, priority, is_active, target } = req.body;
+
     if (!instruction) {
       return res
         .status(400)
         .json({ success: false, error: "instruction required" });
     }
 
-    const { data, error } = await supabase
+const { data, error } = await supabase
       .from("bot_instructions")
       .insert({
         instruction,
@@ -5892,11 +5897,12 @@ app.post("/admin/bot-instructions", adminAuth, async (req, res) => {
         category: category || label || "GENERAL",
         priority: priority != null ? priority : 10,
         is_active: is_active !== false,
+        target: target || "both",
       })
       .select()
       .single();
     if (error) throw error;
-_botInstructionsCache = { data: null, ts: 0 };
+_botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5913,8 +5919,9 @@ app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
       u.category = req.body.category;
       if (!u.label) u.label = req.body.category;
     }
-    if (req.body.priority !== undefined) u.priority = req.body.priority;
+if (req.body.priority !== undefined) u.priority = req.body.priority;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
+    if (req.body.target !== undefined) u.target = req.body.target;
 
     const { data, error } = await supabase
       .from("bot_instructions")
@@ -5923,7 +5930,8 @@ app.put("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
-_botInstructionsCache = { data: null, ts: 0 };
+_botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
+
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -5938,7 +5946,7 @@ app.delete("/admin/bot-instructions/:id", adminAuth, async (req, res) => {
       .delete()
       .eq("id", req.params.id);
     if (error) throw error;
-_botInstructionsCache = { data: null, ts: 0 };
+_botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -6007,6 +6015,7 @@ app.put("/admin/custom-responses/:id", adminAuth, async (req, res) => {
     if (req.body.response !== undefined) u.response = req.body.response;
     if (req.body.match_type !== undefined) u.match_type = req.body.match_type;
     if (req.body.is_active !== undefined) u.is_active = req.body.is_active;
+    if (req.body.target !== undefined) u.target = req.body.target; 
     if (req.body.category !== undefined) u.category = req.body.category;
     if (req.body.priority !== undefined) u.priority = req.body.priority;
 
@@ -7854,7 +7863,8 @@ function buildGuideSystemPrompt({
   otherLessonsContext = "",
   allCourseLessons = [],
   lessonFound = false,
-  otherCourseRecommendation = null
+  otherCourseRecommendation = null,
+  botInstructions = ""
 } = {}) {
 
   const hasCurrentContent = currentLessonContext && currentLessonContext.trim().length > 20;
@@ -7875,6 +7885,11 @@ function buildGuideSystemPrompt({
 أسلوبك: ودود ومختصر، إيموجي مناسبة، رد بلهجة الطالب (default=مصري).
 ❌ ما تقولش "أنا ChatGPT" | ❌ ما تحلش امتحانات كاملة
 💰 لو سأل عن أسعار → "دوس على أيقونة زيكو الحمرا في الصفحة الرئيسية"`);
+
+  // ═══ تعليمات الأدمن ═══
+  if (botInstructions && botInstructions.trim()) {
+    parts.push(`\n⚙️ تعليمات الأدمن (إجبارية):\n${botInstructions}`);
+  }
 
   // ═══ الدرس الحالي ═══
   if (courseName || lectureTitle) {
@@ -8024,6 +8039,10 @@ app.post("/api/guide", limiter, async (req, res) => {
       }
 
       consumeGuideMsg(session_id);
+
+  // 🆕 تحميل تعليمات المرشد التعليمي
+      const guideInstructions = await loadBotInstructions("guide");
+
 
 // ═══ تسجيل رسالة المستخدم في guide_logs ═══
       await logGuide(session_id, "user", message, course_name, lecture_title, remaining - 1, {
@@ -8235,6 +8254,7 @@ const finalSystemPrompt = buildGuideSystemPrompt({
     allCourseLessons,
     lessonFound: !!lessonMatch,
     otherCourseRecommendation,
+    botInstructions: guideInstructions,
 });
 
 // ═══ Conversation Management ═══
