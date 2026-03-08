@@ -4150,6 +4150,131 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
 
 
+// ═══════════════════════════════════════════════════════════════════
+// 🆕 POST-SCORING FILTER — يعتمد 100% على GPT search_terms
+// مفيش أي keywords — بيقارن عبارات GPT بعنوان الكورس في الـ DB
+// ═══════════════════════════════════════════════════════════════════
+
+// --- خطوة أ: Multi-word phrase validation ---
+// لو GPT رجّع عبارة فيها أكتر من كلمة (زي "رسم يدوي")
+// لازم كل كلمات العبارة تكون موجودة في عنوان الكورس
+// مش كلمة واحدة بس
+
+// كلمات عامة بتيجي في عبارات GPT بس مش بتفرق في الموضوع
+// (دي مش topic keywords — دي كلمات بنائية زي "أساسيات" و "مقدمة")
+const _fillerWords = new Set([
+    'اساسيات', 'مقدمه', 'مقدمة', 'مبادئ', 'اساس',
+    'تعلم', 'تعليم', 'شرح', 'كامل', 'شامل', 'عملي', 'تطبيقي',
+    'احتراف', 'احترافي', 'متقدم', 'مبتدئ',
+    'كورس', 'دوره', 'دورة', 'دبلومه', 'برنامج',
+    'اونلاين', 'الكتروني', 'الكترونيه',
+]);
+
+// دالة تشيل "ال" من أول الكلمة
+const _stripAl = (w) => {
+    const n = normalizeArabic(w);
+    return (n.startsWith('ال') && n.length > 3) ? n.slice(2) : n;
+};
+
+// طلّع العبارات اللي فيها أكتر من كلمة من GPT search_terms
+const _gptPhrases = (analysis.search_terms || [])
+    .filter(t => t && t.includes(' ') && t.trim().length > 4)
+    .map(t => {
+        // قسّم العبارة لكلمات
+        const allWords = normalizeArabic(t.toLowerCase())
+            .split(/\s+/)
+            .filter(w => w.length > 2);
+
+        // شيل الكلمات العامة — اللي يفضل هو الموضوع الحقيقي
+        const topicWords = allWords.filter(w => !_fillerWords.has(_stripAl(w)));
+
+        // لو كل الكلمات عامة (مثلاً "أساسيات كورس") → استخدم كلهم
+        return topicWords.length > 0 ? topicWords : allWords;
+    })
+    .filter(words => words.length > 0);
+
+console.log(`🔍 GPT phrases for validation:`, _gptPhrases.map(p => p.join(' ')));
+
+// لو فيه عبارة واحدة على الأقل → شغّل الفلتر
+if (_gptPhrases.length > 0) {
+    let _anyTitleMatchRemoved = false;
+
+    for (const c of courses) {
+        // بس الكورسات اللي عندها titleMatch — متلمسش lessonMatch أو chunkMatch
+        if (!c._titleMatch) continue;
+
+        // جهّز عنوان الكورس بشكلين:
+        // 1. عربي منظّف ومشال منه "ال"
+        const _titleNorm = normalizeArabic((c.title || '').toLowerCase());
+        const _titleWordsStripped = _titleNorm.split(/\s+/).map(w => _stripAl(w)).join(' ');
+
+        // 2. إنجليزي lowercase (عشان المصطلحات الإنجليزية زي photoshop)
+        const _titleLower = (c.title || '').toLowerCase();
+
+        // شيّك كل عبارة من GPT — لو واحدة بس نجحت الكورس يفضل
+        let _anyPhraseMatched = false;
+
+        for (const phraseWords of _gptPhrases) {
+            // احسب كام كلمة من العبارة موجودة في العنوان
+            let _matched = 0;
+
+            for (const pw of phraseWords) {
+                const pwStripped = _stripAl(pw);
+
+                // جرّب 4 طرق للمطابقة:
+                const found =
+                    // 1. الكلمة المنظّفة موجودة في العنوان المنظّف
+                    _titleWordsStripped.includes(pwStripped) ||
+                    // 2. الكلمة الأصلية موجودة في العنوان (للإنجليزي)
+                    _titleLower.includes(pw) ||
+                    // 3. الكلمة كجزء من كلمة أطول (زي "جرافيك" في "جرافيكي")
+                    _titleNorm.split(/\s+/).some(tw => _stripAl(tw).includes(pwStripped) && pwStripped.length >= 4) ||
+                    // 4. الكلمة بالإنجليزي في عنوان عربي (زي "excel" في "كورس Excel")
+                    (/^[a-z]+$/i.test(pw) && _titleLower.includes(pw));
+
+                if (found) _matched++;
+            }
+
+            // القاعدة: لازم أكتر من النص يطابق
+            // كلمتين → لازم الاتنين | 3 كلمات → لازم 2 | 4 كلمات → لازم 3
+            if (_matched * 2 > phraseWords.length) {
+                _anyPhraseMatched = true;
+                break; // عبارة واحدة كفاية
+            }
+        }
+
+        // لو مفيش ولا عبارة نجحت → الكورس ده طابق على كلمة واحدة بس
+        if (!_anyPhraseMatched) {
+            console.log(`⚠️ Phrase filter: "${c.title}" — no GPT phrase fully matched → removing titleMatch`);
+            c._titleMatch = false;
+            c._titleMatchStrength = 'none';
+            c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
+            _anyTitleMatchRemoved = true;
+        }
+    }
+
+    if (_anyTitleMatchRemoved) {
+        console.log(`🔍 Phrase filter: some titleMatch removed — re-sorting`);
+        courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+    }
+}
+
+// --- خطوة ب: لو فيه titleMatch، شيل الـ semantic-only ---
+// ده بيمنع GoDot من الظهور لما بتدور على بايثون
+const _protectedCourses = courses.filter(c => c._titleMatch || c._lessonMatch || c._chunkMatch);
+if (_protectedCourses.length > 0) {
+    const _beforeCount = courses.length;
+    courses = _protectedCourses;
+    if (_beforeCount !== courses.length) {
+        console.log(`🎯 Semantic filter: ${_beforeCount} → ${courses.length} (kept titleMatch/lessonMatch/chunkMatch only)`);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// نهاية POST-SCORING FILTER
+// ═══════════════════════════════════════════════════════════════════
+
+
 // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #103: GPT-based follow-up classification (replaces keyword-based hasNewExplicitTopic)
     // CLARIFY = user refining same search → keep previous results
@@ -5500,7 +5625,8 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply: "اكتبلي سؤالك وأنا هساعدك 😊" });
     }
 
-    const cleanMessage = message.trim().slice(0, 500);
+let cleanMessage = message.trim().slice(0, 500);
+cleanMessage = cleanMessage.replace(/^\d+[.\-)]\s*/, '').trim() || cleanMessage;
     const sessionId = session_id || "anon_" + Date.now();
 
     console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
