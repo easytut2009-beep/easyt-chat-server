@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>easyT Admin Dashboard v12.3</title>
+<title>easyT Admin Dashboard v12.4</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 <style>
 body {
@@ -229,6 +229,9 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
   line-height: 1.6;
 }
 
+.selected-row { background: #eff6ff !important; }
+.selected-row td { background: #eff6ff !important; }
+
 @media (max-width: 768px) {
   .sidebar { width: 100%; height: auto; position: relative; }
   .main { margin-right: 0; }
@@ -254,10 +257,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
   <div class="sidebar">
     <div style="padding:16px 20px;border-bottom:1px solid #334155">
       <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
-      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.3 — Smart Delete</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.4 — Guide + Select Delete</div>
     </div>
     <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
-    <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 المحادثات</a>
+    <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 محادثات المساعد</a>
+    <a href="#" onclick="showTab('guideconversations')" id="nav-guideconversations">🎓 محادثات المرشد</a>
     <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات</a>
     <a href="#" onclick="showTab('botinstructions')" id="nav-botinstructions">🧠 تعليمات البوت</a>
     <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
@@ -281,12 +285,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
     </div>
 
     <div id="tab-conversations" class="tab-content">
-      <h2 style="margin:0 0 16px;font-size:20px">💬 المحادثات</h2>
+      <h2 style="margin:0 0 16px;font-size:20px">💬 محادثات المساعد البيعي</h2>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <input type="text" id="convSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadConversations(1)" style="max-width:400px;margin:0">
         <button class="btn btn-primary btn-sm" onclick="loadConversations(1)">بحث</button>
         <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadConversations(currentConvPage)">🔄</button>
-        <button class="btn btn-danger btn-sm" id="btnClearAll" onclick="clearAllConversations()">🗑️ مسح كل المحادثات</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteSelectedChat" onclick="deleteSelectedChatConversations()" style="display:none">🗑️ حذف المحدد</button>
+        <button class="btn btn-danger btn-sm" id="btnClearAll" onclick="clearAllConversations()">🗑️ مسح الكل</button>
       </div>
       <div id="deleteProgressArea" style="display:none"></div>
       <div id="convList" class="card"></div>
@@ -294,6 +299,24 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
       <div id="convDetail" style="display:none">
         <button class="btn btn-primary btn-sm" onclick="closeConvDetail()" style="margin-bottom:12px">← رجوع</button>
         <div id="convMessages"></div>
+      </div>
+    </div>
+
+    <div id="tab-guideconversations" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🎓 محادثات المرشد التعليمي</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="guideConvSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadGuideConversations(1)" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadGuideConversations(1)">بحث</button>
+        <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadGuideConversations(currentGuideConvPage)">🔄</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteSelectedGuide" onclick="deleteSelectedGuideConversations()" style="display:none">🗑️ حذف المحدد</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllGuideConversations()">🗑️ مسح الكل</button>
+      </div>
+      <div id="guideDeleteProgressArea" style="display:none"></div>
+      <div id="guideConvList" class="card"></div>
+      <div id="guideConvPagination" style="display:flex;gap:8px;justify-content:center;margin-top:8px"></div>
+      <div id="guideConvDetail" style="display:none">
+        <button class="btn btn-primary btn-sm" onclick="closeGuideConvDetail()" style="margin-bottom:12px">← رجوع</button>
+        <div id="guideConvMessages"></div>
       </div>
     </div>
 
@@ -408,6 +431,7 @@ var TOKEN = '';
 var currentTab = 'stats';
 var modalState = {};
 var currentConvPage = 1;
+var currentGuideConvPage = 1;
 var _confirmResolve = null;
 var _crudCache = {};
 var _customResponsesCache = [];
@@ -415,9 +439,14 @@ var _botInstructionsCache = [];
 var _convViewMode = 'flat';
 var _convSortedMessages = [];
 var _convSessionId = '';
+var _guideConvViewMode = 'flat';
+var _guideConvSortedMessages = [];
+var _guideConvSessionId = '';
 var _allCrudItems = {};
 var _crudPages = {};
 var ITEMS_PER_PAGE = 50;
+var _selectedChatSessions = new Set();
+var _selectedGuideSessions = new Set();
 
 function esc(t) {
   if (t == null) return '';
@@ -489,7 +518,7 @@ function doLogout() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// API CALLS — مع معالجة HTML responses
+// API CALLS
 // ═══════════════════════════════════════════════════════════
 function apiCall(path, opts) {
   opts = opts || {};
@@ -516,7 +545,6 @@ function apiCall(path, opts) {
   });
 }
 
-// ✅ Raw fetch بترجع {status, ok, isJson, data}
 async function smartFetch(path, opts) {
   opts = opts || {};
   try {
@@ -531,14 +559,8 @@ async function smartFetch(path, opts) {
     var isHtml = bodyText.includes('<!DOCTYPE') || bodyText.includes('<html');
     var data = null;
     if (isJson) { try { data = JSON.parse(bodyText); } catch(e) {} }
-
     return {
-      status: r.status,
-      ok: r.ok,
-      isJson: isJson,
-      isHtml: isHtml,
-      data: data,
-      text: bodyText,
+      status: r.status, ok: r.ok, isJson: isJson, isHtml: isHtml, data: data, text: bodyText,
       reallyWorked: r.ok && isJson && !isHtml
     };
   } catch(e) {
@@ -558,6 +580,7 @@ function showTab(tab) {
   currentTab = tab;
   if(tab==='stats') loadStats();
   else if(tab==='conversations') loadConversations(1);
+  else if(tab==='guideconversations') loadGuideConversations(1);
   else if(tab==='corrections') loadCorrections();
   else if(tab==='botinstructions') loadBotInstructions();
   else if(tab==='customresponses') loadCustomResponses();
@@ -582,11 +605,13 @@ async function loadStats() {
     try { var faqResp = await apiCall('/admin/faq'); extra.totalFaq = (faqResp.faqs || faqResp.entries || faqResp.items || []).length; } catch(e) { extra.totalFaq = 0; }
     try { var instResp = await apiCall('/admin/instructors'); extra.totalInstructors = (instResp.instructors || instResp.items || []).length; } catch(e) { extra.totalInstructors = 0; }
     try { var spResp = await apiCall('/admin/site-pages'); extra.totalSitePages = (spResp.pages || spResp.items || []).length; } catch(e) { extra.totalSitePages = 0; }
+    try { var gcResp = await apiCall('/admin/guide-conversations?limit=1'); extra.totalGuideConvs = (gcResp.pagination && gcResp.pagination.total) ? gcResp.pagination.total : (gcResp.conversations || gcResp.items || gcResp.data || []).length; } catch(e) { extra.totalGuideConvs = 0; }
 
     var g = document.getElementById('statsGrid');
     var items = [
-      ['💬', d.totalChats || 0, 'إجمالي الرسائل'], ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
+      ['💬', d.totalChats || 0, 'رسائل المساعد'], ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
       ['📅', d.todayChats || 0, 'رسائل اليوم'], ['🟢', d.activeSessions || 0, 'جلسات نشطة'],
+      ['🎓', extra.totalGuideConvs || 0, 'محادثات المرشد'],
       ['🧠', extra.totalCorrections != null ? extra.totalCorrections : (d.totalCorrections || 0), 'تصحيحات'],
       ['📝', extra.totalBotInstructions != null ? extra.totalBotInstructions : (d.totalBotInstructions || 0), 'تعليمات البوت'],
       ['🛠️', extra.totalCustomResponses != null ? extra.totalCustomResponses : (d.totalCustomResponses || 0), 'ردود مخصصة'],
@@ -612,11 +637,13 @@ async function loadStats() {
   } catch (e) { toast('خطأ في تحميل الإحصائيات', 'error'); }
 }
 
-// ═══════════════════════════════════════
-// CONVERSATIONS
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// 💬 SALES ASSISTANT CONVERSATIONS (with select/delete)
+// ═══════════════════════════════════════════════════════════
 async function loadConversations(page) {
   page = page||1; currentConvPage = page;
+  _selectedChatSessions = new Set();
+  document.getElementById('btnDeleteSelectedChat').style.display = 'none';
   var el = document.getElementById('convList');
   el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
   document.getElementById('deleteProgressArea').style.display = 'none';
@@ -629,11 +656,11 @@ async function loadConversations(page) {
       document.getElementById('convPagination').innerHTML='';
       return;
     }
-    var html = '<table><thead><tr><th>الجلسة</th><th>آخر رسالة</th><th>النوع</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>';
+    var html = '<table><thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllChat(this)"></th><th>الجلسة</th><th>آخر رسالة</th><th>النوع</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>';
     conversations.forEach(function(c) {
       var msg = esc(stripHtml(c.last_message||'')).slice(0,60);
       var sid = esc(c.session_id||'');
-      html += '<tr style="cursor:pointer" onclick="loadConvDetail(\''+sid+'\')"><td style="font-family:monospace;font-size:11px">'+sid.slice(0,12)+'...</td><td>'+msg+'</td><td><span class="badge badge-blue">'+esc(c.last_intent||'-')+'</span></td><td style="font-size:11px">'+(c.last_time?fmtFull(c.last_time):'-')+'</td><td>'+(c.message_count||0)+'</td></tr>';
+      html += '<tr id="chat-row-'+sid+'"><td><input type="checkbox" class="chat-sel-cb" value="'+sid+'" onchange="onChatSelChange()"></td><td style="font-family:monospace;font-size:11px;cursor:pointer" onclick="loadConvDetail(\''+sid+'\')">'+sid.slice(0,12)+'...</td><td style="cursor:pointer" onclick="loadConvDetail(\''+sid+'\')">'+msg+'</td><td><span class="badge badge-blue">'+esc(c.last_intent||'-')+'</span></td><td style="font-size:11px">'+(c.last_time?fmtFull(c.last_time):'-')+'</td><td>'+(c.message_count||0)+'</td></tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -651,11 +678,52 @@ async function loadConversations(page) {
   }
 }
 
+function toggleAllChat(master) {
+  document.querySelectorAll('.chat-sel-cb').forEach(function(cb) { cb.checked = master.checked; });
+  onChatSelChange();
+}
+
+function onChatSelChange() {
+  _selectedChatSessions = new Set();
+  document.querySelectorAll('.chat-sel-cb:checked').forEach(function(cb) { _selectedChatSessions.add(cb.value); });
+  var btn = document.getElementById('btnDeleteSelectedChat');
+  btn.style.display = _selectedChatSessions.size > 0 ? '' : 'none';
+  btn.innerHTML = '🗑️ حذف المحدد (' + _selectedChatSessions.size + ')';
+  // highlight selected rows
+  document.querySelectorAll('.chat-sel-cb').forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row) { if (cb.checked) row.classList.add('selected-row'); else row.classList.remove('selected-row'); }
+  });
+}
+
+async function deleteSelectedChatConversations() {
+  if (_selectedChatSessions.size === 0) return;
+  var ok = await showConfirm('حذف ' + _selectedChatSessions.size + ' محادثة من المساعد البيعي؟');
+  if (!ok) return;
+  var ids = Array.from(_selectedChatSessions);
+  var deleted = 0, errors = 0;
+  var btn = document.getElementById('btnDeleteSelectedChat');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جاري الحذف...';
+  for (var i = 0; i < ids.length; i++) {
+    btn.innerHTML = '⏳ ' + (i+1) + '/' + ids.length;
+    try {
+      await apiCall('/admin/conversations/' + encodeURIComponent(ids[i]), { method: 'DELETE' });
+      deleted++;
+      var row = document.getElementById('chat-row-' + ids[i]);
+      if (row) row.style.opacity = '0.3';
+    } catch(e) { errors++; }
+  }
+  btn.disabled = false;
+  toast('تم حذف ' + deleted + ' محادثة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
+  setTimeout(function() { loadConversations(currentConvPage); }, 1000);
+}
+
 // ═══════════════════════════════════════════════════════════
-// 🗑️ CLEAR ALL — مع تشخيص ذكي
+// 🗑️ CLEAR ALL CONVERSATIONS
 // ═══════════════════════════════════════════════════════════
 async function clearAllConversations() {
-  var ok1 = await showConfirm('⚠️ هل أنت متأكد إنك عايز تمسح كل المحادثات؟');
+  var ok1 = await showConfirm('⚠️ هل أنت متأكد إنك عايز تمسح كل محادثات المساعد؟');
   if (!ok1) return;
   var ok2 = await showConfirm('🚨 تأكيد نهائي: كل المحادثات هتتمسح نهائياً!');
   if (!ok2) return;
@@ -667,9 +735,6 @@ async function clearAllConversations() {
   progressArea.style.display = 'block';
   progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#64748b">⏳ جاري البحث عن طريقة المسح المناسبة...</div></div>';
 
-  // ═══════════════════════════════════════
-  // الخطوة 1: جرب bulk delete endpoints
-  // ═══════════════════════════════════════
   var bulkEndpoints = [
     { path: '/admin/conversations/clear', method: 'POST' },
     { path: '/admin/conversations/clear', method: 'DELETE' },
@@ -682,15 +747,9 @@ async function clearAllConversations() {
 
   for (var i = 0; i < bulkEndpoints.length; i++) {
     var ep = bulkEndpoints[i];
-    console.log('🔄 Trying bulk:', ep.method, ep.path);
     progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#3b82f6">🔄 جاري تجربة: ' + ep.method + ' ' + ep.path + '</div></div>';
-
     var result = await smartFetch(ep.path, { method: ep.method });
-
     if (result.reallyWorked) {
-      // ✅ نجح! — لكن نتأكد إن البيانات فعلاً اتمسحت
-      console.log('✅ Bulk endpoint responded OK:', ep.path);
-
       await new Promise(function(r) { setTimeout(r, 1000); });
       var verify = await smartFetch('/admin/conversations?limit=1');
       var remaining = 0;
@@ -698,85 +757,55 @@ async function clearAllConversations() {
         var convs = (verify.data.conversations || verify.data.items || verify.data.data || []);
         remaining = convs.length;
       }
-
       if (remaining === 0) {
         progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">✅ تم مسح كل المحادثات بنجاح!</div></div>';
         toast('تم مسح كل المحادثات ✅');
-        btn.disabled = false;
-        btn.innerHTML = '🗑️ مسح كل المحادثات';
+        btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
         setTimeout(function() { loadConversations(1); }, 2000);
         return;
-      } else {
-        console.log('⚠️ Endpoint returned OK but data still exists. remaining:', remaining);
       }
     }
   }
 
-  // ═══════════════════════════════════════
-  // الخطوة 2: جرب one-by-one delete
-  // ═══════════════════════════════════════
-  console.log('⚠️ No bulk endpoint worked. Trying one-by-one...');
+  // one-by-one
   progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#f59e0b">⏳ جاري تحميل الجلسات للمسح الفردي...</div></div>';
-
-  // حمّل أول جلسة وجرب نمسحها فعلاً
   var testResult = await smartFetch('/admin/conversations?limit=5&page=1');
   if (!testResult.reallyWorked) {
     showServerError('مش قادر أحمل المحادثات');
-    btn.disabled = false;
-    btn.innerHTML = '🗑️ مسح كل المحادثات';
+    btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
     return;
   }
 
   var testConvs = testResult.data.conversations || testResult.data.items || testResult.data.data || [];
   if (testConvs.length === 0) {
     progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;color:#166534">✅ مفيش محادثات أصلاً!</div></div>';
-    btn.disabled = false;
-    btn.innerHTML = '🗑️ مسح كل المحادثات';
+    btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
     return;
   }
 
-  // جرب نمسح أول جلسة وشوف لو فعلاً اتمسحت
   var firstSid = testConvs[0].session_id;
-  var countBefore = testConvs.length;
-
   var delTest = await smartFetch('/admin/conversations/' + encodeURIComponent(firstSid), { method: 'DELETE' });
-  console.log('🧪 Delete test result:', delTest);
-
-  // استنى وبعدين تحقق
   await new Promise(function(r) { setTimeout(r, 500); });
-
   var verifyAfter = await smartFetch('/admin/conversations?limit=5&page=1');
-  var countAfter = 0;
   var stillHasFirst = false;
   if (verifyAfter.reallyWorked) {
     var afterConvs = verifyAfter.data.conversations || verifyAfter.data.items || verifyAfter.data.data || [];
-    countAfter = afterConvs.length;
     stillHasFirst = afterConvs.some(function(c) { return c.session_id === firstSid; });
   }
 
-  // ✅ لو الجلسة فعلاً اتمسحت
   if (delTest.reallyWorked && !stillHasFirst) {
-    console.log('✅ Individual delete works! Proceeding with all...');
     await deleteAllOneByOne(progressArea, btn);
     return;
   }
 
-  // ❌ مفيش طريقة نجحت — وري رسالة الخطأ
-  console.log('❌ No delete method works. delTest:', delTest, 'stillHasFirst:', stillHasFirst);
   showServerError();
-  btn.disabled = false;
-  btn.innerHTML = '🗑️ مسح كل المحادثات';
+  btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
 }
 
-// ═══════════════════════════════════════
-// مسح واحدة واحدة (بعد التأكد إنه شغال)
-// ═══════════════════════════════════════
 async function deleteAllOneByOne(progressArea, btn) {
-  // حمّل كل الجلسات
   var allSessions = [];
   var page = 1;
   var hasMore = true;
-
   while (hasMore) {
     var d = await smartFetch('/admin/conversations?limit=50&page=' + page);
     if (!d.reallyWorked) break;
@@ -786,17 +815,12 @@ async function deleteAllOneByOne(progressArea, btn) {
     hasMore = convs.length >= 50;
     page++;
   }
-
-  // إزالة التكرارات
   allSessions = allSessions.filter(function(v, i, a) { return a.indexOf(v) === i; });
   var total = allSessions.length;
-  var deleted = 0;
-  var errors = 0;
-
+  var deleted = 0, errors = 0;
   for (var i = 0; i < allSessions.length; i++) {
     var sid = allSessions[i];
     var pct = Math.round(((i + 1) / total) * 100);
-
     progressArea.innerHTML = '<div class="delete-progress">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
       '<span style="font-size:14px;font-weight:700;color:#1e293b">🗑️ جاري المسح: ' + (i + 1) + ' / ' + total + '</span>' +
@@ -806,43 +830,26 @@ async function deleteAllOneByOne(progressArea, btn) {
       '<div style="display:flex;justify-content:center;gap:16px;margin-top:8px">' +
       '<span style="font-size:12px;color:#16a34a;font-weight:600">✅ ' + deleted + ' نجح</span>' +
       '<span style="font-size:12px;color:#ef4444;font-weight:600">❌ ' + errors + ' فشل</span></div></div>';
-
     var del = await smartFetch('/admin/conversations/' + encodeURIComponent(sid), { method: 'DELETE' });
-    if (del.reallyWorked || del.status === 200 || del.status === 204) {
-      deleted++;
-    } else {
-      errors++;
-    }
-
+    if (del.reallyWorked || del.status === 200 || del.status === 204) { deleted++; } else { errors++; }
     if (i % 3 === 2) await new Promise(function(r) { setTimeout(r, 50); });
   }
-
-  // النتيجة
   var allGood = errors === 0;
   progressArea.innerHTML = '<div class="delete-progress" style="border-color:' + (allGood ? '#86efac' : '#fde68a') + ';background:' + (allGood ? '#f0fdf4' : '#fffbeb') + '">' +
     '<div style="text-align:center;font-size:16px;font-weight:700;color:' + (allGood ? '#166534' : '#92400e') + '">🏁 انتهى المسح!</div>' +
     '<div style="text-align:center;font-size:13px;margin-top:6px">' +
     '✅ ' + deleted + ' جلسة اتمسحت' + (errors > 0 ? ' | ❌ ' + errors + ' فشل' : '') + '</div></div>';
-
   toast('تم مسح ' + deleted + ' جلسة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
-  btn.disabled = false;
-  btn.innerHTML = '🗑️ مسح كل المحادثات';
+  btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
   setTimeout(function() { loadConversations(1); }, 2000);
 }
 
-// ═══════════════════════════════════════
-// رسالة خطأ السيرفر + الكود المطلوب
-// ═══════════════════════════════════════
 function showServerError(extra) {
   var progressArea = document.getElementById('deleteProgressArea');
   progressArea.innerHTML = '<div class="server-error-box">' +
     '<h3>🔴 السيرفر مفيهوش endpoint لمسح المحادثات!</h3>' +
-    '<p style="font-size:13px;color:#64748b;margin-bottom:12px">' +
-    'الداشبورد بيبعت طلب مسح بس السيرفر مش بيفهمه — لازم تضيف الكود ده في ملف السيرفر (server.js أو index.js):' +
-    '</p>' +
+    '<p style="font-size:13px;color:#64748b;margin-bottom:12px">لازم تضيف الكود ده في ملف السيرفر:</p>' +
     '<pre>' +
-    '// ضيف الكود ده في السيرفر بتاعك\n\n' +
-    '// مسح كل المحادثات\n' +
     'app.delete(\'/admin/conversations\', authenticateAdmin, async (req, res) => {\n' +
     '  try {\n' +
     '    const result = await pool.query(\'DELETE FROM chat_logs\');\n' +
@@ -851,7 +858,6 @@ function showServerError(extra) {
     '    res.status(500).json({ error: error.message });\n' +
     '  }\n' +
     '});\n\n' +
-    '// مسح محادثة واحدة\n' +
     'app.delete(\'/admin/conversations/:sessionId\', authenticateAdmin, async (req, res) => {\n' +
     '  try {\n' +
     '    const result = await pool.query(\n' +
@@ -865,12 +871,7 @@ function showServerError(extra) {
     '});\n' +
     '</pre>' +
     '<div style="margin-top:12px;padding:10px;background:#fef9c3;border-radius:8px;border:1px solid #fde68a">' +
-    '<p style="font-size:12px;color:#854d0e;margin:0">⚠️ <b>مهم:</b> غيّر <code>chat_logs</code> لاسم الجدول الحقيقي عندك، و <code>authenticateAdmin</code> لاسم الـ middleware بتاعك، و <code>pool</code> لاسم الـ database connection.</p>' +
-    '</div>' +
-    '<div style="margin-top:12px;text-align:center">' +
-    '<p style="font-size:13px;color:#3b82f6;font-weight:600">💡 ابعتلي كود السيرفر بتاعك وأنا أضيفلك الـ endpoints بالظبط!</p>' +
-    '</div>' +
-    '</div>';
+    '<p style="font-size:12px;color:#854d0e;margin:0">⚠️ غيّر اسم الجدول و middleware حسب السيرفر بتاعك</p></div></div>';
 }
 
 function closeConvDetail() {
@@ -1013,6 +1014,297 @@ function renderDebug(messages) {
   });
   h += '</tbody></table></div>';
   return h;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🎓 GUIDE CONVERSATIONS (with select/delete)
+// ═══════════════════════════════════════════════════════════
+async function loadGuideConversations(page) {
+  page = page||1; currentGuideConvPage = page;
+  _selectedGuideSessions = new Set();
+  document.getElementById('btnDeleteSelectedGuide').style.display = 'none';
+  var el = document.getElementById('guideConvList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var s = document.getElementById('guideConvSearch').value;
+    var d = await apiCall('/admin/guide-conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
+    var conversations = d.conversations || d.items || d.data || [];
+    if(!conversations.length) {
+      el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد محادثات</p>';
+      document.getElementById('guideConvPagination').innerHTML='';
+      return;
+    }
+    var html = '<table><thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllGuide(this)"></th><th>الجلسة</th><th>الكورس</th><th>الدرس</th><th>آخر رسالة</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>';
+    conversations.forEach(function(c) {
+      var msg = esc(stripHtml(c.last_message||'')).slice(0,40);
+      var sid = esc(c.session_id||'');
+      var course = esc((c.course_name||'').slice(0,25));
+      var lecture = esc((c.lecture_title||'').slice(0,25));
+      html += '<tr id="guide-row-'+sid+'">';
+      html += '<td><input type="checkbox" class="guide-sel-cb" value="'+sid+'" onchange="onGuideSelChange()"></td>';
+      html += '<td style="font-family:monospace;font-size:11px;cursor:pointer" onclick="loadGuideConvDetail(\''+sid+'\')">'+sid.slice(0,10)+'...</td>';
+      html += '<td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+course+'"><span class="badge badge-purple">'+course+'</span></td>';
+      html += '<td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+lecture+'">'+lecture+'</td>';
+      html += '<td style="cursor:pointer" onclick="loadGuideConvDetail(\''+sid+'\')">'+msg+'</td>';
+      html += '<td style="font-size:11px">'+(c.last_time?fmtFull(c.last_time):'-')+'</td>';
+      html += '<td>'+(c.message_count||0)+'</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+    el.style.display='block';
+    document.getElementById('guideConvDetail').style.display='none';
+    var pag = d.pagination||{};
+    var pagEl = document.getElementById('guideConvPagination');
+    var ph = '';
+    if(page>1) ph += '<button class="btn btn-sm btn-primary" onclick="loadGuideConversations('+(page-1)+')">→ السابق</button>';
+    ph += '<span style="padding:4px 12px;background:#e2e8f0;border-radius:6px;font-size:12px">صفحة '+page+'</span>';
+    if(pag.has_more||conversations.length>=50) ph += '<button class="btn btn-sm btn-primary" onclick="loadGuideConversations('+(page+1)+')">التالي ←</button>';
+    pagEl.innerHTML = ph;
+  } catch(e) {
+    el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
+  }
+}
+
+function toggleAllGuide(master) {
+  document.querySelectorAll('.guide-sel-cb').forEach(function(cb) { cb.checked = master.checked; });
+  onGuideSelChange();
+}
+
+function onGuideSelChange() {
+  _selectedGuideSessions = new Set();
+  document.querySelectorAll('.guide-sel-cb:checked').forEach(function(cb) { _selectedGuideSessions.add(cb.value); });
+  var btn = document.getElementById('btnDeleteSelectedGuide');
+  btn.style.display = _selectedGuideSessions.size > 0 ? '' : 'none';
+  btn.innerHTML = '🗑️ حذف المحدد (' + _selectedGuideSessions.size + ')';
+  document.querySelectorAll('.guide-sel-cb').forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row) { if (cb.checked) row.classList.add('selected-row'); else row.classList.remove('selected-row'); }
+  });
+}
+
+async function deleteSelectedGuideConversations() {
+  if (_selectedGuideSessions.size === 0) return;
+  var ok = await showConfirm('حذف ' + _selectedGuideSessions.size + ' محادثة من المرشد التعليمي؟');
+  if (!ok) return;
+  var ids = Array.from(_selectedGuideSessions);
+  var deleted = 0, errors = 0;
+  var btn = document.getElementById('btnDeleteSelectedGuide');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جاري الحذف...';
+  for (var i = 0; i < ids.length; i++) {
+    btn.innerHTML = '⏳ ' + (i+1) + '/' + ids.length;
+    try {
+      await apiCall('/admin/guide-conversations/' + encodeURIComponent(ids[i]), { method: 'DELETE' });
+      deleted++;
+      var row = document.getElementById('guide-row-' + ids[i]);
+      if (row) row.style.opacity = '0.3';
+    } catch(e) { errors++; }
+  }
+  btn.disabled = false;
+  toast('تم حذف ' + deleted + ' محادثة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
+  setTimeout(function() { loadGuideConversations(currentGuideConvPage); }, 1000);
+}
+
+async function clearAllGuideConversations() {
+  var ok1 = await showConfirm('⚠️ مسح كل محادثات المرشد التعليمي؟');
+  if (!ok1) return;
+  var ok2 = await showConfirm('🚨 تأكيد نهائي: كل محادثات المرشد هتتمسح!');
+  if (!ok2) return;
+
+  var progressArea = document.getElementById('guideDeleteProgressArea');
+  progressArea.style.display = 'block';
+  progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#64748b">⏳ جاري المسح...</div></div>';
+
+  var bulkEndpoints = [
+    { path: '/admin/guide-conversations/clear', method: 'POST' },
+    { path: '/admin/guide-conversations/clear', method: 'DELETE' },
+    { path: '/admin/guide-conversations', method: 'DELETE' },
+    { path: '/admin/clear-guide-conversations', method: 'POST' },
+    { path: '/admin/clear-guide-conversations', method: 'DELETE' }
+  ];
+
+  for (var i = 0; i < bulkEndpoints.length; i++) {
+    var ep = bulkEndpoints[i];
+    var result = await smartFetch(ep.path, { method: ep.method });
+    if (result.reallyWorked) {
+      await new Promise(function(r) { setTimeout(r, 1000); });
+      var verify = await smartFetch('/admin/guide-conversations?limit=1');
+      var remaining = 0;
+      if (verify.reallyWorked) {
+        var convs = (verify.data.conversations || verify.data.items || verify.data.data || []);
+        remaining = convs.length;
+      }
+      if (remaining === 0) {
+        progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">✅ تم مسح كل محادثات المرشد!</div></div>';
+        toast('تم مسح كل محادثات المرشد ✅');
+        setTimeout(function() { loadGuideConversations(1); progressArea.style.display='none'; }, 2000);
+        return;
+      }
+    }
+  }
+
+  // one-by-one fallback
+  var allSessions = [];
+  var pg = 1;
+  while (true) {
+    var dd = await smartFetch('/admin/guide-conversations?limit=50&page=' + pg);
+    if (!dd.reallyWorked) break;
+    var convs2 = dd.data.conversations || dd.data.items || dd.data.data || [];
+    if (convs2.length === 0) break;
+    convs2.forEach(function(c) { if (c.session_id) allSessions.push(c.session_id); });
+    if (convs2.length < 50) break;
+    pg++;
+  }
+  allSessions = allSessions.filter(function(v, i, a) { return a.indexOf(v) === i; });
+
+  if (allSessions.length === 0) {
+    progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;color:#166534">✅ مفيش محادثات!</div></div>';
+    setTimeout(function() { progressArea.style.display='none'; }, 2000);
+    return;
+  }
+
+  var total = allSessions.length, deleted = 0, errors = 0;
+  for (var j = 0; j < allSessions.length; j++) {
+    var pct = Math.round(((j + 1) / total) * 100);
+    progressArea.innerHTML = '<div class="delete-progress">' +
+      '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:700">🗑️ ' + (j+1) + '/' + total + '</span><span style="color:#3b82f6;font-weight:700">' + pct + '%</span></div>' +
+      '<div class="delete-progress-bar"><div class="fill fill-working" style="width:' + pct + '%"></div></div>' +
+      '<div style="display:flex;justify-content:center;gap:16px;margin-top:8px"><span style="font-size:12px;color:#16a34a">✅ ' + deleted + '</span><span style="font-size:12px;color:#ef4444">❌ ' + errors + '</span></div></div>';
+    var del = await smartFetch('/admin/guide-conversations/' + encodeURIComponent(allSessions[j]), { method: 'DELETE' });
+    if (del.reallyWorked || del.status === 200 || del.status === 204) { deleted++; } else { errors++; }
+  }
+
+  progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">🏁 تم مسح ' + deleted + ' محادثة!</div></div>';
+  toast('تم مسح ' + deleted + ' محادثة ✅');
+  setTimeout(function() { loadGuideConversations(1); progressArea.style.display='none'; }, 2000);
+}
+
+async function loadGuideConvDetail(sid) {
+  var wrap = document.getElementById('guideConvMessages');
+  document.getElementById('guideConvList').style.display = 'none';
+  document.getElementById('guideConvPagination').style.display = 'none';
+  document.getElementById('guideConvDetail').style.display = 'block';
+  wrap.innerHTML = '<p style="text-align:center;padding:40px;color:#94a3b8">⏳</p>';
+  _guideConvSessionId = sid;
+  try {
+    var d = await apiCall('/admin/guide-conversations/' + encodeURIComponent(sid));
+    var messages = d.messages || d.data || d.items || [];
+    if (!Array.isArray(messages)) messages = [];
+    if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+    _guideConvSortedMessages = sortMessages(messages);
+    renderGuideConversation();
+  } catch(e) { wrap.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p></div>'; }
+}
+
+function renderGuideConversation() {
+  var wrap = document.getElementById('guideConvMessages');
+  var messages = _guideConvSortedMessages, sid = _guideConvSessionId;
+  if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+
+  var courseName = '', lectureTitle = '';
+  for (var i = 0; i < messages.length; i++) {
+    if (messages[i].course_name && !courseName) courseName = messages[i].course_name;
+    if (messages[i].lecture_title && !lectureTitle) lectureTitle = messages[i].lecture_title;
+  }
+
+  var h = '<div class="chat-wrap">';
+  h += '<div class="chat-topbar" style="background:#7c3aed"><div>';
+  h += '<h3 style="margin:0">🎓 ' + esc(sid.slice(0,20)) + '...</h3>';
+  h += '<small style="color:#e9d5ff">' + messages.length + ' رسالة';
+  if (courseName) h += ' | 📚 ' + esc(courseName.slice(0,30));
+  if (lectureTitle) h += ' | 📖 ' + esc(lectureTitle.slice(0,30));
+  h += '</small></div>';
+  h += '<div class="view-toggle">';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'flat' ? ' active' : '') + '" onclick="_guideConvViewMode=\'flat\';renderGuideConversation()" style="' + (_guideConvViewMode === 'flat' ? 'color:#7c3aed' : '') + '">📋 مسطح</button>';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'grouped' ? ' active' : '') + '" onclick="_guideConvViewMode=\'grouped\';renderGuideConversation()" style="' + (_guideConvViewMode === 'grouped' ? 'color:#7c3aed' : '') + '">📦 مجمّع</button>';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'debug' ? ' active' : '') + '" onclick="_guideConvViewMode=\'debug\';renderGuideConversation()" style="' + (_guideConvViewMode === 'debug' ? 'color:#7c3aed' : '') + '">🔧 Debug</button>';
+  h += '</div></div>';
+  h += '<div class="chat-body" id="guideChatBodyScroll">';
+
+  if (_guideConvViewMode === 'flat') h += renderGuideFlat(messages);
+  else if (_guideConvViewMode === 'grouped') h += renderGuideGrouped(messages);
+  else h += renderGuideDebug(messages);
+
+  h += '</div>';
+  h += '<div class="chat-foot">🟢 أخضر = الطالب | 🟣 بنفسجي = المرشد التعليمي</div>';
+  h += '</div>';
+  wrap.innerHTML = h;
+  var sb = document.getElementById('guideChatBodyScroll');
+  if(sb) sb.scrollTop = sb.scrollHeight;
+}
+
+function renderGuideFlat(messages) {
+  var h = '', lastDate = '', seq = 0;
+  messages.forEach(function(m) {
+    seq++;
+    var isUser = (m.role === 'user');
+    var ds = fmtDate(m.created_at);
+    if (ds && ds !== lastDate) { h += '<div class="flat-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="flat-msg ' + (isUser ? 'user-msg' : 'bot-msg') + '"><div class="flat-bubble"' + (!isUser ? ' style="border-left:3px solid #7c3aed"' : '') + '>';
+    h += '<div class="flat-role"><span class="flat-seq" ' + (!isUser ? 'style="background:#7c3aed"' : '') + '>' + seq + '</span> ' + (isUser ? '👤 الطالب' : '🎓 المرشد');
+    h += '</div>';
+    if (m.course_name) h += '<div style="font-size:10px;color:#7c3aed;margin-bottom:4px">📚 ' + esc(m.course_name) + (m.lecture_title ? ' | 📖 ' + esc(m.lecture_title) : '') + '</div>';
+    var msgText = (m.content || m.message || '').slice(0, 3000);
+    h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
+    h += '<div class="flat-meta"><span class="flat-id">ID: ' + (m.id || '?') + '</span><span class="flat-time">' + fmtTime(m.created_at) + '</span></div>';
+    h += '</div></div>';
+  });
+  return h;
+}
+
+function renderGuideGrouped(messages) {
+  var h = '', groups = [], cg = null, gn = 0;
+  messages.forEach(function(m) {
+    if (m.role === 'user') {
+      if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+      gn++; cg = { question: m, answers: [], num: gn, unanswered: false, botOnly: false };
+    } else {
+      if (cg && cg.question) { cg.answers.push(m); }
+      else { if (cg) groups.push(cg); gn++; cg = { question: null, answers: [m], num: gn, botOnly: true }; }
+    }
+  });
+  if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+  var lastDate = '';
+  groups.forEach(function(g) {
+    var fm = g.question || (g.answers[0] || null);
+    var ds = fmtDate(fm ? fm.created_at : '');
+    if (ds && ds !== lastDate) { h += '<div class="qa-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="qa-card" style="border-color:#c4b5fd"><div class="qa-card-header" style="background:#faf5ff"><span class="qa-num" style="background:#7c3aed">' + g.num + '</span>';
+    if (g.botOnly) h += '<span style="font-weight:700;color:#7c3aed">🎓 تلقائية</span>';
+    else if (g.question && g.question.course_name) h += '<span class="badge badge-purple">📚 ' + esc((g.question.course_name||'').slice(0,20)) + '</span>';
+    h += '<span class="qa-time">🕐 ' + fmtTime(fm ? fm.created_at : '') + '</span></div>';
+    if (g.question) {
+      h += '<div class="qa-question"><span class="qa-question-label">👤 سؤال الطالب</span>';
+      h += '<div class="qa-question-text">' + esc((g.question.content || g.question.message || '').slice(0, 1500)) + '</div></div>';
+    }
+    g.answers.forEach(function(ans) {
+      h += '<div class="qa-answer" style="background:#faf5ff"><span class="qa-answer-label" style="background:#f3e8ff;color:#7c3aed">🎓 ' + (g.botOnly ? 'تلقائية' : 'رد المرشد') + '</span>';
+      h += '<div class="qa-answer-text" style="border-color:#c4b5fd">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div></div>';
+    });
+    if (g.unanswered) h += '<div class="qa-no-reply">⚠️ مفيش رد!</div>';
+    h += '</div>';
+  });
+  return h;
+}
+
+function renderGuideDebug(messages) {
+  var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto"><table style="font-size:11px"><thead><tr><th>#</th><th>ID</th><th>Role</th><th>الكورس</th><th>الدرس</th><th>Time</th><th>Content</th></tr></thead><tbody>';
+  messages.forEach(function(m, i) {
+    h += '<tr class="debug-row" style="background:' + (m.role === 'user' ? '#dcf8c6' : '#f3e8ff') + '">';
+    h += '<td><b>' + (i+1) + '</b></td><td>' + (m.id||'?') + '</td><td>' + (m.role === 'user' ? '👤' : '🎓') + '</td>';
+    h += '<td style="font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.course_name||'-').slice(0,20)) + '</td>';
+    h += '<td style="font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.lecture_title||'-').slice(0,20)) + '</td>';
+    h += '<td style="font-family:monospace;font-size:10px">' + esc(m.created_at||'-') + '</td>';
+    h += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content||m.message||'').slice(0,80)) + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  return h;
+}
+
+function closeGuideConvDetail() {
+  document.getElementById('guideConvDetail').style.display='none';
+  document.getElementById('guideConvList').style.display='block';
+  document.getElementById('guideConvPagination').style.display='flex';
 }
 
 // ═══════════════════════════════════════
