@@ -7780,7 +7780,7 @@ async function startServer() {
      ═══════════════════════════════════ */
   const guideConversations = {};
   const guideRateLimits = {};
-  const GUIDE_DAILY_LIMIT = 20;
+  const GUIDE_DAILY_LIMIT = 15;
   const GUIDE_MAX_HISTORY = 20;
 
   function getToday() {
@@ -8046,7 +8046,7 @@ app.post("/api/guide", limiter, async (req, res) => {
       if (remaining <= 0) {
         return res.json({
           reply:
-            "⚠️ خلصت رسائلك النهارده (20 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪",
+            "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪",
           remaining_messages: 0,
         });
       }
@@ -8512,6 +8512,44 @@ res.status(500).json({
       });
     }
   });
+
+
+/* ═══════════════════════════════════
+     Check if course has transcribed content
+     ═══════════════════════════════════ */
+  app.get("/api/guide/check-course", async (req, res) => {
+    const courseName = req.query.course_name;
+    if (!courseName) return res.json({ exists: false });
+
+    try {
+      const courseMatch = await findCourseByName(courseName);
+      if (!courseMatch) return res.json({ exists: false });
+
+      const { data: lessons } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("course_id", courseMatch.id);
+
+      if (!lessons || lessons.length === 0) return res.json({ exists: false });
+
+      const lessonIds = lessons.map(l => l.id);
+
+      const { count } = await supabase
+        .from("chunks")
+        .select("id", { count: "exact", head: true })
+        .in("lesson_id", lessonIds);
+
+      return res.json({
+        exists: (count || 0) > 0,
+        course_title: courseMatch.title,
+        chunks_count: count || 0,
+      });
+    } catch (e) {
+      console.error("❌ check-course error:", e.message);
+      return res.json({ exists: false });
+    }
+  });
+
 
   /* ═══════════════════════════════════
      Guide Bot Health
