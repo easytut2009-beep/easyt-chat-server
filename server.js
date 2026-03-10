@@ -5277,6 +5277,7 @@ updateSessionMemory(sessionId, {
   }
 } // end if (!earlyExitFollowUp)
 
+} // ← end if (analysis.action === "SEARCH")
 
 /* ═══════════════════════════════════
      ACTION: CLARIFY — حوار توضيحي
