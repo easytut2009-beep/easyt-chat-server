@@ -3767,15 +3767,21 @@ setInterval(() => {
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
 
-  // 🆕 FIX: Strip leading number prefixes (e.g. "13. الدبلومات" → "الدبلومات")
+// 🆕 FIX: Strip leading number prefixes (e.g. "13. الدبلومات" → "الدبلومات")
   const _numPrefixMatch = message.match(/^\d{1,3}\s*[\.\-\)]\s+([\s\S]+)/);
   if (_numPrefixMatch && _numPrefixMatch[1].trim().length > 0) {
     console.log(`🔧 Number prefix stripped: "${message}" → "${_numPrefixMatch[1].trim()}"`);
     message = _numPrefixMatch[1].trim();
   }
 
-  const sessionMem = getSessionMemory(sessionId);
+  // 🆕 FIX: Strip leading emojis from suggestion buttons (e.g. "🎓 الدبلومات" → "الدبلومات")
+  const _emojiStripped = message.replace(/^[^\u0600-\u06FFa-zA-Z0-9]+/, '').trim();
+  if (_emojiStripped.length > 0 && _emojiStripped !== message) {
+    console.log(`🔧 Emoji prefix stripped: "${message}" → "${_emojiStripped}"`);
+    message = _emojiStripped;
+  }
 
+  const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
   const cacheKey = getResponseCacheKey(message);
   if (cacheKey && !isFollowUpMessage(message)) {
