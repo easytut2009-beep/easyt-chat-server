@@ -446,6 +446,7 @@ var _confirmResolve = null;
 var _crudCache = {};
 var _customResponsesCache = [];
 var _botInstructionsCache = [];
+var _correctionsCache = [];
 var _convViewMode = 'flat';
 var _convSortedMessages = [];
 var _convSessionId = '';
@@ -1350,15 +1351,31 @@ function openAddCorrectionModal() {
   document.getElementById('modal').classList.add('show');
 }
 
+function openEditCorrectionModal(idx) {
+  var item = _correctionsCache[idx]; if (!item) return;
+  modalState = { type: 'correction_edit', id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل التصحيح #' + item.id;
+  document.getElementById('modalBody').innerHTML =
+    '<div class="learning-badge" style="margin-bottom:12px">🧠 البوت هيتعلم من التصحيح المعدّل</div>' +
+    '<label style="font-size:12px;font-weight:600">السؤال:</label>' +
+    '<input type="text" id="corrQuestion" value="' + esc(item.original_question || item.user_message || '') + '" style="margin-top:4px;margin-bottom:8px">' +
+    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة الصحيحة:</label>' +
+    '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac">' + esc(item.corrected_reply || '') + '</textarea>' +
+    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة:</label>' +
+    '<input type="text" id="corrNote" value="' + esc(item.note || '') + '" style="margin-top:4px">';
+  document.getElementById('modal').classList.add('show');
+}
+
 async function loadCorrections() {
   try {
     var d = await apiCall('/admin/corrections');
     var el = document.getElementById('corrList');
     var corrections = d.corrections || d.items || d.data || [];
+    _correctionsCache = corrections.slice();
     if(!corrections.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات</p>'; return; }
     var html = '<table><thead><tr><th>ID</th><th>السؤال</th><th>الرد الصحيح</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
-    corrections.forEach(function(c) {
-      html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.original_question||c.user_message||'—').slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.corrected_reply||'').slice(0,80))+'</td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\',\''+c.id+'\')">حذف</button></td></tr>';
+    corrections.forEach(function(c, idx) {
+      html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.original_question||c.user_message||'—').slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.corrected_reply||'').slice(0,80))+'</td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCorrectionModal('+idx+')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\',\''+c.id+'\')">🗑️</button></td></tr>';
     });
     el.innerHTML = html + '</tbody></table>';
   } catch(e) { document.getElementById('corrList').innerHTML='<p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p>'; }
@@ -1634,6 +1651,12 @@ async function saveModal() {
       if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
       await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
       closeModal(); toast('تم ✅'); if(currentTab==='corrections') loadCorrections(); return;
+    }
+    if(modalState.type==='correction_edit') {
+      var b = { original_question: document.getElementById('corrQuestion').value||null, corrected_reply: document.getElementById('corrAnswer').value, note: document.getElementById('corrNote').value||null };
+      if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
+      await apiCall('/admin/corrections/'+modalState.id,{method:'PUT',body:JSON.stringify(b)});
+      closeModal(); toast('تم التعديل ✅'); loadCorrections(); return;
     }
     if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
       var cr = { title: document.getElementById('cr_title').value, keywords: document.getElementById('cr_keywords').value, category: document.getElementById('cr_category').value, response: document.getElementById('cr_response').value, priority: parseInt(document.getElementById('cr_priority').value)||0, is_active: document.getElementById('cr_active').checked };
