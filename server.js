@@ -3809,15 +3809,51 @@ async function smartChat(message, sessionId) {
     };
   }
 
-  // 🆕 Direct payment/coupon handlers (short messages only)
-  // Long messages with learning intent → let GPT decide
+// ═══════════════════════════════════════════════════════
+  // 🆕 Direct coupon/payment handlers
+  // ═══════════════════════════════════════════════════════
+
   const _msgWordCount = message.trim().split(/\s+/).length;
+
+  // ─── 1️⃣ COUPON (runs FIRST — no learning-word filter) ───
+  const _wantsToCreateCoupons = /(اضاف[ةه]|انشاء|انشئ|اعمل|تعمل|نعمل|عمل|بناء|تصميم|برمج)/.test(_btnNorm);
+
+  const _isCouponAsk = (
+    /(كوبون|بروموكود|promo\s*code)/.test(_btnNorm) ||
+    /كود\s*(ال)?(خصم|خضم)/.test(_btnNorm) ||
+    /(كوبون|كود)\s*(ال)?(خصم|خضم)/.test(_btnNorm) ||
+    /^(خصم|الخصم)$/.test(_btnNorm) ||
+    /^(عايز|عاوز|محتاج)\s*(كوبون|كود|خصم)/.test(_btnNorm) ||
+    /(فيه?|في|عندك[مو]?)\s*(كوبون|كود|خصم)/.test(_btnNorm)
+  ) && !_wantsToCreateCoupons;
+
+  if (_isCouponAsk) {
+    console.log(`⚡ Coupon intent detected: "${message}" → showing Ramadan offer`);
+
+    let couponReply = `مش محتاج كود خصم! 🎉<br><br>`;
+    couponReply += `🌙 <strong>عرض رمضان شغال تلقائي!</strong><br><br>`;
+    couponReply += `💰 ادفع <strong>49$</strong> بدل <del>59$</del> للاشتراك السنوي<br>`;
+    couponReply += `✅ الخصم بيتطبق مباشرة من غير أي كود<br>`;
+    couponReply += `✅ توفير <strong>10$</strong> فوري!<br><br>`;
+    couponReply += `الاشتراك يشمل كل الدورات + الدبلومات + شهادات 🎓<br><br>`;
+    couponReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن بالعرض ←</a><br>`;
+    couponReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+
+    couponReply = finalizeReply(couponReply);
+    await logChat(sessionId, "bot", couponReply, "SUBSCRIPTION", { version: "10.9", source: "direct_coupon" });
+    return {
+      reply: couponReply,
+      intent: "SUBSCRIPTION",
+      suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+    };
+  }
+
+  // ─── 2️⃣ PAYMENT (with learning-word filter) ───
   const _hasLearningWord = /(كورس|دور[ةه]|شرح|بتشرح|يشرح|اتعلم|تعلم|دروس|درس|اعمل|اسوي|بيشرح|شروحات|تدريب)/.test(_btnNorm);
 
   if (_msgWordCount <= 5 && !_hasLearningWord) {
-    
-    // ═══ Payment / Subscription buttons ═══
-    const _isPaymentBtn = 
+
+    const _isPaymentBtn =
       /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
       /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع|شترك)$/.test(_btnNorm) ||
       /^(اسعار|أسعار)\s*(ال)?(اشتراك)?$/.test(_btnNorm) ||
@@ -3826,7 +3862,7 @@ async function smartChat(message, sessionId) {
 
     if (_isPaymentBtn) {
       console.log(`⚡ Direct payment button: "${message}" → showing subscription info`);
-      
+
       let subReply = `أهلاً بيك! 🎉<br><br>`;
       subReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
       subReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
@@ -3839,7 +3875,7 @@ async function smartChat(message, sessionId) {
       subReply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
       subReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
       subReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-      
+
       subReply = finalizeReply(subReply);
       await logChat(sessionId, "bot", subReply, "SUBSCRIPTION", { version: "10.9", source: "direct_button" });
       return {
@@ -3848,36 +3884,8 @@ async function smartChat(message, sessionId) {
         suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
       };
     }
-
-    // ═══ Coupon / Discount buttons ═══
-    const _isCouponBtn = 
-      /(كوبون|بروموكود|promo\s*code)/.test(_btnNorm) ||
-      /^(كود|الكود)\s*(خصم|الخصم)?$/.test(_btnNorm) ||
-      /^(فيه|في|عندك[مو]?)\s*(كوبون|كود|خصم|بروموكود)/.test(_btnNorm) ||
-      /^(خصم|الخصم)$/.test(_btnNorm) ||
-      /^(عايز|عاوز|محتاج)\s*(كوبون|كود|خصم)/.test(_btnNorm);
-
-    if (_isCouponBtn) {
-      console.log(`⚡ Direct coupon button: "${message}" → showing Ramadan offer`);
-      
-      let couponReply = `مش محتاج كود خصم! 🎉<br><br>`;
-      couponReply += `🌙 <strong>عرض رمضان شغال تلقائي!</strong><br><br>`;
-      couponReply += `💰 ادفع <strong>49$</strong> بدل <del>59$</del> للاشتراك السنوي<br>`;
-      couponReply += `✅ الخصم بيتطبق مباشرة من غير أي كود<br>`;
-      couponReply += `✅ توفير <strong>10$</strong> فوري!<br><br>`;
-      couponReply += `الاشتراك يشمل كل الدورات + الدبلومات + شهادات 🎓<br><br>`;
-      couponReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن بالعرض ←</a><br>`;
-      couponReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-      
-      couponReply = finalizeReply(couponReply);
-      await logChat(sessionId, "bot", couponReply, "SUBSCRIPTION", { version: "10.9", source: "direct_coupon" });
-      return {
-        reply: couponReply,
-        intent: "SUBSCRIPTION",
-        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-      };
-    }
   }
+
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
