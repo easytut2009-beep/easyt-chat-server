@@ -3796,6 +3796,88 @@ async function smartChat(message, sessionId) {
       suggestions: ["عايز كورس 📘", "ازاي ادفع؟ 💳", "📂 الأقسام"],
     };
   }
+// 🆕 Direct diploma button (bypass GPT)
+  if (/^(ال)?دبلوم(ات|ه|ة)?$/.test(_btnNorm)) {
+    console.log(`⚡ Direct diploma button: "${message}" → loading all diplomas`);
+    const allDiplomas = await loadAllDiplomas();
+    const diplomaReply = finalizeReply(formatDiplomasList(allDiplomas));
+    await logChat(sessionId, "bot", diplomaReply, "DIPLOMAS", { version: "10.9", source: "direct_button" });
+    return {
+      reply: diplomaReply,
+      intent: "DIPLOMAS",
+      suggestions: ["عايز كورس 📘", "ازاي ادفع؟ 💳", "📂 الأقسام"],
+    };
+  }
+
+  // 🆕 Direct payment/coupon handlers (short messages only)
+  // Long messages with learning intent → let GPT decide
+  const _msgWordCount = message.trim().split(/\s+/).length;
+  const _hasLearningWord = /(كورس|دور[ةه]|شرح|بتشرح|يشرح|اتعلم|تعلم|دروس|درس|اعمل|اسوي|بيشرح|شروحات|تدريب)/.test(_btnNorm);
+
+  if (_msgWordCount <= 5 && !_hasLearningWord) {
+    
+    // ═══ Payment / Subscription buttons ═══
+    const _isPaymentBtn = 
+      /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
+      /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع|شترك)$/.test(_btnNorm) ||
+      /^(اسعار|أسعار)\s*(ال)?(اشتراك)?$/.test(_btnNorm) ||
+      /^(اشتراك|الاشتراك|سعر\s*الاشتراك)$/.test(_btnNorm) ||
+      /^(الاشتراك\s*بكام|بكام\s*الاشتراك)$/.test(_btnNorm);
+
+    if (_isPaymentBtn) {
+      console.log(`⚡ Direct payment button: "${message}" → showing subscription info`);
+      
+      let subReply = `أهلاً بيك! 🎉<br><br>`;
+      subReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+      subReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      subReply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      subReply += `3. 📱 <strong>InstaPay</strong><br>`;
+      subReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+      subReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+      subReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+      subReply += `✨ <strong>عرض رمضان 🌙</strong> — الاشتراك السنوي بـ <strong>49$</strong> بدل 59$!<br>`;
+      subReply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
+      subReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
+      subReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      
+      subReply = finalizeReply(subReply);
+      await logChat(sessionId, "bot", subReply, "SUBSCRIPTION", { version: "10.9", source: "direct_button" });
+      return {
+        reply: subReply,
+        intent: "SUBSCRIPTION",
+        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
+
+    // ═══ Coupon / Discount buttons ═══
+    const _isCouponBtn = 
+      /(كوبون|بروموكود|promo\s*code)/.test(_btnNorm) ||
+      /^(كود|الكود)\s*(خصم|الخصم)?$/.test(_btnNorm) ||
+      /^(فيه|في|عندك[مو]?)\s*(كوبون|كود|خصم|بروموكود)/.test(_btnNorm) ||
+      /^(خصم|الخصم)$/.test(_btnNorm) ||
+      /^(عايز|عاوز|محتاج)\s*(كوبون|كود|خصم)/.test(_btnNorm);
+
+    if (_isCouponBtn) {
+      console.log(`⚡ Direct coupon button: "${message}" → showing Ramadan offer`);
+      
+      let couponReply = `مش محتاج كود خصم! 🎉<br><br>`;
+      couponReply += `🌙 <strong>عرض رمضان شغال تلقائي!</strong><br><br>`;
+      couponReply += `💰 ادفع <strong>49$</strong> بدل <del>59$</del> للاشتراك السنوي<br>`;
+      couponReply += `✅ الخصم بيتطبق مباشرة من غير أي كود<br>`;
+      couponReply += `✅ توفير <strong>10$</strong> فوري!<br><br>`;
+      couponReply += `الاشتراك يشمل كل الدورات + الدبلومات + شهادات 🎓<br><br>`;
+      couponReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن بالعرض ←</a><br>`;
+      couponReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      
+      couponReply = finalizeReply(couponReply);
+      await logChat(sessionId, "bot", couponReply, "SUBSCRIPTION", { version: "10.9", source: "direct_coupon" });
+      return {
+        reply: couponReply,
+        intent: "SUBSCRIPTION",
+        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
+  }
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
@@ -4618,6 +4700,98 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
     }
 
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+
+// 🆕 FIX: Chunk content fallback — when normal search finds 0 courses
+    // Searches inside lesson transcripts (chunks) for the topic
+    if (courses.length === 0 && diplomas.length === 0 && supabase) {
+      console.log(`🔍 Chunk content fallback: searching chunks for [${termsToSearch.join(', ')}]`);
+      try {
+        // Text search in ALL chunks
+        const _cfTextChunks = await searchChunksByText(termsToSearch, null, null, 15);
+        
+        // Semantic search in chunks
+        let _cfSemanticChunks = [];
+        if (openai) {
+          try {
+            const _cfQuery = termsToSearch.join(' ');
+            const _cfEmbResp = await openai.embeddings.create({
+              model: CHUNK_EMBEDDING_MODEL,
+              input: _cfQuery.substring(0, 2000),
+            });
+            const { data: _cfSemData } = await supabase.rpc("match_lesson_chunks", {
+              query_embedding: _cfEmbResp.data[0].embedding,
+              match_threshold: 0.60,
+              match_count: 10,
+              filter_course_id: null,
+            });
+            _cfSemanticChunks = _cfSemData || [];
+          } catch (_cfSemErr) {
+            console.error("Chunk fallback semantic error:", _cfSemErr.message);
+          }
+        }
+
+        // Merge text + semantic (deduplicate)
+        const _cfAllChunks = [..._cfTextChunks];
+        const _cfSeenIds = new Set(_cfTextChunks.map(c => c.id));
+        for (const sc of _cfSemanticChunks) {
+          if (!_cfSeenIds.has(sc.id)) {
+            _cfAllChunks.push(sc);
+            _cfSeenIds.add(sc.id);
+          }
+        }
+
+        console.log(`🔍 Chunk fallback: ${_cfTextChunks.length} text + ${_cfSemanticChunks.length} semantic = ${_cfAllChunks.length} total`);
+
+        if (_cfAllChunks.length > 0) {
+          const _cfLessonIds = [...new Set(_cfAllChunks.map(c => c.lesson_id).filter(Boolean))];
+          
+          if (_cfLessonIds.length > 0) {
+            const { data: _cfLessons } = await supabase
+              .from("lessons")
+              .select("id, title, course_id")
+              .in("id", _cfLessonIds);
+            
+            if (_cfLessons && _cfLessons.length > 0) {
+              const _cfCourseIds = [...new Set(_cfLessons.map(l => l.course_id).filter(Boolean))];
+              
+              if (_cfCourseIds.length > 0) {
+                const { data: _cfCourses } = await supabase
+                  .from("courses")
+                  .select(COURSE_SELECT_COLS)
+                  .in("id", _cfCourseIds);
+                
+                if (_cfCourses && _cfCourses.length > 0) {
+                  for (const cc of _cfCourses) {
+                    const relevantLessons = _cfLessons.filter(l => l.course_id === cc.id);
+                    cc.matchedLessons = relevantLessons.map(l => {
+                      const matchingChunks = _cfAllChunks.filter(c => c.lesson_id === l.id);
+                      return {
+                        title: l.title,
+                        timestamp_start: matchingChunks[0]?.timestamp_start || null,
+                        similarity: matchingChunks[0]?.similarity || null,
+                      };
+                    });
+                    cc.matchType = "lesson_title";
+                    cc._chunkMatch = true;
+                    cc.relevanceScore = 500;
+                  }
+                  
+                  courses = _cfCourses;
+                  console.log(`🔍 ✅ Chunk fallback: found ${courses.length} courses from lesson content!`);
+                  courses.forEach((c, i) => {
+                    console.log(`   ${i+1}. "${c.title}" — lessons: ${(c.matchedLessons||[]).map(l => l.title).join(', ')}`);
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (_cfErr) {
+        console.error("❌ Chunk content fallback error:", _cfErr.message);
+      }
+    }
+
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
