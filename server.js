@@ -627,6 +627,228 @@ function expandArabicVariants(terms) {
 return [...variants].filter(v => v.length > 1).slice(0, 20);
 }
 
+
+/* ══════════════════════════════════════════════════════════
+   🆕 CORRECTION SYSTEM v2.0 — Full Overhaul
+   Layer 1: Direct match → return corrected reply
+   Layer 2: Context injection → GPT learns from corrections
+   ══════════════════════════════════════════════════════════ */
+
+// ═══ Correction Cache ═══
+const correctionCache = { data: null, ts: 0 };
+const CORRECTION_CACHE_TTL = 5 * 60 * 1000; // 5 دقائق
+
+async function loadAllCorrections() {
+  // لو الكاش لسه طازه → رجّعها
+  if (correctionCache.data && Date.now() - correctionCache.ts < CORRECTION_CACHE_TTL) {
+    return correctionCache.data;
+  }
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("corrections")
+      .select("id, original_question, user_message, corrected_reply, correct_course_ids, original_reply, created_at");
+    if (error) {
+      console.error("❌ loadAllCorrections error:", error.message);
+      return correctionCache.data || []; // stale أحسن من فاضي
+    }
+    correctionCache.data = data || [];
+    correctionCache.ts = Date.now();
+    return correctionCache.data;
+  } catch (e) {
+    console.error("❌ loadAllCorrections exception:", e.message);
+    return correctionCache.data || [];
+  }
+}
+
+function clearCorrectionCache() {
+  correctionCache.data = null;
+  correctionCache.ts = 0;
+  console.log("🗑️ Correction cache cleared");
+}
+
+// ═══ Tokenizer خاص بالتصحيحات ═══
+const CORRECTION_STOP_WORDS = new Set([
+  // عربي — أدوات وضمائر
+  "في", "من", "على", "الى", "إلى", "عن", "هل", "ما",
+  "هو", "هي", "هم", "ان", "أن", "لا", "يا", "و", "او", "أو",
+  "بس", "كده", "كدا", "ده", "دي", "دا", "اللي", "الي",
+  // لهجات — أدوات سؤال
+  "شو", "شنو", "ايش", "وش", "ايه", "إيه",
+  // لهجات — أفعال عامة
+  "عايز", "عاوز", "عايزه", "عاوزه", "ابي", "ابغى", "ابغي",
+  "محتاج", "محتاجه", "بدي", "حاب", "حابب",
+  // أدوات ربط
+  "لو", "سمحت", "ممكن", "يعني", "بقى", "طيب",
+  "كيف", "ازاي", "فين", "وين", "اين", "ليه", "ليش",
+  // كلمات تعليمية عامة (مش مميزة)
+  "كورس", "كورسات", "دوره", "دورة", "دورات", "درس",
+  "تعلم", "اتعلم", "اعرف", "اشوف", "قولي", "وريني",
+  // إنجليزي
+  "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
+  "of", "and", "or", "i", "what", "how", "do", "does", "can",
+]);
+
+function tokenizeForCorrection(text) {
+  if (!text) return [];
+  return normalizeArabic(text.toLowerCase().trim())
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !CORRECTION_STOP_WORDS.has(w));
+}
+
+// ═══ Jaccard Similarity ═══
+function correctionJaccard(tokens1, tokens2) {
+  if (!tokens1.length || !tokens2.length) return 0;
+  const set1 = new Set(tokens1);
+  const set2 = new Set(tokens2);
+  let intersection = 0;
+  for (const t of set1) {
+    if (set2.has(t)) intersection++;
+  }
+  const union = new Set([...set1, ...set2]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+// ═══ حساب تشابه بين رسالة ونص تصحيح ═══
+function correctionMatchScore(userMessage, referenceText) {
+  if (!userMessage || !referenceText) return 0;
+
+  const userNorm = normalizeArabic(userMessage.toLowerCase().trim());
+  const refNorm = normalizeArabic(referenceText.toLowerCase().trim());
+
+  // 1. مطابقة تامة
+  if (userNorm === refNorm) return 1.0;
+
+  // 2. Jaccard على الكلمات
+  const userTokens = tokenizeForCorrection(userMessage);
+  const refTokens = tokenizeForCorrection(referenceText);
+  let score = correctionJaccard(userTokens, refTokens);
+
+  // 3. Containment bonus — نص يحتوي الآخر
+  if (userNorm.includes(refNorm) || refNorm.includes(userNorm)) {
+    score = Math.min(1.0, score + 0.25);
+  }
+
+  // 4. لو الرسائل قصيرة (≤3 كلمات) — Levenshtein أدق
+  if (userTokens.length <= 3 || refTokens.length <= 3) {
+    const simRatio = similarityRatio(userNorm, refNorm) / 100;
+    // خد أعلى قيمة بين Jaccard و Similarity مع وزن
+    score = Math.max(score, simRatio * 0.85);
+  }
+
+  // 5. Partial token matching — لو كلمة من المستخدم شبه كلمة في التصحيح
+  if (score < 0.45 && userTokens.length > 0 && refTokens.length > 0) {
+    let partialHits = 0;
+    for (const ut of userTokens) {
+      for (const rt of refTokens) {
+        if (ut === rt) { partialHits++; break; }
+        // Fuzzy: لو الكلمتين شبه بعض (>= 80%)
+        if (ut.length >= 3 && rt.length >= 3 && similarityRatio(ut, rt) >= 80) {
+          partialHits += 0.7;
+          break;
+        }
+      }
+    }
+    const maxTokens = Math.max(userTokens.length, refTokens.length);
+    const partialScore = maxTokens > 0 ? partialHits / maxTokens : 0;
+    score = Math.max(score, partialScore);
+  }
+
+  return Math.min(1.0, score);
+}
+
+// ═══ Thresholds ═══
+const CORRECTION_DIRECT_THRESHOLD = 0.45;   // قوي كفاية → رد مباشر
+const CORRECTION_CONTEXT_THRESHOLD = 0.20;  // ضعيف → حقن في GPT كسياق
+
+// ═══ LAYER 1: إيجاد أفضل تصحيح مطابق ═══
+async function findBestCorrectionMatch(userMessage) {
+  if (!userMessage || userMessage.trim().length < 3) return null;
+
+  try {
+    const corrections = await loadAllCorrections();
+    if (!corrections || corrections.length === 0) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const corr of corrections) {
+      // لازم يكون فيه corrected_reply أو correct_course_ids
+      const hasReply = corr.corrected_reply && corr.corrected_reply.trim().length > 0;
+      const hasCourseIds = Array.isArray(corr.correct_course_ids) && corr.correct_course_ids.length > 0;
+      if (!hasReply && !hasCourseIds) continue;
+
+      // قارن مع original_question
+      const score1 = correctionMatchScore(userMessage, corr.original_question || "");
+
+      // قارن مع user_message (لو مختلف)
+      let score2 = 0;
+      const um = corr.user_message || "";
+      if (um.trim().length > 0 && um !== (corr.original_question || "")) {
+        score2 = correctionMatchScore(userMessage, um);
+      }
+
+      const finalScore = Math.max(score1, score2);
+
+      if (finalScore > bestScore) {
+        bestScore = finalScore;
+        bestMatch = corr;
+      }
+    }
+
+    if (bestMatch && bestScore >= CORRECTION_CONTEXT_THRESHOLD) {
+      console.log(
+        `📝 [Correction] Best match: score=${bestScore.toFixed(3)} | ` +
+        `Q: "${userMessage.substring(0, 60)}" → Correction #${bestMatch.id} ` +
+        `("${(bestMatch.original_question || "").substring(0, 60)}")`
+      );
+      return { correction: bestMatch, score: bestScore };
+    }
+
+    return null;
+  } catch (e) {
+    console.error("❌ findBestCorrectionMatch error:", e.message);
+    return null; // آمن — الـ flow العادي يكمّل
+  }
+}
+
+// ═══ LAYER 2: جلب تصحيحات لحقنها في GPT ═══
+async function getCorrectionsForContext(userMessage, limit = 3) {
+  if (!userMessage || userMessage.trim().length < 3) return [];
+
+  try {
+    const corrections = await loadAllCorrections();
+    if (!corrections || corrections.length === 0) return [];
+
+    const scored = [];
+    for (const corr of corrections) {
+      // لازم يكون فيه corrected_reply
+      if (!corr.corrected_reply || corr.corrected_reply.trim().length === 0) continue;
+
+      const q = corr.original_question || corr.user_message || "";
+      if (q.trim().length === 0) continue;
+
+      const score = correctionMatchScore(userMessage, q);
+
+      if (score >= CORRECTION_CONTEXT_THRESHOLD) {
+        scored.push({
+          question: q.substring(0, 200),
+          reply: corr.corrected_reply.substring(0, 400),
+          score,
+        });
+      }
+    }
+
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  } catch (e) {
+    console.error("❌ getCorrectionsForContext error:", e.message);
+    return [];
+  }
+}
+
+
 // ===================================================
 // Arabic Root Extraction — شبكة أمان للمطابقة الصرفية
 // ===================================================
@@ -1928,7 +2150,7 @@ const result = data
 /* ═══════════════════════════════════
    11-D: Phase 1 — Smart Analyzer
    ═══════════════════════════════════ */
-function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem) {
+function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relevantCorrections = []) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
@@ -2319,7 +2541,13 @@ CATEGORIES = فقط لما المستخدم يطلب بشكل صريح يشوف 
 
 ═══ للردود ═══
 HTML links: <a href="URL" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">نص</a>
-<br> بدل \\n | ❌ ممنوع اختراع كورسات | SEARCH/DIPLOMAS: response_message=""`;
+<br> بدل \\n | ❌ ممنوع اختراع كورسات | SEARCH/DIPLOMAS: response_message=""
+${relevantCorrections && relevantCorrections.length > 0 ? `
+═══ ⚠️ تصحيحات سابقة من الأدمن (مرجع إجباري) ═══
+الأدمن صحّح الإجابات دي قبل كده. لو السؤال الحالي مشابه → لازم تلتزم بالرد المصحح:
+${relevantCorrections.map((c, i) => `${i + 1}. السؤال: "${c.question}"\n   ← الرد الصح: "${c.reply}"`).join('\n')}
+🔴 لو سؤال المستخدم مطابق أو قريب جداً من أي سؤال فوق → استخدم الرد المصحح كأساس لردك.
+` : ''}`;
 }
 
 const FALLBACK_MESSAGES = [
@@ -2370,12 +2598,14 @@ async function analyzeMessage(
   chatHistory,
   sessionMem,
   botInstructions,
-  customResponses
+  customResponses,
+  relevantCorrections = []    // 🆕 Layer 2
 ) {
   const systemPrompt = buildAnalyzerPrompt(
     botInstructions,
     customResponses,
-    sessionMem
+    sessionMem,
+    relevantCorrections        // 🆕 Layer 2
   );
 
   let filteredHistory = [...chatHistory];
@@ -3554,16 +3784,130 @@ async function smartChat(message, sessionId) {
 
 // Check response cache (skip for follow-ups)
   const cacheKey = getResponseCacheKey(message);
-if (cacheKey && !isFollowUpMessage(message)) {
+  if (cacheKey && !isFollowUpMessage(message)) {
     const cached = getCachedResponse(cacheKey);
     if (cached) {
       return cached;
     }
   }
 
+  // ╔═══════════════════════════════════════════════════════════╗
+  // ║ 🆕 CORRECTION LAYER 1: Direct Match — قبل أي GPT call    ║
+  // ║ لو فيه تصحيح قوي → رجّع الرد المصحح فوراً               ║
+  // ║ يشتغل لكل الـ intents (SEARCH, SUBSCRIPTION, CHAT...)    ║
+  // ╚═══════════════════════════════════════════════════════════╝
+
+  const _correctionMatch = await findBestCorrectionMatch(message);
+
+  if (_correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+    const { correction: _corr, score: _corrScore } = _correctionMatch;
+
+    console.log(`✅ [Correction L1] DIRECT MATCH! Score: ${_corrScore.toFixed(3)} | Correction #${_corr.id}`);
+
+    // ── الحالة 1: فيه رد مصحح نصي → رجّعه فوراً ──
+    if (_corr.corrected_reply && _corr.corrected_reply.trim().length > 0) {
+      let _corrReply = _corr.corrected_reply;
+      _corrReply = markdownToHtml(_corrReply);
+      _corrReply = finalizeReply(_corrReply);
+
+      await logChat(sessionId, "bot", _corrReply, "CORRECTION", {
+        version: "10.9",
+        correction_id: _corr.id,
+        match_score: _corrScore,
+        source: "layer1_corrected_reply",
+      });
+
+      updateSessionMemory(sessionId, {
+        topics: [],
+        interests: [],
+      });
+
+      // Cache الرد المصحح
+      const _corrResult = {
+        reply: _corrReply,
+        intent: "CORRECTION",
+        suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
+      };
+      if (cacheKey) {
+        setCachedResponse(cacheKey, _corrResult);
+      }
+
+      console.log(`✅ [Correction L1] Returned corrected_reply (${_corrReply.length} chars)`);
+      return _corrResult;
+    }
+
+    // ── الحالة 2: فيه course_ids بس بدون رد نصي → جيب الكورسات ──
+    if (Array.isArray(_corr.correct_course_ids) && _corr.correct_course_ids.length > 0) {
+      try {
+        const { data: _corrCourses, error: _corrErr } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT_COLS)
+          .in("id", _corr.correct_course_ids);
+
+        if (!_corrErr && _corrCourses && _corrCourses.length > 0) {
+          const _corrInstructors = await getInstructors();
+          let _corrReply = `إليك الكورسات اللي ممكن تفيدك 😊<br><br>`;
+
+          _corrCourses.forEach((c, i) => {
+            _corrReply += formatCourseCard(c, _corrInstructors, i + 1);
+          });
+
+          _corrReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+          _corrReply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
+          _corrReply = finalizeReply(_corrReply);
+
+          await logChat(sessionId, "bot", _corrReply, "CORRECTION_COURSES", {
+            version: "10.9",
+            correction_id: _corr.id,
+            match_score: _corrScore,
+            course_ids: _corr.correct_course_ids,
+            source: "layer1_course_ids",
+          });
+
+          updateSessionMemory(sessionId, {
+            lastShownCourseIds: _corrCourses.map(c => String(c.id)),
+            topics: [],
+          });
+
+          const _corrResult = {
+            reply: _corrReply,
+            intent: "CORRECTION_COURSES",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+          if (cacheKey) {
+            setCachedResponse(cacheKey, _corrResult);
+          }
+
+          console.log(`✅ [Correction L1] Returned ${_corrCourses.length} corrected courses`);
+          return _corrResult;
+        }
+      } catch (_corrCourseErr) {
+        console.error("❌ [Correction L1] Course fetch error:", _corrCourseErr.message);
+        // Fall through → الـ flow العادي يكمّل
+      }
+    }
+
+    // لو وصلنا هنا = الـ correction مفيهوش reply ولا course_ids صالحة
+    console.log(`⚠️ [Correction L1] Match found but no usable reply/courses → continuing normal flow`);
+  }
+
+  // ╔═══════════════════════════════════════════════════════════╗
+  // ║ 🆕 CORRECTION LAYER 2: جلب تصحيحات لحقنها في GPT        ║
+  // ║ لو فيه تصحيحات مشابهة (score >= 0.20) → GPT يشوفها      ║
+  // ╚═══════════════════════════════════════════════════════════╝
+
+  // Layer 2: بس لو Layer 1 ماشتغلش (score < 0.45 أو مفيش match)
+  let _correctionsForContext = [];
+  if (!_correctionMatch || _correctionMatch.score < CORRECTION_DIRECT_THRESHOLD) {
+    _correctionsForContext = await getCorrectionsForContext(message, 3);
+    if (_correctionsForContext.length > 0) {
+      console.log(`📝 [Correction L2] ${_correctionsForContext.length} corrections for GPT context`);
+    }
+  }
+
 
   // Dialect normalization
-const dialectNormalized = message;
+  const dialectNormalized = message;
 
   // Context enrichment
   const contextResult = enrichMessageWithContext(
@@ -3653,12 +3997,13 @@ const finalQuickReply = finalizeReply(markdownToHtml(quickReply));
   }
 
   // Phase 1: Analyze
-  const analysis = await analyzeMessage(
+const analysis = await analyzeMessage(
     enrichedMessage,
     chatHistory,
     sessionMem,
     botInstructions,
-    customResponses
+    customResponses,
+    _correctionsForContext    // 🆕 Layer 2
   );
 
 // 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
@@ -4395,22 +4740,60 @@ if (!earlyExitFollowUp) {
 const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMatch || c._chunkMatch);
 console.log("🛡️ Protected courses (titleMatch + lessonMatch):", savedTitleMatchCourses.length);
 
-    if (courses.length === 0) {
+if (courses.length === 0) {
       const corrections = await searchCorrections(termsToSearch);
       if (corrections.length > 0) {
-        const corrIds = corrections.flatMap(c => c.correct_course_ids || []).filter(Boolean);
-        if (corrIds.length > 0 && supabase) {
-          const { data: corrCourses } = await supabase
-            .from("courses")
-            .select(COURSE_SELECT_COLS)
-            .in("id", corrIds);
-          if (corrCourses?.length > 0) {
-            courses = corrCourses;
-            scoreAndRankCourses(courses, termsToSearch, analysis.search_terms);
+        // 🆕 FIX: أولاً — لو فيه corrected_reply → استخدمه مباشرة
+        const _corrWithReply = corrections.find(c =>
+          c.corrected_reply && c.corrected_reply.trim().length > 0
+        );
+
+if (_corrWithReply) {
+          console.log(`📝 [SEARCH Correction] Using corrected_reply from correction (score=${_corrWithReply.score})`);
+          
+          let _searchCorrReply = _corrWithReply.corrected_reply;
+          _searchCorrReply = markdownToHtml(_searchCorrReply);
+          _searchCorrReply = finalizeReply(_searchCorrReply);
+
+          reply = _searchCorrReply;
+          intent = "CORRECTION";
+          // Session memory updated in the outer handler below
+
+        } else {
+          // 🆕 ثانياً — fallback على course IDs
+          const corrIds = corrections.flatMap(c => c.correct_course_ids || []).filter(Boolean);
+          if (corrIds.length > 0 && supabase) {
+            const { data: corrCourses } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", corrIds);
+            if (corrCourses?.length > 0) {
+              courses = corrCourses;
+              scoreAndRankCourses(courses, termsToSearch, analysis.search_terms);
+              console.log(`📝 [SEARCH Correction] Using ${corrCourses.length} corrected course IDs`);
+            }
           }
         }
       }
     }
+
+// 🆕 FIX: لو التصحيح رجّع reply مباشرة → متكملش
+    if (reply && intent === "CORRECTION") {
+      console.log(`📝 [SEARCH Correction] Skipping rest of SEARCH handler — corrected_reply already set`);
+      
+      // Jump to session memory update at the end of SEARCH
+      const mainTopic = extractMainTopic(termsToSearch);
+      updateSessionMemory(sessionId, {
+        searchTerms: termsToSearch,
+        lastSearchTopic: mainTopic,
+        userLevel: analysis.user_level,
+        topics: analysis.topics,
+        lastShownCourseIds: [],
+      });
+
+    } else {
+      // باقي كود الـ SEARCH العادي (كل الكود الموجود)
+
 
 const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) : null;
     courses = applyQualityFilters(courses);
@@ -5934,6 +6317,11 @@ app.post("/admin/corrections", adminAuth, async (req, res) => {
       .single();
     if (error) throw error;
     res.json({ success: true, data });
+// 🆕 مسح كاش التصحيحات + كاش الردود
+    clearCorrectionCache();
+    // مسح response cache عشان الردود القديمة الغلط متترجعش
+    responseCache.clear();
+    console.log("🗑️ Response cache cleared (new correction added)");
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -5948,6 +6336,10 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
       .eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
+// 🆕 مسح كاش التصحيحات + كاش الردود
+    clearCorrectionCache();
+    responseCache.clear();
+    console.log("🗑️ Caches cleared (correction deleted)");
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
