@@ -3767,18 +3767,34 @@ setInterval(() => {
 async function smartChat(message, sessionId) {
   const startTime = Date.now();
 
-// 🆕 FIX: Strip leading number prefixes (e.g. "13. الدبلومات" → "الدبلومات")
+  // Strip number prefixes
   const _numPrefixMatch = message.match(/^\d{1,3}\s*[\.\-\)]\s+([\s\S]+)/);
   if (_numPrefixMatch && _numPrefixMatch[1].trim().length > 0) {
     console.log(`🔧 Number prefix stripped: "${message}" → "${_numPrefixMatch[1].trim()}"`);
     message = _numPrefixMatch[1].trim();
   }
 
-  // 🆕 FIX: Strip leading emojis from suggestion buttons (e.g. "🎓 الدبلومات" → "الدبلومات")
+  // Strip leading emojis
   const _emojiStripped = message.replace(/^[^\u0600-\u06FFa-zA-Z0-9]+/, '').trim();
   if (_emojiStripped.length > 0 && _emojiStripped !== message) {
     console.log(`🔧 Emoji prefix stripped: "${message}" → "${_emojiStripped}"`);
     message = _emojiStripped;
+  }
+
+  // 🆕 Direct diploma button (bypass GPT)
+  const _btnClean = message.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '').trim();
+  const _btnNorm = normalizeArabic(_btnClean.toLowerCase());
+
+  if (/^(ال)?دبلوم(ات|ه|ة)?$/.test(_btnNorm)) {
+    console.log(`⚡ Direct diploma button: "${message}" → loading all diplomas`);
+    const allDiplomas = await loadAllDiplomas();
+    const diplomaReply = finalizeReply(formatDiplomasList(allDiplomas));
+    await logChat(sessionId, "bot", diplomaReply, "DIPLOMAS", { version: "10.9", source: "direct_button" });
+    return {
+      reply: diplomaReply,
+      intent: "DIPLOMAS",
+      suggestions: ["عايز كورس 📘", "ازاي ادفع؟ 💳", "📂 الأقسام"],
+    };
   }
 
   const sessionMem = getSessionMemory(sessionId);
