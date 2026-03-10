@@ -147,12 +147,6 @@ const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
 const PAYMENTS_URL = "https://easyt.online/p/Payments";
-const PRICING = {
-  annual: 49,
-  originalAnnual: 59,
-  promoName: "عرض رمضان",
-  currency: "$",
-};
 const COURSE_EMBEDDING_MODEL = "text-embedding-ada-002";
 const CHUNK_EMBEDDING_MODEL = "text-embedding-3-small";
 const COURSE_SELECT_COLS =
@@ -555,7 +549,7 @@ function formatDiplomasList(diplomas) {
     const url = d.link || ALL_DIPLOMAS_URL;
     html += `${i + 1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${d.title}</a><br>`;
   });
-html += `<br><br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>)`;
+html += `<br><br>💡 كل الدبلومات دي متاحة مع الاشتراك السنوي`;
   html += `<br><br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة جميع الدبلومات ←</a>`;
   html += `<br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك الآن ←</a>`;
   return html;
@@ -2523,7 +2517,7 @@ CATEGORIES = فقط لما المستخدم يطلب بشكل صريح يشوف 
 
 ═══ معلومات المنصة ═══
 +600 دورة ومحتوى تعليمي، +27 دبلومة، +750,000 طالب، 15 دورة جديدة شهرياً
-الاشتراك السنوي: 49$ عرض رمضان (بدل 59$) = 4$/شهر — يتجدد تلقائياً بنفس السعر — إلغاء في أي وقت
+الاشتراك السنوي: راجع تعليمات الأدمن للأسعار والعروض الحالية
 وصول كامل فوري لكل الدورات + الدبلومات + شهادات PDF بالإيميل + مجتمع طلابي
 رابط الاشتراك: https://easyt.online/p/subscriptions
 رابط طرق الدفع: https://easyt.online/p/Payments
@@ -3853,7 +3847,7 @@ async function smartChat(message, sessionId) {
           });
 
           _corrReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-          _corrReply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
+_corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
           _corrReply = finalizeReply(_corrReply);
 
           await logChat(sessionId, "bot", _corrReply, "CORRECTION_COURSES", {
@@ -4417,7 +4411,7 @@ reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المن
         }
 
         reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-        reply += `<br><br>💡 مع الاشتراك السنوي (<strong>${PRICING.annual}${PRICING.currency} ${PRICING.promoName}</strong>) تقدر تدخل كل الدورات والدبلومات 🎓`;
+reply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
 
         updateSessionMemory(sessionId, {
           searchTerms: ["الأكثر مبيعاً"],
@@ -4723,7 +4717,7 @@ if (_isNegationFollowUp) {
     }
     reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
-reply += `<br><br>💡 مع الاشتراك السنوي (${PRICING.annual}${PRICING.currency} ${PRICING.promoName}) تقدر تدخل كل الدورات والدبلومات 🎓`;
+reply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
 
 updateSessionMemory(sessionId, {
         searchTerms: termsToSearch,
@@ -4865,7 +4859,7 @@ if (_isNegationFollowUp) {
       }
       reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
-      reply += `<br><br>💡 مع الاشتراك السنوي (49$ عرض رمضان) تقدر تدخل كل الدورات والدبلومات 🎓`;
+reply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
 
 
       const mainTopic93 = extractMainTopic(termsToSearch);
@@ -5330,7 +5324,7 @@ if (!reply.includes('easyt.online/p/subscriptions')) {
       reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
       reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
       reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.currency} فقط</strong> (${PRICING.promoName} بدل ${PRICING.originalAnnual}${PRICING.currency})<br>`;
+reply += `✨ <strong>الاشتراك السنوي</strong> — تفاصيل الأسعار والعروض على صفحة الاشتراك 👇<br>`;
       reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
       reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
       reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
@@ -5389,7 +5383,7 @@ reply += `✨ <strong>الاشتراك السنوي: ${PRICING.annual}${PRICING.
 - الكورسات (الدورات): دروس منفصلة بتركز على مهارة أو موضوع محدد.
 - الخلاصة: الدبلومة = كذا كورس مرتبين في مسار تعليمي واحد.
 - المنصة فيها +600 كورس و +27 دبلومة و +750,000 طالب.
-- الاشتراك السنوي ${PRICING.annual}${PRICING.currency} يشمل كل الكورسات والدبلومات.
+- الاشتراك السنوي يشمل كل الكورسات والدبلومات.
 
 لو السؤال عن حاجة خاصة بالمنصة → جاوب بناءً على المعلومات دي.
 لو السؤال عام → جاوب من معرفتك + مثال عملي.
@@ -5936,7 +5930,7 @@ ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botIns
 
 ═══ معلومات المنصة ═══
 - +600 دورة ومحتوى تعليمي في كل المجالات
-- اشتراك سنوي 49$ (عرض رمضان)
+- اشتراك سنوي يشمل كل المحتوى
 - رابط الاشتراك: https://easyt.online/p/subscriptions`;
 
     const messages = [{ role: "system", content: systemPrompt }];
