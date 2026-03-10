@@ -1965,7 +1965,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 
 ═══ المطلوب ═══
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -2094,18 +2094,22 @@ true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر
 لازم تفهم المعنى التخصصي مش الترجمة الحرفية:
 
 • "media buying" / "ميديا باينج" = شراء مساحات إعلانية على فيسبوك وجوجل وتيكتوك
+• "media buying" / "ميديا باينج" = شراء مساحات إعلانية على فيسبوك وجوجل وتيكتوك
   ❌ ممنوع تترجمها "شراء" أو "قرارات الشراء" — ده مجال نفسي مختلف تماماً!
   ✅ search_terms: ["media buying", "ميديا باينج", "إعلانات مدفوعة", "facebook ads", "اعلانات فيسبوك", "google ads", "اعلانات جوجل", "حملات إعلانية", "تسويق رقمي", "digital marketing", "ديجيتال ماركتنج"]
   ✅ detected_category: "الديجيتال ماركيتنج"
+  ✅ parent_field: "تسويق إلكتروني"
 
 • "growth hacking" / "جروث هاكنج" = استراتيجيات نمو سريع للشركات الناشئة
   ❌ ممنوع تفهمها "اختراق" — ده مجال أمن سيبراني مختلف!
   ✅ search_terms: ["growth hacking", "جروث هاكنج", "تسويق", "نمو", "ديجيتال ماركتنج"]
   ✅ detected_category: "الديجيتال ماركيتنج"
+  ✅ parent_field: "تسويق إلكتروني"
 
 • "copywriting" / "كوبي رايتنج" = كتابة إعلانية وتسويقية
   ❌ ممنوع تفهمها "نسخ" أو "حقوق ملكية"
   ✅ search_terms: ["copywriting", "كوبي رايتنج", "كتابة إعلانية", "كتابة تسويقية", "content writing"]
+  ✅ parent_field: "تسويق إلكتروني"
 
 • "affiliate marketing" = تسويق بالعمولة
   ❌ ممنوع تفهمها "تسويق" بس
@@ -2118,6 +2122,7 @@ true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر
 • "UX/UI" = تصميم تجربة المستخدم وواجهات
   ❌ ممنوع تفهمها "تصميم" بس
   ✅ search_terms: ["UX", "UI", "تصميم واجهات", "تجربة المستخدم", "فيجما", "figma"]
+  ✅ parent_field: "تصميم جرافيك"
 
 القاعدة العامة: لو المصطلح مركب من كلمتين إنجليزي → افهم معناه التخصصي الأول قبل ما تترجم!
 
@@ -2416,6 +2421,7 @@ return {
         response_message: "",
         intent: "GENERAL",
 detected_category: null,
+        parent_field: '',
         user_level: null,
         topics: [],
         is_follow_up: false,
@@ -2429,6 +2435,7 @@ detected_category: null,
 return {
       action: result.action || "CHAT",
       detected_category: result.detected_category || null,
+      parent_field: result.parent_field || '',
       user_intent: result.user_intent || "FIND_COURSE",
       search_terms: Array.isArray(result.search_terms)
         ? result.search_terms.filter((t) => t && t.length > 0)
@@ -2446,7 +2453,7 @@ audience_filter: result.audience_filter || null,
       is_popularity_search: !!result.is_popularity_search,
     };
 
-  } catch (e) {
+} catch (e) {
     console.error("❌ Analyzer error:", e.message);
 
 return {
@@ -2456,6 +2463,7 @@ return {
       response_message: "",
       intent: "ERROR",
 detected_category: null,
+      parent_field: '',
       user_level: null,
       topics: [],
       is_follow_up: false,
@@ -4140,9 +4148,38 @@ if (_titleMatchedDiplomas.length > 0) {
           console.log(`🎓 FIX #115a: Diploma filter: ${diplomas.length} → ${_titleMatchedDiplomas.length} (title match)`);
           diplomas = _titleMatchedDiplomas;
 } else {
-            console.log(`🎓 FIX #115a: No diploma title match → showing 0 diplomas`);
-            diplomas = [];
-          }       
+            // 🆕 FIX #115b: parent_field fallback for diplomas
+            // Problem: "media buying" not in "دبلومة التسويق الإلكتروني" title
+            // But parent_field="تسويق إلكتروني" IS in the title
+            const _parentField = (analysis && analysis.parent_field) ? analysis.parent_field : '';
+            if (_parentField.length > 0) {
+              const _pfNorm = normalizeArabic(_parentField.toLowerCase());
+              const _pfWords = _pfNorm.split(/\s+/).filter(w => w.length > 2);
+              
+              if (_pfWords.length > 0) {
+                const _pfMatched = diplomas.filter(d => {
+                  const dTitleNorm = normalizeArabic((d.title || '').toLowerCase());
+                  // ALL parent_field words must be in diploma title
+                  return _pfWords.every(pw => dTitleNorm.includes(pw));
+                });
+                
+                if (_pfMatched.length > 0) {
+                  console.log(`🎓 FIX #115b: No title match but ${_pfMatched.length} parent_field matched (parent_field="${_parentField}")`);
+                  _pfMatched.forEach(d => console.log(`   🎓 kept: "${d.title}"`));
+                  diplomas = _pfMatched;
+                } else {
+                  console.log(`🎓 FIX #115a+b: No title match & no parent_field match → showing 0 diplomas`);
+                  diplomas = [];
+                }
+              } else {
+                console.log(`🎓 FIX #115a: No diploma title match (parent_field words too short) → showing 0 diplomas`);
+                diplomas = [];
+              }
+            } else {
+              console.log(`🎓 FIX #115a: No diploma title match & no parent_field → showing 0 diplomas`);
+              diplomas = [];
+            }
+          }
       }
     }
 
