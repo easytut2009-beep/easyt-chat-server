@@ -956,11 +956,6 @@ const cappedIlikeTerms = ilikeTerms.slice(0, 16);
 
 // 🔧 Phase 1: Search core fields only
 const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
-    const deepCols = [
-      "title", "description", "subtitle",
-      "full_content", "page_content", "syllabus",
-      "objectives", "domain", "keywords",
-    ];
 
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
@@ -3785,18 +3780,6 @@ async function smartChat(message, sessionId) {
   const _btnClean = message.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '').trim();
   const _btnNorm = normalizeArabic(_btnClean.toLowerCase());
 
-  if (/^(ال)?دبلوم(ات|ه|ة)?$/.test(_btnNorm)) {
-    console.log(`⚡ Direct diploma button: "${message}" → loading all diplomas`);
-    const allDiplomas = await loadAllDiplomas();
-    const diplomaReply = finalizeReply(formatDiplomasList(allDiplomas));
-    await logChat(sessionId, "bot", diplomaReply, "DIPLOMAS", { version: "10.9", source: "direct_button" });
-    return {
-      reply: diplomaReply,
-      intent: "DIPLOMAS",
-      suggestions: ["عايز كورس 📘", "ازاي ادفع؟ 💳", "📂 الأقسام"],
-    };
-  }
-// 🆕 Direct diploma button (bypass GPT)
   if (/^(ال)?دبلوم(ات|ه|ة)?$/.test(_btnNorm)) {
     console.log(`⚡ Direct diploma button: "${message}" → loading all diplomas`);
     const allDiplomas = await loadAllDiplomas();
