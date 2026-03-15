@@ -3983,12 +3983,9 @@ const _isCouponAsk = (
 
   if (_msgWordCount <= 5 && !_hasLearningWord) {
 
-    const _isPaymentBtn =
+const _isPaymentBtn =
       /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
-      /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع|شترك)$/.test(_btnNorm) ||
-      /^(اسعار|أسعار)\s*(ال)?(اشتراك)?$/.test(_btnNorm) ||
-      /^(اشتراك|الاشتراك|سعر\s*الاشتراك)$/.test(_btnNorm) ||
-      /^(الاشتراك\s*بكام|بكام\s*الاشتراك)$/.test(_btnNorm);
+      /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm);
 
     if (_isPaymentBtn) {
       console.log(`💳 Direct payment button: "${message}"`);
