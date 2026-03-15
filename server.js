@@ -3938,7 +3938,6 @@ async function smartChat(message, sessionId) {
     console.log(`⚡ Direct diploma button: "${message}" → loading all diplomas`);
     const allDiplomas = await loadAllDiplomas();
     const diplomaReply = finalizeReply(formatDiplomasList(allDiplomas));
-    await logChat(sessionId, "bot", diplomaReply, "DIPLOMAS", { version: "10.9", source: "direct_button" });
     return {
       reply: diplomaReply,
       intent: "DIPLOMAS",
@@ -3972,7 +3971,6 @@ const _isCouponAsk = (
       `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>` +
       `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`
     );
-    await logChat(sessionId, "bot", _couponReply, "COUPON", { version: "10.9", source: "direct_coupon" });
     return {
       reply: _couponReply,
       intent: "COUPON",
@@ -4006,7 +4004,6 @@ const _isCouponAsk = (
       _payReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
       _payReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
       _payReply = finalizeReply(_payReply);
-      await logChat(sessionId, "bot", _payReply, "SUBSCRIPTION", { version: "10.9", source: "direct_payment_btn" });
       return {
         reply: _payReply,
         intent: "SUBSCRIPTION",
@@ -4048,12 +4045,6 @@ const _isCouponAsk = (
       _corrReply = markdownToHtml(_corrReply);
       _corrReply = finalizeReply(_corrReply);
 
-      await logChat(sessionId, "bot", _corrReply, "CORRECTION", {
-        version: "10.9",
-        correction_id: _corr.id,
-        match_score: _corrScore,
-        source: "layer1_corrected_reply",
-      });
 
       updateSessionMemory(sessionId, {
         topics: [],
@@ -4094,13 +4085,6 @@ const _isCouponAsk = (
 _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
           _corrReply = finalizeReply(_corrReply);
 
-          await logChat(sessionId, "bot", _corrReply, "CORRECTION_COURSES", {
-            version: "10.9",
-            correction_id: _corr.id,
-            match_score: _corrScore,
-            course_ids: _corr.correct_course_ids,
-            source: "layer1_course_ids",
-          });
 
           updateSessionMemory(sessionId, {
             lastShownCourseIds: _corrCourses.map(c => String(c.id)),
@@ -4147,13 +4131,6 @@ const _faqMatch = await findBestFAQMatch(message, _allFAQs);
     _faqReply = markdownToHtml(_faqReply);
     _faqReply = finalizeReply(_faqReply);
 
-    await logChat(sessionId, "bot", _faqReply, "FAQ", {
-      version: "10.9",
-      faq_id: _faq.id,
-      faq_section: _faq.section,
-      match_score: _faqScore,
-      source: "faq_direct",
-    });
 
     updateSessionMemory(sessionId, {
       topics: [],
@@ -6745,23 +6722,6 @@ if (error) throw error;
 });
 
 
-app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false });
-  try {
-    const { error } = await supabase
-      .from("corrections")
-      .delete()
-      .eq("id", req.params.id);
-if (error) throw error;
-    clearCorrectionCache();
-    responseCache.clear();
-    console.log("🗑️ Caches cleared (correction deleted)");
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
 // 🆕 تعديل التصحيحات
 app.put("/admin/corrections/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
@@ -6789,9 +6749,6 @@ app.put("/admin/corrections/:id", adminAuth, async (req, res) => {
     res.status(500).json({ success: false, error: e.message });
   }
 });
-
-// === Bot Instructions ===
-
 
 // === Bot Instructions ===
 app.get("/admin/bot-instructions", adminAuth, async (req, res) => {
