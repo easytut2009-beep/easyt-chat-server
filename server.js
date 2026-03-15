@@ -3810,26 +3810,7 @@ async function smartChat(message, sessionId) {
     /(فيه?|في|عندك[مو]?)\s*(كوبون|كود|خصم)/.test(_btnNorm)
   ) && !_wantsToCreateCoupons;
 
-  if (_isCouponAsk) {
-    console.log(`⚡ Coupon intent detected: "${message}" → showing Ramadan offer`);
-
-    let couponReply = `مش محتاج كود خصم! 🎉<br><br>`;
-    couponReply += `🌙 <strong>عرض رمضان شغال تلقائي!</strong><br><br>`;
-    couponReply += `💰 ادفع <strong>49$</strong> بدل <del>59$</del> للاشتراك السنوي<br>`;
-    couponReply += `✅ الخصم بيتطبق مباشرة من غير أي كود<br>`;
-    couponReply += `✅ توفير <strong>10$</strong> فوري!<br><br>`;
-    couponReply += `الاشتراك يشمل كل الدورات + الدبلومات + شهادات 🎓<br><br>`;
-    couponReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن بالعرض ←</a><br>`;
-    couponReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-
-    couponReply = finalizeReply(couponReply);
-    await logChat(sessionId, "bot", couponReply, "SUBSCRIPTION", { version: "10.9", source: "direct_coupon" });
-    return {
-      reply: couponReply,
-      intent: "SUBSCRIPTION",
-      suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-    };
-  }
+  
 
   // ─── 2️⃣ PAYMENT (with learning-word filter) ───
   const _hasLearningWord = /(كورس|دور[ةه]|شرح|بتشرح|يشرح|اتعلم|تعلم|دروس|درس|اعمل|اسوي|بيشرح|شروحات|تدريب)/.test(_btnNorm);
@@ -3843,30 +3824,7 @@ async function smartChat(message, sessionId) {
       /^(اشتراك|الاشتراك|سعر\s*الاشتراك)$/.test(_btnNorm) ||
       /^(الاشتراك\s*بكام|بكام\s*الاشتراك)$/.test(_btnNorm);
 
-    if (_isPaymentBtn) {
-      console.log(`⚡ Direct payment button: "${message}" → showing subscription info`);
-
-      let subReply = `أهلاً بيك! 🎉<br><br>`;
-      subReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
-      subReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-      subReply += `2. 🅿️ <strong>PayPal</strong><br>`;
-      subReply += `3. 📱 <strong>InstaPay</strong><br>`;
-      subReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
-      subReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
-      subReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      subReply += `✨ <strong>عرض رمضان 🌙</strong> — الاشتراك السنوي بـ <strong>49$</strong> بدل 59$!<br>`;
-      subReply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
-      subReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
-      subReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-
-      subReply = finalizeReply(subReply);
-      await logChat(sessionId, "bot", subReply, "SUBSCRIPTION", { version: "10.9", source: "direct_button" });
-      return {
-        reply: subReply,
-        intent: "SUBSCRIPTION",
-        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-      };
-    }
+    
   }
 
 
@@ -5492,8 +5450,32 @@ const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.t
      ACTION: SUBSCRIPTION
      ═══════════════════════════════════ */
 else if (analysis.action === "SUBSCRIPTION") {
-    // 🆕 FIX: Use GPT response from bot instructions if available
+    // GPT response from bot instructions (has current offers/prices)
     if (analysis.response_message && analysis.response_message.trim().length > 20) {
+      console.log(`💡 SUBSCRIPTION: Using GPT response from bot instructions`);
+      reply = analysis.response_message;
+      if (!reply.includes('easyt.online/p/subscriptions')) {
+        reply += `<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a>`;
+      }
+      if (!reply.includes('easyt.online/p/Payments')) {
+        reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      }
+    } else {
+      // Fallback — generic (no hardcoded prices)
+      reply = `أهلاً بيك! 🎉<br><br>`;
+      reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      reply += `3. 📱 <strong>InstaPay</strong><br>`;
+      reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+      reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+      reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+      reply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
+      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+      reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+    }
+    intent = "SUBSCRIPTION";
+  }
       console.log(`💡 SUBSCRIPTION: Using GPT response from bot instructions`);
       reply = analysis.response_message;
 if (!reply.includes('easyt.online/p/subscriptions')) {
