@@ -1334,7 +1334,7 @@ const searchable = prepareSearchTerms(terms);
 if (!matched) {
           for (const tw of titleN.split(/\s+/)) {
             const sim = similarityRatio(nt, tw);
-            if (sim >= 70) {
+            if (sim >= 82) {
               bestSim = Math.max(bestSim, sim);
               matched = true;
               break;
@@ -5351,6 +5351,20 @@ if (diplomas.length > 0 && relevantDiplomas.length < 2) {
   }
 }
 
+
+// 🆕 FIX: Track courses GPT saw but deliberately excluded
+      const _gptSeenCourseIds = new Set(courses.slice(0, 10).map(c => c.id));
+      const _gptExcludedIds = new Set(
+        [..._gptSeenCourseIds].filter(id => 
+          !relevantCourses.find(rc => rc.id === id) && 
+          !relevantDiplomas.find(rd => rd.id === id)
+        )
+      );
+      if (_gptExcludedIds.size > 0) {
+        console.log(`🤖 GPT deliberately excluded ${_gptExcludedIds.size} courses it reviewed`);
+      }
+
+
 // Verify relevance
       relevantCourses = relevantCourses.filter((c) =>
         verifyCourseRelevance(c, termsToSearch)
@@ -5380,6 +5394,10 @@ if (analysis.user_level === "مبتدئ" && titleMatchMustShow.length > 0) {
 }
 
 for (const tmc of titleMatchMustShow.slice(0, 3)) {
+        if (_gptExcludedIds.has(tmc.id)) {
+          console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
+          continue;
+        }
         relevantCourses.unshift(tmc);
         console.log("FIX63 Must-show title-match added:", tmc.title);
       }
@@ -5398,6 +5416,10 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true || c._les
               console.log(`🎓 Beginner: skipping force-include "${tm.title}" (advanced)`);
               continue;
             }
+          }
+if (_gptExcludedIds.has(tm.id)) {
+            console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
+            continue;
           }
           relevantCourses.push(tm);
           console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
@@ -5467,8 +5489,12 @@ const _topicRelevant = courses.filter(c => {
 
 // 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
       if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
-        for (const stm of savedTitleMatchCourses) {
+for (const stm of savedTitleMatchCourses) {
           if (!relevantCourses.find(rc => rc.id === stm.id)) {
+            if (_gptExcludedIds.has(stm.id)) {
+              console.log(`🤖 Skipping GPT-excluded saved: "${stm.title}"`);
+              continue;
+            }
             relevantCourses.push(stm);
             console.log(`🛡️ FIX99: Re-added lost titleMatch: "${stm.title}"`);
           }
