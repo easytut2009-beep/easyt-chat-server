@@ -2298,7 +2298,21 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 - "كورس بريمير" ← detected_category: "التصوير والمونتاج والأنيميشن"
 - "عايز أتعلم إكسيل" ← detected_category: "تعليم أساسيات الكمبيوتر"
 
+
+═══ 🔴 فهم اللهجات والكلام العامي — إجباري ═══
+لازم تفهم الرسالة في سياقها العامي/اللهجوي الأول قبل ما تفسرها تقنياً!
+
+أمثلة حرجة:
+• "في وكلاء الكم" = "فيه وكلاء ليكم؟" (بيسأل عن وكلاء بيع/موزعين) → action: "SUPPORT"
+  ❌ ممنوع تفهمها "quantum agents" أو تبحث عن كورسات!
+• "الكم" / "لكم" / "ليكم" / "عندكم" / "عندكو" في العامية = ضمير (لكم) مش quantum!
+• "ايه الكم" = "إيه اللي عندكم" → CATEGORIES أو CHAT
+• "فيه وكلاء" / "في وكلاء" / "عندكم وكلاء" = بيسأل عن خدمة في المنصة → SUPPORT
+
+القاعدة: لو الرسالة فيها سؤال عن المنصة/خدمة/ميزة (وكلاء، شهادات، دعم، توظيف...) → action: "SUPPORT" أو "CHAT" — مش SEARCH!
+
 ═══ المطلوب ═══
+
 حلل الرسالة → JSON فقط:
 {"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
@@ -2367,6 +2381,29 @@ true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر
 مثال: "محاسبة" → ["محاسبة", "المحاسبة", "محاسبه", "حسابات", "محاسب", "accounting"]
 
 ⚠️ الهدف: لو فيه كورس اسمه فيه أي شكل من أشكال الكلمة — لازم search_terms تمسكه!
+
+
+🔴🔴🔴 قاعدة الأداة/المنتج المحدد (Proper Noun) — إجبارية:
+لو المستخدم ذكر اسم أداة أو منتج أو تقنية بالاسم الكامل:
+1. search_terms = الاسم الكامل بالإنجليزي + الاسم بالعربي فقط — بدون إضافة المجال العام
+
+2. ❌ ممنوع تضيف المجال العام كـ search term منفصل
+3. ❌ ممنوع تفكك الاسم لكلمات منفصلة
+
+أمثلة:
+• "ai google studio" → ["Google AI Studio", "جوجل اي ستوديو"]
+  ❌ ممنوع: ["AI", "ذكاء اصطناعي", "google", "studio"]
+• "midjourney" → ["Midjourney", "ميدجيرني"]
+  ❌ ممنوع: ["AI", "صور", "توليد صور", "تصميم"]
+• "chatgpt" → ["ChatGPT", "شات جي بي تي"]
+  ❌ ممنوع: ["AI", "ذكاء اصطناعي"]
+• "notion" → ["Notion", "نوشن"]
+  ❌ ممنوع: ["إدارة مهام", "إنتاجية"]
+• "stable diffusion" → ["Stable Diffusion", "ستيبل ديفيوجن"]
+  ❌ ممنوع: ["AI", "صور"]
+
+⚠️ الفرق: "عايز أتعلم ذكاء اصطناعي" (مجال عام) = ضيف مرادفات عادي ✅
+لكن "عايز أتعلم Google AI Studio" (اسم محدد) = الاسم بس ❌ بدون مرادفات المجال
 
 ═══ search_terms — أهم حاجة ═══
 المصطلحات التقنية بس. ❌ "معلومات","حاجة","كورس","عايز","اتعلم","دورة","محتاج"
@@ -3963,19 +4000,11 @@ const _isCouponAsk = (
     /(فيه?|في|عندك[مو]?)\s*(كوبون|كود|خصم)/.test(_btnNorm)
   ) && !_wantsToCreateCoupons;
 
+// 🆕 FIX: Don't hardcode "no coupon" — let GPT read bot_instructions
+  // Problem: Admin added EID20 coupon in bot_instructions but this code always says "no coupon"
   if (_isCouponAsk) {
-    console.log(`🎟️ Direct coupon question: "${message}"`);
-    const _couponReply = finalizeReply(
-      `للأسف مفيش كوبون خصم متاح حالياً 😊<br><br>` +
-      `💡 بس الاشتراك السنوي بيوفرلك وصول كامل لكل الدورات والدبلومات!<br><br>` +
-      `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>` +
-      `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`
-    );
-    return {
-      reply: _couponReply,
-      intent: "COUPON",
-      suggestions: ["ازاي ادفع؟ 💳", "عايز كورس 📘", "🎓 الدبلومات"],
-    };
+    console.log(`🎟️ Coupon question → letting GPT handle (reads bot_instructions for active coupons)`);
+    // Don't return — fall through to GPT analyzer which reads bot_instructions
   }
 
   // ─── 2️⃣ PAYMENT (with learning-word filter) ───
@@ -4031,7 +4060,21 @@ const _isPaymentBtn =
 
   const _correctionMatch = await findBestCorrectionMatch(message, _allCorrections);
 
-  if (_correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+// 🆕 FIX: Skip corrections for subscription/payment questions
+  // Problem: "أسعار الاشتراك" matched a correction about "تجديد الاشتراك"
+  const _skipCorrForSub = (() => {
+    const _n = normalizeArabic((message || '').toLowerCase());
+    const _hasPriceWord = /(اسعار|سعر|بكام|كام|تكلف|ادفع|دفع|فلوس|فيزا|كاش|تحويل|انستاباي|فودافون|بطاق|visa|pay|price|cost)/.test(_n);
+    const _hasSubWord = /(اشتراك|اشترك|باق[ةه]|خط[ةه]|عرض|عروض)/.test(_n);
+    const _isPriceQ = /(اسعار|سعر|بكام|كام|تكلف|ازاي\s*(ا)?دفع|كيف\s*(ا)?دفع|طرق\s*(ال)?دفع)/.test(_n);
+    return (_hasPriceWord && _hasSubWord) || _isPriceQ;
+  })();
+
+  if (_skipCorrForSub) {
+    console.log(`💰 Skipping corrections for payment question: "${message}"`);
+  }
+
+  if (!_skipCorrForSub && _correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
     const { correction: _corr, score: _corrScore } = _correctionMatch;
 
     console.log(`✅ [Correction L1] DIRECT MATCH! Score: ${_corrScore.toFixed(3)} | Correction #${_corr.id}`);
@@ -4973,6 +5016,131 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
+
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 SAFE Relevance Gate v2
+// Removes courses that match only 1 generic word from a multi-word query
+// Has 3 safety checks to prevent false removals
+// ═══════════════════════════════════════════════════════════
+{
+  const _gateIntentWords = new Set([
+    'ابحث', 'ابحثي', 'ابحثلي', 'دور', 'دوري', 'دورلي', 'دورات', 'دوره', 'دورة',
+    'كورسات', 'كورس', 'تعلم', 'اتعلم', 'عايز', 'عاوز', 'محتاج',
+    'بدي', 'ابغي', 'ابغى', 'عن', 'اريد', 'اعرف', 'شرح', 'اشرح',
+    'اشرحلي', 'وريني', 'قولي', 'فين', 'وين', 'هل', 'في', 'فيه',
+    'search', 'find', 'want', 'need', 'about', 'for', 'the', 'a', 'an',
+    'i', 'me', 'my', 'is', 'are', 'how', 'what',
+  ]);
+
+  const _gateStripPrefix = (w) => {
+    const _n = normalizeArabic(w);
+    if (_n.startsWith('ال') && _n.length > 3) return _n.substring(2);
+    if (_n.startsWith('بال') && _n.length > 4) return _n.substring(3);
+    if (_n.startsWith('وال') && _n.length > 4) return _n.substring(3);
+    return _n;
+  };
+
+  // === Extract topic words from ORIGINAL message ===
+  const _gateNormMsg = normalizeArabic(message.toLowerCase().trim());
+  const _gateRawMsg = message.toLowerCase().trim();
+
+  const _gateTopicWords = _gateNormMsg.split(/\s+/)
+    .filter(w => w.length > 2 && !_gateIntentWords.has(w) && !BASIC_STOP_WORDS.has(w))
+    .map(w => _gateStripPrefix(w))
+    .filter(w => w.length > 2);
+
+  const _gateEngWords = _gateRawMsg.split(/\s+/)
+    .filter(w => /^[a-zA-Z]{2,}$/.test(w) && !_gateIntentWords.has(w))
+    .map(w => w.toLowerCase());
+
+  const _gateMsgTopicWords = [...new Set([..._gateTopicWords, ..._gateEngWords])];
+
+  // === Extract topic words from GPT's search terms (has synonyms!) ===
+  const _gateSearchWords = [...new Set(
+    termsToSearch
+      .flatMap(t => normalizeArabic(t.toLowerCase()).split(/\s+/))
+      .filter(w => w.length > 2 && !_gateIntentWords.has(w) && !BASIC_STOP_WORDS.has(w))
+      .map(w => _gateStripPrefix(w))
+      .filter(w => w.length > 2)
+  )];
+
+  // Also English words from search terms
+  const _gateSearchEngWords = [...new Set(
+    termsToSearch
+      .flatMap(t => t.split(/\s+/))
+      .filter(w => /^[a-zA-Z]{2,}$/.test(w) && !_gateIntentWords.has(w))
+      .map(w => w.toLowerCase())
+  )];
+
+  const _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
+
+  console.log(`🔍 Relevance Gate v2:`);
+  console.log(`   Message topic words: [${_gateMsgTopicWords.join(', ')}]`);
+  console.log(`   Search term words: [${_gateAllSearchWords.join(', ')}]`);
+
+  // === Only activate for 2+ topic words in original message ===
+  if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
+    const _gateBeforeCount = courses.length;
+
+    courses = courses.filter(c => {
+      // ✅ SAFETY CHECK 1: Always keep chunk/lesson matches
+      if (c._chunkMatch || c._lessonMatch) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (chunk/lesson match)`);
+        return true;
+      }
+
+      // Build course text
+      const _cTitleNorm = normalizeArabic((c.title || '').toLowerCase());
+      const _cSubNorm = normalizeArabic((c.subtitle || '').toLowerCase());
+      const _cTitleRaw = (c.title || '').toLowerCase();
+      const _cSubRaw = (c.subtitle || '').toLowerCase();
+
+      let _lessonText = '';
+      if (c.matchedLessons && c.matchedLessons.length > 0) {
+        _lessonText = normalizeArabic(
+          c.matchedLessons.map(l => (l.title || '')).join(' ').toLowerCase()
+        );
+      }
+
+      const _allNorm = _cTitleNorm + ' ' + _cSubNorm + ' ' + _lessonText;
+      const _allRaw = _cTitleRaw + ' ' + _cSubRaw;
+
+      // === CHECK A: Original message words (80% needed) ===
+      const _msgMatched = _gateMsgTopicWords.filter(w => {
+        if (_allNorm.includes(w)) return true;
+        if (/^[a-zA-Z]+$/.test(w) && _allRaw.includes(w)) return true;
+        return false;
+      });
+      const _msgRatio = _msgMatched.length / _gateMsgTopicWords.length;
+
+      if (_msgRatio >= 0.8) return true; // ✅ Passes on original words
+
+      // === CHECK B: GPT search terms (2+ words must match) ===
+      // This catches synonyms: "ديجيتال ماركتنج" → GPT added "تسويق" → matches "التسويق الإلكتروني"
+      const _searchMatched = _gateAllSearchWords.filter(w => {
+        if (_allNorm.includes(w)) return true;
+        if (/^[a-zA-Z]+$/.test(w) && _allRaw.includes(w)) return true;
+        return false;
+      });
+
+      if (_searchMatched.length >= 2) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (${_searchMatched.length} search terms match: [${_searchMatched.join(',')}])`);
+        return true; // ✅ Passes on GPT synonyms
+      }
+
+      // === FAILED all checks → remove ===
+      console.log(`🚫 Gate REMOVED: "${c.title}" — msg:[${_msgMatched.join(',')}] (${_msgMatched.length}/${_gateMsgTopicWords.length}) — search:[${_searchMatched.join(',')}] (${_searchMatched.length})`);
+      c._titleMatch = false;
+      c._titleMatchStrength = 'none';
+      return false;
+    });
+
+    if (courses.length < _gateBeforeCount) {
+      console.log(`🚫 Relevance Gate: ${_gateBeforeCount} → ${courses.length} courses`);
+    }
+  }
+}
 
 
 // ═══════════════════════════════════════════════════════════
