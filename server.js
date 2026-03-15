@@ -2463,7 +2463,30 @@ true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر
 
 
 ═══ user_intent ═══
-FIND_COURSE=عايز يتعلم/يدور على كورس | QUESTION=عايز يفهم مصطلح ("يعني إيه X") | UNCLEAR=حروف عشوائية 100% فقط
+═══ 🔴 قاعدة "خلصت" vs "عايز أخلص" — إجبارية ═══
+- "خلصت الكورس" / "انا خلصت" / "خلاص خلصته" (ماضي) → الطالب خلص فعلاً وبيسأل عن الشهادة
+- "لخلصى الكورس" / "عايز أخلص" / "ازاي أخلص" / "محتاج أكمل" (مستقبل) → الطالب لسه بيتعلم وعايز مساعدة يكمل
+❌ ممنوع تربط "لخلصى" أو "عايز أخلص" بسؤال الشهادة — حتى لو الشهادة اتذكرت قبل كده في المحادثة!
+✅ لو قال "لخلصى الكورس" → action: "CLARIFY", response_message: "عايز تخلص كورس إيه؟ وإيه اللي واقفك؟ 😊 قولي وأنا أساعدك!"
+
+═══ 🔴 قاعدة الشرح والتلخيص — إجبارية ═══
+أنت مساعد بيعي — مش مدرّس! الشرح والتلخيص ده شغل المرشد التعليمي اللي جوه الكورس.
+لو المستخدم طلب شرح أو تلخيص أو توضيح لأي مصطلح أو موضوع:
+- user_intent = "FIND_COURSE" (❌ ممنوع QUESTION نهائياً!)
+- action = "SEARCH"
+- search_terms = الموضوع اللي عايز يفهمه
+❌ ممنوع تشرح أو تلخص أي مصطلح
+✅ ابحث عن كورسات في الموضوع واعرضها
+
+أمثلة:
+- "عاوز شرح عن ورك فلو" → SEARCH, FIND_COURSE, ["workflow", "وورك فلو"]
+- "اشرحلي SEO" → SEARCH, FIND_COURSE, ["SEO", "سيو"]
+- "يعني إيه machine learning" → SEARCH, FIND_COURSE, ["machine learning", "تعلم الآلة"]
+- "لخصلي الدرس" → CHAT, response_message: "التلخيص والشرح ده شغل المرشد التعليمي 🤖 لما تشترك في الكورس هيساعدك في كل حاجة!"
+
+═══ user_intent ═══
+FIND_COURSE=عايز يتعلم/يدور على كورس/عايز شرح/عايز يفهم مصطلح | UNCLEAR=حروف عشوائية 100% فقط
+⚠️ user_intent = "FIND_COURSE" دايماً — المساعد البيعي بيعرض كورسات مش بيشرح
 ⚠️ كلمة حقيقية واحدة = مش UNCLEAR
 
 ═══ follow_up_type ═══
@@ -4483,12 +4506,20 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
     skipUpsell = true;
   }
 
-// الـ Analyzer أصلاً بيرجع user_intent — مش محتاجين GPT call تاني
-  let _isConceptualQuestion = false;
-  if (analysis.action === "SEARCH" && !_clarifyContextTopics) {
-    _isConceptualQuestion = analysis.user_intent === "QUESTION";
-    console.log(`🧠 Conceptual check (from analyzer): "${analysis.user_intent}" → isConceptual=${_isConceptualQuestion}`);
+// 🆕 FIX: المساعد البيعي مبيشرحش — بيعرض كورسات بس
+  if (analysis.user_intent === "QUESTION") {
+    console.log(`🔄 Sales bot: QUESTION → FIND_COURSE (sales bot doesn't explain, guide bot does)`);
+    analysis._wasQuestion = true;
+    analysis.user_intent = "FIND_COURSE";
+    // لو كان CHAT وعنده search_terms → حوّله SEARCH عشان يعرض كورسات
+    if (analysis.action === "CHAT" && analysis.search_terms && analysis.search_terms.length > 0) {
+      analysis.action = "SEARCH";
+    }
   }
+
+  let _isConceptualQuestion = false;
+  // 🆕 FIX: _isConceptualQuestion = false دايماً (المساعد البيعي مبيجاوبش أسئلة)
+  console.log(`🧠 Conceptual check: DISABLED for sales bot (user_intent="${analysis.user_intent}")`);
 
   // 🛡️ Safety Net: لو SEARCH بدون search_terms → CLARIFY
   if (analysis.action === "SEARCH" && (!analysis.search_terms || analysis.search_terms.length === 0)) {
@@ -4518,12 +4549,8 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
     }
   }
 
-if (_isConceptualQuestion && analysis.action === "SEARCH") {
-    console.log(`ℹ️ Conceptual question detected — keeping SEARCH (FIX #86: SEARCH handler answers + shows course cards)`);
-    // 🔧 FIX #86: Don't override to CHAT — SEARCH handler has QUESTION support (FIX #84)
-    // analysis.action = "CHAT";  // ← DISABLED
-    analysis.user_intent = "QUESTION";
-  }
+// 🆕 FIX: المساعد البيعي مبيجاوبش أسئلة — بيعرض كورسات بس
+  // _isConceptualQuestion is always false now (sales bot doesn't explain)
 
 
 // 🆕 FIX #112: Force follow-up for clear alternative patterns
@@ -5516,6 +5543,11 @@ const cat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch);
 
         if (cat) {
           reply += `<br><br>📂 ممكن كمان تتصفح <a href="${cat.url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">كورسات ${cat.name}</a>`;
+        }
+
+        // 🆕 FIX: لو المستخدم كان عايز شرح → وجهه للمرشد التعليمي
+        if (analysis._wasQuestion) {
+          reply += `<br><br>🤖 <strong>ولما تشترك، المرشد التعليمي جوه كل كورس هيساعدك تفهم أي حاجة وتلخصلك الدروس!</strong>`;
         }
       }
 
