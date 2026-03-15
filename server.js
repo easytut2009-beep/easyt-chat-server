@@ -6744,6 +6744,55 @@ if (error) throw error;
   }
 });
 
+
+app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { error } = await supabase
+      .from("corrections")
+      .delete()
+      .eq("id", req.params.id);
+if (error) throw error;
+    clearCorrectionCache();
+    responseCache.clear();
+    console.log("🗑️ Caches cleared (correction deleted)");
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// 🆕 تعديل التصحيحات
+app.put("/admin/corrections/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const u = {};
+    if (req.body.original_question !== undefined) u.original_question = req.body.original_question;
+    if (req.body.user_message !== undefined) u.user_message = req.body.user_message;
+    if (req.body.corrected_reply !== undefined) u.corrected_reply = req.body.corrected_reply;
+    if (req.body.original_reply !== undefined) u.original_reply = req.body.original_reply;
+    if (req.body.correct_course_ids !== undefined) u.correct_course_ids = req.body.correct_course_ids;
+    if (req.body.note !== undefined) u.note = req.body.note;
+
+    const { data, error } = await supabase
+      .from("corrections")
+      .update(u)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    clearCorrectionCache();
+    responseCache.clear();
+    console.log("🗑️ Caches cleared (correction updated)");
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// === Bot Instructions ===
+
+
 // === Bot Instructions ===
 app.get("/admin/bot-instructions", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
