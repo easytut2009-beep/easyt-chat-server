@@ -5476,30 +5476,7 @@ else if (analysis.action === "SUBSCRIPTION") {
     }
     intent = "SUBSCRIPTION";
   }
-      console.log(`💡 SUBSCRIPTION: Using GPT response from bot instructions`);
-      reply = analysis.response_message;
-if (!reply.includes('easyt.online/p/subscriptions')) {
-        reply += `<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a>`;
-      }
-      if (!reply.includes('easyt.online/p/Payments')) {
-        reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-      }
-    } else {
-      reply = `أهلاً بيك! 🎉<br><br>`;
-      reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
-      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
-      reply += `3. 📱 <strong>InstaPay</strong><br>`;
-      reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
-      reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
-      reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-reply += `✨ <strong>الاشتراك السنوي</strong> — تفاصيل الأسعار والعروض على صفحة الاشتراك 👇<br>`;
-      reply += `يشمل كل الدورات + الدبلومات + شهادات + مجتمع طلابي 🎓<br><br>`;
-      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 اشترك الآن ←</a><br>`;
-      reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-    }
-    intent = "SUBSCRIPTION";
-  }
+   
 
   /* ═══════════════════════════════════
      ACTION: DIPLOMAS
