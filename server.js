@@ -690,6 +690,111 @@ function tokenizeForCorrection(text) {
     .filter(w => w.length > 1 && !CORRECTION_STOP_WORDS.has(w));
 }
 
+
+// ═══════════════════════════════════════════════════════
+// 🆕 FAQ SYSTEM — Direct answers from FAQ table
+// ═══════════════════════════════════════════════════════
+
+const faqCache = { data: null, ts: 0 };
+const FAQ_CACHE_TTL = 5 * 60 * 1000;
+
+async function loadAllFAQs() {
+  if (faqCache.data && Date.now() - faqCache.ts < FAQ_CACHE_TTL) {
+    return faqCache.data;
+  }
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .select("id, section, question, answer");
+    if (error) {
+      console.error("❌ loadAllFAQs error:", error.message);
+      return faqCache.data || [];
+    }
+    faqCache.data = data || [];
+    faqCache.ts = Date.now();
+    console.log(`📋 FAQ loaded: ${faqCache.data.length} entries`);
+    return faqCache.data;
+  } catch (e) {
+    console.error("❌ loadAllFAQs exception:", e.message);
+    return faqCache.data || [];
+  }
+}
+
+function clearFAQCache() {
+  faqCache.data = null;
+  faqCache.ts = 0;
+  console.log("🗑️ FAQ cache cleared");
+}
+
+const FAQ_DIRECT_THRESHOLD = 0.50;
+const FAQ_CONTEXT_THRESHOLD = 0.25;
+
+async function findBestFAQMatch(userMessage, preloadedFAQs = null) {
+  if (!userMessage || userMessage.trim().length < 3) return null;
+  try {
+    const faqs = preloadedFAQs || await loadAllFAQs();
+    if (!faqs || faqs.length === 0) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const faq of faqs) {
+      if (!faq.question || !faq.answer) continue;
+      
+      // Use same matching logic as corrections
+      const score = correctionMatchScore(userMessage, faq.question);
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = faq;
+      }
+    }
+
+    if (bestMatch && bestScore >= FAQ_CONTEXT_THRESHOLD) {
+      console.log(
+        `📋 [FAQ] Best match: score=${bestScore.toFixed(3)} | ` +
+        `Q: "${userMessage.substring(0, 60)}" → FAQ #${bestMatch.id} ` +
+        `("${(bestMatch.question || "").substring(0, 60)}")`
+      );
+      return { faq: bestMatch, score: bestScore };
+    }
+
+    return null;
+  } catch (e) {
+    console.error("❌ findBestFAQMatch error:", e.message);
+    return null;
+  }
+}
+
+async function getFAQsForContext(userMessage, limit = 3, preloadedFAQs = null) {
+  if (!userMessage || userMessage.trim().length < 3) return [];
+  try {
+    const faqs = preloadedFAQs || await loadAllFAQs();
+    if (!faqs || faqs.length === 0) return [];
+
+    const scored = [];
+    for (const faq of faqs) {
+      if (!faq.question || !faq.answer) continue;
+      const score = correctionMatchScore(userMessage, faq.question);
+      if (score >= FAQ_CONTEXT_THRESHOLD) {
+        scored.push({
+          question: faq.question.substring(0, 200),
+          answer: faq.answer.substring(0, 500),
+          section: faq.section || "",
+          score,
+        });
+      }
+    }
+
+    return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+  } catch (e) {
+    console.error("❌ getFAQsForContext error:", e.message);
+    return [];
+  }
+}
+
+
 // ═══ Jaccard Similarity ═══
 function correctionJaccard(tokens1, tokens2) {
   if (!tokens1.length || !tokens2.length) return 0;
@@ -756,11 +861,11 @@ const CORRECTION_DIRECT_THRESHOLD = 0.45;   // قوي كفاية → رد مبا
 const CORRECTION_CONTEXT_THRESHOLD = 0.20;  // ضعيف → حقن في GPT كسياق
 
 // ═══ LAYER 1: إيجاد أفضل تصحيح مطابق ═══
-async function findBestCorrectionMatch(userMessage) {
+async function findBestCorrectionMatch(userMessage, preloadedCorrections = null) {
   if (!userMessage || userMessage.trim().length < 3) return null;
 
   try {
-    const corrections = await loadAllCorrections();
+    const corrections = preloadedCorrections || await loadAllCorrections();
     if (!corrections || corrections.length === 0) return null;
 
     let bestMatch = null;
@@ -807,11 +912,11 @@ async function findBestCorrectionMatch(userMessage) {
 }
 
 // ═══ LAYER 2: جلب تصحيحات لحقنها في GPT ═══
-async function getCorrectionsForContext(userMessage, limit = 3) {
+async function getCorrectionsForContext(userMessage, limit = 3, preloadedCorrections = null) {
   if (!userMessage || userMessage.trim().length < 3) return [];
 
   try {
-    const corrections = await loadAllCorrections();
+    const corrections = preloadedCorrections || await loadAllCorrections();
     if (!corrections || corrections.length === 0) return [];
 
     const scored = [];
@@ -1531,15 +1636,22 @@ const embResp = await openai.embeddings.create({
   }
 }
 
-async function searchCorrections(terms) {
-  if (!supabase || !terms || terms.length === 0) return [];
+async function searchCorrections(terms, preloadedCorrections = null) {
+  if (!terms || terms.length === 0) return [];
   try {
-    const { data: corrections, error } = await supabase
-      .from("corrections")
-      .select(
-        "original_question, user_message, correct_course_ids, corrected_reply"
-      );
-    if (error || !corrections) return [];
+    let corrections;
+    if (preloadedCorrections) {
+      corrections = preloadedCorrections;
+    } else {
+      if (!supabase) return [];
+      const { data, error } = await supabase
+        .from("corrections")
+        .select(
+          "original_question, user_message, correct_course_ids, corrected_reply"
+        );
+      if (error || !data) return [];
+      corrections = data;
+    }
 
     const normInput = normalizeArabic(terms.join(" ").toLowerCase());
     const matches = [];
@@ -1630,6 +1742,17 @@ const meaningful = searchTerms.filter(
 /* ══════════════════════════════════════════════════════════
    SECTION 9: Card Formatting
    ══════════════════════════════════════════════════════════ */
+
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+
 function formatCourseCard(course, instructors, index) {
   const instructor = instructors.find((i) => i.id === course.instructor_id);
   const instructorName = instructor ? instructor.name : "";
@@ -1659,10 +1782,10 @@ function formatCourseCard(course, instructors, index) {
   const num = index !== undefined ? `${index}. ` : "";
 
   let card = `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">`;
-  card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${course.title}</div>`;
+card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${escapeHtml(course.title)}</div>`;
   card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
   if (instructorName) {
-    card += `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${instructorName}</div>`;
+    card += `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${escapeHtml(instructorName)}</div>`;
   }
   if (desc) {
     card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">${desc}</div>`;
@@ -1711,7 +1834,7 @@ function formatDiplomaCard(diploma) {
   }
 
   let card = `<div style="border:2px solid #e63946;border-radius:12px;overflow:hidden;margin:8px 0;background:linear-gradient(135deg,#fff5f5,#fff);box-shadow:0 2px 8px rgba(230,57,70,0.1);padding:12px">`;
-  card += `<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">🎓 ${diploma.title}</div>`;
+  card += `<div style="font-weight:700;font-size:15px;color:#1a1a2e;margin-bottom:6px">🎓 ${escapeHtml(diploma.title)}</div>`;
   card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
   if (desc) {
     card += `<div style="font-size:12px;color:#555;margin-bottom:6px;line-height:1.5">📚 ${desc}</div>`;
@@ -2140,7 +2263,7 @@ const result = data
 /* ═══════════════════════════════════
    11-D: Phase 1 — Smart Analyzer
    ═══════════════════════════════════ */
-function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relevantCorrections = []) {
+function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relevantCorrections = [], relevantFAQs = []) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
@@ -2537,6 +2660,11 @@ ${relevantCorrections && relevantCorrections.length > 0 ? `
 الأدمن صحّح الإجابات دي قبل كده. لو السؤال الحالي مشابه → لازم تلتزم بالرد المصحح:
 ${relevantCorrections.map((c, i) => `${i + 1}. السؤال: "${c.question}"\n   ← الرد الصح: "${c.reply}"`).join('\n')}
 🔴 لو سؤال المستخدم مطابق أو قريب جداً من أي سؤال فوق → استخدم الرد المصحح كأساس لردك.
+` : ''}
+${relevantFAQs && relevantFAQs.length > 0 ? `
+═══ 📋 أسئلة شائعة (FAQ) — مرجع للإجابة ═══
+لو السؤال الحالي مشابه لأي سؤال من دول → استخدم الإجابة المسجلة:
+${relevantFAQs.map((f, i) => `${i + 1}. [${f.section}] السؤال: "${f.question}"\n   ← الإجابة: "${f.answer}"`).join('\n')}
 ` : ''}`;
 }
 
@@ -2589,13 +2717,15 @@ async function analyzeMessage(
   sessionMem,
   botInstructions,
   customResponses,
-  relevantCorrections = []    // 🆕 Layer 2
+  relevantCorrections = [],
+  relevantFAQs = []
 ) {
-  const systemPrompt = buildAnalyzerPrompt(
+const systemPrompt = buildAnalyzerPrompt(
     botInstructions,
     customResponses,
     sessionMem,
-    relevantCorrections        // 🆕 Layer 2
+    relevantCorrections,
+    relevantFAQs
   );
 
   let filteredHistory = [...chatHistory];
@@ -3800,9 +3930,9 @@ async function smartChat(message, sessionId) {
   const _msgWordCount = message.trim().split(/\s+/).length;
 
   // ─── 1️⃣ COUPON (runs FIRST — no learning-word filter) ───
-  const _wantsToCreateCoupons = /(اضاف[ةه]|انشاء|انشئ|اعمل|تعمل|نعمل|عمل|بناء|تصميم|برمج)/.test(_btnNorm);
+  const _wantsToCreateCoupons = /(اضاف[ةه]|انشاء|انشئ|بناء|تصميم|برمج)\s*(كوبون|كود|خصم|نظام|قسيم)/.test(_btnNorm);
 
-  const _isCouponAsk = (
+const _isCouponAsk = (
     /(كوبون|بروموكود|promo\s*code)/.test(_btnNorm) ||
     /كود\s*(ال)?(خصم|خضم)/.test(_btnNorm) ||
     /(كوبون|كود)\s*(ال)?(خصم|خضم)/.test(_btnNorm) ||
@@ -3811,7 +3941,21 @@ async function smartChat(message, sessionId) {
     /(فيه?|في|عندك[مو]?)\s*(كوبون|كود|خصم)/.test(_btnNorm)
   ) && !_wantsToCreateCoupons;
 
-  
+  if (_isCouponAsk) {
+    console.log(`🎟️ Direct coupon question: "${message}"`);
+    const _couponReply = finalizeReply(
+      `للأسف مفيش كوبون خصم متاح حالياً 😊<br><br>` +
+      `💡 بس الاشتراك السنوي بيوفرلك وصول كامل لكل الدورات والدبلومات!<br><br>` +
+      `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>` +
+      `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`
+    );
+    await logChat(sessionId, "bot", _couponReply, "COUPON", { version: "10.9", source: "direct_coupon" });
+    return {
+      reply: _couponReply,
+      intent: "COUPON",
+      suggestions: ["ازاي ادفع؟ 💳", "عايز كورس 📘", "🎓 الدبلومات"],
+    };
+  }
 
   // ─── 2️⃣ PAYMENT (with learning-word filter) ───
   const _hasLearningWord = /(كورس|دور[ةه]|شرح|بتشرح|يشرح|اتعلم|تعلم|دروس|درس|اعمل|اسوي|بيشرح|شروحات|تدريب)/.test(_btnNorm);
@@ -3825,9 +3969,28 @@ async function smartChat(message, sessionId) {
       /^(اشتراك|الاشتراك|سعر\s*الاشتراك)$/.test(_btnNorm) ||
       /^(الاشتراك\s*بكام|بكام\s*الاشتراك)$/.test(_btnNorm);
 
-    
+    if (_isPaymentBtn) {
+      console.log(`💳 Direct payment button: "${message}"`);
+      let _payReply = `أهلاً بيك! 🎉<br><br>`;
+      _payReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+      _payReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      _payReply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      _payReply += `3. 📱 <strong>InstaPay</strong><br>`;
+      _payReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+      _payReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+      _payReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+      _payReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
+      _payReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+      _payReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      _payReply = finalizeReply(_payReply);
+      await logChat(sessionId, "bot", _payReply, "SUBSCRIPTION", { version: "10.9", source: "direct_payment_btn" });
+      return {
+        reply: _payReply,
+        intent: "SUBSCRIPTION",
+        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
   }
-
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
@@ -3845,7 +4008,11 @@ async function smartChat(message, sessionId) {
   // ║ يشتغل لكل الـ intents (SEARCH, SUBSCRIPTION, CHAT...)    ║
   // ╚═══════════════════════════════════════════════════════════╝
 
-  const _correctionMatch = await findBestCorrectionMatch(message);
+// 🆕 FIX: Load corrections + FAQs once, reuse everywhere
+  const _allCorrections = await loadAllCorrections();
+  const _allFAQs = await loadAllFAQs();
+
+  const _correctionMatch = await findBestCorrectionMatch(message, _allCorrections);
 
   if (_correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
     const { correction: _corr, score: _corrScore } = _correctionMatch;
@@ -3939,6 +4106,53 @@ _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل
     console.log(`⚠️ [Correction L1] Match found but no usable reply/courses → continuing normal flow`);
   }
 
+
+
+// ╔═══════════════════════════════════════════════════════════╗
+  // ║ 🆕 FAQ LAYER: Direct Match — before GPT analyzer          ║
+  // ║ If FAQ match is strong → return FAQ answer directly        ║
+  // ╚═══════════════════════════════════════════════════════════╝
+
+const _faqMatch = await findBestFAQMatch(message, _allFAQs);
+
+  if (_faqMatch && _faqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+    const { faq: _faq, score: _faqScore } = _faqMatch;
+
+    console.log(`✅ [FAQ] DIRECT MATCH! Score: ${_faqScore.toFixed(3)} | FAQ #${_faq.id} | Section: "${_faq.section}"`);
+
+    let _faqReply = _faq.answer;
+    _faqReply = markdownToHtml(_faqReply);
+    _faqReply = finalizeReply(_faqReply);
+
+    await logChat(sessionId, "bot", _faqReply, "FAQ", {
+      version: "10.9",
+      faq_id: _faq.id,
+      faq_section: _faq.section,
+      match_score: _faqScore,
+      source: "faq_direct",
+    });
+
+    updateSessionMemory(sessionId, {
+      topics: [],
+      interests: [],
+    });
+
+    const _faqResult = {
+      reply: _faqReply,
+      intent: "FAQ",
+      suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
+    };
+
+    if (cacheKey) {
+      setCachedResponse(cacheKey, _faqResult);
+    }
+
+    console.log(`✅ [FAQ] Returned answer (${_faqReply.length} chars)`);
+    return _faqResult;
+  }
+
+
+
   // ╔═══════════════════════════════════════════════════════════╗
   // ║ 🆕 CORRECTION LAYER 2: جلب تصحيحات لحقنها في GPT        ║
   // ║ لو فيه تصحيحات مشابهة (score >= 0.20) → GPT يشوفها      ║
@@ -3947,9 +4161,19 @@ _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل
   // Layer 2: بس لو Layer 1 ماشتغلش (score < 0.45 أو مفيش match)
   let _correctionsForContext = [];
   if (!_correctionMatch || _correctionMatch.score < CORRECTION_DIRECT_THRESHOLD) {
-    _correctionsForContext = await getCorrectionsForContext(message, 3);
+_correctionsForContext = await getCorrectionsForContext(message, 3, _allCorrections);
     if (_correctionsForContext.length > 0) {
       console.log(`📝 [Correction L2] ${_correctionsForContext.length} corrections for GPT context`);
+    }
+  }
+
+
+// 🆕 FAQ Layer 2: Get FAQs for GPT context
+  let _faqsForContext = [];
+  if (!_faqMatch || _faqMatch.score < FAQ_DIRECT_THRESHOLD) {
+_faqsForContext = await getFAQsForContext(message, 3, _allFAQs);
+    if (_faqsForContext.length > 0) {
+      console.log(`📋 [FAQ L2] ${_faqsForContext.length} FAQs for GPT context`);
     }
   }
 
@@ -4051,7 +4275,8 @@ const analysis = await analyzeMessage(
     sessionMem,
     botInstructions,
     customResponses,
-    _correctionsForContext    // 🆕 Layer 2
+    _correctionsForContext,
+    _faqsForContext
   );
 
 // 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
@@ -4493,6 +4718,8 @@ reply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل
      ═══════════════════════════════════ */
   if (analysis.action === "SEARCH" && analysis.search_terms.length > 0) {
 let termsToSearch = [...new Set(analysis.search_terms)];
+// 🆕 FIX: Load instructors once for entire SEARCH block
+    const _searchInstructors = await getInstructors();
     // Priority title search
 // Main search — courses includes title priority + lessons merged
     let [courses, diplomas, lessonResults] = await Promise.all([
@@ -4881,7 +5108,7 @@ const savedTitleMatchCourses = courses.filter(c => c._titleMatch || c._lessonMat
 console.log("🛡️ Protected courses (titleMatch + lessonMatch):", savedTitleMatchCourses.length);
 
 if (courses.length === 0) {
-      const corrections = await searchCorrections(termsToSearch);
+const corrections = await searchCorrections(termsToSearch, _allCorrections);
       if (corrections.length > 0) {
         // 🆕 FIX: أولاً — لو فيه corrected_reply → استخدمه مباشرة
         const _corrWithReply = corrections.find(c =>
@@ -5021,7 +5248,7 @@ updateSessionMemory(sessionId, {
 
       // Must-show courses
       const phase2Model = "gpt-4o-mini";
-      const instructors = await getInstructors();
+const instructors = _searchInstructors;
 
 
       // 🆕 FIX #84: For QUESTION intent, also generate an answer
@@ -5314,7 +5541,7 @@ let noResultCat = detectCategoryFromContext(analysis, courses, termsToSearch);
               .limit(3);
 
             if (catCourses && catCourses.length > 0) {
-              const instr = await getInstructors();
+              const instr = _searchInstructors;
               reply += `💡 <strong>كورسات مشهورة في نفس المجال:</strong><br>`;
               catCourses.forEach((c, i) => {
                 reply += formatCourseCard(c, instr, i + 1);
@@ -5378,7 +5605,7 @@ lastShownDiplomaIds: [...new Set([
 
           // Show related courses from chunks if found
           if (questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
-            const instructors = await getInstructors();
+const instructors = _searchInstructors;
             reply += `<br><br>💡 <strong>كورسات على المنصة ليها علاقة:</strong><br>`;
             for (const rc of questionAnswer.relatedCourses.slice(0, 2)) {
               const rcUrl = rc.link || ALL_COURSES_URL;
@@ -6187,7 +6414,7 @@ app.post("/admin/login", adminLoginLimiter, (req, res) => {
 });
 
 // === Admin Stats ===
-app.get("/admin/stats", async (req, res) => {
+app.get("/admin/stats", adminAuth, async (req, res) => {
   if (!supabase) {
     return res.status(500).json({ success: false, error: "Database not connected" });
   }
@@ -6319,7 +6546,7 @@ app.get("/admin/stats", async (req, res) => {
 });
 
 // === Conversations ===
-app.get("/admin/conversations", async (req, res) => {
+app.get("/admin/conversations", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const page = parseInt(req.query.page) || 1;
@@ -6369,7 +6596,7 @@ app.get("/admin/conversations", async (req, res) => {
 // ═══════════════════════════════════════
 // 🗑️ مسح كل المحادثات
 // ═══════════════════════════════════════
-app.delete("/admin/conversations", async (req, res) => {
+app.delete("/admin/conversations", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { error } = await supabase
@@ -6386,7 +6613,7 @@ app.delete("/admin/conversations", async (req, res) => {
 // ═══════════════════════════════════════
 // 🗑️ مسح محادثة واحدة بالـ session_id
 // ═══════════════════════════════════════
-app.delete("/admin/conversations/:sessionId", async (req, res) => {
+app.delete("/admin/conversations/:sessionId", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { error } = await supabase
@@ -6401,7 +6628,7 @@ app.delete("/admin/conversations/:sessionId", async (req, res) => {
 });
 
 
-app.get("/admin/conversations/:sessionId", async (req, res) => {
+app.get("/admin/conversations/:sessionId", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6420,7 +6647,7 @@ app.get("/admin/conversations/:sessionId", async (req, res) => {
 });
 
 // === Corrections ===
-app.get("/admin/corrections", async (req, res) => {
+app.get("/admin/corrections", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6457,13 +6684,12 @@ app.post("/admin/corrections", adminAuth, async (req, res) => {
       .insert(insertData)
       .select()
       .single();
-    if (error) throw error;
-    res.json({ success: true, data });
-// 🆕 مسح كاش التصحيحات + كاش الردود
+if (error) throw error;
+    // 🆕 مسح الكاش الأول قبل الـ response
     clearCorrectionCache();
-    // مسح response cache عشان الردود القديمة الغلط متترجعش
     responseCache.clear();
-    console.log("🗑️ Response cache cleared (new correction added)");
+    console.log("🗑️ Correction + Response cache cleared (new correction added)");
+    res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -6476,19 +6702,18 @@ app.delete("/admin/corrections/:id", adminAuth, async (req, res) => {
       .from("corrections")
       .delete()
       .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-// 🆕 مسح كاش التصحيحات + كاش الردود
+if (error) throw error;
     clearCorrectionCache();
     responseCache.clear();
     console.log("🗑️ Caches cleared (correction deleted)");
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
 // === Bot Instructions ===
-app.get("/admin/bot-instructions", async (req, res) => {
+app.get("/admin/bot-instructions", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6578,7 +6803,7 @@ _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
 });
 
 // === Custom Responses ===
-app.get("/admin/custom-responses", async (req, res) => {
+app.get("/admin/custom-responses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6674,7 +6899,7 @@ app.delete("/admin/custom-responses/:id", adminAuth, async (req, res) => {
 });
 
 // === Courses Admin ===
-app.get("/admin/courses", async (req, res) => {
+app.get("/admin/courses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const page = parseInt(req.query.page) || 1;
@@ -6760,7 +6985,7 @@ app.delete("/admin/courses/:id", adminAuth, async (req, res) => {
 });
 
 // === Diplomas Admin ===
-app.get("/admin/diplomas", async (req, res) => {
+app.get("/admin/diplomas", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const page = parseInt(req.query.page) || 1;
@@ -6840,7 +7065,7 @@ app.delete("/admin/diplomas/:id", adminAuth, async (req, res) => {
 });
 
 // === Instructors Admin ===
-app.get("/admin/instructors", async (req, res) => {
+app.get("/admin/instructors", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6903,7 +7128,7 @@ app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
 });
 
 // === FAQ Admin ===
-app.get("/admin/faq", async (req, res) => {
+app.get("/admin/faq", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -6926,6 +7151,7 @@ app.post("/admin/faq", adminAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+clearFAQCache();
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -6941,7 +7167,8 @@ app.put("/admin/faq/:id", adminAuth, async (req, res) => {
       .eq("id", req.params.id)
       .select()
       .single();
-    if (error) throw error;
+if (error) throw error;
+    clearFAQCache();
     res.json({ success: true, data });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -6955,7 +7182,8 @@ app.delete("/admin/faq/:id", adminAuth, async (req, res) => {
       .from("faq")
       .delete()
       .eq("id", req.params.id);
-    if (error) throw error;
+if (error) throw error;
+    clearFAQCache();
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -6963,7 +7191,7 @@ app.delete("/admin/faq/:id", adminAuth, async (req, res) => {
 });
 
 // === Site Pages Admin ===
-app.get("/admin/site-pages", async (req, res) => {
+app.get("/admin/site-pages", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -7132,7 +7360,7 @@ app.delete("/admin/guide-conversations/:sessionId", adminAuth, async (req, res) 
 
 
 // === Logs Admin ===
-app.get("/admin/logs", async (req, res) => {
+app.get("/admin/logs", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const page = parseInt(req.query.page) || 1;
@@ -7168,7 +7396,7 @@ app.get("/admin/logs", async (req, res) => {
   }
 });
 
-app.get("/admin/sessions/:sessionId", async (req, res) => {
+app.get("/admin/sessions/:sessionId", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
@@ -7189,7 +7417,7 @@ app.get("/admin/sessions/:sessionId", async (req, res) => {
   }
 });
 
-app.get("/admin/export-logs", async (req, res) => {
+app.get("/admin/export-logs", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const days = parseInt(req.query.days) || 7;
@@ -7364,7 +7592,7 @@ app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
 });
 
 // --- Debug: Check upload tables ---
-app.get("/api/upload/debug", async (req, res) => {
+app.get("/api/upload/debug", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "DB not connected" });
   
   const tables = {};
@@ -9427,7 +9655,7 @@ function sleep(ms) {
 }
 
 
-app.get("/api/debug-guide", async (req, res) => {
+app.get("/api/debug-guide", adminAuth, async (req, res) => {
   const courseName = req.query.course || "";
   const lessonTitle = req.query.lesson || "";
   
