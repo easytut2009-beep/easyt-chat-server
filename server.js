@@ -1367,11 +1367,12 @@ const embResponse = await openai.embeddings.create({
 
         // If there are title matches, REMOVE description-only matches
         const titleMatched = scored.filter(d => d._diplomaScore >= 50);
-        if (titleMatched.length > 0) {
+if (titleMatched.length > 0) {
           console.log(`🎯 FIX #80: ${titleMatched.length} title-matched diplomas, filtering out description-only`);
           rawResults = titleMatched.sort((a, b) => b._diplomaScore - a._diplomaScore);
         } else {
-          rawResults = scored.sort((a, b) => b._diplomaScore - a._diplomaScore);
+          console.log(`🎯 FIX #80: No diploma title match → returning empty (prevents wrong diplomas)`);
+          rawResults = [];
         }
       }
     }
