@@ -2033,13 +2033,41 @@ function isFollowUpMessage(message) {
     "في كورسات",
     "ايوه",
     "اه عايز",
-    "طيب وايه",
+"طيب وايه",
     "وايه كمان",
     "وايه تاني",
+    "ليهم علاقة",
+    "ليهم علاقه",
+    "لهم علاقة",
+    "لهم علاقه",
+    "العلاقة بينهم",
+    "العلاقه بينهم",
+    "مرتبطين ببعض",
+    "مكملين بعض",
+    "ابدأ بأنهي",
+    "ابدا بانهي",
+    "ابدأ بايه",
+    "ابدا بايه",
+    "ابدأ بأيهم",
+    "انهي فيهم",
+    "أنهي فيهم",
+    "انهي الافضل",
+    "الفرق بينهم",
+    "الفرق بين دول",
+    "ايهم افضل",
+    "ايهم احسن",
+    "محتار بين",
+    "محتار ابدأ",
+    "محتار ابدا",
+    "اختار انهي",
+    "اختار ايه",
+    "بينهم ايه",
+    "ايه الاحسن",
+    "انهي اول",
+    "انهي الاول",
   ];
   return followUpPatterns.some((p) => norm.includes(normalizeArabic(p)));
 }
-
 
 
 
@@ -3066,9 +3094,30 @@ const userLevelBlock = analysis.user_level
   ? `\n🎯 مستوى المستخدم: "${analysis.user_level}" — لازم تراعيه في كل اختياراتك!`
   : "";
 
+// 🆕 Advisory detection — لو المستخدم عايز نصيحة/استشارة عن الكورسات
+const _adviseRegex = /محتار|ابدا\s*ب|ابدأ\s*ب|انهي\s*فيهم|أنهي\s*فيهم|الفرق\s*بين|ليهم\s*علاق|لهم\s*علاق|العلاق[ةه]\s*بين|مرتبطين|مكملين|ايهم\s*افضل|ايهم\s*احسن|اختار\s*انهي|اختار\s*ايه|ترتيب|انهي\s*الاول|انهي\s*اول/;
+const _isAdvisory = _adviseRegex.test(normalizeArabic((message || "").toLowerCase()));
+
+const adviseBlock = _isAdvisory ? `
+
+═══ 🧠 وضع الاستشارة — إجباري ═══
+المستخدم مش بيدور على كورس جديد — هو عايز نصيحة أو استشارة عن الكورسات اللي قدامه!
+
+🔴 لازم تعمل واحدة من دول حسب السؤال:
+• لو "ابدأ بأنهي" أو "محتار" → رتّب الكورسات (1→2→3) واشرح ليه كل خطوة بناءً على الـ syllabus والـ objectives
+• لو "الفرق بين" → قارن بين الكورسات بالتفصيل (المحتوى، المستوى، الهدف)
+• لو "ليهم علاقة" أو "مرتبطين" → اشرح العلاقة بينهم وازاي يكملوا بعض
+• لو "ايهم أفضل" → انصحه بالأنسب ليه حسب مستواه واهتماماته
+
+✅ ابدأ بالنصيحة مباشرة في الـ message (مثلاً: "ابدأ بكورس X الأول عشان...")
+✅ استخدم بيانات الكورسات (syllabus, objectives, description) عشان النصيحة تكون دقيقة ومفيدة
+✅ ختّم بسؤال مفيد: "عايز أعملك خطة دراسة بالأسابيع؟ 📅"
+❌ ممنوع تقول "شوف الكورسات دي 👇" بدون ما تدّيه نصيحة
+❌ ممنوع تعرض الكورسات من غير ترتيب أو مقارنة حسب طلبه` : "";
+
 const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
 
-الرسالة: "${message}"${userLevelBlock}
+الرسالة: "${message}"${userLevelBlock}${adviseBlock}
 
 ═══ البيانات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
@@ -6430,7 +6479,59 @@ const _qFilterTerms = questionTerms.filter(t => {
 
 } else {
       // CHAT handling — greetings, casual, etc.
-      reply = analysis.response_message || getSmartFallback(sessionId);
+      
+      // 🆕 Smart context fallback: لو فيه سياق سابق والرد فاضي → استخدم السياق
+      if ((!analysis.response_message || analysis.response_message.length < 15)
+          && sessionMem.topics && sessionMem.topics.length > 0
+          && sessionMem.messageCount > 1
+          && !skipUpsell
+          && openai) {
+        
+        console.log(`🧠 Smart CHAT fallback: topics=[${sessionMem.topics.join(', ')}], lastSearch="${sessionMem.lastSearchTopic}"`);
+        
+        try {
+          const _ctxTopics = sessionMem.topics.join(', ');
+          const _prevTerms = (sessionMem.lastSearchTerms || []).join(', ');
+          
+          const _smartResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `أنت "زيكو" المرشد التعليمي في منصة easyT.
+
+السياق: المستخدم كان بيتكلم عن: ${_ctxTopics}
+كلمات البحث السابقة: ${_prevTerms || 'غير محدد'}
+آخر موضوع بحث: ${sessionMem.lastSearchTopic || 'غير محدد'}
+
+المستخدم بعت رسالة. حاول تفهمها في سياق المحادثة السابقة.
+
+قواعد:
+- لو بيسأل عن المواضيع/الكورسات السابقة → جاوب في السياق ده
+- لو بيسأل "همه" أو "دول" → يقصد الكورسات/المواضيع اللي فاتت
+- لو محتار أو عايز نصيحة → ادّيله نصيحة عملية
+- لو فعلاً مش فاهم → اسأل سؤال محدد مرتبط بالسياق (مش سؤال عام)
+- بالعامية المصرية ومختصر
+- استخدم <br> للأسطر الجديدة`
+              },
+              ...chatHistory.slice(-4),
+              { role: "user", content: message }
+            ],
+            max_tokens: 300,
+            temperature: 0.5,
+          });
+          
+          reply = _smartResp.choices[0].message.content || getSmartFallback(sessionId);
+          console.log(`🧠 Smart CHAT fallback: response generated (${reply.length} chars)`);
+          
+        } catch (_smartErr) {
+          console.error("🧠 Smart CHAT fallback error:", _smartErr.message);
+          reply = analysis.response_message || getSmartFallback(sessionId);
+        }
+        
+      } else {
+        reply = analysis.response_message || getSmartFallback(sessionId);
+      }
     }
 
 // No upsell in CHAT mode
