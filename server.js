@@ -4037,73 +4037,8 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-/* ══════════════════════════════════════════════════════════
-   🆕 Smart Chunk/Lesson Relevance Verification v2
-   Checks course identity — if no match, removes protection
-   so GPT's intelligent decision is respected (not overridden)
-   ══════════════════════════════════════════════════════════ */
-function verifyChunkLessonRelevance(courses, searchTerms) {
-  if (!courses || courses.length === 0) return;
-  if (!searchTerms || searchTerms.length === 0) return;
 
-  const topicTerms = searchTerms.filter(t => {
-    const nt = normalizeArabic(t.toLowerCase());
-    return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
-  });
 
-  if (topicTerms.length === 0) return;
-
-  let unprotected = 0;
-
-  for (const c of courses) {
-    // ✅ Title match = definitely relevant — skip
-    if (c._titleMatch) continue;
-
-    // Only check chunk/lesson protected courses
-    const isProtected = c._chunkMatch || c._lessonMatch;
-    if (!isProtected) continue;
-
-    // === Check course IDENTITY (title/subtitle/domain/keywords) ===
-    const identityNorm = normalizeArabic(
-      [c.title, c.subtitle, c.domain, c.keywords]
-        .filter(Boolean).join(' ').toLowerCase()
-    );
-    const identityRaw = [c.title, c.subtitle, c.domain, c.keywords]
-      .filter(Boolean).join(' ').toLowerCase();
-
-    let isRelevant = topicTerms.some(t => {
-      const nt = normalizeArabic(t.toLowerCase());
-      if (nt.length <= 2) return false;
-      if (identityNorm.includes(nt)) return true;
-      if (/^[a-zA-Z]+$/i.test(t) && identityRaw.includes(t.toLowerCase())) return true;
-      return false;
-    });
-
-    if (isRelevant) {
-      console.log(`   ✅ Verified via course identity: "${c.title}"`);
-      continue;
-    }
-
-    // === NOT in course identity ===
-    // Remove protection flags so force-include won't override GPT
-    // ⚠️ Keep score as-is so course still reaches GPT for intelligent review
-    console.log(`   🤖 Unprotecting: "${c.title}" — not in course identity, GPT will decide`);
-    if (c._chunkMatch) {
-      c._chunkMatch = false;
-      c._weakChunkMatch = true;
-    }
-    if (c._lessonMatch) {
-      c._lessonMatch = false;
-      c._weakLessonMatch = true;
-    }
-    // ✅ NO score reduction — let GPT see this course and make the smart decision
-    unprotected++;
-  }
-
-  if (unprotected > 0) {
-    console.log(`🤖 verifyChunkLessonRelevance: ${unprotected} courses unprotected — GPT decides`);
-  }
-}
 
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
@@ -5175,8 +5110,6 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
 
-// 🆕 Verify chunk/lesson matches — downgrade if course isn't about the topic
-verifyChunkLessonRelevance(courses, termsToSearch);
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 SAFE Relevance Gate v2
