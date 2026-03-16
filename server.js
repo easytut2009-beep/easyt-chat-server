@@ -5613,6 +5613,11 @@ if (diplomas.length > 0 && relevantDiplomas.length < 2) {
 }
 
 
+// Verify relevance
+      relevantCourses = relevantCourses.filter((c) =>
+        verifyCourseRelevance(c, termsToSearch)
+      );
+
 // 🆕 FIX: Track courses GPT saw but deliberately excluded
       const _gptSeenCourseIds = new Set(courses.slice(0, 10).map(c => c.id));
       const _gptExcludedIds = new Set(
@@ -5625,11 +5630,6 @@ if (diplomas.length > 0 && relevantDiplomas.length < 2) {
         console.log(`🤖 GPT deliberately excluded ${_gptExcludedIds.size} courses it reviewed`);
       }
 
-
-// Verify relevance
-      relevantCourses = relevantCourses.filter((c) =>
-        verifyCourseRelevance(c, termsToSearch)
-      );
 
 // 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
 let titleMatchMustShow = courses.filter(c => {
@@ -5654,15 +5654,23 @@ if (analysis.user_level === "مبتدئ" && titleMatchMustShow.length > 0) {
   }
 }
 
-for (const tmc of titleMatchMustShow.slice(0, 3)) {
-        if (_gptExcludedIds.has(tmc.id)) {
-          console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
-          continue;
-        }
-        relevantCourses.unshift(tmc);
-        console.log("FIX63 Must-show title-match added:", tmc.title);
-      }
-
+if (_gptExcludedIds.has(tm.id)) {
+  console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
+  continue;
+}
+// 🆕 FIX: lesson/chunk-only match + GPT never saw it = don't force
+if (!tm._titleMatch && !_gptSeenCourseIds.has(tm.id)) {
+  console.log(`⏭️ Skipping unreviewed lesson/chunk force-include: "${tm.title}"`);
+  continue;
+}
+  // 🆕 FIX: lesson/chunk-only match + GPT never saw it = don't force
+  if (!tmc._titleMatch && !_gptSeenCourseIds.has(tmc.id)) {
+    console.log(`⏭️ Skipping unreviewed lesson/chunk must-show: "${tmc.title}"`);
+    continue;
+  }
+  relevantCourses.unshift(tmc);
+  console.log("FIX63 Must-show title-match added:", tmc.title);
+}
 
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
       // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
