@@ -4038,6 +4038,95 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
+/* ══════════════════════════════════════════════════════════
+   🆕 Smart Chunk/Lesson Relevance Verification
+   Chunks still searched ✅ but course must ACTUALLY be about the topic
+   ══════════════════════════════════════════════════════════ */
+function verifyChunkLessonRelevance(courses, searchTerms) {
+  if (!courses || courses.length === 0) return;
+  if (!searchTerms || searchTerms.length === 0) return;
+
+  // Extract meaningful topic words
+  const topicTerms = searchTerms.filter(t => {
+    const nt = normalizeArabic(t.toLowerCase());
+    return nt.length > 2 && !BASIC_STOP_WORDS.has(t.toLowerCase());
+  });
+
+  if (topicTerms.length === 0) return;
+
+  let downgraded = 0;
+
+  for (const c of courses) {
+    // ✅ Title match = definitely relevant — skip
+    if (c._titleMatch) continue;
+
+    // Only verify chunk/lesson protected courses
+    const isProtected = c._chunkMatch || c._lessonMatch;
+    if (!isProtected) continue;
+
+    // === Build course IDENTITY (title/subtitle/domain/keywords only) ===
+    const identityNorm = normalizeArabic(
+      [c.title, c.subtitle, c.domain, c.keywords]
+        .filter(Boolean).join(' ').toLowerCase()
+    );
+    const identityRaw = [c.title, c.subtitle, c.domain, c.keywords]
+      .filter(Boolean).join(' ').toLowerCase();
+
+    // === Check 1: topic in course identity ===
+    let isRelevant = topicTerms.some(t => {
+      const nt = normalizeArabic(t.toLowerCase());
+      if (nt.length <= 2) return false;
+      // Arabic check
+      if (identityNorm.includes(nt)) return true;
+      // English check
+      if (/^[a-zA-Z]+$/i.test(t) && identityRaw.includes(t.toLowerCase())) return true;
+      return false;
+    });
+
+    // === Check 2: topic in matched LESSON TITLES (not chunk content) ===
+    if (!isRelevant && c.matchedLessons && c.matchedLessons.length > 0) {
+      const lessonTitlesNorm = normalizeArabic(
+        c.matchedLessons.map(l => l.title || '').join(' ').toLowerCase()
+      );
+      const lessonTitlesRaw = c.matchedLessons
+        .map(l => l.title || '').join(' ').toLowerCase();
+
+      isRelevant = topicTerms.some(t => {
+        const nt = normalizeArabic(t.toLowerCase());
+        if (nt.length <= 2) return false;
+        if (lessonTitlesNorm.includes(nt)) return true;
+        if (/^[a-zA-Z]+$/i.test(t) && lessonTitlesRaw.includes(t.toLowerCase())) return true;
+        return false;
+      });
+
+      if (isRelevant) {
+        console.log(`   ✅ Verified via lesson title: "${c.title}"`);
+      }
+    }
+
+    // === Downgrade if NOT relevant ===
+    if (!isRelevant) {
+      console.log(`   🔍 Downgrade: "${c.title}" — chunk/lesson match but topic NOT in course identity`);
+      if (c._chunkMatch) {
+        c._chunkMatch = false;
+        c._weakChunkMatch = true;
+      }
+      if (c._lessonMatch) {
+        c._lessonMatch = false;
+        c._weakLessonMatch = true;
+      }
+      // Reduce score so quality filters remove it
+      c.relevanceScore = Math.min(c.relevanceScore || 0, 50);
+      downgraded++;
+    }
+  }
+
+  if (downgraded > 0) {
+    console.log(`🔍 verifyChunkLessonRelevance: ${downgraded} courses downgraded`);
+  }
+}
+
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
@@ -5107,6 +5196,9 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
+
+// 🆕 Verify chunk/lesson matches — downgrade if course isn't about the topic
+verifyChunkLessonRelevance(courses, termsToSearch);
 
 
 // ═══════════════════════════════════════════════════════════
