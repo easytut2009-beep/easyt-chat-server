@@ -4073,33 +4073,9 @@ function detectInstructorQuestion(message) {
     }
   }
 
-  // 🆕 Smart: compare against actual instructor names in DB cache
-  const bareWords = norm.split(/\s+/).filter(w => w.length > 1);
-  if (bareWords.length >= 2 && bareWords.length <= 4 && instructorCache.data && instructorCache.data.length > 0) {
-    const msgNorm = normalizeArabicName(message);
-    for (const inst of instructorCache.data) {
-      let instName = normalizeArabicName(inst.name || '');
-      instName = instName.replace(/^(ا|م|د|مهندس|دكتور|استاذ)\s*[\/\.]\s*/, '').trim();
-      if (!instName || instName.length < 3) continue;
-
-      const iWords = instName.split(' ').filter(w => w.length > 1);
-      const mWords = msgNorm.split(' ').filter(w => w.length > 1);
-      const hits = mWords.filter(mw => iWords.some(iw => iw === mw));
-
-      if (hits.length >= 2) {
-        console.log(`👨‍🏫 detectInstructor [smart DB]: "${message}" → "${inst.name}" (${hits.length} hits)`);
-        return {
-          isInstructorQuestion: false,
-          instructorName: null,
-          possibleInstructorName: message.trim(),
-          isPopularityQuestion: false,
-        };
-      }
-    }
-  }
-
   return null;
 }
+
 
 async function searchByInstructor(instructorName) {
   if (!supabase || !instructorName) return { instructor: null, courses: [] };
@@ -4506,8 +4482,6 @@ const _isPaymentBtn =
       // مش محاضر → يكمل الـ flow العادي (يمكن اسم كورس أو موضوع)
     }
   }
-
-
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
@@ -9402,7 +9376,6 @@ const embResponse = await openai.embeddings.create({
 async function startServer() {
   console.log("\n🚀 Starting Ziko Chatbot v10.9...\n");
   supabaseConnected = await testSupabaseConnection();
-if (supabaseConnected) await getInstructors();
 
   /* ═══════════════════════════════════
      Guide Bot State
