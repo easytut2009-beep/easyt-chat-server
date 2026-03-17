@@ -4073,9 +4073,33 @@ function detectInstructorQuestion(message) {
     }
   }
 
+  // 🆕 Smart: compare against actual instructor names in DB cache
+  const bareWords = norm.split(/\s+/).filter(w => w.length > 1);
+  if (bareWords.length >= 2 && bareWords.length <= 4 && instructorCache.data && instructorCache.data.length > 0) {
+    const msgNorm = normalizeArabicName(message);
+    for (const inst of instructorCache.data) {
+      let instName = normalizeArabicName(inst.name || '');
+      instName = instName.replace(/^(ا|م|د|مهندس|دكتور|استاذ)\s*[\/\.]\s*/, '').trim();
+      if (!instName || instName.length < 3) continue;
+
+      const iWords = instName.split(' ').filter(w => w.length > 1);
+      const mWords = msgNorm.split(' ').filter(w => w.length > 1);
+      const hits = mWords.filter(mw => iWords.some(iw => iw === mw));
+
+      if (hits.length >= 2) {
+        console.log(`👨‍🏫 detectInstructor [smart DB]: "${message}" → "${inst.name}" (${hits.length} hits)`);
+        return {
+          isInstructorQuestion: false,
+          instructorName: null,
+          possibleInstructorName: message.trim(),
+          isPopularityQuestion: false,
+        };
+      }
+    }
+  }
+
   return null;
 }
-
 
 async function searchByInstructor(instructorName) {
   if (!supabase || !instructorName) return { instructor: null, courses: [] };
@@ -4484,78 +4508,6 @@ const _isPaymentBtn =
   }
 
 
-// ═══════════════════════════════════════════════════════════
-  // 🆕 Smart Instructor Detection — checks actual DB names
-  // ═══════════════════════════════════════════════════════════
-  if (!_instructorCheck || (!_instructorCheck.isInstructorQuestion && !_instructorCheck.possibleInstructorName)) {
-    const _msgWords = message.trim().split(/\s+/);
-    if (_msgWords.length >= 2 && _msgWords.length <= 4) {
-      const _cachedInstructors = await getInstructors();
-      const _msgNorm = normalizeArabicName(message);
-
-      // Strip title prefixes like أ/ م/ د/ مهندس/
-      const _stripTitle = (name) => {
-        return name
-          .replace(/^(ا|أ|م|د|مهندس|دكتور|استاذ|المهندس|الدكتور|الاستاذ)\s*[\/\.]\s*/i, '')
-          .trim();
-      };
-
-      let _matchedInstructor = null;
-      let _matchScore = 0;
-
-      for (const inst of _cachedInstructors) {
-        const _instNorm = _stripTitle(normalizeArabicName(inst.name));
-        if (!_instNorm || _instNorm.length < 3) continue;
-
-        // Check 1: Overall similarity
-        const sim = similarityRatio(_msgNorm, _instNorm);
-        if (sim >= 70 && sim > _matchScore) {
-          _matchScore = sim;
-          _matchedInstructor = inst;
-        }
-
-        // Check 2: Word-level match (2+ name words match)
-        const _mWords = _msgNorm.split(' ').filter(w => w.length > 1);
-        const _iWords = _instNorm.split(' ').filter(w => w.length > 1);
-        const _hits = _mWords.filter(mw =>
-          _iWords.some(iw => iw === mw || (mw.length >= 3 && iw.length >= 3 && similarityRatio(mw, iw) >= 80))
-        );
-
-        if (_hits.length >= 2) {
-          const _wordScore = 75 + Math.round((_hits.length / Math.max(_mWords.length, _iWords.length)) * 25);
-          if (_wordScore > _matchScore) {
-            _matchScore = _wordScore;
-            _matchedInstructor = inst;
-          }
-        }
-      }
-
-      if (_matchedInstructor && _matchScore >= 70) {
-        console.log(`👨‍🏫 Smart DB match: "${message}" → "${_matchedInstructor.name}" (score=${_matchScore})`);
-        const { instructor: _si, courses: _sc } = await searchByInstructor(_matchedInstructor.name);
-        const _siInstructors = await getInstructors();
-
-        if (_si && _sc.length > 0) {
-          let _siReply = `👨‍🏫 <strong>${escapeHtml(_si.name)}</strong><br>`;
-          _siReply += `📚 عنده <strong>${_sc.length}</strong> كورس على المنصة:<br><br>`;
-          _sc.slice(0, 5).forEach((c, i) => {
-            _siReply += formatCourseCard(c, _siInstructors, i + 1);
-          });
-          if (_sc.length > 5) {
-            _siReply += `<br>📌 وفيه كمان <strong>${_sc.length - 5}</strong> كورسات تانية!`;
-          }
-          _siReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-          _siReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
-
-          return {
-            reply: finalizeReply(_siReply),
-            intent: "INSTRUCTOR",
-            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
-          };
-        }
-      }
-    }
-  }
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
@@ -9450,6 +9402,7 @@ const embResponse = await openai.embeddings.create({
 async function startServer() {
   console.log("\n🚀 Starting Ziko Chatbot v10.9...\n");
   supabaseConnected = await testSupabaseConnection();
+if (supabaseConnected) await getInstructors();
 
   /* ═══════════════════════════════════
      Guide Bot State
