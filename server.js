@@ -4121,13 +4121,14 @@ if (instructorMatch) {
           console.log(`👨‍🏫 Matched: "${instructorMatch.name}" (score=${bestScore}, id=${instructorMatch.id})`);
           
           // Strategy 1a: by instructor_id
-          const { data: instCourses } = await supabase
+const { data: instCourses, error: err1a } = await supabase
             .from("courses")
-            .select("*")
+            .select(COURSE_SELECT_COLS)
             .eq("instructor_id", instructorMatch.id)
             .limit(20);
+          if (err1a) console.error("👨‍🏫 Strategy 1a ERROR:", err1a.message);
           courses = instCourses || [];
-          console.log(`👨‍🏫 Strategy 1a (instructor_id): ${courses.length} courses`);
+          console.log(`👨‍🏫 Strategy 1a (instructor_id=${instructorMatch.id}): ${courses.length} courses`);
 
           // Strategy 1b: if 0 courses, search by instructor name in course text fields
           if (courses.length === 0) {
@@ -4144,11 +4145,12 @@ if (instructorMatch) {
                 ])
                 .join(",");
               
-              const { data: nameCourses } = await supabase
+const { data: nameCourses, error: err1b } = await supabase
                 .from("courses")
-                .select("*")
+                .select(COURSE_SELECT_COLS)
                 .or(nameFilters)
                 .limit(20);
+              if (err1b) console.error("👨‍🏫 Strategy 1b ERROR:", err1b.message);
               
               if (nameCourses && nameCourses.length > 0) {
                 courses = nameCourses;
@@ -4159,10 +4161,11 @@ if (instructorMatch) {
             // Strategy 1c: try matching by getting ALL courses and checking instructor_id against instructors table
             if (courses.length === 0) {
               console.log(`👨‍🏫 Strategy 1c: checking all courses for this instructor...`);
-              const { data: allCourses } = await supabase
+const { data: allCourses, error: err1c } = await supabase
                 .from("courses")
-                .select("*")
+                .select(COURSE_SELECT_COLS)
                 .limit(500);
+              if (err1c) console.error("👨‍🏫 Strategy 1c ERROR:", err1c.message);
               
               if (allCourses && allCourses.length > 0) {
                 // Log first course's instructor_id to debug
@@ -4191,9 +4194,10 @@ if (instructorMatch) {
     if (!instructorMatch || courses.length === 0) {
       console.log(`👨‍🏫 Fallback: searching courses table for instructor name...`);
 
-      const { data: allCourses } = await supabase
+const { data: allCourses, error: err2 } = await supabase
         .from("courses")
-        .select("*");
+        .select(COURSE_SELECT_COLS);
+      if (err2) console.error("👨‍🏫 Strategy 2 ERROR:", err2.message);
 
       if (allCourses && allCourses.length > 0) {
         const sample = allCourses[0];
