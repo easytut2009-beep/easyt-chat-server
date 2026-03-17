@@ -3993,6 +3993,115 @@ function generateChatSuggestions(action, analysis, termsToSearch, hasResults) {
   return ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "📂 الأقسام"];
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 INSTRUCTOR SEARCH — Standalone (touches NOTHING existing)
+// ═══════════════════════════════════════════════════════════
+
+function detectInstructorQuestion(message) {
+  const norm = normalizeArabic((message || "").toLowerCase());
+
+  // ✅ ONLY trigger when "محاضر/مدرس/مدرب" is explicitly mentioned
+  const instructorWords = /(محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|محاضرين|مدرسين|مدربين)/;
+  if (!instructorWords.test(norm)) return null;
+
+  // Extract instructor name
+  let extractedName = null;
+
+  // "المحاضر أحمد إبراهيم" / "محاضر أحمد"
+  const patterns = [
+    /(?:محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
+    /كورسات\s+(?:ال)?(?:محاضر|مدرس|مدرب)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
+    /(?:هل|هو)\s+(?:ال)?(?:محاضر|مدرس|مدرب)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
+  ];
+
+  for (const p of patterns) {
+    const m = norm.match(p);
+    if (m && m[1]) {
+      extractedName = m[1].trim()
+        .replace(/(الاكثر|الأكثر|الاعلى|الأعلى|مبيعا|مبيعاً|افضل|أفضل|اشهر|أشهر|من|في|على|عندكم|عندكو|بتاعكم).*$/g, '')
+        .trim();
+      if (extractedName.length >= 2) break;
+      extractedName = null;
+    }
+  }
+
+  // "مين المحاضر الأكثر مبيعاً"
+  const isPopularity = /(مين|من هو|من هي)\s+.*(محاضر|مدرس|مدرب)/.test(norm)
+    || (/(اكثر|أكثر|افضل|أفضل|اشهر|أشهر|اعلى|أعلى)/.test(norm) && !extractedName);
+
+  console.log(`👨‍🏫 detectInstructor: name="${extractedName}", popularity=${isPopularity}`);
+
+  return {
+    isInstructorQuestion: true,
+    instructorName: extractedName,
+    isPopularityQuestion: isPopularity && !extractedName,
+  };
+}
+
+
+async function searchByInstructor(instructorName) {
+  if (!supabase || !instructorName) return { instructor: null, courses: [] };
+
+  try {
+    const instructors = await getInstructors();
+    if (!instructors || instructors.length === 0) return { instructor: null, courses: [] };
+
+    const normSearch = normalizeArabic(instructorName.toLowerCase().trim());
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const inst of instructors) {
+      const normName = normalizeArabic((inst.name || "").toLowerCase().trim());
+
+      // Exact
+      if (normName === normSearch) { bestMatch = inst; bestScore = 100; break; }
+
+      // Contains
+      if (normName.includes(normSearch) || normSearch.includes(normName)) {
+        const s = 90;
+        if (s > bestScore) { bestScore = s; bestMatch = inst; }
+        continue;
+      }
+
+      // Word match: "أحمد" matches "أحمد إبراهيم"
+      const searchWords = normSearch.split(/\s+/).filter(w => w.length > 1);
+      const nameWords = normName.split(/\s+/);
+      const hits = searchWords.filter(sw =>
+        nameWords.some(nw => nw.includes(sw) || sw.includes(nw))
+      );
+      if (hits.length > 0) {
+        const s = 60 + Math.round((hits.length / Math.max(searchWords.length, 1)) * 30);
+        if (s > bestScore) { bestScore = s; bestMatch = inst; }
+        continue;
+      }
+
+      // Fuzzy
+      const sim = similarityRatio(normSearch, normName);
+      if (sim > bestScore && sim >= 55) { bestScore = sim; bestMatch = inst; }
+    }
+
+    if (!bestMatch) return { instructor: null, courses: [] };
+
+    console.log(`👨‍🏫 Instructor match: "${instructorName}" → "${bestMatch.name}" (score=${bestScore})`);
+
+    const { data: courses, error } = await supabase
+      .from("courses")
+      .select(COURSE_SELECT_COLS)
+      .eq("instructor_id", bestMatch.id)
+      .limit(20);
+
+    return {
+      instructor: bestMatch,
+      courses: error ? [] : (courses || []),
+    };
+  } catch (e) {
+    console.error("searchByInstructor error:", e.message);
+    return { instructor: null, courses: [] };
+  }
+}
+
+
 // ═══════════════════════════════════
 // Response Cache — same question = same answer
 // ═══════════════════════════════════
@@ -4130,6 +4239,79 @@ const _isPaymentBtn =
       };
     }
   }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 INSTRUCTOR DETECTION — Early exit (before GPT analyzer)
+  // Same safe pattern as diploma button & payment button
+  // ═══════════════════════════════════════════════════════════
+  const _instructorCheck = detectInstructorQuestion(message);
+
+  if (_instructorCheck && _instructorCheck.isInstructorQuestion) {
+
+    if (_instructorCheck.instructorName) {
+      // ═══ بحث عن محاضر بالاسم ═══
+      const { instructor, courses } = await searchByInstructor(_instructorCheck.instructorName);
+      const _instInstructors = await getInstructors();
+
+      if (instructor && courses.length > 0) {
+        let _instReply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
+        _instReply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
+
+        courses.slice(0, 5).forEach((c, i) => {
+          _instReply += formatCourseCard(c, _instInstructors, i + 1);
+        });
+
+        if (courses.length > 5) {
+          _instReply += `<br>📌 وفيه كمان <strong>${courses.length - 5}</strong> كورسات تانية!`;
+        }
+        _instReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+        _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else if (instructor) {
+        let _instReply = `👨‍🏫 المحاضر <strong>${escapeHtml(instructor.name)}</strong> موجود على المنصة بس مفيش كورسات مسجلة ليه حالياً.`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else {
+        let _instReply = `🔍 مش لاقي محاضر اسمه "<strong>${escapeHtml(_instructorCheck.instructorName)}</strong>" على المنصة.`;
+        _instReply += `<br>ممكن تتأكد من الاسم وتجرب تاني؟ 😊`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      }
+
+    } else if (_instructorCheck.isPopularityQuestion) {
+      // ═══ "مين المحاضر الأكثر مبيعاً" — مفيش data بالمحاضر ═══
+      let _instReply = `👨‍🏫 عندنا محاضرين كتير مميزين على المنصة! 🌟<br><br>`;
+      _instReply += `💡 تقدر تشوف الكورسات الأكثر مبيعاً وهتلاقي اسم المحاضر على كل كورس 😊<br><br>`;
+      _instReply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+      return {
+        reply: finalizeReply(_instReply),
+        intent: "INSTRUCTOR",
+        suggestions: ["الكورسات الأكثر مبيعاً 🏆", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
+    // ← لو وصل هنا = كلمة "محاضر" موجودة بس مفيش اسم ومش popularity
+    //   → يكمّل الـ flow العادي (GPT يتعامل معاه)
+  }
+
+
+
 
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
