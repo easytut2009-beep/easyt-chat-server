@@ -4117,14 +4117,70 @@ async function searchByInstructor(instructorName) {
           }
         }
 
-        if (instructorMatch) {
-          console.log(`👨‍🏫 Matched: "${instructorMatch.name}" (score=${bestScore})`);
+if (instructorMatch) {
+          console.log(`👨‍🏫 Matched: "${instructorMatch.name}" (score=${bestScore}, id=${instructorMatch.id})`);
+          
+          // Strategy 1a: by instructor_id
           const { data: instCourses } = await supabase
             .from("courses")
             .select("*")
             .eq("instructor_id", instructorMatch.id)
             .limit(20);
           courses = instCourses || [];
+          console.log(`👨‍🏫 Strategy 1a (instructor_id): ${courses.length} courses`);
+
+          // Strategy 1b: if 0 courses, search by instructor name in course text fields
+          if (courses.length === 0) {
+            console.log(`👨‍🏫 Strategy 1b: searching courses by instructor name "${instructorMatch.name}"...`);
+            const instNameNorm = normalizeArabicName(instructorMatch.name);
+            const instNameWords = instNameNorm.split(' ').filter(w => w.length > 1);
+            
+            if (instNameWords.length > 0) {
+              const nameFilters = instNameWords
+                .flatMap(w => [
+                  `title.ilike.%${w}%`,
+                  `description.ilike.%${w}%`,
+                  `subtitle.ilike.%${w}%`,
+                ])
+                .join(",");
+              
+              const { data: nameCourses } = await supabase
+                .from("courses")
+                .select("*")
+                .or(nameFilters)
+                .limit(20);
+              
+              if (nameCourses && nameCourses.length > 0) {
+                courses = nameCourses;
+                console.log(`👨‍🏫 Strategy 1b: found ${courses.length} courses by name search`);
+              }
+            }
+
+            // Strategy 1c: try matching by getting ALL courses and checking instructor_id against instructors table
+            if (courses.length === 0) {
+              console.log(`👨‍🏫 Strategy 1c: checking all courses for this instructor...`);
+              const { data: allCourses } = await supabase
+                .from("courses")
+                .select("*")
+                .limit(500);
+              
+              if (allCourses && allCourses.length > 0) {
+                // Log first course's instructor_id to debug
+                console.log(`👨‍🏫 DEBUG: instructor.id = "${instructorMatch.id}" (type: ${typeof instructorMatch.id})`);
+                console.log(`👨‍🏫 DEBUG: sample course.instructor_id = "${allCourses[0].instructor_id}" (type: ${typeof allCourses[0].instructor_id})`);
+                
+                // Try string comparison (in case UUID vs string mismatch)
+                const matchedByString = allCourses.filter(c => 
+                  String(c.instructor_id) === String(instructorMatch.id)
+                );
+                
+                if (matchedByString.length > 0) {
+                  courses = matchedByString;
+                  console.log(`👨‍🏫 Strategy 1c: found ${courses.length} courses (string match)`);
+                }
+              }
+            }
+          }
         }
       }
     } catch (tableErr) {
