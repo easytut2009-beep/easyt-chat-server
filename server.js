@@ -4483,6 +4483,72 @@ const _isPaymentBtn =
     }
   }
 
+
+ // ═══════════════════════════════════════════════════════════
+  // 🆕 Smart Instructor Detection — checks actual DB names
+  // No keywords needed — compares message against real instructors
+  // ═══════════════════════════════════════════════════════════
+  if (!_instructorCheck || (!_instructorCheck.isInstructorQuestion && !_instructorCheck.possibleInstructorName)) {
+    const _msgWords = message.trim().split(/\s+/);
+    if (_msgWords.length >= 2 && _msgWords.length <= 4) {
+      const _cachedInstructors = await getInstructors();
+      const _msgNorm = normalizeArabicName(message);
+
+      let _matchedInstructor = null;
+      let _matchScore = 0;
+
+      for (const inst of _cachedInstructors) {
+        const _instNorm = normalizeArabicName(inst.name);
+        if (!_instNorm || _instNorm.length < 3) continue;
+
+        const sim = similarityRatio(_msgNorm, _instNorm);
+        if (sim >= 75 && sim > _matchScore) {
+          _matchScore = sim;
+          _matchedInstructor = inst;
+        }
+
+        const _mWords = _msgNorm.split(' ').filter(w => w.length > 1);
+        const _iWords = _instNorm.split(' ').filter(w => w.length > 1);
+        const _hits = _mWords.filter(mw =>
+          _iWords.some(iw => iw === mw || (mw.length >= 3 && iw.length >= 3 && similarityRatio(mw, iw) >= 85))
+        );
+
+        if (_hits.length >= 2) {
+          const _wordScore = 70 + Math.round((_hits.length / Math.max(_mWords.length, _iWords.length)) * 30);
+          if (_wordScore > _matchScore) {
+            _matchScore = _wordScore;
+            _matchedInstructor = inst;
+          }
+        }
+      }
+
+      if (_matchedInstructor && _matchScore >= 70) {
+        console.log(`👨‍🏫 Smart DB match: "${message}" → "${_matchedInstructor.name}" (score=${_matchScore})`);
+        const { instructor: _si, courses: _sc } = await searchByInstructor(_matchedInstructor.name);
+        const _siInstructors = await getInstructors();
+
+        if (_si && _sc.length > 0) {
+          let _siReply = `👨‍🏫 <strong>${escapeHtml(_si.name)}</strong><br>`;
+          _siReply += `📚 عنده <strong>${_sc.length}</strong> كورس على المنصة:<br><br>`;
+          _sc.slice(0, 5).forEach((c, i) => {
+            _siReply += formatCourseCard(c, _siInstructors, i + 1);
+          });
+          if (_sc.length > 5) {
+            _siReply += `<br>📌 وفيه كمان <strong>${_sc.length - 5}</strong> كورسات تانية!`;
+          }
+          _siReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+          _siReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+          return {
+            reply: finalizeReply(_siReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        }
+      }
+    }
+  }
+
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
   const cacheKey = getResponseCacheKey(message);
