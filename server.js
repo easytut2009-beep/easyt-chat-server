@@ -252,6 +252,15 @@ function prepareSearchTerms(terms) {
     const t = term.toLowerCase().trim();
     if (t.length <= 1) continue;
     result.add(t);
+
+    // 🆕 FIX: "sketch up" → "sketchup" | "solid works" → "solidworks"
+    if (t.includes(' ') && /[a-zA-Z]/.test(t)) {
+      const concatenated = t.replace(/\s+/g, '');
+      if (concatenated.length > 3) {
+        result.add(concatenated);
+      }
+    }
+
     const normT = normalizeArabic(t);
     if (normT.length > 1) result.add(normT);
     for (const word of t.split(/\s+/)) {
