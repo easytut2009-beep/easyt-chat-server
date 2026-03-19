@@ -212,8 +212,7 @@ const CATEGORIES = {
     url: "https://easyt.online/courses/category/28a781a3-88fb-4460-bc68-7ea69aa2168d",
   },
   "الاستثمار والأسواق المالية": {
-    url: "https://easyt.online/co    const _hasPriceWord = /(اسعار|سعر|بكام|كام|تكلف|ادفع|دفع|فلوس|فيزا|كاش|تحويل|انستاباي|فودافون|بطاق|visa|pay|price|cost)/.test(_n);
-urses/category/957e7f0d-ac31-49e6-939e-ead6134ccc3a",
+    url: "https://easyt.online/courses/category/957e7f0d-ac31-49e6-939e-ead6134ccc3a",
   },
   "التسويق والمبيعات": {
     url: "https://easyt.online/courses/category/f3ee963c-5e2d-44c3-b77e-1b118a438ee5",
@@ -4517,9 +4516,9 @@ const _isPaymentBtn =
 
 // 🆕 FIX: Skip corrections for subscription/payment questions
   // Problem: "أسعار الاشتراك" matched a correction about "تجديد الاشتراك"
-const _skipCorrForSub = (() => {
+  const _skipCorrForSub = (() => {
     const _n = normalizeArabic((message || '').toLowerCase());
-    const _hasPriceWord = /(اسعار|سعر|ثمن|بكام|كام|تكلف|تكلفه|قيمه|قيمة|مبلغ|رسوم|ادفع|دفع|فلوس|فيزا|كاش|تحويل|انستاباي|فودافون|بطاق|visa|pay|price|cost)/.test(_n);
+    const _hasPriceWord = /(اسعار|سعر|بكام|كام|تكلف|ادفع|دفع|فلوس|فيزا|كاش|تحويل|انستاباي|فودافون|بطاق|visa|pay|price|cost)/.test(_n);
     const _hasSubWord = /(اشتراك|اشترك|باق[ةه]|خط[ةه]|عرض|عروض)/.test(_n);
     const _isPriceQ = /(اسعار|سعر|بكام|كام|تكلف|ازاي\s*(ا)?دفع|كيف\s*(ا)?دفع|طرق\s*(ال)?دفع)/.test(_n);
     return (_hasPriceWord && _hasSubWord) || _isPriceQ;
@@ -4617,10 +4616,7 @@ _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل
 
 const _faqMatch = await findBestFAQMatch(message, _allFAQs);
 
-  // 🆕 FIX: Skip FAQ for subscription/payment questions — let GPT read bot_instructions
-  if (_skipCorrForSub && _faqMatch) {
-    console.log(`💰 Skipping FAQ for payment question: "${message}"`);
-  } else if (_faqMatch && _faqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+  if (_faqMatch && _faqMatch.score >= FAQ_DIRECT_THRESHOLD) {
     const { faq: _faq, score: _faqScore } = _faqMatch;
 
     console.log(`✅ [FAQ] DIRECT MATCH! Score: ${_faqScore.toFixed(3)} | FAQ #${_faq.id} | Section: "${_faq.section}"`);
