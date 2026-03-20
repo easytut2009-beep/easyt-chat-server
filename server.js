@@ -2829,7 +2829,14 @@ async function analyzeMessage(
   relevantFAQs = []
 ) {
 // 🆕 Remove bot name before analysis
-  message = message.replace(/يا\s*زيكو/gi, '').replace(/زيكو/gi, '').trim();
+const botNames = ['زيكو', 'يا زيكو', 'ziko', 'ya ziko'];
+let cleanMessage = message;
+botNames.forEach(name => {
+  cleanMessage = cleanMessage.split(name).join('');
+});
+cleanMessage = cleanMessage.replace(/\s+/g, ' ').trim();
+message = cleanMessage || message;
+
 const systemPrompt = buildAnalyzerPrompt(
     botInstructions,
     customResponses,
