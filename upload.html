@@ -179,7 +179,12 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <h2 style="margin:0">📖 الدروس الموجودة</h2>
-          <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل الـ Chunks</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-warn btn-sm hidden" id="btn-edit-all" onclick="startEditAll()">✏️ تعديل الكل</button>
+            <button class="btn btn-success btn-sm hidden" id="btn-save-all" onclick="saveAllRenames()">💾 حفظ الكل</button>
+            <button class="btn btn-outline btn-sm hidden" id="btn-cancel-edit-all" onclick="cancelEditAll()">❌ إلغاء التعديل</button>
+            <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل الـ Chunks</button>
+          </div>
         </div>
         <div id="lessons-container"></div>
       </div>
@@ -255,6 +260,7 @@ let editLessonId = null;
 let renamingLessonId = null;
 let highlightedIndex = -1;
 let dropdownOpen = false;
+let editAllMode = false;
 
 let lessonEntries = [];
 let entryCounter = 0;
@@ -485,63 +491,176 @@ async function refreshCourseData() {
 // ════════════════════════════════════
 function renderLessons() {
   const container = $('lessons-container');
-  if (existingLessons.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>مفيش دروس لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p></div>';
+
+  // ═══ Button visibility based on editAllMode ═══
+  if (editAllMode) {
+    $('btn-edit-all').classList.add('hidden');
     $('btn-delete-all').classList.add('hidden');
-    return;
+    $('btn-save-all').classList.remove('hidden');
+    $('btn-cancel-edit-all').classList.remove('hidden');
+  } else {
+    $('btn-save-all').classList.add('hidden');
+    $('btn-cancel-edit-all').classList.add('hidden');
+    if (existingLessons.length > 0) {
+      $('btn-edit-all').classList.remove('hidden');
+      $('btn-delete-all').classList.remove('hidden');
+    } else {
+      $('btn-edit-all').classList.add('hidden');
+      $('btn-delete-all').classList.add('hidden');
+    }
   }
 
-  $('btn-delete-all').classList.remove('hidden');
+  if (existingLessons.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>مفيش دروس لحد دلوقتي<br>ابدأ أضف أول درس من الفورم تحت 👇</p></div>';
+    return;
+  }
 
   let html = '<div class="lessons-list">';
   existingLessons.forEach((lesson, idx) => {
     const lessonId = String(lesson.id);
-    const isRenaming = (renamingLessonId !== null && String(renamingLessonId) === lessonId);
     const jsId = safeJsStr(lessonId);
     const jsTitle = safeJsStr(lesson.title);
     const attrTitle = escAttr(lesson.title);
 
-    html += '<div class="lesson-row' + (isRenaming ? ' renaming' : '') + '" data-lesson-id="' + escAttr(lessonId) + '">';
+    const badge = lesson.chunk_count > 0
+      ? '<span class="badge badge-green">' + lesson.chunk_count + ' قطعة ✅</span>'
+      : '<span class="badge badge-gray">0 قطع — محتاج رفع</span>';
 
-    if (isRenaming) {
-      html += '<div class="inline-edit">' +
-        '<input type="text" id="rename-' + escAttr(lessonId) + '" value="' + attrTitle + '" onkeypress="if(event.key===\'Enter\')saveRename(\'' + jsId + '\')">' +
-        '</div>' +
-        '<div class="lesson-actions">' +
-          '<button class="btn btn-success btn-sm" onclick="saveRename(\'' + jsId + '\')">💾 حفظ</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="cancelRename()">❌</button>' +
-        '</div>';
+    if (editAllMode) {
+      // ═══ Edit-All Mode: كل الدروس فيها input ═══
+      html += '<div class="lesson-row renaming" data-lesson-id="' + escAttr(lessonId) + '">';
+      html += '<span class="entry-num">' + (idx + 1) + '</span>';
+      html += '<div class="inline-edit">';
+      html += '<input type="text" id="edit-all-' + escAttr(lessonId) + '" value="' + attrTitle + '">';
+      html += '</div>';
+      html += '<div style="flex-shrink:0">' + badge + '</div>';
+      html += '</div>';
     } else {
-      const badge = lesson.chunk_count > 0
-        ? '<span class="badge badge-green">' + lesson.chunk_count + ' قطعة ✅</span>'
-        : '<span class="badge badge-gray">0 قطع — محتاج رفع</span>';
+      // ═══ Normal Mode ═══
+      const isRenaming = (renamingLessonId !== null && String(renamingLessonId) === lessonId);
 
-      html += '<div class="lesson-info">' +
-        '<div class="lesson-title">' + (idx + 1) + '. ' + escHtml(lesson.title) + '</div>' +
-        '<div class="lesson-meta">' + badge + '</div>' +
-        '</div>' +
-        '<div class="lesson-actions">' +
-          '<button class="btn btn-warn btn-sm" onclick="startRename(\'' + jsId + '\')">✏️ تعديل الاسم</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="onReupload(\'' + jsId + '\', \'' + jsTitle + '\')">' +
-            (lesson.chunk_count > 0 ? '📁 إعادة رفع' : '📁 رفع ملف') +
-          '</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="onDeleteLesson(\'' + jsId + '\', \'' + jsTitle + '\')">🗑️</button>' +
-        '</div>';
+      html += '<div class="lesson-row' + (isRenaming ? ' renaming' : '') + '" data-lesson-id="' + escAttr(lessonId) + '">';
+
+      if (isRenaming) {
+        html += '<div class="inline-edit">' +
+          '<input type="text" id="rename-' + escAttr(lessonId) + '" value="' + attrTitle + '" onkeypress="if(event.key===\'Enter\')saveRename(\'' + jsId + '\')">' +
+          '</div>' +
+          '<div class="lesson-actions">' +
+            '<button class="btn btn-success btn-sm" onclick="saveRename(\'' + jsId + '\')">💾 حفظ</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="cancelRename()">❌</button>' +
+          '</div>';
+      } else {
+        html += '<div class="lesson-info">' +
+          '<div class="lesson-title">' + (idx + 1) + '. ' + escHtml(lesson.title) + '</div>' +
+          '<div class="lesson-meta">' + badge + '</div>' +
+          '</div>' +
+          '<div class="lesson-actions">' +
+            '<button class="btn btn-warn btn-sm" onclick="startRename(\'' + jsId + '\')">✏️ تعديل الاسم</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="onReupload(\'' + jsId + '\', \'' + jsTitle + '\')">' +
+              (lesson.chunk_count > 0 ? '📁 إعادة رفع' : '📁 رفع ملف') +
+            '</button>' +
+            '<button class="btn btn-danger btn-sm" onclick="onDeleteLesson(\'' + jsId + '\', \'' + jsTitle + '\')">🗑️</button>' +
+          '</div>';
+      }
+
+      html += '</div>';
     }
-
-    html += '</div>';
   });
   html += '</div>';
   container.innerHTML = html;
 
-  if (renamingLessonId !== null) {
+  if (editAllMode) {
+    // Focus first input in edit-all mode
+    const firstInp = document.getElementById('edit-all-' + String(existingLessons[0].id));
+    if (firstInp) { firstInp.focus(); firstInp.select(); }
+  } else if (renamingLessonId !== null) {
     const inp = document.getElementById('rename-' + String(renamingLessonId));
     if (inp) { inp.focus(); inp.select(); }
   }
 }
 
 // ════════════════════════════════════
-// Rename
+// Edit All Mode
+// ════════════════════════════════════
+function startEditAll() {
+  editAllMode = true;
+  renamingLessonId = null;
+  renderLessons();
+  addLog('وضع تعديل الكل — عدّل الأسماء واضغط "حفظ الكل"', 'info');
+}
+
+function cancelEditAll() {
+  editAllMode = false;
+  renderLessons();
+  addLog('تم إلغاء تعديل الكل', 'info');
+}
+
+async function saveAllRenames() {
+  const changes = [];
+  let emptyCount = 0;
+
+  existingLessons.forEach(lesson => {
+    const inp = document.getElementById('edit-all-' + lesson.id);
+    if (inp) {
+      const newTitle = inp.value.trim();
+      if (!newTitle) {
+        emptyCount++;
+      } else if (newTitle !== lesson.title.trim()) {
+        changes.push({ id: String(lesson.id), oldTitle: lesson.title, newTitle: newTitle });
+      }
+    }
+  });
+
+  if (emptyCount > 0) {
+    addLog('⚠️ فيه ' + emptyCount + ' درس بدون اسم — مش هيتغير', 'warn');
+  }
+
+  if (changes.length === 0) {
+    addLog('مفيش تغييرات للحفظ', 'info');
+    editAllMode = false;
+    renderLessons();
+    return;
+  }
+
+  const ok = await showModal(
+    '💾 حفظ التعديلات',
+    'هيتم تعديل أسماء ' + changes.length + ' درس. تكمل؟',
+    '💾 احفظ الكل'
+  );
+  if (!ok) return;
+
+  $('btn-save-all').disabled = true;
+  $('btn-save-all').innerHTML = '<span class="spinner"></span> جاري الحفظ...';
+  $('btn-cancel-edit-all').disabled = true;
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  addLog('جاري حفظ ' + changes.length + ' تعديل...', 'info');
+
+  for (const change of changes) {
+    try {
+      await api('PATCH', '/api/admin/lessons/' + change.id, { title: change.newTitle });
+      addLog('  ✅ "' + change.oldTitle + '" → "' + change.newTitle + '"', 'success');
+      successCount++;
+    } catch (e) {
+      addLog('  ❌ "' + change.oldTitle + '": ' + e.message, 'error');
+      errorCount++;
+    }
+  }
+
+  addLog('تم الحفظ: ' + successCount + ' نجح' + (errorCount > 0 ? ' | ' + errorCount + ' فشل' : ''), successCount > 0 ? 'success' : 'error');
+
+  $('btn-save-all').disabled = false;
+  $('btn-save-all').innerHTML = '💾 حفظ الكل';
+  $('btn-cancel-edit-all').disabled = false;
+
+  editAllMode = false;
+  await refreshCourseData();
+}
+
+// ════════════════════════════════════
+// Rename (single)
 // ════════════════════════════════════
 function startRename(id) {
   renamingLessonId = String(id);
@@ -602,7 +721,6 @@ function onEntryNameChange(entryId, value) {
   updateBtnCount();
 }
 
-// ✅ Fixed: auto-fill name + auto-add new entry
 function onEntryFileSelect(entryId, event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -610,7 +728,6 @@ function onEntryFileSelect(entryId, event) {
   if (!entry) return;
   entry.fileName = file.name;
 
-  // ✅ لو الاسم فاضي — خده من اسم الملف
   if (!entry.name.trim()) {
     entry.name = file.name.replace(/\.[^.]+$/, '');
     const inp = document.getElementById('entry-name-' + entryId);
@@ -632,7 +749,6 @@ function onEntryFileSelect(entryId, event) {
       }
     }
 
-    // ✅ لو ده آخر entry — ضيف واحد جديد فاضي تلقائياً
     const isLast = lessonEntries[lessonEntries.length - 1]?.id === entryId;
     if (isLast) {
       addLessonEntry();
@@ -758,7 +874,6 @@ async function onProcessAll() {
         addLog('  ↳ استبدال محتوى درس موجود (id=' + lessonId + ')', 'warn');
       }
 
-      // ✅ Fixed: لا تبعت lessonId لو مش موجود
       const payload = {
         courseId: selectedCourseId,
         lessonName: entry.name.trim(),
@@ -827,6 +942,7 @@ function onReupload(id, title) {
 function cancelEdit() {
   editLessonId = null;
   renamingLessonId = null;
+  editAllMode = false;
   $('multi-upload-section').classList.remove('hidden');
   $('single-upload-section').classList.add('hidden');
   $('inp-lesson-name').value = '';
@@ -873,7 +989,6 @@ async function onProcessLesson() {
     $('progress-fill').style.width = '30%';
     addLog('Processing: ' + lessonName + ' (' + transcript.length + ' chars) [re-upload id=' + editLessonId + ']', 'info');
 
-    // ✅ Fixed: لا تبعت lessonId لو null
     const payload = {
       courseId: selectedCourseId,
       lessonName: lessonName,
