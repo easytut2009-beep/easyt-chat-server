@@ -2828,6 +2828,8 @@ async function analyzeMessage(
   relevantCorrections = [],
   relevantFAQs = []
 ) {
+// 🆕 Remove bot name before analysis
+  message = message.replace(/يا\s*زيكو/gi, '').replace(/زيكو/gi, '').trim();
 const systemPrompt = buildAnalyzerPrompt(
     botInstructions,
     customResponses,
