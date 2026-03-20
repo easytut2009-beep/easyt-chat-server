@@ -6367,18 +6367,69 @@ else if (analysis.action === "SUBSCRIPTION") {
         reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
       }
     } else {
-      // Fallback — generic (no hardcoded prices)
-      reply = `أهلاً بيك! 🎉<br><br>`;
-      reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
-      reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-      reply += `2. 🅿️ <strong>PayPal</strong><br>`;
-      reply += `3. 📱 <strong>InstaPay</strong><br>`;
-      reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
-      reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
-      reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      reply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
-      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
-      reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      // 🆕 FIX: Re-ask GPT with bot_instructions for price/subscription info
+      let _gptSubReply = "";
+      
+      if (openai) {
+        try {
+          const _subInstructions = await loadBotInstructions("sales");
+          console.log(`💡 SUBSCRIPTION: GPT had no response → re-asking with bot_instructions`);
+          
+          const _subResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `أنت مساعد منصة easyT التعليمية. المستخدم بيسأل عن الاشتراك أو الأسعار أو الدفع.
+
+⛔ تعليمات الأدمن (إجبارية — لازم تلتزم بيها):
+${_subInstructions || "الاشتراك السنوي متاح على صفحة الاشتراك"}
+
+═══ طرق الدفع ═══
+1. Visa/MasterCard
+2. PayPal
+3. InstaPay
+4. فودافون كاش: 01027007899
+5. تحويل بنكي: بنك الإسكندرية — 202069901001
+6. Skrill: info@easyt.online
+
+جاوب على سؤال المستخدم بناءً على تعليمات الأدمن.
+بالعامية المصرية وبأسلوب ودود.
+استخدم <br> للأسطر الجديدة و <strong> للعناوين.`
+              },
+              { role: "user", content: message }
+            ],
+            max_tokens: 400,
+            temperature: 0.3,
+          });
+          _gptSubReply = _subResp.choices[0].message.content || "";
+        } catch (_subErr) {
+          console.error("SUBSCRIPTION re-ask GPT error:", _subErr.message);
+        }
+      }
+
+      if (_gptSubReply && _gptSubReply.trim().length > 20) {
+        reply = _gptSubReply;
+        if (!reply.includes('easyt.online/p/subscriptions')) {
+          reply += `<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a>`;
+        }
+        if (!reply.includes('easyt.online/p/Payments')) {
+          reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+        }
+      } else {
+        // Final fallback — same as before
+        reply = `أهلاً بيك! 🎉<br><br>`;
+        reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+        reply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+        reply += `2. 🅿️ <strong>PayPal</strong><br>`;
+        reply += `3. 📱 <strong>InstaPay</strong><br>`;
+        reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+        reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+        reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+        reply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
+        reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+        reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      }
     }
     intent = "SUBSCRIPTION";
   }
