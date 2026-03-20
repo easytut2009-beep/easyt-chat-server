@@ -1400,7 +1400,22 @@ async function loadBotInstructions() {
     var se = document.getElementById('botInstructionsSearch'); var s = se ? se.value : '';
     var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
     var items = d.instructions || d.items || d.data || [];
-    _botInstructionsCache = items.slice();
+
+// ✅ فلترة البحث على الفرونت
+if (s && s.trim()) {
+    var searchLower = s.trim().toLowerCase();
+    items = items.filter(function(item) {
+        var instruction = (item.instruction || '').toLowerCase();
+        var category = (item.category || '').toLowerCase();
+        var id = String(item.id || '');
+        return instruction.indexOf(searchLower) !== -1 
+            || category.indexOf(searchLower) !== -1 
+            || id.indexOf(searchLower) !== -1;
+    });
+}
+
+_botInstructionsCache = items.slice();
+
     if (!items.length) { el.innerHTML = '<div class="card" style="text-align:center;padding:30px"><p style="color:#94a3b8">مفيش تعليمات</p><button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف</button></div>'; return; }
 
     // Filter by target
