@@ -2828,15 +2828,6 @@ async function analyzeMessage(
   relevantCorrections = [],
   relevantFAQs = []
 ) {
-// 🆕 Remove bot name before analysis
-const botNames = ['زيكو', 'يا زيكو', 'ziko', 'ya ziko'];
-let cleanMessage = message;
-botNames.forEach(name => {
-  cleanMessage = cleanMessage.split(name).join('');
-});
-cleanMessage = cleanMessage.replace(/\s+/g, ' ').trim();
-message = cleanMessage || message;
-
 const systemPrompt = buildAnalyzerPrompt(
     botInstructions,
     customResponses,
@@ -4323,6 +4314,19 @@ async function smartChat(message, sessionId) {
     console.log(`🔧 Emoji prefix stripped: "${message}" → "${_emojiStripped}"`);
     message = _emojiStripped;
   }
+
+
+// 🆕 Remove bot name "زيكو" before any processing
+  const _botNameCleaned = message
+    .replace(/يا\s*زيكو/gi, '')
+    .replace(/زيكو/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (_botNameCleaned.length > 0 && _botNameCleaned !== message) {
+    console.log(`🤖 Bot name removed: "${message}" → "${_botNameCleaned}"`);
+    message = _botNameCleaned;
+  }
+
 
   // 🆕 Direct diploma button (bypass GPT)
   const _btnClean = message.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '').trim();
