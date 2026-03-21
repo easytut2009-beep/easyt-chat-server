@@ -3744,6 +3744,20 @@ const sim = similarityRatio(nt, tw);
         console.log(`🔤 Fuzzy titleMatch: ${_fuzzyMatched.join(', ')} in "${c.title}" → +400`);
       }
     }
+// Keywords-based titleMatch
+    if (!c._titleMatch) {
+      let _kwHits = 0;
+      for (const term of termsToSearch) {
+        const nt = normalizeArabic(term.toLowerCase());
+        if (nt.length > 2 && keywordsNorm.includes(nt)) _kwHits++;
+      }
+      if (_kwHits >= 2) {
+        c._titleMatch = true;
+        c._titleMatchStrength = 'strong';
+        c.relevanceScore = (c.relevanceScore || 0) + 500;
+        console.log('🔑 Keywords match (' + _kwHits + ' hits): "' + c.title + '" → titleMatch + 500');
+      }
+    }
 
     if (c._titleMatch) {
       if (c._titleMatchStrength === 'strong') {
