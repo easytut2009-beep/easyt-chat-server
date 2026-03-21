@@ -6121,7 +6121,9 @@ if (_gptExcludedIds.has(tm.id)) {
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
-const protectedOnly = courses.filter((c) => c._titleMatch === true);
+const protectedOnly = courses.filter((c) => c._titleMatch === true && !_gptExcludedIds.has(c.id));
+console.log(`🛡️ FIX #62v3: Protected after GPT-exclusion filter: ${courses.filter(c => c._titleMatch === true).length} → ${protectedOnly.length}`);
+
         
         if (protectedOnly.length > 0) {
           console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
