@@ -5099,26 +5099,6 @@ if (!analysis.is_follow_up && isContextFollowUp
 
 
 
-// FIX: "أنا + أي حاجة" = بيوصف نفسه مش بيدور على محاضر
-  if (analysis.action === "INSTRUCTOR") {
-    const _profNorm = normalizeArabic((message || "").toLowerCase());
-    const _startsWithAna = /^(انا|أنا)\s/.test(_profNorm);
-    const _wantsInstructor = /(عايز|عاوز|محتاج|ابغي|بدي|ابي|وريني|جيبلي)\s.*(كورس|دور|محاضر)/.test(_profNorm);
-    
-    if (_startsWithAna && !_wantsInstructor) {
-      console.log("FIX: INSTRUCTOR → CLARIFY (user describing themselves, not searching instructor)");
-      if (analysis.search_terms && analysis.search_terms.length > 0) {
-        analysis.action = "SEARCH";
-      } else {
-        analysis.action = "CLARIFY";
-        if (!analysis.response_message || analysis.response_message.length < 10) {
-          analysis.response_message = "أهلاً بيك! 😊 عايز تتعلم إيه في مجالك بالظبط؟";
-        }
-      }
-    }
-  }
-
-
 let reply = "";
   let intent = analysis.intent || analysis.action;
 
