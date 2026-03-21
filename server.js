@@ -1058,7 +1058,7 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     console.log("🔍 Search terms:", allTerms);
 
-const limitedTerms = allTerms.slice(0, 6);
+const limitedTerms = allTerms.slice(0, 8);
 
 // ═══ Expand Arabic variants for ilike matching ═══
 const ilikeTerms = expandArabicVariants(limitedTerms);
@@ -3744,18 +3744,34 @@ const sim = similarityRatio(nt, tw);
         console.log(`🔤 Fuzzy titleMatch: ${_fuzzyMatched.join(', ')} in "${c.title}" → +400`);
       }
     }
-// Keywords-based titleMatch
+// Keywords-based titleMatch — FIX: word-level matching (handles ال prefix)
     if (!c._titleMatch) {
-      let _kwHits = 0;
+      const _kwMatchedWords = new Set();
+      
       for (const term of termsToSearch) {
         const nt = normalizeArabic(term.toLowerCase());
-        if (nt.length > 2 && keywordsNorm.includes(nt)) _kwHits++;
+        if (nt.length <= 2) continue;
+        
+        // Check 1: Full term as substring in keywords
+        if (keywordsNorm.includes(nt)) {
+          nt.split(/\s+/).forEach(w => { if (w.length > 2) _kwMatchedWords.add(w); });
+          continue;
+        }
+        
+        // Check 2: Individual words (handles "الهندسه المدنيه" vs "هندسه مدنيه")
+        const words = nt.split(/\s+/).filter(w => w.length > 2);
+        for (const w of words) {
+          if (keywordsNorm.includes(w)) {
+            _kwMatchedWords.add(w);
+          }
+        }
       }
-      if (_kwHits >= 2) {
+      
+      if (_kwMatchedWords.size >= 2) {
         c._titleMatch = true;
         c._titleMatchStrength = 'strong';
         c.relevanceScore = (c.relevanceScore || 0) + 500;
-        console.log('🔑 Keywords match (' + _kwHits + ' hits): "' + c.title + '" → titleMatch + 500');
+        console.log('🔑 Keywords word-match (' + _kwMatchedWords.size + ' words: [' + [..._kwMatchedWords].join(', ') + ']): "' + c.title + '" → titleMatch + 500');
       }
     }
 
@@ -5557,13 +5573,16 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
 // Has 3 safety checks to prevent false removals
 // ═══════════════════════════════════════════════════════════
 {
-  const _gateIntentWords = new Set([
+const _gateIntentWords = new Set([
     'ابحث', 'ابحثي', 'ابحثلي', 'دور', 'دوري', 'دورلي', 'دورات', 'دوره', 'دورة',
     'كورسات', 'كورس', 'تعلم', 'اتعلم', 'عايز', 'عاوز', 'محتاج',
     'بدي', 'ابغي', 'ابغى', 'عن', 'اريد', 'اعرف', 'شرح', 'اشرح',
     'اشرحلي', 'وريني', 'قولي', 'فين', 'وين', 'هل', 'في', 'فيه',
     'search', 'find', 'want', 'need', 'about', 'for', 'the', 'a', 'an',
     'i', 'me', 'my', 'is', 'are', 'how', 'what',
+    // Arabic question/filler words (not topics)
+    'ايه', 'اية', 'ايش', 'شو', 'وش', 'موجود', 'موجوده', 'موجودة',
+    'متاح', 'متاحه', 'متاحة', 'المتاحة', 'الموجودة', 'الموجوده',
   ]);
 
   const _gateStripPrefix = (w) => {
