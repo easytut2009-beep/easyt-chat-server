@@ -5603,7 +5603,6 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
     const _gateBeforeCount = courses.length;
 
 courses = courses.filter(c => {
-courses = courses.filter(c => {
       // ✅ SAFETY CHECK 1: Always keep chunk/lesson matches (content-proven)
       if (c._chunkMatch || c._lessonMatch) {
         console.log(`   ✅ Gate SAFE: "${c.title}" (${c._lessonMatch ? 'lesson' : 'chunk'} match)`);
