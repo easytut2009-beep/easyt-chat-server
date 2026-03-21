@@ -1611,7 +1611,23 @@ function buildPaginationBar(entity, page, totalPages) {
 }
 
 function goToPage(entity, page) { _crudPages[entity] = page; renderCrudPage(entity, page); var el = document.getElementById(entity + '-table'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-function openEditFromCache(e, id) { if (_crudCache[e] && _crudCache[e][id]) openEditModal(e, _crudCache[e][id]); else toast('حدّث الصفحة', 'error'); }
+async function openEditFromCache(e, id) {
+  try {
+    var d = await apiCall('/admin/' + e + '/' + id);
+    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
+    if (item && item.id) {
+      _crudCache[e][id] = item;
+      openEditModal(e, item);
+    } else if (_crudCache[e] && _crudCache[e][id]) {
+      openEditModal(e, _crudCache[e][id]);
+    } else {
+      toast('مش لاقي البيانات', 'error');
+    }
+  } catch(err) {
+    if (_crudCache[e] && _crudCache[e][id]) openEditModal(e, _crudCache[e][id]);
+    else toast('حدّث الصفحة', 'error');
+  }
+}
 
 async function deleteCrud(entity, id) {
   if (!(await showConfirm('حذف؟'))) return;
@@ -1634,7 +1650,7 @@ function closeModal() { document.getElementById('modal').classList.remove('show'
 
 function getFields(e) {
   var m = {
-    'courses':[{key:'title',label:'العنوان'},{key:'description',label:'الوصف',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة'}],
+'courses':[{key:'title',label:'العنوان'},{key:'description',label:'الوصف',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة'},{key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}],
     'diplomas':[{key:'title',label:'العنوان'},{key:'slug',label:'Slug'},{key:'link',label:'الرابط'},{key:'description',label:'الوصف',type:'textarea'},{key:'price',label:'السعر'},{key:'courses_count',label:'عدد الدورات'},{key:'hours',label:'الساعات'}],
     'instructors':[{key:'name',label:'الاسم'}],
     'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}],
@@ -1646,16 +1662,47 @@ function getFields(e) {
 function openAddModal(entity) {
   modalState = {type:'add',entity:entity};
   document.getElementById('modalTitle').textContent = '➕ إضافة';
-  var f = getFields(entity);
-  document.getElementById('modalBody').innerHTML = f.map(function(f){ return '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">'+f.label+':</label>'+(f.type==='textarea'?'<textarea id="modal_'+f.key+'" rows="3" style="margin-top:4px"></textarea>':'<input type="text" id="modal_'+f.key+'" style="margin-top:4px">'); }).join('');
+  var fields = getFields(entity);
+  var html = '';
+  fields.forEach(function(f) {
+    html += '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">' + f.label + ':</label>';
+    if (f.type === 'keywords') {
+      html += '<div id="keywords-container"><div style="display:flex;gap:4px;margin-top:4px" class="kw-row"><input type="text" class="kw-input" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button></div></div>';
+      html += '<button type="button" class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-top:6px" onclick="addKeywordInput()">+ كلمة مفتاحية</button>';
+    } else if (f.type === 'textarea') {
+      html += '<textarea id="modal_' + f.key + '" rows="3" style="margin-top:4px"></textarea>';
+    } else {
+      html += '<input type="text" id="modal_' + f.key + '" style="margin-top:4px">';
+    }
+  });
+  document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('show');
 }
 
 function openEditModal(entity, item) {
   modalState = {type:'edit',entity:entity,id:item.id};
   document.getElementById('modalTitle').textContent = '✏️ تعديل';
-  var f = getFields(entity);
-  document.getElementById('modalBody').innerHTML = f.map(function(f){ var v = esc(item[f.key]!=null?String(item[f.key]):''); return '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">'+f.label+':</label>'+(f.type==='textarea'?'<textarea id="modal_'+f.key+'" rows="3" style="margin-top:4px">'+v+'</textarea>':'<input type="text" id="modal_'+f.key+'" value="'+v+'" style="margin-top:4px">'); }).join('');
+  var fields = getFields(entity);
+  var html = '';
+  fields.forEach(function(f) {
+    var v = item[f.key] != null ? String(item[f.key]) : '';
+    html += '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">' + f.label + ':</label>';
+    if (f.type === 'keywords') {
+      var kws = v ? v.split(',').map(function(k) { return k.trim(); }).filter(function(k) { return k; }) : [];
+      if (kws.length === 0) kws = [''];
+      html += '<div id="keywords-container">';
+      kws.forEach(function(kw) {
+        html += '<div style="display:flex;gap:4px;margin-top:4px" class="kw-row"><input type="text" class="kw-input" value="' + esc(kw) + '" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button></div>';
+      });
+      html += '</div>';
+      html += '<button type="button" class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-top:6px" onclick="addKeywordInput()">+ كلمة مفتاحية</button>';
+    } else if (f.type === 'textarea') {
+      html += '<textarea id="modal_' + f.key + '" rows="3" style="margin-top:4px">' + esc(v) + '</textarea>';
+    } else {
+      html += '<input type="text" id="modal_' + f.key + '" value="' + esc(v) + '" style="margin-top:4px">';
+    }
+  });
+  document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('show');
 }
 
@@ -1687,8 +1734,18 @@ if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_e
       else await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
       closeModal(); toast('تم ✅'); loadBotInstructions(); return;
     }
-    var fields = getFields(modalState.entity); var body = {};
-    fields.forEach(function(f){ var v=document.getElementById('modal_'+f.key); if(v) body[f.key]=v.value; });
+var fields = getFields(modalState.entity); var body = {};
+fields.forEach(function(f) {
+  if (f.type === 'keywords') {
+    var inputs = document.querySelectorAll('#keywords-container .kw-input');
+    var kws = [];
+    inputs.forEach(function(inp) { if (inp.value.trim()) kws.push(inp.value.trim()); });
+    body[f.key] = kws.join(',');
+  } else {
+    var v = document.getElementById('modal_' + f.key);
+    if (v) body[f.key] = v.value;
+  }
+});
     if(modalState.type==='add') await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
     else await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
     closeModal(); toast('تم ✅');
@@ -1696,6 +1753,19 @@ if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_e
     loadCrud(modalState.entity, _crudPages[modalState.entity] || 1, true);
   } catch(e) { toast('خطأ: '+e.message,'error'); }
 }
+
+
+function addKeywordInput() {
+  var container = document.getElementById('keywords-container');
+  if (!container) return;
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+  div.className = 'kw-row';
+  div.innerHTML = '<input type="text" class="kw-input" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>';
+  container.appendChild(div);
+  div.querySelector('input').focus();
+}
+
 </script>
 </body>
 </html>
