@@ -6189,26 +6189,7 @@ for (const stm of savedTitleMatchCourses) {
 
 
 
-if (_gateMsgTopicWords.length >= 2) {
-            var _fx99Norm = normalizeArabic((stm.title || '').toLowerCase()) + ' ' + normalizeArabic((stm.subtitle || '').toLowerCase());
-            var _fx99Raw = (stm.title || '').toLowerCase() + ' ' + (stm.subtitle || '').toLowerCase();
-            var _fx99Msg = _gateMsgTopicWords.filter(function(w) {
-              if (_fx99Norm.includes(w)) return true;
-              if (/^[a-zA-Z]+$/.test(w) && _fx99Raw.includes(w)) return true;
-              return false;
-            });
-            var _fx99Search = _gateAllSearchWords.filter(function(w) {
-              if (_fx99Norm.includes(w)) return true;
-              if (/^[a-zA-Z]+$/.test(w) && _fx99Raw.includes(w)) return true;
-              return false;
-            });
-            if (_fx99Msg.length < 2 && _fx99Search.length < 2) {
-              console.log('🚫 FIX99 BLOCKED: "' + stm.title + '" topics:' + _fx99Msg.length + ' search:' + _fx99Search.length);
-              continue;
-            }
-          }
-
-          if (!relevantCourses.find(rc => rc.id === stm.id)) {
+         if (!relevantCourses.find(rc => rc.id === stm.id)) {
             if (_gptExcludedIds.has(stm.id)) {
               console.log(`🤖 Skipping GPT-excluded saved: "${stm.title}"`);
               continue;
