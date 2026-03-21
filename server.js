@@ -5671,7 +5671,7 @@ var _allRaw = _cTitleRaw + ' ' + _cSubRaw + ' ' + _cKeywordsRaw;
           console.log('   ✅ Gate PASS: "' + c.title + '" (' + _msgHits.length + ' topic words)');
           return true;
         }
-        if (_searchHits.length >= 2) {
+        if (_searchHits.length >= 3) {
           console.log('   ✅ Gate PASS: "' + c.title + '" (' + _searchHits.length + ' search terms)');
           return true;
         }
