@@ -1244,7 +1244,7 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
         }
         if (subtitleNorm.includes(nt)) score += 30;
         if (domainNorm.includes(nt)) score += 10;
-        if (keywordsNorm.includes(nt)) score += 5;
+        if (keywordsNorm.includes(nt)) score += 40;
         if (pageNorm.includes(nt)) score += 5;
         if (syllabusNorm.includes(nt)) score += 4;
         if (objectivesNorm.includes(nt)) score += 4;
@@ -5611,8 +5611,11 @@ courses = courses.filter(function(c) {
       if (c.matchedLessons && c.matchedLessons.length > 0) {
         _lessonText = normalizeArabic(c.matchedLessons.map(function(l) { return l.title || ''; }).join(' ').toLowerCase());
       }
-      var _allNorm = _cTitleNorm + ' ' + _cSubNorm + ' ' + _lessonText;
-      var _allRaw = _cTitleRaw + ' ' + _cSubRaw;
+      var _cKeywordsNorm = normalizeArabic((c.keywords || '').toLowerCase());
+var _cKeywordsRaw = (c.keywords || '').toLowerCase();
+var _allNorm = _cTitleNorm + ' ' + _cSubNorm + ' ' + _cKeywordsNorm + ' ' + _lessonText;
+var _allRaw = _cTitleRaw + ' ' + _cSubRaw + ' ' + _cKeywordsRaw;
+
 
       var _msgHits = _gateMsgTopicWords.filter(function(w) {
         if (_allNorm.includes(w)) return true;
