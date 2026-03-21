@@ -5663,15 +5663,10 @@ var _allRaw = _cTitleRaw + ' ' + _cSubRaw + ' ' + _cKeywordsRaw;
       });
 
       if (_gateMsgTopicWords.length >= 2) {
-        if (c._chunkMatch && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
-  console.log('   ✅ Gate PASS: "' + c.title + '" (chunk match + word hit)');
-  return true;
-}
-if (c._lessonMatch && !c._chunkMatch && (_msgHits.length >= 2 || _searchHits.length >= 3)) {
-  console.log('   ✅ Gate PASS: "' + c.title + '" (lesson match + strong evidence)');
-  return true;
-}
-
+        if ((c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
+          console.log('   ✅ Gate PASS: "' + c.title + '" (content match + word hit)');
+          return true;
+        }
         if (_msgHits.length >= 2) {
           console.log('   ✅ Gate PASS: "' + c.title + '" (' + _msgHits.length + ' topic words)');
           return true;
