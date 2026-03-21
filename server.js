@@ -4029,6 +4029,16 @@ function normalizeArabicName(name) {
 function detectInstructorQuestion(message) {
   const norm = normalizeArabic((message || "").toLowerCase());
 
+  // ══════════════════════════════════════════════════════════
+  // 🆕 FIX: "أنا مهندس/دكتور/مدرس" = المستخدم بيوصف نفسه
+  // مش بيدور على محاضر! لازم نسيب الرسالة تروح لـ GPT
+  // ══════════════════════════════════════════════════════════
+  const selfDescriptionPattern = /(?:^|\s)(انا|احنا|اني|بشتغل|شغال|متخرج|خريج)\s+(?:ال)?(مهندس|مهندسه|دكتور|دكتوره|استاذ|استاذه|مدرس|مدرسه|مدرب|مدربه|محاضر|محاضره)/;
+  if (selfDescriptionPattern.test(norm)) {
+    console.log(`👨‍🏫 detectInstructor: SKIPPED — self-description ("أنا مهندس/دكتور..." = user describing themselves, NOT searching for instructor)`);
+    return null;
+  }
+
   const instructorKeywords = /(محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|محاضرين|مدرسين|مدربين|دكتور|الدكتور|استاذ|الاستاذ|مهندس|المهندس)/;
   const hasKeyword = instructorKeywords.test(norm);
 
@@ -4390,7 +4400,7 @@ const _isPaymentBtn =
       _payReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
       _payReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
       _payReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-      _payReply = finalizeReply(_payReply);
+_payReply = finalizeReply(_payReply);
       return {
         reply: _payReply,
         intent: "SUBSCRIPTION",
@@ -4399,9 +4409,51 @@ const _isPaymentBtn =
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 FIX: Payment method name detection
+  // "انستاباي", "فودافون كاش", "تحويل بنكي", "instapay", "bank transfer", etc.
+  // When user mentions a specific payment method → payment info directly
+  // ═══════════════════════════════════════════════════════════
+  if (!_hasLearningWord) {
+    const _lowerMsg = message.toLowerCase();
+    const _normMsg = normalizeArabic(_lowerMsg);
+    const _isPaymentMethodMention =
+      /(ال)?انستا\s*با[يى]/.test(_normMsg) ||
+      /instapay|insta\s*pay/.test(_lowerMsg) ||
+      /فودافون\s*كاش/.test(_normMsg) ||
+      /vodafone\s*cash/.test(_lowerMsg) ||
+      /(ال)?تحويل[ات]?\s*(ال)?بنكي[ةه]?/.test(_normMsg) ||
+      /bank\s*transfer/.test(_lowerMsg) ||
+      /سكريل/.test(_normMsg) ||
+      /skrill/.test(_lowerMsg) ||
+      /(باي|بي)\s*بال/.test(_normMsg) ||
+      /paypal/.test(_lowerMsg);
+
+    if (_isPaymentMethodMention) {
+      console.log(`💳 Payment method name detected: "${message}"`);
+      let _pmReply = `أهلاً بيك! 🎉<br><br>`;
+      _pmReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
+      _pmReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
+      _pmReply += `2. 🅿️ <strong>PayPal</strong><br>`;
+      _pmReply += `3. 📱 <strong>InstaPay</strong><br>`;
+      _pmReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
+      _pmReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
+      _pmReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
+      _pmReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
+      _pmReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+      _pmReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+      _pmReply = finalizeReply(_pmReply);
+      return {
+        reply: _pmReply,
+        intent: "SUBSCRIPTION",
+        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
+  }
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 INSTRUCTOR DETECTION — Early exit (before GPT analyzer)
+
   // Same safe pattern as diploma button & payment button
   // ═══════════════════════════════════════════════════════════
   const _instructorCheck = detectInstructorQuestion(message);
@@ -5098,44 +5150,6 @@ if (!analysis.is_follow_up && isContextFollowUp
 // GPT handles search term extraction in analyzer
 
 
-// FIX: "أنا مهندس/نجار/طباخ..." = بيوصف مهنته مش بيدور على محاضر
-  if (analysis.action === "INSTRUCTOR") {
-    const _profNorm = normalizeArabic((message || "").toLowerCase());
-    const _startsWithAna = /^(انا|أنا)\s/.test(_profNorm);
-    const _describesSelf = /(انا|أنا)\s+(مهنتي|مهنتى|شغال|بشتغل|اشتغل|شغلي|بعمل|عندي|عندى)/.test(_profNorm);
-
-    if (_startsWithAna || _describesSelf) {
-      console.log("FIX: INSTRUCTOR → user describing themselves, not looking for instructor");
-
-      const _excludeWords = new Set([
-        'انا','مهنتي','مهنتى','شغال','بشتغل','اشتغل','عندي','عندى','بعمل',
-        'عايز','عاوز','محتاج','ايه','اللي','تخصني','تخصنى',
-        'الدورات','والدبلومات','دبلومات','كورسات','دورات','كورس','دوره','دورة',
-        'والدورات','والكورسات','بتاعت','بتاع','حاجه','حاجة','اتعلم','تعلم',
-      ]);
-
-      const _profWords = message.split(/\s+/).filter(w => {
-        const wn = normalizeArabic(w.toLowerCase());
-        return wn.length > 2 && !_excludeWords.has(wn) && !BASIC_STOP_WORDS.has(w.toLowerCase());
-      });
-
-      console.log("FIX: Extracted profession words:", _profWords);
-
-      if (_profWords.length >= 2) {
-        analysis.action = "SEARCH";
-        analysis.search_terms = [..._profWords];
-        analysis.topics = [..._profWords];
-      } else {
-        analysis.action = "CLARIFY";
-        if (!analysis.response_message || analysis.response_message.length < 10) {
-          analysis.response_message = "أهلاً بيك! 😊 عايز تتعلم إيه في مجالك بالظبط؟";
-        }
-        analysis.topics = _profWords.length > 0 ? [..._profWords] : [];
-        analysis.search_terms = [..._profWords];
-      }
-    }
-  }
-
 
 let reply = "";
   let intent = analysis.intent || analysis.action;
@@ -5588,10 +5602,10 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
   if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
     const _gateBeforeCount = courses.length;
 
-    courses = courses.filter(c => {
-      // ✅ SAFETY CHECK 1: Always keep chunk/lesson matches
-      if (c._chunkMatch || c._lessonMatch) {
-        console.log(`   ✅ Gate SAFE: "${c.title}" (chunk/lesson match)`);
+courses = courses.filter(c => {
+      // ✅ SAFETY CHECK 1: Always keep title/chunk/lesson matches
+      if (c._titleMatch || c._chunkMatch || c._lessonMatch) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (${c._titleMatch ? 'title' : c._lessonMatch ? 'lesson' : 'chunk'} match)`);
         return true;
       }
 
@@ -6386,23 +6400,7 @@ else if (analysis.action === "CLARIFY") {
     console.log(`💬 CLARIFY: Question #${currentCount + 1} — "${reply.substring(0, 80)}..."`);
 
     // 🆕 FIX: Save topics as searchTerms + lastSearchTopic so follow-up context is preserved
-let clarifyTopics = analysis.topics && analysis.topics.length > 0 ? [...analysis.topics] : [];
-
-    if (clarifyTopics.length === 0) {
-      const _clrExclude = new Set([
-        'انا','مهنتي','مهنتى','شغال','بشتغل','اشتغل','عايز','عاوز','محتاج',
-        'ايه','اللي','تخصني','تخصنى','عندي','عندى','بعمل',
-      ]);
-      const _clrWords = message.split(/\s+/).filter(w => {
-        const wn = normalizeArabic(w.toLowerCase());
-        return wn.length > 2 && !_clrExclude.has(wn) && !BASIC_STOP_WORDS.has(w.toLowerCase());
-      });
-      if (_clrWords.length > 0) {
-        clarifyTopics = _clrWords.slice(0, 5);
-        console.log("CLARIFY safety: extracted topics from message:", clarifyTopics);
-      }
-    }
-
+const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.topics : [];
 
     // 🆕 FIX: Save both topics AND search_terms for better context merge
     const allClarifyTerms = [...new Set([
