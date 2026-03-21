@@ -2351,7 +2351,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 ═══ المطلوب ═══
 
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT|INSTRUCTOR","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false,"instructor_name":"اسم المحاضر لو action=INSTRUCTOR أو null","is_instructor_popularity":false}
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -2708,29 +2708,6 @@ CLARIFY فقط لو قال "عايز اتعلم" بدون أي موضوع نها
 SUPPORT = مشاكل تقنية (الموقع مش شغال، مش عارف ادخل...)
 CHAT = ترحيب/كلام عام/شكر
 
-
-INSTRUCTOR = بيسأل عن محاضر بالاسم أو بيسأل مين أحسن/أشهر محاضر
-⚠️ "أنا مهندس مدني" ≠ سؤال عن محاضر! ده بيوصف مهنته → SEARCH أو CLARIFY
-⚠️ "كورسات المهندس أحمد" = سؤال عن محاضر → INSTRUCTOR
-⚠️ "مين أحسن محاضر" = سؤال شهرة → INSTRUCTOR
-
-القاعدة: INSTRUCTOR فقط لما المستخدم بيسأل عن شخص محدد يدرّس على المنصة أو بيسأل عن أشهر/أحسن محاضر
-
-أمثلة INSTRUCTOR:
-• "كورسات الدكتور أحمد" → INSTRUCTOR
-• "المهندس محمد عنده كورسات؟" → INSTRUCTOR
-• "عايز كورسات أحمد إبراهيم" → INSTRUCTOR
-• "مين أحسن محاضر عندكم" → INSTRUCTOR
-• "مين أشهر مدرب" → INSTRUCTOR
-
-أمثلة مش INSTRUCTOR:
-• "أنا مهندس مدني" → SEARCH أو CLARIFY (بيوصف مهنته)
-• "أنا دكتور وعايز أطور نفسي" → CLARIFY (بيوصف مهنته)
-• "أنا مهنتي مهندس" → CLARIFY (بيوصف مهنته)
-• "كورسات عن المبيعات" → SEARCH (بيدور على موضوع مش محاضر)
-• "كورسات هندسة" → SEARCH (بيدور على موضوع)
-
-
 🔴🔴🔴 قاعدة CATEGORIES vs SEARCH — أهم قاعدة بعد SUBSCRIPTION:
 CATEGORIES = فقط لما المستخدم يطلب بشكل صريح يشوف قائمة كل الأقسام/الأقسام/المجالات
 أمثلة CATEGORIES الصح: "ايه الأقسام؟" / "ورّيني الأقسام" / "عايز اشوف المجالات المتاحة" / "الأقسام عندكم ايه؟"
@@ -2908,10 +2885,8 @@ detected_category: null,
         is_follow_up: false,
         previous_topic_reference: null,
         audience_filter: null,
-language: "ar",
+        language: "ar",
         is_popularity_search: false,
-        instructor_name: null,
-        is_instructor_popularity: false,
       };
     }
 
@@ -2934,8 +2909,6 @@ follow_up_type: result.follow_up_type || null,
 audience_filter: result.audience_filter || null,
       language: result.language || "ar",
       is_popularity_search: !!result.is_popularity_search,
-      instructor_name: result.instructor_name || null,
-      is_instructor_popularity: !!result.is_instructor_popularity,
     };
 
 } catch (e) {
@@ -2955,10 +2928,8 @@ detected_category: null,
 follow_up_type: null,
       previous_topic_reference: null,
       audience_filter: null,
-language: "ar",
+      language: "ar",
       is_popularity_search: false,
-      instructor_name: null,
-      is_instructor_popularity: false,
     };
   }
 }
@@ -4055,7 +4026,64 @@ function normalizeArabicName(name) {
 }
 
 
-// 🧠 detectInstructorQuestion removed — GPT handles instructor detection now
+function detectInstructorQuestion(message) {
+  const norm = normalizeArabic((message || "").toLowerCase());
+
+  const instructorKeywords = /(محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|محاضرين|مدرسين|مدربين|دكتور|الدكتور|استاذ|الاستاذ|مهندس|المهندس)/;
+  const hasKeyword = instructorKeywords.test(norm);
+
+  let extractedName = null;
+
+  if (hasKeyword) {
+    const patterns = [
+      /(?:محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|دكتور|الدكتور|استاذ|الاستاذ|مهندس|المهندس)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
+      /كورسات\s+(?:ال)?(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
+    ];
+
+    for (const p of patterns) {
+      const m = norm.match(p);
+      if (m && m[1]) {
+        extractedName = m[1].trim()
+          .replace(/(الاكثر|الاعلى|مبيعا|افضل|اشهر|من|في|على|عندكم|عندكو|بتاعكم|ايه|اية|كام|هل|اعرف).*$/g, '')
+          .trim();
+        if (extractedName.length >= 2) break;
+        extractedName = null;
+      }
+    }
+
+    const isPopularity = /(مين|من هو|من هي)\s+.*(محاضر|مدرس|مدرب)/.test(norm)
+      || (/(اكثر|افضل|اشهر|اعلى)/.test(norm) && !extractedName);
+
+    console.log(`👨‍🏫 detectInstructor [keyword]: name="${extractedName}", pop=${isPopularity}`);
+
+    return {
+      isInstructorQuestion: true,
+      instructorName: extractedName,
+      possibleInstructorName: null,
+      isPopularityQuestion: isPopularity && !extractedName,
+    };
+  }
+
+  // ✨ "كورسات أحمد إبراهيم" — no keyword but might be instructor name
+  const coursesByName = norm.match(/كورسات\s+([\u0600-\u06FFa-zA-Z\s]{3,})/);
+  if (coursesByName && coursesByName[1]) {
+    let possName = coursesByName[1].trim()
+      .replace(/(الاكثر|الاعلى|مبيعا|افضل|اشهر|من الكورسات|المجانيه|المجانية|المدفوعه|المدفوعة|هل|ايه|اية).*$/g, '')
+      .trim();
+
+    if (possName.length >= 3) {
+      console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
+      return {
+        isInstructorQuestion: false,
+        instructorName: null,
+        possibleInstructorName: possName,
+        isPopularityQuestion: false,
+      };
+    }
+  }
+
+  return null;
+}
 
 
 async function searchByInstructor(instructorName) {
@@ -4372,10 +4400,120 @@ const _isPaymentBtn =
   }
 
 
-// 🧠 Instructor detection moved to GPT — no more regex early exit
+// ═══════════════════════════════════════════════════════════
+  // 🆕 INSTRUCTOR DETECTION — Early exit (before GPT analyzer)
+  // Same safe pattern as diploma button & payment button
+  // ═══════════════════════════════════════════════════════════
+  const _instructorCheck = detectInstructorQuestion(message);
 
-  // 🧠 possibleInstructorName block removed — GPT handles this now
+  if (_instructorCheck && _instructorCheck.isInstructorQuestion) {
 
+    if (_instructorCheck.instructorName) {
+      // ═══ بحث عن محاضر بالاسم ═══
+      const { instructor, courses } = await searchByInstructor(_instructorCheck.instructorName);
+      const _instInstructors = await getInstructors();
+
+      if (instructor && courses.length > 0) {
+        let _instReply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
+        _instReply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
+
+        courses.slice(0, 5).forEach((c, i) => {
+          _instReply += formatCourseCard(c, _instInstructors, i + 1);
+        });
+
+        if (courses.length > 5) {
+          _instReply += `<br>📌 وفيه كمان <strong>${courses.length - 5}</strong> كورسات تانية!`;
+        }
+        _instReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+        _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else if (instructor) {
+        let _instReply = `👨‍🏫 المحاضر <strong>${escapeHtml(instructor.name)}</strong> موجود على المنصة بس مفيش كورسات مسجلة ليه حالياً.`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else {
+        let _instReply = `🔍 مش لاقي محاضر اسمه "<strong>${escapeHtml(_instructorCheck.instructorName)}</strong>" على المنصة.`;
+        _instReply += `<br>ممكن تتأكد من الاسم وتجرب تاني؟ 😊`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      }
+
+    } else if (_instructorCheck.isPopularityQuestion) {
+      // ═══ "مين المحاضر الأكثر مبيعاً" — مفيش data بالمحاضر ═══
+      let _instReply = `👨‍🏫 عندنا محاضرين كتير مميزين على المنصة! 🌟<br><br>`;
+      _instReply += `💡 تقدر تشوف الكورسات الأكثر مبيعاً وهتلاقي اسم المحاضر على كل كورس 😊<br><br>`;
+      _instReply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+      return {
+        reply: finalizeReply(_instReply),
+        intent: "INSTRUCTOR",
+        suggestions: ["الكورسات الأكثر مبيعاً 🏆", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    }
+    // ← لو وصل هنا = كلمة "محاضر" موجودة بس مفيش اسم ومش popularity
+    //   → يكمّل الـ flow العادي (GPT يتعامل معاه)
+  }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 Handle possibleInstructorName — "كورسات أحمد إبراهيم" (no keyword)
+  // ═══════════════════════════════════════════════════════════
+  if (_instructorCheck && !_instructorCheck.isInstructorQuestion && _instructorCheck.possibleInstructorName) {
+    console.log(`👨‍🏫 Possible instructor name: "${_instructorCheck.possibleInstructorName}" — trying search...`);
+    const { instructor: _possInst, courses: _possCourses } = await searchByInstructor(_instructorCheck.possibleInstructorName);
+
+    if (_possInst && _possCourses.length > 0) {
+      console.log(`👨‍🏫 ✅ Found instructor "${_possInst.name}" with ${_possCourses.length} courses`);
+      const _possInstructors = await getInstructors();
+
+      let _possReply = `👨‍🏫 <strong>${escapeHtml(_possInst.name)}</strong><br>`;
+      _possReply += `📚 عنده <strong>${_possCourses.length}</strong> كورس على المنصة:<br><br>`;
+
+      _possCourses.slice(0, 5).forEach((c, i) => {
+        _possReply += formatCourseCard(c, _possInstructors, i + 1);
+      });
+
+      if (_possCourses.length > 5) {
+        _possReply += `<br>📌 وفيه كمان <strong>${_possCourses.length - 5}</strong> كورسات تانية!`;
+      }
+      _possReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+      _possReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+      return {
+        reply: finalizeReply(_possReply),
+        intent: "INSTRUCTOR",
+        suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+      };
+    } else {
+      console.log(`👨‍🏫 ❌ Not found as instructor — continuing normal flow`);
+      // مش محاضر → يكمل الـ flow العادي (يمكن اسم كورس أو موضوع)
+    }
+  }
+
+  const sessionMem = getSessionMemory(sessionId);
+// Check response cache (skip for follow-ups)
+  const cacheKey = getResponseCacheKey(message);
+  if (cacheKey && !isFollowUpMessage(message)) {
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
 
   // ╔═══════════════════════════════════════════════════════════╗
   // ║ 🆕 CORRECTION LAYER 1: Direct Match — قبل أي GPT call    ║
@@ -6283,48 +6421,6 @@ else if (analysis.action === "SUBSCRIPTION") {
       analysis.response_message ||
       "لو عندك مشكلة تقنية تواصل معانا على support@easyt.online 📧";
   }
-
-
-/* ═══════════════════════════════════
-     ACTION: INSTRUCTOR
-     ═══════════════════════════════════ */
-  else if (analysis.action === "INSTRUCTOR") {
-    const _instName = analysis.instructor_name;
-    const _allInstructors = await getInstructors();
-
-    if (_instName) {
-      const { instructor, courses } = await searchByInstructor(_instName);
-
-      if (instructor && courses.length > 0) {
-        reply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
-        reply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
-        courses.slice(0, 5).forEach((c, i) => {
-          reply += formatCourseCard(c, _allInstructors, i + 1);
-        });
-        if (courses.length > 5) {
-          reply += `<br>📌 وفيه كمان <strong>${courses.length - 5}</strong> كورسات تانية!`;
-        }
-        reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-        reply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
-      } else if (instructor) {
-        reply = `👨‍🏫 المحاضر <strong>${escapeHtml(instructor.name)}</strong> موجود على المنصة بس مفيش كورسات مسجلة ليه حالياً.`;
-        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-      } else {
-        reply = `🔍 مش لاقي محاضر اسمه "<strong>${escapeHtml(_instName)}</strong>" على المنصة.`;
-        reply += `<br>ممكن تتأكد من الاسم وتجرب تاني؟ 😊`;
-        reply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-      }
-    } else if (analysis.is_instructor_popularity) {
-      reply = `👨‍🏫 عندنا محاضرين كتير مميزين على المنصة! 🌟<br><br>`;
-      reply += `💡 تقدر تشوف الكورسات الأكثر مبيعاً وهتلاقي اسم المحاضر على كل كورس 😊<br><br>`;
-      reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-    } else {
-      reply = analysis.response_message || `👨‍🏫 لو عايز تعرف كورسات محاضر معين، قولي اسمه وهجبهالك! 😊`;
-    }
-    intent = "INSTRUCTOR";
-  }
-
-
 
 /* ═══════════════════════════════════
      ACTION: CHAT (default) — FIX #70 + FIX #85
