@@ -5573,7 +5573,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
     .filter(w => /^[a-zA-Z]{2,}$/.test(w) && !_gateIntentWords.has(w))
     .map(w => w.toLowerCase());
 
-  var _gateMsgTopicWords = [...new Set([..._gateTopicWords, ..._gateEngWords])];
+  const _gateMsgTopicWords = [...new Set([..._gateTopicWords, ..._gateEngWords])];
 
   // === Extract topic words from GPT's search terms (has synonyms!) ===
   const _gateSearchWords = [...new Set(
@@ -5592,7 +5592,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
       .map(w => w.toLowerCase())
   )];
 
-  var _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
+  const _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
 
   console.log(`🔍 Relevance Gate v2:`);
   console.log(`   Message topic words: [${_gateMsgTopicWords.join(', ')}]`);
@@ -5602,67 +5602,102 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
   if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
     const _gateBeforeCount = courses.length;
 
-courses = courses.filter(function(c) {
-      var _cTitleNorm = normalizeArabic((c.title || '').toLowerCase());
-      var _cSubNorm = normalizeArabic((c.subtitle || '').toLowerCase());
-      var _cTitleRaw = (c.title || '').toLowerCase();
-      var _cSubRaw = (c.subtitle || '').toLowerCase();
-      var _lessonText = '';
+courses = courses.filter(c => {
+      // ✅ SAFETY CHECK 1: Always keep chunk/lesson matches (content-proven)
+      if (c._chunkMatch || c._lessonMatch) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (${c._lessonMatch ? 'lesson' : 'chunk'} match)`);
+        return true;
+      }
+
+      // Build course text (needed for ALL checks below)
+      const _cTitleNorm = normalizeArabic((c.title || '').toLowerCase());
+      const _cSubNorm = normalizeArabic((c.subtitle || '').toLowerCase());
+      const _cTitleRaw = (c.title || '').toLowerCase();
+      const _cSubRaw = (c.subtitle || '').toLowerCase();
+
+      // ✅ SAFETY CHECK 1b: titleMatch — verify multi-word topic coverage
+      // Problem: "هندسة" alone matches "إعادة هندسة العمليات" → titleMatch=true
+      // But user asked "هندسة مدنية" → title must have BOTH words!
+      if (c._titleMatch) {
+        if (_gateMsgTopicWords.length >= 2) {
+          const _tmText = _cTitleNorm + ' ' + _cSubNorm;
+          const _tmHits = _gateMsgTopicWords.filter(w => _tmText.includes(w));
+          const _tmNeeded = Math.max(2, Math.ceil(_gateMsgTopicWords.length * 0.5));
+
+          if (_tmHits.length >= _tmNeeded) {
+            console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch verified: ${_tmHits.length}/${_gateMsgTopicWords.length} topic words: [${_tmHits.join(',')}])`);
+            return true;
+          }
+
+          // Fallback: check GPT search term words (catches synonyms/translations)
+          const _tmSearchHits = _gateAllSearchWords.filter(w => {
+            if (_cTitleNorm.includes(w)) return true;
+            if (/^[a-zA-Z]+$/.test(w) && _cTitleRaw.includes(w)) return true;
+            return false;
+          });
+          if (_tmSearchHits.length >= 2) {
+            console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch + ${_tmSearchHits.length} search words: [${_tmSearchHits.join(',')}])`);
+            return true;
+          }
+
+          // ❌ Title matches only 1 generic word — REVOKE titleMatch
+          console.log(`   🚫 Gate REVOKED titleMatch: "${c.title}" — topic:[${_tmHits.join(',')}](${_tmHits.length}/${_gateMsgTopicWords.length}) search:[${_tmSearchHits.join(',')}](${_tmSearchHits.length})`);
+          c._titleMatch = false;
+          c._titleMatchStrength = 'none';
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 500);
+          // Fall through → normal CHECK A + CHECK B below
+        } else {
+          // Single-word query → trust titleMatch as before
+          console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch, single-word query)`);
+          return true;
+        }
+      }
+
+      let _lessonText = '';
       if (c.matchedLessons && c.matchedLessons.length > 0) {
-        _lessonText = normalizeArabic(c.matchedLessons.map(function(l) { return l.title || ''; }).join(' ').toLowerCase());
+        _lessonText = normalizeArabic(
+          c.matchedLessons.map(l => (l.title || '')).join(' ').toLowerCase()
+        );
       }
-      var _allNorm = _cTitleNorm + ' ' + _cSubNorm + ' ' + _lessonText;
-      var _allRaw = _cTitleRaw + ' ' + _cSubRaw;
 
-      var _msgHits = _gateMsgTopicWords.filter(function(w) {
+      const _allNorm = _cTitleNorm + ' ' + _cSubNorm + ' ' + _lessonText;
+      const _allRaw = _cTitleRaw + ' ' + _cSubRaw;
+
+      // === CHECK A: Original message words (80% needed) ===
+      const _msgMatched = _gateMsgTopicWords.filter(w => {
+        if (_allNorm.includes(w)) return true;
+        if (/^[a-zA-Z]+$/.test(w) && _allRaw.includes(w)) return true;
+        return false;
+      });
+      const _msgRatio = _msgMatched.length / _gateMsgTopicWords.length;
+
+      if (_msgRatio >= 0.8) return true; // ✅ Passes on original words
+
+      // === CHECK B: GPT search terms (2+ words must match) ===
+      // This catches synonyms: "ديجيتال ماركتنج" → GPT added "تسويق" → matches "التسويق الإلكتروني"
+      const _searchMatched = _gateAllSearchWords.filter(w => {
         if (_allNorm.includes(w)) return true;
         if (/^[a-zA-Z]+$/.test(w) && _allRaw.includes(w)) return true;
         return false;
       });
 
-      var _searchHits = _gateAllSearchWords.filter(function(w) {
-        if (_allNorm.includes(w)) return true;
-        if (/^[a-zA-Z]+$/.test(w) && _allRaw.includes(w)) return true;
-        return false;
-      });
-
-      if (_gateMsgTopicWords.length >= 2) {
-        if ((c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
-          console.log('   ✅ Gate PASS: "' + c.title + '" (content match + word hit)');
-          return true;
-        }
-        if (_msgHits.length >= 2) {
-          console.log('   ✅ Gate PASS: "' + c.title + '" (' + _msgHits.length + ' topic words)');
-          return true;
-        }
-        if (_searchHits.length >= 2) {
-          console.log('   ✅ Gate PASS: "' + c.title + '" (' + _searchHits.length + ' search terms)');
-          return true;
-        }
-        console.log('   🚫 Gate REMOVED: "' + c.title + '" topics:[' + _msgHits.join(',') + '] search:[' + _searchHits.join(',') + ']');
-        c._titleMatch = false;
-        c._titleMatchStrength = 'none';
-        return false;
+      if (_searchMatched.length >= 2) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (${_searchMatched.length} search terms match: [${_searchMatched.join(',')}])`);
+        return true; // ✅ Passes on GPT synonyms
       }
 
-      if (_msgHits.length >= 1 || _searchHits.length >= 1) {
-        console.log('   ✅ Gate PASS: "' + c.title + '" (single-word query)');
-        return true;
-      }
-      if (c._chunkMatch || c._lessonMatch || c._titleMatch) {
-        console.log('   ✅ Gate PASS: "' + c.title + '" (has match flag)');
-        return true;
-      }
-      console.log('   🚫 Gate REMOVED: "' + c.title + '" (no match)');
+      // === FAILED all checks → remove ===
+      console.log(`🚫 Gate REMOVED: "${c.title}" — msg:[${_msgMatched.join(',')}] (${_msgMatched.length}/${_gateMsgTopicWords.length}) — search:[${_searchMatched.join(',')}] (${_searchMatched.length})`);
+      c._titleMatch = false;
+      c._titleMatchStrength = 'none';
       return false;
     });
 
     if (courses.length < _gateBeforeCount) {
-      console.log('🚫 Relevance Gate: ' + _gateBeforeCount + ' → ' + courses.length + ' courses');
+      console.log(`🚫 Relevance Gate: ${_gateBeforeCount} → ${courses.length} courses`);
     }
   }
 }
-
 
 
 // ═══════════════════════════════════════════════════════════
@@ -6121,9 +6156,7 @@ if (_gptExcludedIds.has(tm.id)) {
 
 if (relevantCourses.length === 0 && relevantDiplomas.length === 0 && courses.length > 0) {
         // FIX #62 v3: Fallback to title-matched OR lesson-matched courses
-const protectedOnly = courses.filter((c) => c._titleMatch === true && !_gptExcludedIds.has(c.id));
-console.log(`🛡️ FIX #62v3: Protected after GPT-exclusion filter: ${courses.filter(c => c._titleMatch === true).length} → ${protectedOnly.length}`);
-
+const protectedOnly = courses.filter((c) => c._titleMatch === true);
         
         if (protectedOnly.length > 0) {
           console.log(`⚠️ FIX #62v3: Using ${protectedOnly.length} protected courses as fallback (title=${protectedOnly.filter(c=>c._titleMatch).length}, lesson=${protectedOnly.filter(c=>c._lessonMatch).length})`);
@@ -6188,10 +6221,7 @@ for (const stm of savedTitleMatchCourses) {
             console.log(`🚫 FIX99: Skipping gate-revoked: "${stm.title}"`);
             continue;
           }
-
-
-
-         if (!relevantCourses.find(rc => rc.id === stm.id)) {
+          if (!relevantCourses.find(rc => rc.id === stm.id)) {
             if (_gptExcludedIds.has(stm.id)) {
               console.log(`🤖 Skipping GPT-excluded saved: "${stm.title}"`);
               continue;
