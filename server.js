@@ -5098,6 +5098,44 @@ if (!analysis.is_follow_up && isContextFollowUp
 // GPT handles search term extraction in analyzer
 
 
+// FIX: "أنا مهندس/نجار/طباخ..." = بيوصف مهنته مش بيدور على محاضر
+  if (analysis.action === "INSTRUCTOR") {
+    const _profNorm = normalizeArabic((message || "").toLowerCase());
+    const _startsWithAna = /^(انا|أنا)\s/.test(_profNorm);
+    const _describesSelf = /(انا|أنا)\s+(مهنتي|مهنتى|شغال|بشتغل|اشتغل|شغلي|بعمل|عندي|عندى)/.test(_profNorm);
+
+    if (_startsWithAna || _describesSelf) {
+      console.log("FIX: INSTRUCTOR → user describing themselves, not looking for instructor");
+
+      const _excludeWords = new Set([
+        'انا','مهنتي','مهنتى','شغال','بشتغل','اشتغل','عندي','عندى','بعمل',
+        'عايز','عاوز','محتاج','ايه','اللي','تخصني','تخصنى',
+        'الدورات','والدبلومات','دبلومات','كورسات','دورات','كورس','دوره','دورة',
+        'والدورات','والكورسات','بتاعت','بتاع','حاجه','حاجة','اتعلم','تعلم',
+      ]);
+
+      const _profWords = message.split(/\s+/).filter(w => {
+        const wn = normalizeArabic(w.toLowerCase());
+        return wn.length > 2 && !_excludeWords.has(wn) && !BASIC_STOP_WORDS.has(w.toLowerCase());
+      });
+
+      console.log("FIX: Extracted profession words:", _profWords);
+
+      if (_profWords.length >= 2) {
+        analysis.action = "SEARCH";
+        analysis.search_terms = [..._profWords];
+        analysis.topics = [..._profWords];
+      } else {
+        analysis.action = "CLARIFY";
+        if (!analysis.response_message || analysis.response_message.length < 10) {
+          analysis.response_message = "أهلاً بيك! 😊 عايز تتعلم إيه في مجالك بالظبط؟";
+        }
+        analysis.topics = _profWords.length > 0 ? [..._profWords] : [];
+        analysis.search_terms = [..._profWords];
+      }
+    }
+  }
+
 
 let reply = "";
   let intent = analysis.intent || analysis.action;
@@ -6348,7 +6386,23 @@ else if (analysis.action === "CLARIFY") {
     console.log(`💬 CLARIFY: Question #${currentCount + 1} — "${reply.substring(0, 80)}..."`);
 
     // 🆕 FIX: Save topics as searchTerms + lastSearchTopic so follow-up context is preserved
-const clarifyTopics = analysis.topics && analysis.topics.length > 0 ? analysis.topics : [];
+let clarifyTopics = analysis.topics && analysis.topics.length > 0 ? [...analysis.topics] : [];
+
+    if (clarifyTopics.length === 0) {
+      const _clrExclude = new Set([
+        'انا','مهنتي','مهنتى','شغال','بشتغل','اشتغل','عايز','عاوز','محتاج',
+        'ايه','اللي','تخصني','تخصنى','عندي','عندى','بعمل',
+      ]);
+      const _clrWords = message.split(/\s+/).filter(w => {
+        const wn = normalizeArabic(w.toLowerCase());
+        return wn.length > 2 && !_clrExclude.has(wn) && !BASIC_STOP_WORDS.has(w.toLowerCase());
+      });
+      if (_clrWords.length > 0) {
+        clarifyTopics = _clrWords.slice(0, 5);
+        console.log("CLARIFY safety: extracted topics from message:", clarifyTopics);
+      }
+    }
+
 
     // 🆕 FIX: Save both topics AND search_terms for better context merge
     const allClarifyTerms = [...new Set([
