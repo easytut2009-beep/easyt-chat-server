@@ -1060,6 +1060,21 @@ const allTerms = prepareSearchTerms(searchTerms);
 
 const limitedTerms = allTerms.slice(0, 8);
 
+// 🆕 FIX: Ensure original GPT search terms aren't lost in variant expansion
+// Problem: prepareSearchTerms expands "هندسة مدنية" into 6+ variants,
+// crowding out tool names like "ريفيت", "revit", "اوتوكاد" etc.
+for (const st of searchTerms) {
+    if (limitedTerms.length >= 14) break;
+    const stLower = st.toLowerCase().trim();
+    const stNorm = normalizeArabic(stLower);
+    if (stLower.length > 2 
+        && !BASIC_STOP_WORDS.has(stLower) 
+        && !limitedTerms.some(lt => lt === stLower || lt === stNorm || normalizeArabic(lt) === stNorm)) {
+        limitedTerms.push(stLower);
+        console.log(`🔧 Original term preserved: "${stLower}"`);
+    }
+}
+
 // ═══ Expand Arabic variants for ilike matching ═══
 const ilikeTerms = expandArabicVariants(limitedTerms);
 console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
@@ -5663,8 +5678,8 @@ var _allRaw = _cTitleRaw + ' ' + _cSubRaw + ' ' + _cKeywordsRaw;
       });
 
       if (_gateMsgTopicWords.length >= 2) {
-        if ((c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
-          console.log('   ✅ Gate PASS: "' + c.title + '" (content match + word hit)');
+        if ((c._titleMatch || c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
+          console.log('   ✅ Gate PASS: "' + c.title + '" (match flag + word hit)');
           return true;
         }
         if (_msgHits.length >= 2) {
