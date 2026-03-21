@@ -7782,7 +7782,7 @@ app.get("/admin/courses", adminAuth, async (req, res) => {
 
     let query = supabase
       .from("courses")
-      .select("id, title, price, instructor_id, image", { count: "exact" })
+.select("id, title, description, link, price, instructor_id, image, keywords", { count: "exact" })
       .order("title", { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -7826,6 +7826,23 @@ app.post("/admin/courses", adminAuth, async (req, res) => {
     res.status(500).json({ success: false, error: e.message });
   }
 });
+
+
+app.get("/admin/courses/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    if (error) throw error;
+    res.json({ success: true, item: data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 
 app.put("/admin/courses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
