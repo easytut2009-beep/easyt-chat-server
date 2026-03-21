@@ -5663,7 +5663,7 @@ var _allRaw = _cTitleRaw + ' ' + _cSubRaw + ' ' + _cKeywordsRaw;
       });
 
       if (_gateMsgTopicWords.length >= 2) {
-if ((c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 2 || _searchHits.length >= 3)) {
+        if ((c._chunkMatch || c._lessonMatch) && (_msgHits.length >= 1 || _searchHits.length >= 1)) {
           console.log('   ✅ Gate PASS: "' + c.title + '" (content match + word hit)');
           return true;
         }
