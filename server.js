@@ -5573,7 +5573,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
     .filter(w => /^[a-zA-Z]{2,}$/.test(w) && !_gateIntentWords.has(w))
     .map(w => w.toLowerCase());
 
-  const _gateMsgTopicWords = [...new Set([..._gateTopicWords, ..._gateEngWords])];
+  var _gateMsgTopicWords = [...new Set([..._gateTopicWords, ..._gateEngWords])];
 
   // === Extract topic words from GPT's search terms (has synonyms!) ===
   const _gateSearchWords = [...new Set(
@@ -5592,7 +5592,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
       .map(w => w.toLowerCase())
   )];
 
-  const _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
+  var _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
 
   console.log(`🔍 Relevance Gate v2:`);
   console.log(`   Message topic words: [${_gateMsgTopicWords.join(', ')}]`);
