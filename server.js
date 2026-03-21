@@ -7782,7 +7782,7 @@ app.get("/admin/courses", adminAuth, async (req, res) => {
 
     let query = supabase
       .from("courses")
-.select("id, title, description, link, price, instructor_id, image, keywords", { count: "exact" })
+.select("id, title, subtitle, description, link, price, instructor_id, image, keywords", { count: "exact" })
       .order("title", { ascending: true })
       .range(offset, offset + limit - 1);
 
