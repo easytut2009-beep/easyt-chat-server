@@ -1612,30 +1612,19 @@ function buildPaginationBar(entity, page, totalPages) {
 
 function goToPage(entity, page) { _crudPages[entity] = page; renderCrudPage(entity, page); var el = document.getElementById(entity + '-table'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 async function openEditFromCache(e, id) {
-  var cached = (_crudCache[e] && _crudCache[e][id]) ? _crudCache[e][id] : null;
-  var finalItem = cached;
-
+  if (_crudCache[e] && _crudCache[e][id]) {
+    openEditModal(e, _crudCache[e][id]);
+    return;
+  }
   try {
     var d = await apiCall('/admin/' + e + '/' + id);
-    var apiItem = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
-    if (apiItem && apiItem.id) {
-      // Merge: cache أولاً + API يكمل اللي ناقص
-      var merged = {};
-      if (cached) { for (var k in cached) merged[k] = cached[k]; }
-      for (var k in apiItem) {
-        if (apiItem[k] != null && apiItem[k] !== '') merged[k] = apiItem[k];
-      }
-      finalItem = merged;
-      _crudCache[e][id] = merged;
+    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
+    if (item && item.id) {
+      openEditModal(e, item);
+    } else {
+      toast('مش لاقي البيانات', 'error');
     }
   } catch(err) {
-    // API فشل — نستخدم الكاش
-    console.log('API fetch failed, using cache for', e, id);
-  }
-
-  if (finalItem) {
-    openEditModal(e, finalItem);
-  } else {
     toast('حدّث الصفحة', 'error');
   }
 }
