@@ -5603,17 +5603,56 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
     const _gateBeforeCount = courses.length;
 
 courses = courses.filter(c => {
-      // ✅ SAFETY CHECK 1: Always keep title/chunk/lesson matches
-      if (c._titleMatch || c._chunkMatch || c._lessonMatch) {
-        console.log(`   ✅ Gate SAFE: "${c.title}" (${c._titleMatch ? 'title' : c._lessonMatch ? 'lesson' : 'chunk'} match)`);
+courses = courses.filter(c => {
+      // ✅ SAFETY CHECK 1: Always keep chunk/lesson matches (content-proven)
+      if (c._chunkMatch || c._lessonMatch) {
+        console.log(`   ✅ Gate SAFE: "${c.title}" (${c._lessonMatch ? 'lesson' : 'chunk'} match)`);
         return true;
       }
 
-      // Build course text
+      // Build course text (needed for ALL checks below)
       const _cTitleNorm = normalizeArabic((c.title || '').toLowerCase());
       const _cSubNorm = normalizeArabic((c.subtitle || '').toLowerCase());
       const _cTitleRaw = (c.title || '').toLowerCase();
       const _cSubRaw = (c.subtitle || '').toLowerCase();
+
+      // ✅ SAFETY CHECK 1b: titleMatch — verify multi-word topic coverage
+      // Problem: "هندسة" alone matches "إعادة هندسة العمليات" → titleMatch=true
+      // But user asked "هندسة مدنية" → title must have BOTH words!
+      if (c._titleMatch) {
+        if (_gateMsgTopicWords.length >= 2) {
+          const _tmText = _cTitleNorm + ' ' + _cSubNorm;
+          const _tmHits = _gateMsgTopicWords.filter(w => _tmText.includes(w));
+          const _tmNeeded = Math.max(2, Math.ceil(_gateMsgTopicWords.length * 0.5));
+
+          if (_tmHits.length >= _tmNeeded) {
+            console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch verified: ${_tmHits.length}/${_gateMsgTopicWords.length} topic words: [${_tmHits.join(',')}])`);
+            return true;
+          }
+
+          // Fallback: check GPT search term words (catches synonyms/translations)
+          const _tmSearchHits = _gateAllSearchWords.filter(w => {
+            if (_cTitleNorm.includes(w)) return true;
+            if (/^[a-zA-Z]+$/.test(w) && _cTitleRaw.includes(w)) return true;
+            return false;
+          });
+          if (_tmSearchHits.length >= 2) {
+            console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch + ${_tmSearchHits.length} search words: [${_tmSearchHits.join(',')}])`);
+            return true;
+          }
+
+          // ❌ Title matches only 1 generic word — REVOKE titleMatch
+          console.log(`   🚫 Gate REVOKED titleMatch: "${c.title}" — topic:[${_tmHits.join(',')}](${_tmHits.length}/${_gateMsgTopicWords.length}) search:[${_tmSearchHits.join(',')}](${_tmSearchHits.length})`);
+          c._titleMatch = false;
+          c._titleMatchStrength = 'none';
+          c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 500);
+          // Fall through → normal CHECK A + CHECK B below
+        } else {
+          // Single-word query → trust titleMatch as before
+          console.log(`   ✅ Gate SAFE: "${c.title}" (titleMatch, single-word query)`);
+          return true;
+        }
+      }
 
       let _lessonText = '';
       if (c.matchedLessons && c.matchedLessons.length > 0) {
@@ -6176,8 +6215,13 @@ const _topicRelevant = courses.filter(c => {
       }
 
 // 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
-      if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
+if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
 for (const stm of savedTitleMatchCourses) {
+          // 🆕 Skip if titleMatch was revoked by Relevance Gate
+          if (!stm._titleMatch) {
+            console.log(`🚫 FIX99: Skipping gate-revoked: "${stm.title}"`);
+            continue;
+          }
           if (!relevantCourses.find(rc => rc.id === stm.id)) {
             if (_gptExcludedIds.has(stm.id)) {
               console.log(`🤖 Skipping GPT-excluded saved: "${stm.title}"`);
@@ -6235,7 +6279,7 @@ const cat = detectCategoryFromContext(analysis, relevantCourses, termsToSearch);
 
         // 🆕 FIX: لو المستخدم كان عايز شرح → وجهه للمرشد التعليمي
         if (analysis._wasQuestion) {
-          reply += `<br><br>🤖 <strong>ولما تشترك، المرشد التعليمي جوه كل كورس هيساعدك تفهم أي حاجة وتلخصلك الدروس!</strong>`;
+          reply += `<br><br>🤖 <strong>ولما تشترك، المرشد التعليمي جوه كل كورس هيساعدك تفهم أي حاجة ويلخصلك الدروس!</strong>`;
         }
       }
 
