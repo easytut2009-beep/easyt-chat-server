@@ -4594,76 +4594,132 @@ if (_isContactSupport) {
     }
   }
 
+
+// ═══════════════════════════════════════════
+// 🛡️ GPT Instructor Intent Validator
+// ═══════════════════════════════════════════
+async function validateInstructorIntent(message, extractedName) {
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 20,
+      messages: [
+        {
+          role: "system",
+          content: `You are a strict intent classifier for an Arabic educational platform chatbot.
+
+A keyword detector extracted "${extractedName}" as a possible instructor name from the user's message.
+
+Your ONLY job: Is the user ACTUALLY asking about a specific person/instructor by name?
+
+Reply with ONLY one word:
+- "YES" → user is asking about a real person / instructor by name
+- "NO" → user is asking about a topic, subject, course category, or anything else
+
+Examples:
+- "مين مسلم خير الله" → YES
+- "كورسات عن المبيعات" → NO
+- "عايز محاضر أحمد" → YES  
+- "ايه الكورسات في التسويق" → NO
+- "مين المحاضر بتاع كورس الاكسل" → YES
+- "فيه دورات عن البرمجة" → NO`
+        },
+        { role: "user", content: message }
+      ]
+    });
+
+    const answer = res.choices[0].message.content.trim().toUpperCase();
+    return answer.startsWith("YES");
+  } catch (err) {
+    console.error("⚠️ validateInstructorIntent error:", err.message);
+    return true; // ← fallback: لو GPT وقع، خلي السلوك القديم زي ما هو
+  }
+}
+
+
 // ═══════════════════════════════════════════════════════════
   // 🆕 INSTRUCTOR DETECTION — Early exit (before GPT analyzer)
 
   // Same safe pattern as diploma button & payment button
   // ═══════════════════════════════════════════════════════════
-  const _instructorCheck = detectInstructorQuestion(message);
+const _instructorCheck = detectInstructorQuestion(message);
 
   if (_instructorCheck && _instructorCheck.isInstructorQuestion) {
 
-    if (_instructorCheck.instructorName) {
-      // ═══ بحث عن محاضر بالاسم ═══
-      const { instructor, courses } = await searchByInstructor(_instructorCheck.instructorName);
-      const _instInstructors = await getInstructors();
+    // 🛡️ GPT double-check: هل فعلاً بيسأل عن محاضر؟
+    const _isReallyInstructor = await validateInstructorIntent(
+      message,
+      _instructorCheck.instructorName || ""
+    );
 
-      if (instructor && courses.length > 0) {
-        let _instReply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
-        _instReply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
+    if (!_isReallyInstructor) {
+      console.log(`🛡️ GPT blocked false instructor match: "${message}" ≠ "${_instructorCheck.instructorName}"`);
+      // مش بيعمل return — بيكمل الـ flow العادي تحت
+    } else {
 
-        courses.slice(0, 5).forEach((c, i) => {
-          _instReply += formatCourseCard(c, _instInstructors, i + 1);
-        });
+      if (_instructorCheck.instructorName) {
+        // ═══ بحث عن محاضر بالاسم ═══
+        const { instructor, courses } = await searchByInstructor(_instructorCheck.instructorName);
+        const _instInstructors = await getInstructors();
 
-        if (courses.length > 5) {
-          _instReply += `<br>📌 وفيه كمان <strong>${courses.length - 5}</strong> كورسات تانية!`;
+        if (instructor && courses.length > 0) {
+          let _instReply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
+          _instReply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
+
+          courses.slice(0, 5).forEach((c, i) => {
+            _instReply += formatCourseCard(c, _instInstructors, i + 1);
+          });
+
+          if (courses.length > 5) {
+            _instReply += `<br>📌 وفيه كمان <strong>${courses.length - 5}</strong> كورسات تانية!`;
+          }
+          _instReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+          _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else if (instructor) {
+          let _instReply = `👨‍🏫 المحاضر <strong>${escapeHtml(instructor.name)}</strong> موجود على المنصة بس مفيش كورسات مسجلة ليه حالياً.`;
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else {
+          let _instReply = `🔍 مش لاقي محاضر اسمه "<strong>${escapeHtml(_instructorCheck.instructorName)}</strong>" على المنصة.`;
+          _instReply += `<br>ممكن تتأكد من الاسم وتجرب تاني؟ 😊`;
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          };
         }
-        _instReply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-        _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+      } else if (_instructorCheck.isPopularityQuestion) {
+        let _instReply = `👨‍🏫 عندنا محاضرين كتير مميزين على المنصة! 🌟<br><br>`;
+        _instReply += `💡 تقدر تشوف الكورسات الأكثر مبيعاً وهتلاقي اسم المحاضر على كل كورس 😊<br><br>`;
+        _instReply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
 
         return {
           reply: finalizeReply(_instReply),
           intent: "INSTRUCTOR",
-          suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
-        };
-      } else if (instructor) {
-        let _instReply = `👨‍🏫 المحاضر <strong>${escapeHtml(instructor.name)}</strong> موجود على المنصة بس مفيش كورسات مسجلة ليه حالياً.`;
-        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-
-        return {
-          reply: finalizeReply(_instReply),
-          intent: "INSTRUCTOR",
-          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-        };
-      } else {
-        let _instReply = `🔍 مش لاقي محاضر اسمه "<strong>${escapeHtml(_instructorCheck.instructorName)}</strong>" على المنصة.`;
-        _instReply += `<br>ممكن تتأكد من الاسم وتجرب تاني؟ 😊`;
-        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-
-        return {
-          reply: finalizeReply(_instReply),
-          intent: "INSTRUCTOR",
-          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          suggestions: ["الكورسات الأكثر مبيعاً 🏆", "🎓 الدبلومات", "📂 الأقسام"],
         };
       }
 
-    } else if (_instructorCheck.isPopularityQuestion) {
-      // ═══ "مين المحاضر الأكثر مبيعاً" — مفيش data بالمحاضر ═══
-      let _instReply = `👨‍🏫 عندنا محاضرين كتير مميزين على المنصة! 🌟<br><br>`;
-      _instReply += `💡 تقدر تشوف الكورسات الأكثر مبيعاً وهتلاقي اسم المحاضر على كل كورس 😊<br><br>`;
-      _instReply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+    } // ← end else _isReallyInstructor
 
-      return {
-        reply: finalizeReply(_instReply),
-        intent: "INSTRUCTOR",
-        suggestions: ["الكورسات الأكثر مبيعاً 🏆", "🎓 الدبلومات", "📂 الأقسام"],
-      };
-    }
     // ← لو وصل هنا = كلمة "محاضر" موجودة بس مفيش اسم ومش popularity
     //   → يكمّل الـ flow العادي (GPT يتعامل معاه)
   }
-
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 Handle possibleInstructorName — "كورسات أحمد إبراهيم" (no keyword)
