@@ -4514,6 +4514,56 @@ const _isCouponAsk = (
     // Don't return — fall through to GPT analyzer which reads bot_instructions
   }
 
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX: Early correction/FAQ check — BEFORE hardcoded handlers
+  // Problem: Hardcoded regex handlers (like _isSubAll) return before
+  //          corrections/FAQs/bot_instructions are ever checked.
+  // Fix: Load corrections + FAQs early. If strong match → return immediately.
+  //       This catches admin corrections that would otherwise be bypassed.
+  // ═══════════════════════════════════════════════════════════
+  const _allCorrections = await loadAllCorrections();
+  const _allFAQs = await loadAllFAQs();
+
+  // Early correction check
+  const _earlyCorrectionMatch = await findBestCorrectionMatch(message, _allCorrections);
+  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+    const { correction: _earlyCorr, score: _earlyScore } = _earlyCorrectionMatch;
+    
+    if (_earlyCorr.corrected_reply && _earlyCorr.corrected_reply.trim().length > 0) {
+      console.log(`✅ [Early Correction] DIRECT MATCH! Score: ${_earlyScore.toFixed(3)} | Correction #${_earlyCorr.id}`);
+      
+      let _earlyReply = _earlyCorr.corrected_reply;
+      _earlyReply = markdownToHtml(_earlyReply);
+      _earlyReply = finalizeReply(_earlyReply);
+      
+      return {
+        reply: _earlyReply,
+        intent: "CORRECTION",
+        suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
+      };
+    }
+  }
+
+  // Early FAQ check
+  const _earlyFaqMatch = await findBestFAQMatch(message, _allFAQs);
+  if (_earlyFaqMatch && _earlyFaqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+    const { faq: _earlyFaq, score: _earlyFaqScore } = _earlyFaqMatch;
+    
+    console.log(`✅ [Early FAQ] DIRECT MATCH! Score: ${_earlyFaqScore.toFixed(3)} | FAQ #${_earlyFaq.id}`);
+    
+    let _earlyFaqReply = _earlyFaq.answer;
+    _earlyFaqReply = markdownToHtml(_earlyFaqReply);
+    _earlyFaqReply = finalizeReply(_earlyFaqReply);
+    
+    return {
+      reply: _earlyFaqReply,
+      intent: "FAQ",
+      suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
+    };
+  }
+
+
   // ─── 2️⃣ PAYMENT (with learning-word filter) ───
   const _hasLearningWord = /(كورس|دور[ةه]|شرح|بتشرح|يشرح|اتعلم|تعلم|دروس|درس|اعمل|اسوي|بيشرح|شروحات|تدريب)/.test(_btnNorm);
 
@@ -4588,13 +4638,56 @@ if (_isSubIssue) {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: Detect QUESTIONS about subscription content vs REQUESTS to subscribe
+// Problem: _isSubAll catches "لو عملت اشتراك سنوي اقدر احصل على كل الكورسات؟"
+// and returns immediately → bot_instructions / corrections / GPT never see it
+// Fix: If user is ASKING about what subscription includes → let GPT handle it
+// ═══════════════════════════════════════════════════════════
+const _isSubContentQuestion = (() => {
+  const _n = normalizeArabic(message.toLowerCase());
+  
+  // 1. Question mark + subscription word → definitely a question
+  if (/[؟?]/.test(message) && /(اشتراك|اشترك|الاشتراك)/.test(_n)) return true;
+  
+  // 2. "does it include" patterns (بيشمل/يشمل/هيشمل)
+  if (/(بيشمل|بتشمل|يشمل|هيشمل|هتشمل|تشمل|شامل)/.test(_n) && /(اشتراك|اشترك|الاشتراك)/.test(_n)) return true;
+  
+  // 3. "can I get/access" patterns (اقدر احصل / هقدر ادخل)
+  if (/(اقدر|هقدر|هاقدر|ممكن)\s*(احصل|ادخل|اتفرج|اشوف|اخد|افتح|استخدم)/.test(_n)) return true;
+  
+  // 4. Conditional "لو" + subscription (لو عملت اشتراك / لو اشتركت)
+  if (/^لو\s/.test(_n) && /(اشتراك|اشترك|عملت\s*اشتراك|اشتركت)/.test(_n)) return true;
+  
+  // 5. "free" question + subscription (مجاني بعد الاشتراك)
+  if (/(مجان[يى]|ببلاش|مجانا)/.test(_n) && /(اشتراك|اشترك|الاشتراك)/.test(_n)) return true;
+  
+  // 6. "after that" + subscription (بعد كده مجاني)
+  if (/بعد\s*كد/.test(_n) && /(اشتراك|اشترك|الاشتراك)/.test(_n)) return true;
+  
+  // 7. "هل" + subscription (هل الاشتراك فيه)
+  if (/هل\s/.test(_n) && /(اشتراك|اشترك|الاشتراك)/.test(_n)) return true;
+  
+  // 8. "الاشتراك فيه/بيديني/هيديني" (asking what subscription gives)
+  if (/(الاشتراك|اشتراك)\s*(فيه|فيها|بيديني|هيديني|بيدي|هيدي)/.test(_n)) return true;
+  
+  // 9. "ايه اللي في الاشتراك" / "الاشتراك فيه ايه"
+  if (/(فيه?\s*(ايه|إيه|اية)|ايه\s*(اللي|في)\s*(ال)?(اشتراك))/.test(_n)) return true;
+  
+  // 10. "الفرق بين" + subscription types
+  if (/الفرق\s*(بين)/.test(_n) && /(اشتراك|باق[ةه])/.test(_n)) return true;
+
+  return false;
+})();
+
 
  // ✅ اشتراك في كل الدورات / الكورسات ──────────────
   const _isSubAll = /(اشتراك|اشترك|باق[ةه]).*(كل|جميع).*(الدورات|الكورسات|الدبلومات)/i.test(message)
     || /(كل|جميع).*(الدورات|الكورسات).*(اشتراك|اشترك)/i.test(message)
     || /باق[ةه]\s*(سنو|شهر)/i.test(message);
 
-  if (_isSubAll) {
+if (_isSubAll && !_isSubContentQuestion) {
+
     console.log(`🎓 Subscription for all: "${message}"`);
     let _subReply = `أهلاً بيك! 🎉<br><br>`;
     _subReply += `ادخل على صفحة الاشتراك وهتلاقي كل الباقات والعروض المتاحة 👇<br><br>`;
@@ -4878,9 +4971,10 @@ const _instructorCheck = detectInstructorQuestion(message);
   // ║ يشتغل لكل الـ intents (SEARCH, SUBSCRIPTION, CHAT...)    ║
   // ╚═══════════════════════════════════════════════════════════╝
 
-// 🆕 FIX: Load corrections + FAQs once, reuse everywhere
-  const _allCorrections = await loadAllCorrections();
-  const _allFAQs = await loadAllFAQs();
+// 🆕 Corrections + FAQs already loaded above (early check)
+  // const _allCorrections — already declared
+  // const _allFAQs — already declared
+
 
   const _correctionMatch = await findBestCorrectionMatch(message, _allCorrections);
 
