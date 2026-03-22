@@ -199,7 +199,7 @@ label{display:block;font-weight:600;margin-bottom:6px;font-size:14px;color:#444}
             <button class="btn btn-warn btn-sm hidden" id="btn-edit-all" onclick="startEditAll()">✏️ تعديل الكل</button>
             <button class="btn btn-success btn-sm hidden" id="btn-save-all" onclick="saveAllEdits()">💾 حفظ الكل</button>
             <button class="btn btn-outline btn-sm hidden" id="btn-cancel-edit-all" onclick="cancelEditAll()">❌ إلغاء التعديل</button>
-            <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل الـ Chunks</button>
+            <button class="btn btn-danger btn-sm hidden" id="btn-delete-all" onclick="onDeleteAll()">🗑️ مسح كل الدروس</button>
           </div>
         </div>
         <div id="lessons-container"></div>
@@ -656,6 +656,9 @@ function removeEditAllFile(lessonId) {
   renderLessons();
 }
 
+// ════════════════════════════════════════════════════════════
+// ═══ MODIFIED: saveAllEdits — أضفت logging تفصيلي للتشخيص ═══
+// ════════════════════════════════════════════════════════════
 async function saveAllEdits() {
   if (processing) return;
 
@@ -663,14 +666,28 @@ async function saveAllEdits() {
   let emptyCount = 0;
 
   existingLessons.forEach(lesson => {
-    const inp = document.getElementById('edit-all-' + lesson.id);
+    const lessonId = String(lesson.id);
+    const inp = document.getElementById('edit-all-' + lessonId);
+
+    // ← ADDED: debug logging
+    console.log('🔍 Looking for input: edit-all-' + lessonId, 'Found:', !!inp);
+
     if (inp) {
       const newTitle = inp.value.trim();
+      const oldTitle = lesson.title.trim();
+
+      // ← ADDED: debug logging
+      console.log('📝 Comparing:', JSON.stringify(oldTitle), '→', JSON.stringify(newTitle), 'Changed:', newTitle !== oldTitle);
+
       if (!newTitle) {
         emptyCount++;
-      } else if (newTitle !== lesson.title.trim()) {
-        nameChanges.push({ id: String(lesson.id), oldTitle: lesson.title, newTitle: newTitle });
+      } else if (newTitle !== oldTitle) {
+        nameChanges.push({ id: lessonId, oldTitle: lesson.title, newTitle: newTitle });
       }
+    } else {
+      // ← ADDED: warn if input not found
+      addLog('⚠️ Input not found for lesson id=' + lessonId, 'warn');
+      console.warn('Input not found: edit-all-' + lessonId);
     }
   });
 
@@ -689,6 +706,14 @@ async function saveAllEdits() {
       });
     }
   });
+
+  // ← ADDED: detailed logging of detected changes
+  addLog('📊 فحص التغييرات: ' + nameChanges.length + ' اسم تغيّر | ' + fileChanges.length + ' ملف جديد | ' + emptyCount + ' فاضي', 'info');
+  nameChanges.forEach(c => {
+    addLog('  📝 "' + c.oldTitle + '" → "' + c.newTitle + '"', 'info');
+  });
+  console.log('📊 nameChanges:', nameChanges);
+  console.log('📊 fileChanges:', fileChanges);
 
   if (emptyCount > 0) {
     addLog('⚠️ فيه ' + emptyCount + ' درس بدون اسم — مش هيتغير', 'warn');
@@ -736,11 +761,19 @@ async function saveAllEdits() {
     for (const change of nameChanges) {
       $('edit-all-progress-text').textContent = '⏳ ' + (completedOps + 1) + ' / ' + totalOps + ' — تعديل اسم: ' + change.newTitle;
       try {
-        await api('PATCH', '/api/admin/lessons/' + change.id, { title: change.newTitle });
+        // ← ADDED: log the request details
+        console.log('📤 PATCH /api/admin/lessons/' + change.id, { title: change.newTitle });
+
+        const result = await api('PATCH', '/api/admin/lessons/' + change.id, { title: change.newTitle });
+
+        // ← ADDED: log the response
+        console.log('📥 PATCH response:', result);
+
         addLog('  ✅ "' + change.oldTitle + '" → "' + change.newTitle + '"', 'success');
         successCount++;
       } catch (e) {
         addLog('  ❌ "' + change.oldTitle + '": ' + e.message, 'error');
+        console.error('PATCH error for lesson ' + change.id + ':', e);
         errorCount++;
       }
       completedOps++;
@@ -1155,49 +1188,78 @@ async function onProcessLesson() {
   }
 }
 
-// ════════════════════════════════════
-// Delete Lesson
-// ════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// ═══ MODIFIED: Delete Lesson — بيحذف الدرس + الـ chunks ═══
+// ══════════════════════════════════════════════════════════════
 async function onDeleteLesson(id, title) {
-  const ok = await showModal('🗑️ حذف chunks', 'حذف كل الـ chunks لدرس "' + title + '"؟', '🗑️ احذف');
+  const ok = await showModal(
+    '🗑️ حذف الدرس نهائياً',
+    'هيتم حذف الدرس "' + title + '" وكل الـ chunks بتاعته نهائياً.\nمتأكد؟',
+    '🗑️ احذف الدرس'
+  );
   if (!ok) return;
   try {
-    addLog('Deleting chunks for: ' + title, 'warn');
-    const result = await api('DELETE', '/api/admin/lessons/' + id + '/chunks');
-    addLog('Deleted ' + (result.deleted || 0) + ' chunks ✅', 'success');
+    addLog('Deleting lesson + chunks: ' + title, 'warn');
+
+    // 1) Delete chunks first
+    try {
+      const chunkResult = await api('DELETE', '/api/admin/lessons/' + id + '/chunks');
+      addLog('  Deleted ' + (chunkResult.deleted || 0) + ' chunks', 'info');
+    } catch (e) {
+      addLog('  ⚠️ Chunks delete: ' + e.message, 'warn');
+    }
+
+    // 2) Delete the lesson record itself ← NEW
+    await api('DELETE', '/api/admin/lessons/' + id);
+    addLog('  Deleted lesson "' + title + '" ✅', 'success');
+
     await refreshCourseData();
-  } catch (e) { addLog('Error: ' + e.message, 'error'); }
+  } catch (e) {
+    addLog('Error deleting lesson: ' + e.message, 'error');
+  }
 }
 
-// ════════════════════════════════════
-// Delete All Chunks
-// ════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// ═══ MODIFIED: Delete All — بيحذف كل الدروس + كل الـ chunks ═══
+// ══════════════════════════════════════════════════════════════════
 async function onDeleteAll() {
   if (existingLessons.length === 0) return;
   const ok = await showModal(
-    '⚠️ مسح كل الـ Chunks!',
-    'هتمسح ' + totalChunks + ' قطعة من ' + existingLessons.length + ' درس لكورس "' + selectedCourseName + '"؟\nمش ممكن التراجع!',
-    '🗑️ مسح الكل'
+    '⚠️ مسح كل الدروس والـ Chunks!',
+    'هتمسح ' + existingLessons.length + ' درس و ' + totalChunks + ' قطعة من كورس "' + selectedCourseName + '"؟\n\nالدروس هتتشال نهائياً ومش ممكن التراجع!',
+    '🗑️ مسح الكل نهائياً'
   );
   if (!ok) return;
 
   try {
-    let totalDeleted = 0;
-    addLog('Deleting ALL chunks for: ' + selectedCourseName + ' (' + existingLessons.length + ' lessons)...', 'warn');
+    let totalDeletedChunks = 0;
+    let totalDeletedLessons = 0;
+    addLog('Deleting ALL lessons + chunks for: ' + selectedCourseName + ' (' + existingLessons.length + ' lessons)...', 'warn');
 
     for (const lesson of existingLessons) {
-      if (lesson.chunk_count > 0) {
-        try {
-          const result = await api('DELETE', '/api/admin/lessons/' + lesson.id + '/chunks');
-          totalDeleted += (result.deleted || 0);
-          addLog('  Deleted ' + (result.deleted || 0) + ' chunks from "' + lesson.title + '"', 'info');
-        } catch (e) {
-          addLog('  Error deleting "' + lesson.title + '": ' + e.message, 'error');
+      try {
+        // 1) Delete chunks first
+        if (lesson.chunk_count > 0) {
+          try {
+            const result = await api('DELETE', '/api/admin/lessons/' + lesson.id + '/chunks');
+            totalDeletedChunks += (result.deleted || 0);
+            addLog('  Deleted ' + (result.deleted || 0) + ' chunks from "' + lesson.title + '"', 'info');
+          } catch (e) {
+            addLog('  ⚠️ Error deleting chunks for "' + lesson.title + '": ' + e.message, 'warn');
+          }
         }
+
+        // 2) Delete the lesson record itself ← NEW
+        await api('DELETE', '/api/admin/lessons/' + lesson.id);
+        totalDeletedLessons++;
+        addLog('  Deleted lesson: "' + lesson.title + '" ✅', 'success');
+
+      } catch (e) {
+        addLog('  ❌ Error deleting lesson "' + lesson.title + '": ' + e.message, 'error');
       }
     }
 
-    addLog('Total deleted: ' + totalDeleted + ' chunks ✅', 'success');
+    addLog('🏁 Total deleted: ' + totalDeletedChunks + ' chunks + ' + totalDeletedLessons + ' lessons ✅', 'success');
     await refreshCourseData();
   } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
