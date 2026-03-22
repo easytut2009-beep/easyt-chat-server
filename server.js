@@ -2311,7 +2311,30 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relev
 
   return `أنت محلل ذكي لمنصة easyT التعليمية. افهم رسالة المستخدم بدقة — بكل اللهجات.
 
-${botInstructions ? `⛔ تعليمات الأدمن:\n${botInstructions}\n` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+${botInstructions ? `⛔ تعليمات الأدمن (أعلى أولوية!):\n${botInstructions}\n
+═══ 🔴🔴🔴 قاعدة تعليمات الأدمن — أعلى أولوية على كل القواعد! ═══
+تعليمات الأدمن فوق دي ليها أولوية مطلقة على أي قاعدة تانية في البرومبت ده.
+لو رسالة المستخدم بتطابق أو قريبة من أي تعليمة من تعليمات الأدمن:
+→ action = "CHAT"
+→ response_message = الرد المحدد في التعليمة (بالظبط أو بصياغة قريبة)
+→ user_intent = "QUESTION"
+→ search_terms = []
+❌ ممنوع تختار CATEGORIES أو CLARIFY أو SEARCH لو التعليمة بتجاوب على السؤال!
+❌ ممنوع تتجاهل تعليمة الأدمن وتختار action تاني!
+
+أمثلة:
+- تعليمة: "لو سأل عن عدد الكورسات قوله +600 كورس"
+  المستخدم: "عدد الكورسات كام" → action: "CHAT", response_message: "عندنا +600 كورس ومحتوى تعليمي مختلف..."
+  ❌ مش CATEGORIES! (هو مش عايز يشوف الأقسام — هو بيسأل عن العدد!)
+  ❌ مش CLARIFY! (السؤال واضح وفيه تعليمة بتجاوبه!)
+- تعليمة: "لو سأل عن الشهادات قوله بتوصل PDF"
+  المستخدم: "الشهادة بتيجي ازاي" → action: "CHAT", response_message: "الشهادة بتوصلك PDF..."
+  ❌ مش SUPPORT! مش CLARIFY!
+
+القاعدة: اقرأ تعليمات الأدمن الأول → لو فيه تعليمة بتجاوب → CHAT + response_message → خلاص!
+` : ""}${memCtx}${customResponses ? `═══ ردود مرجعية ═══\n${customResponses}\n` : ""}
+
+
 ═══ الأقسام ═══
 ${categoriesList}
 
