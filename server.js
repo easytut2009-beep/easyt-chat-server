@@ -4527,6 +4527,27 @@ if (_isContactSupport) {
   };
 }
 
+// ✅ مشترك وعنده مشكلة في الدورات
+const _isSubIssue = /(مشترك|اشتركت|اشتراك|قمت بالاشتراك).*(مش فات|لم تفتح|مش ظاهر|مش شغال|مفتحتش|مبتفتحش|لا تعمل|مش متاح)/i.test(message)
+  || /(الدورات|الكورسات|الدبلوم).*(مش فات|لم تفتح|مش ظاهر|مش شغال|مفتحتش|لا تعمل|مش متاح).*(مشترك|اشتراك)/i.test(message)
+  || /(لم تفتح|مش فاتح|مبتفتحش).*(الدورات|الكورسات|كل الدورات)/i.test(message);
+
+if (_isSubIssue) {
+  console.log(`⚠️ Subscription issue: "${message}"`);
+  let _issueReply = `أهلاً بيك! 😊<br><br>`;
+  _issueReply += `لو أنت مشترك ومش لاقي كل الدورات، جرب الخطوات دي:<br><br>`;
+  _issueReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
+  _issueReply += `2️⃣ هتلاقي كل الكورسات متاحة ليك — كل كورس لوحده مش تحت اسم الدبلومة<br>`;
+  _issueReply += `3️⃣ لو لسه مش ظاهرة، جرب تعمل <b>تسجيل خروج وتدخل تاني</b><br><br>`;
+  _issueReply += `❓ لو المشكلة لسه موجودة، تواصل مع الدعم الفني وهيساعدوك فوراً 👇<br>`;
+  _issueReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+  _issueReply = finalizeReply(_issueReply);
+  return {
+    reply: _issueReply,
+    intent: "SUBSCRIPTION_ISSUE",
+    suggestions: ["📞 تواصل معانا", "💰 تجديد الاشتراك", "🎓 الدبلومات"]
+  };
+}
 
   // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Payment method name detection
