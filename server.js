@@ -6730,12 +6730,47 @@ else if (analysis.action === "SUBSCRIPTION") {
     intent = "DIPLOMAS";
   }
 
-  /* ═══════════════════════════════════
-     ACTION: CATEGORIES
-     ═══════════════════════════════════ */
-  else if (analysis.action === "CATEGORIES") {
+/* ═══════════════════════════════════
+   ACTION: CATEGORIES — 🆕 FIX #49: حماية من أسئلة العدد
+   ═══════════════════════════════════ */
+else if (analysis.action === "CATEGORIES") {
+  
+  // ══════════════════════════════════════════════════════════
+  // 🆕 FIX #49: "عدد الكورسات كام" = سؤال عن العدد مش عن الأقسام
+  // GPT بيغلط ويصنفها CATEGORIES بسبب كلمة "كورسات"
+  // ══════════════════════════════════════════════════════════
+  const _normCatMsg = normalizeArabic((message || "").toLowerCase());
+  
+  const _isCountQuestion = 
+    // "عدد الكورسات" / "كام كورس" / "كم دورة"
+    /(عدد|كام|كم)\s*(ال)?(كورس|كورسات|دوره|دورات|دورة|محتوى|محتوي)/.test(_normCatMsg) ||
+    // "الكورسات كام" / "كورسات كام" / "الدورات كم"
+    /(ال)?(كورس|كورسات|دوره|دورات|دورة)\s+(كام|كم|عدد|عددهم|عددها|قد\s*ايه|قد\s*اية|اد\s*ايه|اد\s*اية)/.test(_normCatMsg) ||
+    // "فيه كام كورس" / "عندكم كم كورس"
+    /(فيه?|عندكم|عندكو|في|فى)\s+(كام|كم)\s*(كورس|كورسات|دوره|دورات|دورة)/.test(_normCatMsg) ||
+    // "الكورسات بتاعتكم كام" / "عندكم كورسات اد ايه"
+    /(كورسات|دورات).{0,15}(كام|كم|اد\s*اي|قد\s*اي)/.test(_normCatMsg);
+
+  if (_isCountQuestion) {
+    console.log(`🛡️ FIX #49: CATEGORIES overridden → user asking about course COUNT, not browsing`);
+    
+    // لو GPT جاوب من instruction #48 → استخدم إجابته
+    if (analysis.response_message && analysis.response_message.trim().length > 20 
+        && /600|كورس|محتو/.test(analysis.response_message)) {
+      reply = analysis.response_message;
+      console.log(`🛡️ FIX #49: Using GPT response_message (instruction #48)`);
+    } else {
+      // Fallback — نفس محتوى instruction #48
+      reply = `عندنا <strong>+600 كورس</strong> ومحتوى تعليمي مختلف على المنصة 🎓`;
+      reply += `<br><br>ده غير إن كل شهر بيتضاف تقريبًا <strong>15 كورس جديد</strong> 🆕`;
+      reply += `<br><br>💡 تقدر تتصفح كل الكورسات من هنا:`;
+      reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 جميع الكورسات ←</a>`;
+      console.log(`🛡️ FIX #49: Using hardcoded fallback (instruction #48 content)`);
+    }
+  } else {
     reply = formatCategoriesList();
   }
+}
 
   /* ═══════════════════════════════════
      ACTION: SUPPORT
