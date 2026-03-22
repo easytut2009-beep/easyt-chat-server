@@ -4439,9 +4439,10 @@ const _isPaymentBtn =
     }
 
     // ✅ تم الدفع / رفع الإيصال
-    const _isPaymentDone = /^(تم|خلاص|خلصت|دفعت)?\s*(ال)?(دفع|تحويل|سداد)$/i.test(_msgNorm)
-      || /^(رفع|ارفع|اعمل رفع)?\s*(ال)?(ايصال|إيصال|وصل)$/i.test(_msgNorm)
-      || /^(حول[ت]?|عمل[ت]?\s*تحويل)$/i.test(_msgNorm);
+const _isPaymentDone = /^(تم|خلاص|خلصت|دفعت)?\s*(ال)?(دفع|تحويل|سداد)$/i.test(_btnNorm)
+  || /^(رفع|ارفع|اعمل رفع)?\s*(ال)?(ايصال|إيصال|وصل)$/i.test(_btnNorm)
+  || /^(حول[ت]?|عمل[ت]?\s*تحويل)$/i.test(_btnNorm);
+
 
     if (_isPaymentDone) {
       console.log(`🧾 Payment done / receipt: "${message}"`);
