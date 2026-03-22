@@ -4503,6 +4503,30 @@ if (_isSubDiplomas) {
 }
 
 
+// ✅ تواصل مع الدعم
+const _isContactSupport = /تواصل\s*(مع)?\s*(الدعم|الادمن|الأدمن)/i.test(message)
+  || /خدم[ةه]\s*العملاء/i.test(message)
+  || /عايز\s*(اتكلم|اكلم|اتواصل)\s*(مع)?\s*(حد|الدعم|الادمن)/i.test(message)
+  || /محتاج\s*(دعم|مساعد)/i.test(message)
+  || /الدعم\s*الفني/i.test(message)
+  || /واتساب\s*الدعم/i.test(message)
+  || /رقم\s*الواتساب/i.test(message)
+  || /عايز\s*اشتكى/i.test(message)
+  || /عند[يى]\s*مشكل/i.test(message)
+  || /كلم\s*(الدعم|حد)/i.test(message);
+
+if (_isContactSupport) {
+  console.log(`📞 Contact support: "${message}"`);
+  let _supportReply = `يمكنك التواصل مع الدعم الفني عبر واتساب للحصول على المساعدة اللازمة 😊<br><br>`;
+  _supportReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+  _supportReply = finalizeReply(_supportReply);
+  return {
+    reply: _supportReply,
+    intent: "CONTACT_SUPPORT",
+    suggestions: ["💰 طرق الدفع", "🎓 الاشتراك", "🎓 الدبلومات"]
+  };
+}
+
 
   // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Payment method name detection
