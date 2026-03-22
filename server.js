@@ -4104,12 +4104,24 @@ function detectInstructorQuestion(message) {
     };
   }
 
-  // ✨ "كورسات أحمد إبراهيم" — no keyword but might be instructor name
+// ✨ "كورسات أحمد إبراهيم" — no keyword but might be instructor name
   const coursesByName = norm.match(/كورسات\s+([\u0600-\u06FFa-zA-Z\s]{3,})/);
   if (coursesByName && coursesByName[1]) {
     let possName = coursesByName[1].trim()
       .replace(/(الاكثر|الاعلى|مبيعا|افضل|اشهر|من الكورسات|المجانيه|المجانية|المدفوعه|المدفوعة|هل|ايه|اية).*$/g, '')
       .trim();
+
+    // ═══════════════════════════════════════════════════════════
+    // 🛡️ FIX: لو الكلام بيبدأ بحرف جر = موضوع مش اسم محاضر
+    // "كورسات عن المبيعات" ← موضوع ✅
+    // "كورسات أحمد إبراهيم" ← اسم محاضر ✅
+    // ═══════════════════════════════════════════════════════════
+    const _topicPrefixes = /^(عن|في|فى|ف\s|بخصوص|حول|خاصه|خاصة|متعلق|لل|عن\s*ال|في\s*ال|فى\s*ال|بتاعت|بتاعة|تخص|ال)/;
+    
+    if (_topicPrefixes.test(possName)) {
+      console.log(`🛡️ detectInstructor: BLOCKED topic-prefix "${possName}" — not an instructor name`);
+      return null;
+    }
 
     if (possName.length >= 3) {
       console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
