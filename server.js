@@ -4430,14 +4430,33 @@ const _isPaymentBtn =
       _payReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
       _payReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
       _payReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-_payReply = finalizeReply(_payReply);
+      _payReply = finalizeReply(_payReply);
       return {
         reply: _payReply,
         intent: "SUBSCRIPTION",
         suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
       };
     }
+
+    // ✅ تم الدفع / رفع الإيصال
+    const _isPaymentDone = /^(تم|خلاص|خلصت|دفعت)?\s*(ال)?(دفع|تحويل|سداد)$/i.test(_msgNorm)
+      || /^(رفع|ارفع|اعمل رفع)?\s*(ال)?(ايصال|إيصال|وصل)$/i.test(_msgNorm)
+      || /^(حول[ت]?|عمل[ت]?\s*تحويل)$/i.test(_msgNorm);
+
+    if (_isPaymentDone) {
+      console.log(`🧾 Payment done / receipt: "${message}"`);
+      let _receiptReply = `تمام 👌<br><br>`;
+      _receiptReply += `لو حولت فلوس وعاوز ترفع إيصال التحويل، ادخل على صفحة طرق الدفع واملا النموذج واختار الكورس أو الدبلومة اللي دفعت ليها وارفع صورة الإيصال، وهيتم التفعيل خلال 24 ساعة ✅<br><br>`;
+      _receiptReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ورفع الإيصال ←</a>`;
+      _receiptReply = finalizeReply(_receiptReply);
+      return {
+        reply: _receiptReply,
+        intent: "PAYMENT_DONE",
+        suggestions: ["💰 طرق الدفع", "🎓 الاشتراك", "📞 تواصل معانا"]
+      };
+    }
   }
+
 
   // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Payment method name detection
