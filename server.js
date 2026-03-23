@@ -4516,7 +4516,8 @@ if (extractedName) {
 
     
 
-if (possName.length >= 3) {
+javascript
+    if (possName.length >= 3) {
       console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
       return {
         isInstructorQuestion: false,
@@ -4527,6 +4528,8 @@ if (possName.length >= 3) {
     }
   }
 
+  return null;
+}
 
 
 
