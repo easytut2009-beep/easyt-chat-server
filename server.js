@@ -5289,6 +5289,57 @@ const _instructorCheck = detectInstructorQuestion(message);
 
   if (_instructorCheck && _instructorCheck.isInstructorQuestion) {
 
+    // ══════════════════════════════════════════════════════════
+    // ✅ "مين بيشرح كورس X?" — يعدي مباشرة بدون GPT validation
+    // ══════════════════════════════════════════════════════════
+    if (_instructorCheck.isWhoIsInstructorForCourse) {
+      console.log(`👨‍🏫 Direct lookup: "who teaches course?" → hint="${_instructorCheck.courseNameHint}"`);
+      const _courseInstResult = await lookupCourseInstructor(_instructorCheck.courseNameHint);
+
+      if (_courseInstResult && _courseInstResult.instructorName) {
+        let _instReply = `👨‍🏫 محاضر كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" هو: <strong>${escapeHtml(_courseInstResult.instructorName)}</strong>`;
+        if (_courseInstResult.instructorTitle) {
+          _instReply += `<br>📋 ${escapeHtml(_courseInstResult.instructorTitle)}`;
+        }
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+        _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else if (_courseInstResult && _courseInstResult.found) {
+        let _instReply = `📚 كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" موجود بس مفيش محاضر مسجل ليه حالياً.`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else if (_instructorCheck.courseNameHint) {
+        let _instReply = `🔍 مش لاقي كورس بالاسم ده "<strong>${escapeHtml(_instructorCheck.courseNameHint)}</strong>".`;
+        _instReply += `<br>ممكن تقولي اسم الكورس بالظبط؟ 😊`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      } else {
+        let _instReply = `أي كورس تقصد عشان أقولك مين المحاضر؟ 😊`;
+        _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+        return {
+          reply: finalizeReply(_instReply),
+          intent: "INSTRUCTOR",
+          suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      }
+    }
+
     // 🛡️ GPT double-check: هل فعلاً بيسأل عن محاضر؟
     const _isReallyInstructor = await validateInstructorIntent(
       message,
@@ -5298,57 +5349,7 @@ const _instructorCheck = detectInstructorQuestion(message);
     if (!_isReallyInstructor) {
       console.log(`🛡️ GPT blocked false instructor match: "${message}" ≠ "${_instructorCheck.instructorName}"`);
       // مش بيعمل return — بيكمل الـ flow العادي تحت
-} else {
-
-      // ══════════════════════════════════════════════════════════
-      // ✅ NEW: "مين المحاضر اللي بيشرح كورس X؟"
-      // ══════════════════════════════════════════════════════════
-      if (_instructorCheck.isWhoIsInstructorForCourse) {
-        const _courseInstResult = await lookupCourseInstructor(_instructorCheck.courseNameHint);
-
-        if (_courseInstResult && _courseInstResult.instructorName) {
-          let _instReply = `👨‍🏫 محاضر كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" هو: <strong>${escapeHtml(_courseInstResult.instructorName)}</strong>`;
-          if (_courseInstResult.instructorTitle) {
-            _instReply += `<br>📋 ${escapeHtml(_courseInstResult.instructorTitle)}`;
-          }
-          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-          _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
-
-          return {
-            reply: finalizeReply(_instReply),
-            intent: "INSTRUCTOR",
-            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
-          };
-        } else if (_courseInstResult && _courseInstResult.found) {
-          let _instReply = `📚 كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" موجود بس مفيش محاضر مسجل ليه حالياً.`;
-          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-
-          return {
-            reply: finalizeReply(_instReply),
-            intent: "INSTRUCTOR",
-            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-          };
-        } else if (_instructorCheck.courseNameHint) {
-          let _instReply = `🔍 مش لاقي كورس بالاسم ده "<strong>${escapeHtml(_instructorCheck.courseNameHint)}</strong>".`;
-          _instReply += `<br>ممكن تقولي اسم الكورس بالظبط؟ 😊`;
-          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-
-          return {
-            reply: finalizeReply(_instReply),
-            intent: "INSTRUCTOR",
-            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-          };
-        } else {
-          let _instReply = `أي كورس تقصد عشان أقولك مين المحاضر؟ 😊`;
-          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
-
-          return {
-            reply: finalizeReply(_instReply),
-            intent: "INSTRUCTOR",
-            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-          };
-        }
-      }
+    } else {
 
       if (_instructorCheck.instructorName) {
         // ═══ بحث عن محاضر بالاسم ═══
@@ -5412,6 +5413,7 @@ const _instructorCheck = detectInstructorQuestion(message);
     // ← لو وصل هنا = كلمة "محاضر" موجودة بس مفيش اسم ومش popularity
     //   → يكمّل الـ flow العادي (GPT يتعامل معاه)
   }
+
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 Handle possibleInstructorName — "كورسات أحمد إبراهيم" (no keyword)
