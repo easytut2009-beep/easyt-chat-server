@@ -439,6 +439,40 @@ async function getInstructors() {
   }
 }
 
+
+async function injectInstructorNames(courses) {
+  if (!supabase || !courses || courses.length === 0) return;
+  const ids = [...new Set(courses.filter(c => c.instructor_id).map(c => c.instructor_id))];
+  if (ids.length === 0) {
+    console.log("👨‍🏫 injectInstructorNames: no instructor_ids found on courses");
+    return;
+  }
+  try {
+    const { data, error } = await supabase.from("instructors").select("id, name").in("id", ids);
+    if (error) {
+      console.error("👨‍🏫 injectInstructorNames DB error:", error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      console.log("👨‍🏫 injectInstructorNames: 0 instructors found for ids:", ids);
+      return;
+    }
+    const map = {};
+    data.forEach(i => { map[String(i.id)] = i.name; });
+    let injected = 0;
+    courses.forEach(c => {
+      if (c.instructor_id && map[String(c.instructor_id)]) {
+        c._inst_name = map[String(c.instructor_id)];
+        injected++;
+      }
+    });
+    console.log("👨‍🏫 injectInstructorNames: " + injected + "/" + courses.length + " courses got instructor names");
+  } catch(e) {
+    console.error("👨‍🏫 injectInstructorNames exception:", e.message);
+  }
+}
+
+
 function detectRelevantCategory(categoryNameFromGPT) {
   if (!categoryNameFromGPT) return null;
   
@@ -1766,11 +1800,10 @@ function formatCourseCard(course, instructors, index) {
 const instructor = course.instructor_id
   ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
   : null;
+  const instructorName = course._inst_name
+    || (instructor ? instructor.name : "")
+    || course.instructor_name || course.instructor || course.teacher_name || course.teacher || "";
 
-
-  const instructorName = instructor
-    ? instructor.name
-    : course.instructor_name || course.instructor || course.teacher_name || course.teacher || "";
   const courseUrl = course.link || "https://easyt.online/courses";
 
   const rawPrice = course.price;
@@ -4494,19 +4527,49 @@ if (possName.length >= 3) {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
   // ✅ "مين بيشرح كورس X" / "مين اللي بيدرس X" (بدون keyword محاضر)
   // ══════════════════════════════════════════════════════════
   const _whoTeachesPattern = /(مين|من)\s+(اللي|اللى|الذي|الذى)?\s*(بيشرح|بيدرس|بيدي|بيقدم|يشرح|يدرس|يقدم|شرح|درس|قدم)\s*([\u0600-\u06FFa-zA-Z\s&0-9]*)/;
   const _whoTeachesMatch = norm.match(_whoTeachesPattern);
-  if (_whoTeachesMatch) {
-    let _courseHint3 = (_whoTeachesMatch[4] || '').trim();
-    if (!_courseHint3 || _courseHint3.length < 2) {
-      const _cm3 = norm.match(/(?:كورس|الكورس|دورة|دوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/);
-      if (_cm3 && _cm3[1]) _courseHint3 = _cm3[1].trim();
+  
+  // ✅ "مين بيشرح كورس X" بدون الفعل بعد "مين" مباشرة
+  const _whoCourseDirect = /(مين|من)\s+(?:بيشرح|بيدرس|بيدي|بيقدم|يشرح|يدرس|يقدم|شرح|درس|قدم)?\s*(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/;
+  const _whoCourseMatch = norm.match(_whoCourseDirect);
+
+  // ✅ "مين محاضر كورس X"
+  const _whoInstructorOf = /(مين|من)\s+(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)?\s*([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/;
+  const _whoInstMatch = norm.match(_whoInstructorOf);
+
+  if (_whoTeachesMatch || _whoCourseMatch || _whoInstMatch) {
+    let _courseHint3 = '';
+    
+    if (_whoTeachesMatch && _whoTeachesMatch[4]) {
+      _courseHint3 = _whoTeachesMatch[4].trim();
+    }
+    if ((!_courseHint3 || _courseHint3.length < 2) && _whoCourseMatch && _whoCourseMatch[2]) {
+      _courseHint3 = _whoCourseMatch[2].trim();
+    }
+    if ((!_courseHint3 || _courseHint3.length < 2) && _whoInstMatch && _whoInstMatch[2]) {
+      _courseHint3 = _whoInstMatch[2].trim();
     }
     
-    console.log(`👨‍🏫 detectInstructor: "who teaches?" pattern → courseHint="${_courseHint3}"`);
+    // fallback: extract course name from "كورس X"
+    if (!_courseHint3 || _courseHint3.length < 2) {
+      const _cm3 = norm.match(/(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/);
+      if (_cm3 && _cm3[1]) _courseHint3 = _cm3[1].trim();
+    }
+
+    // fallback: extract last meaningful words after the verb
+    if (!_courseHint3 || _courseHint3.length < 2) {
+      const _afterVerb = norm.match(/(?:بيشرح|بيدرس|بيقدم|يشرح|يدرس|يقدم)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/);
+      if (_afterVerb && _afterVerb[1]) _courseHint3 = _afterVerb[1].trim();
+    }
+
+    // clean up common stop words from hint
+    _courseHint3 = _courseHint3.replace(/^(ال|كورس|دورة|دوره)\s*/g, '').trim();
+
+    console.log('👨‍🏫 detectInstructor: "who teaches?" pattern → courseHint="' + _courseHint3 + '"');
     return {
       isInstructorQuestion: true,
       instructorName: null,
@@ -4517,23 +4580,26 @@ if (possName.length >= 3) {
     };
   }
 
-  // كمان: "محاضر كورس X" (بدون "مين")
-  const _instructorOfCoursePattern = /(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/;
+  // ✅ "محاضر كورس X" (بدون "مين")
+  const _instructorOfCoursePattern = /(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)?\s*([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/;
   const _iocMatch = norm.match(_instructorOfCoursePattern);
   if (_iocMatch && _iocMatch[1]) {
-    console.log(`👨‍🏫 detectInstructor: "instructor of course" pattern → "${_iocMatch[1].trim()}"`);
+    const _cleanHint = _iocMatch[1].trim().replace(/^(ال|كورس|دورة|دوره)\s*/g, '').trim();
+    console.log('👨‍🏫 detectInstructor: "instructor of course" pattern → "' + _cleanHint + '"');
     return {
       isInstructorQuestion: true,
       instructorName: null,
       possibleInstructorName: null,
       isPopularityQuestion: false,
       isWhoIsInstructorForCourse: true,
-      courseNameHint: _iocMatch[1].trim(),
+      courseNameHint: _cleanHint,
     };
   }
 
   return null;
 }
+
+
 
 async function searchByInstructor(instructorName) {
   if (!supabase || !instructorName) return { instructor: null, courses: [] };
@@ -7020,6 +7086,7 @@ for (const stm of savedTitleMatchCourses) {
       }
 
 if (relevantCourses.length > 0) {
+        await injectInstructorNames(relevantCourses);
         const _rcInstructors = await getInstructors();
         relevantCourses.slice(0, 5).forEach((c, i) => {
           reply += formatCourseCard(c, _rcInstructors, i + 1);
