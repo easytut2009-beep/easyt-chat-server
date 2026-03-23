@@ -4337,10 +4337,39 @@ function detectInstructorQuestion(message) {
 
   if (hasKeyword) {
 
-// 🛡️ FIX: "الاستاذ الذي قدم..." / "المحاضر اللي شرح..." = سؤال "مين المحاضر؟" مش بحث باسم
-    if (/(محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|دكتور|الدكتور|استاذ|الاستاذ|مهندس|المهندس)\s+(الذي|الذى|اللي|اللى|التي|التى|بتاع|بتاعت|بتاعه|بتاعها|تبع|صاحب|ده|دي|دا|هذا|هذه)/.test(norm)) {
-      console.log(`🛡️ detectInstructor: "who is the instructor?" pattern — returning null for AI`);
-      return null;
+// ══════════════════════════════════════════════════════════
+    // ✅ FIX: "الاستاذ الذي قدم..." / "المحاضر اللي شرح..." 
+    // = سؤال "مين المحاضر؟" → نبحث عن الكورس ونرجع المحاضر
+    // ══════════════════════════════════════════════════════════
+    const _whoIsInstructorPattern = /(محاضر|مدرس|مدرب|المحاضر|المدرس|المدرب|دكتور|الدكتور|استاذ|الاستاذ|مهندس|المهندس)\s+(الذي|الذى|اللي|اللى|التي|التى|بتاع|بتاعت|بتاعه|بتاعها|تبع|صاحب|ده|دي|دا|هذا|هذه)/;
+    
+    if (_whoIsInstructorPattern.test(norm)) {
+      // استخرج اسم الكورس من الرسالة
+      let _courseHint = null;
+      const _courseExtractors = [
+        /(?:كورس|الكورس|دورة|دوره|الدورة|الدوره|ماده|المادة|الماده)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/,
+        /(?:بيشرح|بيدرس|بيدي|بيقدم|شرح|درس|قدم|يشرح|يدرس|يقدم)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/,
+      ];
+      for (const _cp of _courseExtractors) {
+        const _cm = norm.match(_cp);
+        if (_cm && _cm[1] && _cm[1].trim().length >= 2) {
+          _courseHint = _cm[1].trim()
+            .replace(/\s*(ده|دي|دا|هذا|هذه|بتاعكم|عندكم|عندكو)\s*$/g, '')
+            .trim();
+          break;
+        }
+      }
+      
+      console.log(`👨‍🏫 detectInstructor: "who is the instructor?" → courseHint="${_courseHint}"`);
+      
+      return {
+        isInstructorQuestion: true,
+        instructorName: null,
+        possibleInstructorName: null,
+        isPopularityQuestion: false,
+        isWhoIsInstructorForCourse: true,
+        courseNameHint: _courseHint,
+      };
     }
 
     const patterns = [
@@ -4354,11 +4383,24 @@ function detectInstructorQuestion(message) {
 
 // 🛡️ FIX: Relative clauses / descriptive phrases are NOT instructor names
     // "الذي قدم الكورس" / "اللي شرح" / "اللى بيدرّس" = وصف، مش اسم!
-    if (extractedName) {
+if (extractedName) {
       const _relativeOrVerb = /^(الذي|الذى|اللي|اللى|التي|التى|اللذين|الذين|اللذي|اللذى|اللتي|اللتى|اللواتي|ذا|هو|هي|ده|دي|دا)/;
       if (_relativeOrVerb.test(extractedName.trim())) {
-        console.log(`🛡️ detectInstructor: BLOCKED — "${extractedName}" is a relative clause, NOT a name`);
-        return null;
+        console.log(`👨‍🏫 detectInstructor: relative clause "${extractedName}" → treating as course instructor lookup`);
+        
+        // استخرج اسم الكورس
+        let _courseHint2 = null;
+        const _cm2 = norm.match(/(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/);
+        if (_cm2 && _cm2[1]) _courseHint2 = _cm2[1].trim();
+        
+        return {
+          isInstructorQuestion: true,
+          instructorName: null,
+          possibleInstructorName: null,
+          isPopularityQuestion: false,
+          isWhoIsInstructorForCourse: true,
+          courseNameHint: _courseHint2,
+        };
       }
     }
 
@@ -4441,9 +4483,57 @@ function detectInstructorQuestion(message) {
     }
   }
 
+if (possName.length >= 3) {
+      console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
+      return {
+        isInstructorQuestion: false,
+        instructorName: null,
+        possibleInstructorName: possName,
+        isPopularityQuestion: false,
+      };
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // ✅ "مين بيشرح كورس X" / "مين اللي بيدرس X" (بدون keyword محاضر)
+  // ══════════════════════════════════════════════════════════
+  const _whoTeachesPattern = /(مين|من)\s+(اللي|اللى|الذي|الذى)?\s*(بيشرح|بيدرس|بيدي|بيقدم|يشرح|يدرس|يقدم|شرح|درس|قدم)\s*([\u0600-\u06FFa-zA-Z\s&0-9]*)/;
+  const _whoTeachesMatch = norm.match(_whoTeachesPattern);
+  if (_whoTeachesMatch) {
+    let _courseHint3 = (_whoTeachesMatch[4] || '').trim();
+    if (!_courseHint3 || _courseHint3.length < 2) {
+      const _cm3 = norm.match(/(?:كورس|الكورس|دورة|دوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/);
+      if (_cm3 && _cm3[1]) _courseHint3 = _cm3[1].trim();
+    }
+    
+    console.log(`👨‍🏫 detectInstructor: "who teaches?" pattern → courseHint="${_courseHint3}"`);
+    return {
+      isInstructorQuestion: true,
+      instructorName: null,
+      possibleInstructorName: null,
+      isPopularityQuestion: false,
+      isWhoIsInstructorForCourse: true,
+      courseNameHint: _courseHint3 || null,
+    };
+  }
+
+  // كمان: "محاضر كورس X" (بدون "مين")
+  const _instructorOfCoursePattern = /(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+(?:كورس|الكورس|دورة|دوره|الدورة|الدوره)\s+([\u0600-\u06FFa-zA-Z\s&0-9]{2,})/;
+  const _iocMatch = norm.match(_instructorOfCoursePattern);
+  if (_iocMatch && _iocMatch[1]) {
+    console.log(`👨‍🏫 detectInstructor: "instructor of course" pattern → "${_iocMatch[1].trim()}"`);
+    return {
+      isInstructorQuestion: true,
+      instructorName: null,
+      possibleInstructorName: null,
+      isPopularityQuestion: false,
+      isWhoIsInstructorForCourse: true,
+      courseNameHint: _iocMatch[1].trim(),
+    };
+  }
+
   return null;
 }
-
 
 async function searchByInstructor(instructorName) {
   if (!supabase || !instructorName) return { instructor: null, courses: [] };
@@ -4604,6 +4694,102 @@ const { data: allCourses, error: err2 } = await supabase
   } catch (e) {
     console.error("searchByInstructor error:", e.message);
     return { instructor: null, courses: [] };
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════
+// ✅ NEW: Look up instructor for a specific course
+// Given a course name/hint, find the course and return its instructor
+// ══════════════════════════════════════════════════════════
+async function lookupCourseInstructor(courseNameHint) {
+  if (!supabase || !courseNameHint) return null;
+
+  const norm = normalizeArabic((courseNameHint || '').toLowerCase());
+  const keywords = norm.split(/\s+/).filter(w => w.length >= 2);
+
+  if (keywords.length === 0) return null;
+
+  console.log(`🔍 lookupCourseInstructor: hint="${courseNameHint}", keywords=[${keywords}]`);
+
+  try {
+    // Step 1: Search courses by keywords in title
+    const orFilters = keywords
+      .map(kw => `title.ilike.%${kw}%`)
+      .join(',');
+
+    const { data: courses, error } = await supabase
+      .from('courses')
+      .select('id, title, instructor_id')
+      .or(orFilters)
+      .limit(20);
+
+    if (error) {
+      console.error('🔍 lookupCourseInstructor DB error:', error.message);
+      return null;
+    }
+
+    if (!courses || courses.length === 0) {
+      console.log('🔍 lookupCourseInstructor: no courses found');
+      return null;
+    }
+
+    console.log(`🔍 lookupCourseInstructor: found ${courses.length} courses`);
+
+    // Step 2: Score courses by keyword match count (best match)
+    let bestCourse = null;
+    let bestScore = 0;
+
+    for (const course of courses) {
+      const ct = normalizeArabic((course.title || '').toLowerCase());
+      let score = 0;
+      for (const kw of keywords) {
+        if (ct.includes(kw)) score++;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestCourse = course;
+      }
+    }
+
+    if (!bestCourse) {
+      // Fallback: take first result
+      bestCourse = courses[0];
+    }
+
+    console.log(`🔍 lookupCourseInstructor: best match = "${bestCourse.title}" (score=${bestScore}, instructor_id=${bestCourse.instructor_id})`);
+
+    // Step 3: Check instructor_id
+    if (!bestCourse.instructor_id) {
+      console.log('🔍 lookupCourseInstructor: course has no instructor_id');
+      return { courseName: bestCourse.title, instructorName: null, instructorTitle: null, found: true };
+    }
+
+    // Step 4: Get instructor details
+    const { data: instructor, error: instErr } = await supabase
+      .from('instructors')
+      .select('id, name, title')
+      .eq('id', bestCourse.instructor_id)
+      .single();
+
+    if (instErr || !instructor) {
+      console.log('🔍 lookupCourseInstructor: instructor not found for id', bestCourse.instructor_id);
+      return { courseName: bestCourse.title, instructorName: null, instructorTitle: null, found: true };
+    }
+
+    console.log(`✅ lookupCourseInstructor: "${bestCourse.title}" → instructor: "${instructor.name}"`);
+
+    return {
+      courseName: bestCourse.title,
+      instructorName: instructor.name,
+      instructorTitle: instructor.title || '',
+      instructorId: instructor.id,
+      found: true,
+    };
+
+  } catch (err) {
+    console.error('🔍 lookupCourseInstructor exception:', err);
+    return null;
   }
 }
 
@@ -5119,7 +5305,57 @@ const _instructorCheck = detectInstructorQuestion(message);
     if (!_isReallyInstructor) {
       console.log(`🛡️ GPT blocked false instructor match: "${message}" ≠ "${_instructorCheck.instructorName}"`);
       // مش بيعمل return — بيكمل الـ flow العادي تحت
-    } else {
+} else {
+
+      // ══════════════════════════════════════════════════════════
+      // ✅ NEW: "مين المحاضر اللي بيشرح كورس X؟"
+      // ══════════════════════════════════════════════════════════
+      if (_instructorCheck.isWhoIsInstructorForCourse) {
+        const _courseInstResult = await lookupCourseInstructor(_instructorCheck.courseNameHint);
+
+        if (_courseInstResult && _courseInstResult.instructorName) {
+          let _instReply = `👨‍🏫 محاضر كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" هو: <strong>${escapeHtml(_courseInstResult.instructorName)}</strong>`;
+          if (_courseInstResult.instructorTitle) {
+            _instReply += `<br>📋 ${escapeHtml(_courseInstResult.instructorTitle)}`;
+          }
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+          _instReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else if (_courseInstResult && _courseInstResult.found) {
+          let _instReply = `📚 كورس "<strong>${escapeHtml(_courseInstResult.courseName)}</strong>" موجود بس مفيش محاضر مسجل ليه حالياً.`;
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else if (_instructorCheck.courseNameHint) {
+          let _instReply = `🔍 مش لاقي كورس بالاسم ده "<strong>${escapeHtml(_instructorCheck.courseNameHint)}</strong>".`;
+          _instReply += `<br>ممكن تقولي اسم الكورس بالظبط؟ 😊`;
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else {
+          let _instReply = `أي كورس تقصد عشان أقولك مين المحاضر؟ 😊`;
+          _instReply += `<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`;
+
+          return {
+            reply: finalizeReply(_instReply),
+            intent: "INSTRUCTOR",
+            suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        }
+      }
 
       if (_instructorCheck.instructorName) {
         // ═══ بحث عن محاضر بالاسم ═══
