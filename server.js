@@ -1763,8 +1763,10 @@ function escapeHtml(text) {
 
 
 function formatCourseCard(course, instructors, index) {
-  const instructor = instructors.find((i) => i.id === course.instructor_id);
-  const instructorName = instructor ? instructor.name : "";
+const instructor = (instructors || []).find((i) => i.id === course.instructor_id);
+  const instructorName = instructor
+    ? instructor.name
+    : course.instructor_name || course.instructor || course.teacher_name || course.teacher || "";
   const courseUrl = course.link || "https://easyt.online/courses";
 
   const rawPrice = course.price;
@@ -7128,9 +7130,10 @@ for (const stm of savedTitleMatchCourses) {
         });
       }
 
-      if (relevantCourses.length > 0) {
+if (relevantCourses.length > 0) {
+        const _rcInstructors = await getInstructors();
         relevantCourses.slice(0, 5).forEach((c, i) => {
-          reply += formatCourseCard(c, instructors, i + 1);
+          reply += formatCourseCard(c, _rcInstructors, i + 1);
         });
       }
 
