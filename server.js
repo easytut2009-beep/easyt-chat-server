@@ -4341,7 +4341,22 @@ function detectInstructorQuestion(message) {
       /كورسات\s+(?:ال)?(?:محاضر|مدرس|مدرب|دكتور|استاذ|مهندس)\s+([\u0600-\u06FFa-zA-Z\s]{2,})/,
     ];
 
-    for (const p of patterns) {
+    for (const p of patterns) 
+
+{
+
+// 🛡️ FIX: Relative clauses / descriptive phrases are NOT instructor names
+    // "الذي قدم الكورس" / "اللي شرح" / "اللى بيدرّس" = وصف، مش اسم!
+    if (extractedName) {
+      const _relativeOrVerb = /^(الذي|الذى|اللي|اللى|التي|التى|اللذين|الذين|اللذي|اللذى|اللتي|اللتى|اللواتي|ذا|هو|هي|ده|دي|دا)/;
+      if (_relativeOrVerb.test(extractedName.trim())) {
+        console.log(`🛡️ detectInstructor: BLOCKED — "${extractedName}" is a relative clause, NOT a name`);
+        return null;
+      }
+    }
+
+
+
       const m = norm.match(p);
       if (m && m[1]) {
         extractedName = m[1].trim()
@@ -4379,6 +4394,14 @@ function detectInstructorQuestion(message) {
     
     if (_topicPrefixes.test(possName)) {
       console.log(`🛡️ detectInstructor: BLOCKED topic-prefix "${possName}"`);
+      return null;
+    }
+
+// 🛡️ FIX: Temporal/contextual phrases are NOT instructor names
+    // "من اول" / "من قبل" / "من زمان" = عبارة زمنية، مش اسم!
+    const _temporalPattern = /^من\s*(اول|الاول|قبل|زمان|بدري|فتره|فترة|كتير|قديم|وقت|ايام|يوم|شهر|سنه|سنة|كده|كدا|كدة|فات|فاتت|النهارده|النهاردة|امبارح|الصبح|بكره|بكرا|اسبوع|شهرين|سنتين)/;
+    if (_temporalPattern.test(possName)) {
+      console.log(`🛡️ detectInstructor: BLOCKED — temporal phrase "${possName}" is NOT a name`);
       return null;
     }
 
