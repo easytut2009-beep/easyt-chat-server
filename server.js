@@ -4472,16 +4472,7 @@ if (extractedName) {
       return null;
     }
 
-    if (possName.length >= 3) {
-      console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
-      return {
-        isInstructorQuestion: false,
-        instructorName: null,
-        possibleInstructorName: possName,
-        isPopularityQuestion: false,
-      };
-    }
-  }
+    
 
 if (possName.length >= 3) {
       console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
