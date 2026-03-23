@@ -1763,7 +1763,11 @@ function escapeHtml(text) {
 
 
 function formatCourseCard(course, instructors, index) {
-const instructor = (instructors || []).find((i) => i.id === course.instructor_id);
+const instructor = course.instructor_id
+  ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
+  : null;
+
+
   const instructorName = instructor
     ? instructor.name
     : course.instructor_name || course.instructor || course.teacher_name || course.teacher || "";
@@ -3174,7 +3178,10 @@ follow_up_type: null,
    11-E: Phase 2 — RAG Recommender
    ═══════════════════════════════════ */
 function prepareCourseForRAG(course, instructors) {
-  const instructor = instructors.find((i) => i.id === course.instructor_id);
+  const instructor = course.instructor_id
+    ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
+    : null;
+
   const cleanDesc = (course.description || "")
     .replace(/<[^>]*>/g, "")
     .substring(0, 250);
@@ -5192,6 +5199,30 @@ Examples:
   // Same safe pattern as diploma button & payment button
   // ═══════════════════════════════════════════════════════════
 const _instructorCheck = detectInstructorQuestion(message);
+
+// ═══ Handle "مين بيشرح كورس X?" — search + show card with instructor ═══
+  if (_instructorCheck && _instructorCheck.isWhoIsInstructorForCourse) {
+    const _courseHint = _instructorCheck.courseNameHint;
+    if (_courseHint && _courseHint.length >= 2) {
+      console.log(`👨‍🏫 "Who teaches?" → searching for "${_courseHint}"`);
+      const _hintTerms = _courseHint.split(/\s+/).filter(w => w.length >= 2);
+      const _hintInstructors = await getInstructors();
+      const _hintCourses = await searchCourses(_hintTerms);
+      if (_hintCourses.length > 0) {
+        const _topCourse = _hintCourses[0];
+        const _courseInst = _topCourse.instructor_id
+          ? _hintInstructors.find(i => String(i.id) === String(_topCourse.instructor_id))
+          : null;
+        let _whoReply = _courseInst
+          ? `👨‍🏫 محاضر كورس "<strong>${escapeHtml(_topCourse.title)}</strong>" هو <strong>${escapeHtml(_courseInst.name)}</strong> 😊<br><br>`
+          : `📚 لقيت الكورس! 😊<br><br>`;
+        _whoReply += formatCourseCard(_topCourse, _hintInstructors, 1);
+        _whoReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل كل الدورات والدبلومات 🎓`;
+        return { reply: finalizeReply(_whoReply), intent: "INSTRUCTOR_COURSE", suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"] };
+      }
+    }
+    return { reply: finalizeReply(`أي كورس بالظبط عشان أقولك مين المحاضر؟ 😊<br><br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📊 تصفح كل الدورات ←</a>`), intent: "INSTRUCTOR_CLARIFY", suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"] };
+  }
 
 if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorCheck.isWhoIsInstructorForCourse) {
 
@@ -8516,8 +8547,11 @@ app.get("/admin/courses", adminAuth, async (req, res) => {
 
     const instructors = await getInstructors();
     const enriched = (data || []).map((c) => {
-      const inst = instructors.find((i) => i.id === c.instructor_id);
+const inst = c.instructor_id
+        ? instructors.find((i) => String(i.id) === String(c.instructor_id))
+        : null;
       return { ...c, instructor_name: inst ? inst.name : "" };
+
     });
 
     res.json({
