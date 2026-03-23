@@ -4729,25 +4729,67 @@ async function lookupCourseInstructor(courseNameHint) {
 
     console.log(`🔍 lookupCourseInstructor: found ${courses.length} courses`);
 
-    // Step 2: Score courses by keyword match count (best match)
+// Step 2: Score courses with combined forward + backward scoring
+    // ده بيمنع مطابقة كلمة واحدة تكسب على مطابقة كاملة
+    
+    // كلمات عامة نتجاهلها في الحساب
+    const stopWords = new Set([
+      'كورس', 'دورة', 'دوره', 'كورسات', 'دورات',
+      'شرح', 'تعلم', 'تعليم', 'اساسيات', 'أساسيات',
+      'مقدمة', 'مقدمه', 'في', 'فى', 'من', 'على',
+      'the', 'course', 'learn', 'intro', 'a', 'an', 'in', 'of', 'to'
+    ]);
+
+    // فلتر الكلمات العامة من كلمات البحث
+    const filteredKeywords = keywords.filter(kw => !stopWords.has(kw));
+    const searchWords = filteredKeywords.length > 0 ? filteredKeywords : keywords;
+
     let bestCourse = null;
     let bestScore = 0;
 
     for (const course of courses) {
       const ct = normalizeArabic((course.title || '').toLowerCase());
-      let score = 0;
-      for (const kw of keywords) {
-        if (ct.includes(kw)) score++;
+      const titleWords = ct.split(/\s+/).filter(w => w.length >= 2);
+      
+      // فلتر الكلمات العامة من عنوان الكورس
+      const filteredTitleWords = titleWords.filter(tw => !stopWords.has(tw));
+      const effectiveTitleWords = filteredTitleWords.length > 0 ? filteredTitleWords : titleWords;
+
+      // عدد الكلمات اللي طابقت
+      let hits = 0;
+      for (const kw of searchWords) {
+        if (ct.includes(kw)) hits++;
       }
-      if (score > bestScore) {
-        bestScore = score;
+
+      // لو مفيش ولا match → skip
+      if (hits === 0) continue;
+
+      // Forward Score: كام كلمة من البحث لقيناها في العنوان
+      const forwardScore = hits / searchWords.length;
+
+      // Backward Score: كام كلمة من العنوان موجودة في البحث
+      let backwardHits = 0;
+      const searchText = searchWords.join(' ');
+      for (const tw of effectiveTitleWords) {
+        if (searchText.includes(tw)) backwardHits++;
+      }
+      const backwardScore = backwardHits / effectiveTitleWords.length;
+
+      // Combined Score
+      const combinedScore = Math.round(((forwardScore + backwardScore) / 2) * 100);
+
+      console.log(`🔍 Score: "${course.title}" → forward=${(forwardScore*100).toFixed(0)}% backward=${(backwardScore*100).toFixed(0)}% combined=${combinedScore}%`);
+
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
         bestCourse = course;
       }
     }
 
-    if (!bestCourse) {
-      // Fallback: take first result
-      bestCourse = courses[0];
+    // لو أحسن نتيجة أقل من 30% → مش واثقين
+    if (!bestCourse || bestScore < 30) {
+      console.log(`🔍 lookupCourseInstructor: no good match (bestScore=${bestScore})`);
+      return null;
     }
 
     console.log(`🔍 lookupCourseInstructor: best match = "${bestCourse.title}" (score=${bestScore}, instructor_id=${bestCourse.instructor_id})`);
