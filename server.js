@@ -4529,6 +4529,7 @@ if (possName.length >= 3) {
 
 
 
+
 async function searchByInstructor(instructorName) {
   if (!supabase || !instructorName) return { instructor: null, courses: [] };
 
