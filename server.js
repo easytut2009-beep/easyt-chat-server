@@ -4711,8 +4711,10 @@ if (_isSubIssue) {
   _issueReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
   _issueReply += `2️⃣ هتلاقي كل الكورسات متاحة ليك — كل كورس لوحده مش تحت اسم الدبلومة<br>`;
   _issueReply += `3️⃣ لو لسه مش ظاهرة، جرب تعمل <b>تسجيل خروج وتدخل تاني</b><br><br>`;
-  _issueReply += `❓ لو المشكلة لسه موجودة، تواصل مع الدعم الفني وهيساعدوك فوراً 👇<br>`;
+_issueReply += `⏳ <b>استنى 24 ساعة</b> بعد الاشتراك عشان كل المحتوى يتفعّل بالكامل.<br><br>`;
+  _issueReply += `❓ لو بعد 24 ساعة المشكلة لسه موجودة، تواصل مع الدعم الفني وهيساعدوك فوراً 👇<br>`;
   _issueReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+
   _issueReply = finalizeReply(_issueReply);
   return {
     reply: _issueReply,
