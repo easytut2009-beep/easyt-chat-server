@@ -4862,6 +4862,22 @@ ${JSON.stringify(courseList, null, 1)}
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: Context-Aware Guard
+// Returns true when user has an active conversation
+// 100% safe: only READS sessionMemory - changes nothing
+// When returns false → zero impact on existing behavior
+// ═══════════════════════════════════════════════════════════
+function hasActiveConversationContext(sessionId) {
+  const mem = sessionMemory.get(sessionId);
+  if (!mem) return false;
+  // _totalMsgs is incremented at top of smartChat for EVERY message (including early returns)
+  if (!mem._totalMsgs || mem._totalMsgs <= 1) return false;
+  // Only consider conversations within last 10 minutes
+  if (Date.now() - mem.lastActivity > 10 * 60 * 1000) return false;
+  return true;
+}
+
 
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
@@ -4895,6 +4911,11 @@ async function smartChat(message, sessionId) {
     message = _botNameCleaned;
   }
 
+// 🆕 FIX: Track total messages per session (before ANY early return)
+  // Safe: uses new field _totalMsgs that nothing else touches
+  const _ctxMem = getSessionMemory(sessionId);
+  _ctxMem._totalMsgs = (_ctxMem._totalMsgs || 0) + 1;
+  _ctxMem.lastActivity = Date.now();
 
   // 🆕 Direct diploma button (bypass GPT)
   const _btnClean = message.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '').trim();
@@ -4966,9 +4987,11 @@ if (_isCouponAsk) {
   const _allCorrections = await loadAllCorrections();
   const _allFAQs = await loadAllFAQs();
 
-  // Early correction check
+// Early correction check
   const _earlyCorrectionMatch = await findBestCorrectionMatch(message, _allCorrections);
-  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+  // 🆕 FIX: Raise threshold in active conversations (let GPT handle with context)
+  const _earlyCorrThreshold = hasActiveConversationContext(sessionId) ? 0.85 : CORRECTION_DIRECT_THRESHOLD;
+  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= _earlyCorrThreshold) {
     const { correction: _earlyCorr, score: _earlyScore } = _earlyCorrectionMatch;
     
     if (_earlyCorr.corrected_reply && _earlyCorr.corrected_reply.trim().length > 0) {
@@ -4988,7 +5011,8 @@ if (_isCouponAsk) {
 
   // Early FAQ check
   const _earlyFaqMatch = await findBestFAQMatch(message, _allFAQs);
-  if (_earlyFaqMatch && _earlyFaqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_DIRECT_THRESHOLD;
+  if (_earlyFaqMatch && _earlyFaqMatch.score >= _earlyFaqThreshold) {
     const { faq: _earlyFaq, score: _earlyFaqScore } = _earlyFaqMatch;
     
     console.log(`✅ [Early FAQ] DIRECT MATCH! Score: ${_earlyFaqScore.toFixed(3)} | FAQ #${_earlyFaq.id}`);
@@ -5002,6 +5026,12 @@ if (_isCouponAsk) {
       intent: "FAQ",
       suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
     };
+// 🆕 FIX: Log when correction skipped due to active conversation
+  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD 
+      && _earlyCorrectionMatch.score < _earlyCorrThreshold) {
+    console.log(`🔄 [Early Correction] Skipped — active conversation (score=${_earlyCorrectionMatch.score.toFixed(3)}, needs >=${_earlyCorrThreshold})`);
+  }
+
   }
 
 
@@ -5475,7 +5505,7 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
   const cacheKey = getResponseCacheKey(message);
-  if (cacheKey && !isFollowUpMessage(message)) {
+if (cacheKey && !isFollowUpMessage(message) && !hasActiveConversationContext(sessionId)) {
     const cached = getCachedResponse(cacheKey);
     if (cached) {
       return cached;
@@ -5509,7 +5539,8 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
     console.log(`💰 Skipping corrections for payment question: "${message}"`);
   }
 
-  if (!_skipCorrForSub && _correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+const _mainCorrThreshold = hasActiveConversationContext(sessionId) ? 0.85 : CORRECTION_DIRECT_THRESHOLD;
+  if (!_skipCorrForSub && _correctionMatch && _correctionMatch.score >= _mainCorrThreshold) {
     const { correction: _corr, score: _corrScore } = _correctionMatch;
 
     console.log(`✅ [Correction L1] DIRECT MATCH! Score: ${_corrScore.toFixed(3)} | Correction #${_corr.id}`);
@@ -5597,7 +5628,8 @@ _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل
 
 const _faqMatch = await findBestFAQMatch(message, _allFAQs);
 
-  if (_faqMatch && _faqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+const _mainFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_DIRECT_THRESHOLD;
+  if (_faqMatch && _faqMatch.score >= _mainFaqThreshold) {
     const { faq: _faq, score: _faqScore } = _faqMatch;
 
     console.log(`✅ [FAQ] DIRECT MATCH! Score: ${_faqScore.toFixed(3)} | FAQ #${_faq.id} | Section: "${_faq.section}"`);
@@ -7908,8 +7940,7 @@ const _qFilterTerms = questionTerms.filter(t => {
       
       // 🆕 Smart context fallback: لو فيه سياق سابق والرد فاضي → استخدم السياق
       if ((!analysis.response_message || analysis.response_message.length < 15)
-          && sessionMem.topics && sessionMem.topics.length > 0
-          && sessionMem.messageCount > 1
+&& ((sessionMem.topics && sessionMem.topics.length > 0) || (chatHistory && chatHistory.length >= 2))
           && !skipUpsell
           && openai) {
         
