@@ -2344,8 +2344,8 @@ function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relev
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
 
-  const memCtx = sessionMem.messageCount > 0
-    ? `\n═══ ذاكرة ═══\nمواضيع: ${sessionMem.topics.join(", ") || "-"} | بحث: ${sessionMem.lastSearchTopic || "-"} | كلمات: ${sessionMem.lastSearchTerms.join(", ") || "-"} | مستوى: ${sessionMem.userLevel || "-"} | رسائل: ${sessionMem.messageCount}\n`
+const memCtx = sessionMem.messageCount > 0
+    ? `\n═══ ذاكرة (المحادثة بدأت من ${sessionMem.messageCount} رسائل — ممنوع تحية!) ═══\nمواضيع: ${sessionMem.topics.join(", ") || "-"} | بحث: ${sessionMem.lastSearchTopic || "-"} | كلمات: ${sessionMem.lastSearchTerms.join(", ") || "-"} | مستوى: ${sessionMem.userLevel || "-"} | رسائل: ${sessionMem.messageCount}\n⚠️ ده مش أول رسالة! ممنوع تحية. لو الرسالة الجديدة عامة ("جميع الدورات"/"الدبلومات"/"كل الكورسات") وفيه موضوع سابق في الذاكرة → افهمها في سياق الموضوع السابق مش كأنها طلب تصفح.\n`
     : "";
 
   const topicSwitchRule = `
@@ -3034,9 +3034,11 @@ CATEGORIES = فقط لما المستخدم يطلب بشكل صريح يشوف 
 
 🔴 قاعدة بدء الرد في response_message:
 - ❌ ممنوع نهائياً تبدأ response_message بـ: "أيوه" / "اه" / "طبعاً" / "بالتأكيد" / "أكيد"
+- ❌ لو عدد الرسائل في الذاكرة > 0 (يعني مش أول رسالة): ممنوع نهائياً تبدأ بأي تحية! (مساء النور / صباح النور / أهلاً بيك / مرحباً / هلا / أهلاً / نورت). ادخل في الموضوع مباشرة — المستخدم اتحيّا قبل كده خلاص!
 - ✅ ابدأ بإيموجي + المعلومة مباشرة
-- مثال غلط: "أيوه! 🎉 استخدم الكود..." ❌
-- مثال صح: "🎁 استخدم الكود..." ✅
+- مثال غلط لو مش أول رسالة: "مساء النور! 😊 الاشتراك بيشمل..." ❌
+- مثال صح لو مش أول رسالة: "🎓 الاشتراك بيشمل..." ✅
+
 
 ═══ حالات خاصة إضافية ═══
 • "اشتركت" / "انا اشتركت" / "اشتركت الان" (بدون شكوى أو مشكلة) → action: "CHAT", هنّيه واسأله عايز يتعلم ايه
@@ -3527,6 +3529,7 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
 - لو المستخدم طلب حاجة (request) بدون علامة استفهام → ابدأ بالمعلومة مباشرة
 - لو المستخدم سأل سؤال (question) بأداة استفهام أو علامة استفهام → ابدأ بالمعلومة مباشرة
 - ❌ ممنوع تبدأ بـ "أيوه" أو "اه" أو "طبعاً" في أي رد نهائياً
+- ❌ ممنوع نهائياً تبدأ بأي تحية (مساء النور / صباح النور / أهلاً بيك / مرحباً / هلا) — المستخدم اتحيّا قبل كده. ابدأ بالمحتوى مباشرة!
 - مثال طلب: "bghit code promo" → ✅ "🎁 استخدم الكود..." ❌ "أيوه! استخدم..."
 - مثال سؤال: "عندكم كود خصم؟" → ✅ "🎁 استخدم الكود..."`;
 
@@ -4868,6 +4871,7 @@ ${JSON.stringify(courseList, null, 1)}
 // 100% safe: only READS sessionMemory - changes nothing
 // When returns false → zero impact on existing behavior
 // ═══════════════════════════════════════════════════════════
+
 function hasActiveConversationContext(sessionId) {
   const mem = sessionMemory.get(sessionId);
   if (!mem) return false;
@@ -5809,10 +5813,20 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   // Catches cases where GPT misclassifies as CHAT/SEARCH
   // Must run BEFORE FIX #77 (which converts specific DIPLOMAS → SEARCH)
   // ═══════════════════════════════════════════════════════════
+// 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
+  const _gptMadeContextualDecision = 
+    analysis.response_message && 
+    analysis.response_message.trim().length > 20 &&
+    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action);
+
   if (isGeneralDiplomaRequest(enrichedMessage)) {
-    console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
-    analysis.action = "DIPLOMAS";
-    analysis.search_terms = [];
+    if (_gptMadeContextualDecision) {
+      console.log(`📋 FIX #79 SKIPPED: GPT made contextual decision (action=${analysis.action}, response=${analysis.response_message.substring(0, 60)}...) — trusting GPT over regex`);
+    } else {
+      console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
+      analysis.action = "DIPLOMAS";
+      analysis.search_terms = [];
+    }
   }
 
 
@@ -5895,9 +5909,14 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
   if (_allTermsGeneric) {
     const _msgNorm = normalizeArabic((enrichedMessage || "").toLowerCase());
     if (/كل|جميع|كلهم|الكل/.test(_msgNorm)) {
-      console.log(`🔄 FIX: "all courses" pattern → CATEGORIES (was SEARCH with terms: [${analysis.search_terms.join(', ')}])`);
-      analysis.action = "CATEGORIES";
-      analysis.search_terms = [];
+      // 🆕 لو GPT فاهم السياق (عنده response جاهز) → متغيّرش قراره
+      if (_gptMadeContextualDecision) {
+        console.log(`🔄 "all courses" → CATEGORIES SKIPPED: GPT has contextual response (action=${analysis.action}) — trusting GPT`);
+      } else {
+        console.log(`🔄 FIX: "all courses" pattern → CATEGORIES (was SEARCH with terms: [${analysis.search_terms.join(', ')}])`);
+        analysis.action = "CATEGORIES";
+        analysis.search_terms = [];
+      }
     }
   }
 }
