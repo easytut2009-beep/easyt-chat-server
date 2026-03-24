@@ -5126,16 +5126,38 @@ const _isEGPPrice = /بالجني[هة]\s*(المصر[يى])?/i.test(message)
   || /(الجني[هة]|بالجني[هة])/i.test(message);
 
 if (_isEGPPrice) {
-  console.log(`💰 EGP Price query: "${message}"`);
-  let _egpReply = `الأسعار على المنصة معروضة بالدولار 💲<br><br>`;
-  _egpReply += `تقدر تحسبها بالجنيه المصري حسب سعر الصرف الحالي 😊<br>`;
-  _egpReply += `مثلاً لو الكورس بـ 9.99$ يبقى تقريباً ${Math.round(9.99 * 50)} جنيه`;
-  _egpReply = finalizeReply(_egpReply);
-  return {
-    reply: _egpReply,
-    intent: "EGP_PRICING",
-    suggestions: ["💰 طرق الدفع", "🎓 الدبلومات", "🎓 الاشتراك السنوي"]
-  };
+  // 🆕 FIX: شيل كلمات السعر والجنيه وشوف لو فيه موضوع محدد
+  const _egpNorm = normalizeArabic(message.toLowerCase());
+  const _egpStripped = _egpNorm
+    .replace(/بالجني[هة]\s*(المصر[يى])?/g, '')
+    .replace(/بالمصر[يى]/g, '')
+    .replace(/(جني[هة]|مصر[يى])/g, '')
+    .replace(/(كم|كام|سعر|اسعار|بكام|تكلف[ةه]|ثمن|قيم[ةه]|ايه|هو|هي|هى|طيب|يا|بس)/g, '')
+    .replace(/(دبلوم[ةه]?|كورس|دور[ةه]|course|diploma)/gi, '')
+    .replace(/[؟?!\.،,]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // فلتر الكلمات اللي طولها أكتر من حرفين
+  const _egpMeaningfulWords = _egpStripped.split(/\s+/).filter(w => w.length > 2);
+
+  if (_egpMeaningfulWords.length > 0) {
+    // 🆕 فيه موضوع محدد (مثلاً "تحليل البيانات") → متردش رد عام، سيبها تكمل للبحث
+    console.log(`💰 EGP + specific topic: [${_egpMeaningfulWords.join(', ')}] → skipping generic reply, falling through to search`);
+    // لا ترجع هنا — الرسالة هتكمل للـ GPT analyzer اللي هيعمل SEARCH ويجيب الكارت
+  } else {
+    // سؤال عام عن الجنيه بدون موضوع محدد → رد عام
+    console.log(`💰 Generic EGP Price query: "${message}"`);
+    let _egpReply = `الأسعار على المنصة معروضة بالدولار 💲<br><br>`;
+    _egpReply += `تقدر تحسبها بالجنيه المصري حسب سعر الصرف الحالي 😊<br>`;
+    _egpReply += `مثلاً لو الكورس بـ 9.99$ يبقى تقريباً ${Math.round(9.99 * 50)} جنيه`;
+    _egpReply = finalizeReply(_egpReply);
+    return {
+      reply: _egpReply,
+      intent: "EGP_PRICING",
+      suggestions: ["💰 طرق الدفع", "🎓 الدبلومات", "🎓 الاشتراك السنوي"]
+    };
+  }
 }
 
 // ✅ تأكيد اشتراك — المستخدم بيقول انه اشترك
