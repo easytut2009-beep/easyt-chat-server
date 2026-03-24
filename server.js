@@ -5099,18 +5099,6 @@ if (_isSubConfirm) {
   };
 }
 
-if (_isContactSupport) {
-  console.log(`📞 Contact support: "${message}"`);
-  let _supportReply = `يمكنك التواصل مع الدعم الفني عبر واتساب للحصول على المساعدة اللازمة 😊<br><br>`;
-  _supportReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
-  _supportReply = finalizeReply(_supportReply);
-  return {
-    reply: _supportReply,
-    intent: "CONTACT_SUPPORT",
-    suggestions: ["💰 طرق الدفع", "🎓 الاشتراك", "🎓 الدبلومات"]
-  };
-}
-
 
   // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Payment method name detection
