@@ -3974,14 +3974,22 @@ c._titleMatchStrength = 'none';
         // If NO intent words were stripped → all topic words match → STRONG
         // If intent words WERE stripped → reduced specificity → WEAK
 if (_topicWords.length === words.length) {
-          c._titleMatchStrength = 'strong';
-          console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
-        } else if (_topicWords.length >= 2) {
-          c._titleMatchStrength = 'strong';
-          console.log(`✅ FIX: 2+ topic words matched title after intent-strip (STRONG): "${c.title}" topics=[${_topicWords.join(",")}]`);
-        } else if (c._titleMatchStrength !== 'strong') {
-          c._titleMatchStrength = 'weak';
-        }
+    // كل الكلمات topic words (مفيش intent words اتشالت) → STRONG
+    c._titleMatchStrength = 'strong';
+    console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
+} else if (_topicWords.length >= 1) {
+    // 🆕 FIX #119: تغيير من >= 2 إلى >= 1
+    // لو فيه حتى topic word واحدة بس وهي موجودة في العنوان → ده STRONG
+    // آمن لأن: isWordBoundaryMatch اتشيك على كل الكلمات قبل ما نوصل هنا
+    // يعني الكلمة فعلاً موجودة في عنوان الكورس كـ word boundary match
+    c._titleMatchStrength = 'strong';
+    console.log(`✅ FIX #119: ${_topicWords.length} topic word(s) matched title (STRONG): "${c.title}" topics=[${_topicWords.join(",")}]`);
+} else if (c._titleMatchStrength !== 'strong') {
+    // 0 topic words = كل الكلمات كانت intent words (تعلم/كورس/دورة/شرح...)
+    // ده فعلاً ضعيف → WEAK
+    c._titleMatchStrength = 'weak';
+    console.log(`📋 Title-match (WEAK — 0 topic words): "${c.title}"`);
+}
         return true;
       }
       return false;
@@ -4759,6 +4767,99 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX #62v4: GPT Rescue Validation
+// Last-chance rescue before showing "no results"
+// Only runs when relevantCourses=0 but scored courses exist
+// Uses GPT to verify: are these courses ACTUALLY relevant?
+// ═══════════════════════════════════════════════════════════
+async function gptRescueValidation(userMessage, candidates, searchTerms) {
+  if (!openai || !candidates || candidates.length === 0) return [];
+
+  try {
+    const courseList = candidates.map((c, i) => ({
+      index: i,
+      title: c.title || "",
+      subtitle: (c.subtitle || "").replace(/<[^>]*>/g, "").substring(0, 100),
+      domain: c.domain || "",
+      score: c.relevanceScore || 0,
+    }));
+
+    const searchTermsStr = (searchTerms || [])
+      .filter(t => t.length > 1)
+      .slice(0, 8)
+      .join(", ");
+
+    const resp = await gptWithRetry(() =>
+      openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `أنت مراجع نتائج بحث في منصة تعليمية.
+
+المستخدم كتب: "${userMessage.substring(0, 200)}"
+كلمات البحث: [${searchTermsStr}]
+
+الكورسات دي اتلقت في البحث بس الفلتر الأوتوماتيكي استبعدها كلها.
+مهمتك: راجع هل فيه كورس منهم فعلاً مناسب لطلب المستخدم.
+
+الكورسات:
+${JSON.stringify(courseList, null, 1)}
+
+ارجع JSON فقط:
+{"relevant": [0, 2]}
+أو
+{"relevant": []}
+
+قواعد:
+- "تعلم الفرنسية" ↔ "تعلم اللغة الفرنسية" = نفس الموضوع ✅
+- "كورس اكسل" ↔ "Microsoft Excel" = نفس الموضوع ✅  
+- لو اسم الكورس أو الـ domain عن نفس الموضوع → relevant
+- لو الكورس عن موضوع مختلف تماماً → مش relevant
+- لو مش متأكد → خليه relevant (أحسن من إنه يختفي)
+- ارجع [] فاضية فقط لو فعلاً مفيش أي كورس له أي علاقة`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 50,
+        temperature: 0,
+      })
+    );
+
+    const raw = resp.choices[0].message.content;
+    let result;
+    try {
+      result = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      result = match ? JSON.parse(match[0]) : { relevant: [] };
+    }
+
+    const indices = Array.isArray(result.relevant) ? result.relevant : [];
+
+    const rescued = indices
+      .filter((i) => typeof i === "number" && i >= 0 && i < candidates.length)
+      .map((i) => candidates[i]);
+
+    if (rescued.length > 0) {
+      console.log(
+        `🆘 GPT Rescue: ${rescued.length}/${candidates.length} courses validated:`,
+        rescued.map((c) => `"${c.title}"`).join(", ")
+      );
+    } else {
+      console.log(
+        `🆘 GPT Rescue: confirmed 0/${candidates.length} courses are relevant`
+      );
+    }
+
+    return rescued;
+  } catch (e) {
+    console.error("❌ gptRescueValidation error:", e.message);
+    return [];
+  }
+}
 
 
 
@@ -6996,8 +7097,45 @@ const _topicRelevant = courses.filter(c => {
         // Don't set relevantCourses → falls through to "no results" section below
       }
     
-        } else {
-          console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
+} else {
+          // 🆕 FIX #62v4: GPT Rescue — آخر فرصة قبل "مفيش كورس"
+          // بنسأل GPT: هل فعلاً مفيش كورس مناسب من دول؟
+          const _rescueCandidates = courses
+            .filter((c) => (c.relevanceScore || 0) >= 300)
+            .slice(0, 5);
+
+          if (_rescueCandidates.length > 0) {
+            console.log(
+              `🆘 FIX #62v4: GPT Rescue — checking ${_rescueCandidates.length} candidates before "no results"`
+            );
+            const _rescued = await gptRescueValidation(
+              message,
+              _rescueCandidates,
+              termsToSearch
+            );
+
+            if (_rescued.length > 0) {
+              relevantCourses = _rescued.slice(0, 3);
+              if (
+                !recommendationMessage ||
+                recommendationMessage.trim().length < 10
+              ) {
+                recommendationMessage =
+                  "إليك الكورسات المتاحة اللي ممكن تناسبك:";
+              }
+              console.log(
+                `🆘 FIX #62v4: GPT Rescue SUCCESS — ${_rescued.length} courses saved from "no results"!`
+              );
+            } else {
+              console.log(
+                `⚠️ FIX #62v4: GPT Rescue confirmed — no relevant courses found`
+              );
+            }
+          } else {
+            console.log(
+              `⚠️ FIX #62v3: No protected courses and no rescue candidates — showing "no results"`
+            );
+          }
         }
       }
 
