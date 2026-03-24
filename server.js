@@ -5075,6 +5075,48 @@ if (_isSubDiplomas) {
 }
 
 
+// ✅ موعد الدعم أو خدمة العملاء
+const _isSupportSchedule = /موعد\s*(خدم[ةه]\s*العملاء|الدعم)/i.test(message)
+  || /مواعيد\s*(خدم[ةه]\s*العملاء|الدعم|العمل|الشغل)/i.test(message)
+  || /شغالين/i.test(message)
+  || /(بتشتغلوا|بتفتحوا|بتقفلوا)\s*امت/i.test(message)
+  || /(متاحين|متواجدين|موجودين)\s*امت/i.test(message)
+  || /(اكلمكم|اكلمهم)\s*امت/i.test(message);
+
+if (_isSupportSchedule) {
+  console.log(`🕐 Support schedule: "${message}"`);
+  let _scheduleReply = `الدعم الفني وخدمة العملاء متواجدين من 8ص إلى 2ص طوال أيام الأسبوع 😊`;
+  _scheduleReply = finalizeReply(_scheduleReply);
+  return {
+    reply: _scheduleReply,
+    intent: "SUPPORT_SCHEDULE",
+    suggestions: ["💬 تواصل مع الدعم", "💰 طرق الدفع", "🎓 الدبلومات"]
+  };
+}
+
+// ✅ تواصل مع الدعم
+const _isContactSupport = /تواصل\s*(مع)?\s*(الدعم|الادمن|الأدمن)/i.test(message)
+  || /خدم[ةه]\s*العملاء/i.test(message)
+  || /عايز\s*(اتكلم|اكلم|اتواصل)\s*(مع)?\s*(حد|الدعم|الادمن)/i.test(message)
+  || /محتاج\s*(دعم|مساعد)/i.test(message)
+  || /الدعم\s*الفني/i.test(message)
+  || /واتساب\s*الدعم/i.test(message)
+  || /رقم\s*الواتساب/i.test(message)
+  || /عايز\s*اشتكى/i.test(message)
+  || /عند[يى]\s*مشكل/i.test(message)
+  || /كلم\s*(الدعم|حد)/i.test(message);
+
+if (_isContactSupport) {
+  console.log(`📞 Contact support: "${message}"`);
+  let _supportReply = `يمكنك التواصل مع الدعم الفني عبر واتساب للحصول على المساعدة اللازمة 😊<br><br>`;
+  _supportReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+  _supportReply = finalizeReply(_supportReply);
+  return {
+    reply: _supportReply,
+    intent: "CONTACT_SUPPORT",
+    suggestions: ["💰 طرق الدفع", "🎓 الاشتراك", "🎓 الدبلومات"]
+  };
+}
 
 
 // ✅ تأكيد اشتراك — المستخدم بيقول انه اشترك
@@ -5098,7 +5140,6 @@ if (_isSubConfirm) {
     suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
   };
 }
-
 
   // ═══════════════════════════════════════════════════════════
   // 🆕 FIX: Payment method name detection
