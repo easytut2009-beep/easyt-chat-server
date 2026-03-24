@@ -5118,6 +5118,25 @@ if (_isContactSupport) {
   };
 }
 
+// ✅ سؤال عن السعر بالجنيه المصري
+const _isEGPPrice = /بالجني[هة]\s*(المصر[يى])?/i.test(message)
+  || /بالمصر[يى]/i.test(message)
+  || /سعر.*(جني[هة]|مصر[يى])/i.test(message)
+  || /كام\s*جني[هة]/i.test(message)
+  || /(الجني[هة]|بالجني[هة])/i.test(message);
+
+if (_isEGPPrice) {
+  console.log(`💰 EGP Price query: "${message}"`);
+  let _egpReply = `الأسعار على المنصة معروضة بالدولار 💲<br><br>`;
+  _egpReply += `تقدر تحسبها بالجنيه المصري حسب سعر الصرف الحالي 😊<br>`;
+  _egpReply += `مثلاً لو الكورس بـ 9.99$ يبقى تقريباً ${Math.round(9.99 * 50)} جنيه`;
+  _egpReply = finalizeReply(_egpReply);
+  return {
+    reply: _egpReply,
+    intent: "EGP_PRICING",
+    suggestions: ["💰 طرق الدفع", "🎓 الدبلومات", "🎓 الاشتراك السنوي"]
+  };
+}
 
 // ✅ تأكيد اشتراك — المستخدم بيقول انه اشترك
 const _isSubConfirm = (
