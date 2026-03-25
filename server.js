@@ -17,7 +17,6 @@
 
 require("dotenv").config();
 const express = require("express");
-const compression = require("compression");
 const cors = require("cors");
 const crypto = require("crypto");
 const path = require("path");
@@ -133,7 +132,6 @@ app.use(
   })
 );
 
-app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 
 const limiter = rateLimit({
@@ -3135,7 +3133,7 @@ async function gptWithRetry(callFn, maxRetries = 2) {
         throw error;
       }
       
-const waitMs = attempt * 500; // 0.5s, 1s
+      const waitMs = attempt * 1000; // 1s, 2s
       console.log(`⚠️ GPT retry ${attempt}/${maxRetries} after ${waitMs}ms — ${error.message}`);
       await new Promise(r => setTimeout(r, waitMs));
     }
@@ -3171,9 +3169,9 @@ const systemPrompt = buildAnalyzerPrompt(
   }
   filteredHistory = filteredHistory.slice(-6);
 
-const messages = [
+  const messages = [
     { role: "system", content: systemPrompt },
-    ...filteredHistory.slice(-6),
+    ...filteredHistory,
     { role: "user", content: message },
   ];
 
@@ -3348,9 +3346,8 @@ async function generateSmartRecommendation(
   sessionMem,
   analysis,
   instructors,
-  model = "gpt-4o-mini"
+  model = "gpt-4o"
 ) {
-
 const courseData = courses
     .slice(0, 10)
     .map((c, i) => ({
@@ -5020,10 +5017,8 @@ if (_isCouponAsk) {
   // Fix: Load corrections + FAQs early. If strong match → return immediately.
   //       This catches admin corrections that would otherwise be bypassed.
   // ═══════════════════════════════════════════════════════════
-const [_allCorrections, _allFAQs] = await Promise.all([
-    loadAllCorrections(),
-    loadAllFAQs(),
-  ]);
+  const _allCorrections = await loadAllCorrections();
+  const _allFAQs = await loadAllFAQs();
 
 // Early correction check
   const _earlyCorrectionMatch = await findBestCorrectionMatch(message, _allCorrections);
@@ -8177,7 +8172,7 @@ ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botIns
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: messages,
-      max_tokens: 400,
+      max_tokens: 1000,
       temperature: 0.5,
     });
 
@@ -8206,7 +8201,6 @@ ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botIns
 /* ══════════════════════════════════════════════════════════
    SECTION 12: /chat Endpoint
    ══════════════════════════════════════════════════════════ */
-const _chatDedupeMap = new Map();
 app.post("/chat", limiter, async (req, res) => {
   try {
     const { message, session_id } = req.body;
@@ -8218,20 +8212,8 @@ app.post("/chat", limiter, async (req, res) => {
       return res.json({ reply: "اكتبلي سؤالك وأنا هساعدك 😊" });
     }
 
-const cleanMessage = message.trim().slice(0, 500);
+    const cleanMessage = message.trim().slice(0, 500);
     const sessionId = session_id || "anon_" + Date.now();
-
-    const _dedupeKey = `${sessionId}:${cleanMessage.toLowerCase().replace(/\s+/g, ' ')}`;
-    const _lastDedupeTime = _chatDedupeMap.get(_dedupeKey);
-    if (_lastDedupeTime && Date.now() - _lastDedupeTime < 30000) {
-      console.log(`⚡ Duplicate blocked: "${cleanMessage.substring(0, 40)}"`);
-      return res.json({ 
-        reply: "⏳ رسالتك وصلت — استنى ثواني وهرد عليك! 😊",
-        suggestions: [] 
-      });
-    }
-    _chatDedupeMap.set(_dedupeKey, Date.now());
-    setTimeout(() => _chatDedupeMap.delete(_dedupeKey), 35000);
 
     console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
     await logChat(sessionId, "user", cleanMessage, null);
