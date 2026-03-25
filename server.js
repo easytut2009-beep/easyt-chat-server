@@ -2339,14 +2339,29 @@ const result = data
 /* ═══════════════════════════════════
    11-D: Phase 1 — Smart Analyzer
    ═══════════════════════════════════ */
+
+// ← غيّر الرقم لو رقم واتساب الدعم الفني مختلف
+const WHATSAPP_SUPPORT_LINK = '<a href="https://wa.me/201027007899" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">على الواتساب 💬</a>';
+
 function buildAnalyzerPrompt(botInstructions, customResponses, sessionMem, relevantCorrections = [], relevantFAQs = []) {
   const categoriesList = Object.entries(CATEGORIES)
     .map(([name], i) => `${i + 1}. ${name}`)
     .join("\n");
 
-  const memCtx = sessionMem.messageCount > 0
-    ? `\n═══ ذاكرة ═══\nمواضيع: ${sessionMem.topics.join(", ") || "-"} | بحث: ${sessionMem.lastSearchTopic || "-"} | كلمات: ${sessionMem.lastSearchTerms.join(", ") || "-"} | مستوى: ${sessionMem.userLevel || "-"} | رسائل: ${sessionMem.messageCount}\n`
-    : "";
+const memCtx = sessionMem.messageCount > 0
+  ? `
+═══ ذاكرة المحادثة (${sessionMem.messageCount} رسائل سابقة) ═══
+مواضيع اتكلمنا فيها: ${sessionMem.topics.join(", ") || "-"}
+آخر بحث: ${sessionMem.lastSearchTopic || "-"}
+كلمات البحث: ${sessionMem.lastSearchTerms.join(", ") || "-"}
+مستوى المستخدم: ${sessionMem.userLevel || "-"}
+
+⚠️ تعليمات مهمة:
+1. ده مش أول رسالة — ممنوع تحية تاني!
+2. لو المستخدم قال "جميع الدورات" أو "كل الكورسات" أو "الدبلومات" وكان الموضوع السابق في الذاكرة → افهمها في سياق الموضوع السابق مش كأنها طلب تصفح
+3. افهم كل رسالة جديدة في سياق المحادثة السابقة
+`
+  : "";
 
   const topicSwitchRule = `
 ═══ 🔴🔴🔴 قاعدة تغيير الموضوع — أولوية عالية جداً! ═══
@@ -2504,7 +2519,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 
 أمثلة حقيقية:
 - "اشتركت النهارده 🎉" → CHAT, response: "مبروك! 🎉 عايز تبدأ تتعلم إيه؟"
-- "اشتركت وين اشتراكي اديني فلوسي" → SUPPORT, response: "نتفهم موقفك 🙏 تواصل مع الدعم مباشرة..."
+- "اشتركت وين اشتراكي اديني فلوسي" → SUPPORT, response: "نتفهم موقفك تماماً 🙏 تواصل مع فريق الدعم ${WHATSAPP_SUPPORT_LINK} وهيساعدوك فوراً"
 - "اشتركت بس الدورات مش ظاهرة" → SUPPORT, response: "ادخل على 'دوراتي' + لو المشكلة مستمرة → تواصل مع الدعم"
 - "اشتركت هل يتجدد تلقائي؟" → CHAT, response: "نعم بيتجدد تلقائي — وتقدر تلغي في أي وقت..."
 
@@ -2517,11 +2532,11 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 
 - "اذا في نقطة مو واضحة كيف اسأل" → CHAT, response: "المرشد التعليمي الذكي موجود جوه كل كورس!"
 - "كيف استخدم المنصة" → CHAT, response: "المنصة سهلة! اشترك → ادخل على أي كورس → ابدأ..."
-- "عايز اتكلم مع حد" → SUPPORT, response: "تواصل مع الدعم [واتساب]"
+- "عايز اتكلم مع حد" → SUPPORT, response: "تقدر تتواصل مع فريق الدعم ${WHATSAPP_SUPPORT_LINK}"
 
 ⚠️ لو المستخدم بيشتكي أو زعلان أو عايز فلوسه:
 → action = "SUPPORT"
-→ response_message = تفهّم موقفه بكل احترام + وجّهه لواتساب الدعم
+→ response_message = تفهّم موقفه بكل احترام + وجّهه للدعم ${WHATSAPP_SUPPORT_LINK}
 → ❌ ممنوع نهائياً تهنّيه أو تقوله "مبروك"!
 → ❌ ممنوع تعرض كورسات أو أقسام لواحد زعلان أو بيشتكي!
 
@@ -2534,7 +2549,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 
 ⚠️ لو المستخدم مشترك وعنده مشكلة تقنية:
 → action = "SUPPORT"
-→ response_message = نصائح (ادخل على "دوراتي" + تسجيل خروج ودخول + استنى 24 ساعة لو دفع بديل) + لو مستمرة → واتساب الدعم
+→ response_message = نصائح (ادخل على "دوراتي" + تسجيل خروج ودخول + استنى 24 ساعة لو دفع بديل) + لو مستمرة → تواصل مع الدعم ${WHATSAPP_SUPPORT_LINK}
 
 
 ═══ 🔴 فهم اللهجات والكلام العامي — إجباري ═══
@@ -3029,18 +3044,34 @@ CATEGORIES = فقط لما المستخدم يطلب بشكل صريح يشوف 
 - تحويل بنكي: بنك الإسكندرية — حساب: 202069901001 — Swift: ALEXEGCXXXX
 - Skrill: info@easyt.online
 ⚠️ لو البطاقات مش شغالة → وجّهه لصفحة طرق الدفع البديلة
-واتساب للدعم متاح من صفحة طرق الدفع
+
+═══ 🔴 قاعدة الدعم الفني والواتساب — إجبارية ═══
+لما توجّه المستخدم للدعم الفني، دايماً استخدم اللينك الكليكابل ده حرفياً:
+${WHATSAPP_SUPPORT_LINK}
+❌ ممنوع نهائياً تكتب رقم تليفون كنص عادي أو أرقام للدعم!
+❌ ممنوع نهائياً تكتب "رقم الواتساب هو..." أو تعرض أي رقم واتساب!
+✅ دايماً استخدم اللينك الكليكابل فوق — المستخدم يضغط عليه وبيفتح الواتساب مباشرة
+✅ أمثلة صح:
+  "تقدر تتواصل مع فريق الدعم ${WHATSAPP_SUPPORT_LINK}"
+  "لو المشكلة مستمرة، كلّم الدعم ${WHATSAPP_SUPPORT_LINK}"
+  "فريق الدعم موجود ${WHATSAPP_SUPPORT_LINK} وهيساعدوك فوراً"
+❌ أمثلة غلط:
+  "رقم الواتساب 01027007899" ← ممنوع!
+  "تواصل على 01027007899" ← ممنوع!
+  "الرقم هو ..." ← ممنوع!
 
 
 🔴 قاعدة بدء الرد في response_message:
 - ❌ ممنوع نهائياً تبدأ response_message بـ: "أيوه" / "اه" / "طبعاً" / "بالتأكيد" / "أكيد"
+- ❌ لو عدد الرسائل في الذاكرة > 0 (يعني مش أول رسالة): ممنوع نهائياً تبدأ بأي تحية! (مساء النور / صباح النور / أهلاً بيك / مرحباً / هلا / أهلاً / نورت). ادخل في الموضوع مباشرة — المستخدم اتحيّا قبل كده خلاص!
 - ✅ ابدأ بإيموجي + المعلومة مباشرة
-- مثال غلط: "أيوه! 🎉 استخدم الكود..." ❌
-- مثال صح: "🎁 استخدم الكود..." ✅
+- مثال غلط لو مش أول رسالة: "مساء النور! 😊 الاشتراك بيشمل..." ❌
+- مثال صح لو مش أول رسالة: "🎓 الاشتراك بيشمل..." ✅
+
 
 ═══ حالات خاصة إضافية ═══
 • "اشتركت" / "انا اشتركت" / "اشتركت الان" (بدون شكوى أو مشكلة) → action: "CHAT", هنّيه واسأله عايز يتعلم ايه
-• "الدورات مش متاحة" / "مش قادر أوصل" / "الاشتراك يعمل أو لا" → action: "SUPPORT", وجّهه للدعم الفني
+• "الدورات مش متاحة" / "مش قادر أوصل" / "الاشتراك يعمل أو لا" → action: "SUPPORT", وجّهه للدعم الفني ${WHATSAPP_SUPPORT_LINK}
 • "خصم أكبر" / "كوبون أكتر" → action: "CHAT", لو فيه معلومة في تعليمات الأدمن → اذكرها | لو مفيش → قوله "ده أقوى عرض متاح حالياً — تقدر تشوف التفاصيل من صفحة الاشتراك"
 
 
@@ -3067,11 +3098,11 @@ ${relevantFAQs.map((f, i) => `${i + 1}. [${f.section}] السؤال: "${f.questi
 }
 
 const FALLBACK_MESSAGES = [
-  "🤔 ممكن توضحلي أكتر؟ مثلاً:\n• 'عايز كورس فوتوشوب'\n• 'ازاي ادفع'\n• 'عندي مشكلة في حسابي'",
-  "🤔 ممكن توضح سؤالك؟ مثلاً:\n• اسم الكورس أو المجال\n• 'ازاي ادفع'\n• 'عندي مشكلة'",
-  "🤔 معلش مش قادر أفهم طلبك 😊 جرب تكتب:\n• اسم الكورس أو المجال\n• أو 'ازاي ادفع'\n• أو 'عندي مشكلة'",
-  "🤔 ممكن تحدد أكتر؟ 🎯 مثلاً:\n• برمجة، تصميم، تسويق\n• أو 'ازاي ادفع'\n• أو 'محتاج مساعدة'",
-  "🤔 مش متأكد فهمتك 😊 ممكن توضحلي:\n• عايز تتعلم إيه؟\n• أو عندك سؤال عن الاشتراك؟\n• أو عندك مشكلة تقنية؟",
+  `🤔 ممكن توضحلي أكتر؟ مثلاً:<br>• 'عايز كورس فوتوشوب'<br>• 'ازاي ادفع'<br>• أو تواصل مع الدعم ${WHATSAPP_SUPPORT_LINK}`,
+  `🤔 ممكن توضح سؤالك؟ مثلاً:<br>• اسم الكورس أو المجال<br>• 'ازاي ادفع'<br>• أو كلّم الدعم ${WHATSAPP_SUPPORT_LINK}`,
+  `🤔 معلش مش قادر أفهم طلبك 😊 جرب تكتب:<br>• اسم الكورس أو المجال<br>• أو 'ازاي ادفع'<br>• أو كلّم الدعم ${WHATSAPP_SUPPORT_LINK}`,
+  `🤔 ممكن تحدد أكتر؟ 🎯 مثلاً:<br>• برمجة، تصميم، تسويق<br>• أو 'ازاي ادفع'<br>• أو تواصل مع الدعم ${WHATSAPP_SUPPORT_LINK}`,
+  `🤔 مش متأكد فهمتك 😊 ممكن توضحلي:<br>• عايز تتعلم إيه؟<br>• أو عندك سؤال عن الاشتراك؟<br>• أو كلّم الدعم ${WHATSAPP_SUPPORT_LINK}`,
 ];
 
 
@@ -3527,6 +3558,7 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
 - لو المستخدم طلب حاجة (request) بدون علامة استفهام → ابدأ بالمعلومة مباشرة
 - لو المستخدم سأل سؤال (question) بأداة استفهام أو علامة استفهام → ابدأ بالمعلومة مباشرة
 - ❌ ممنوع تبدأ بـ "أيوه" أو "اه" أو "طبعاً" في أي رد نهائياً
+- ❌ ممنوع نهائياً تبدأ بأي تحية (مساء النور / صباح النور / أهلاً بيك / مرحباً / هلا) — المستخدم اتحيّا قبل كده. ابدأ بالمحتوى مباشرة!
 - مثال طلب: "bghit code promo" → ✅ "🎁 استخدم الكود..." ❌ "أيوه! استخدم..."
 - مثال سؤال: "عندكم كود خصم؟" → ✅ "🎁 استخدم الكود..."`;
 
@@ -3974,14 +4006,22 @@ c._titleMatchStrength = 'none';
         // If NO intent words were stripped → all topic words match → STRONG
         // If intent words WERE stripped → reduced specificity → WEAK
 if (_topicWords.length === words.length) {
-          c._titleMatchStrength = 'strong';
-          console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
-        } else if (_topicWords.length >= 2) {
-          c._titleMatchStrength = 'strong';
-          console.log(`✅ FIX: 2+ topic words matched title after intent-strip (STRONG): "${c.title}" topics=[${_topicWords.join(",")}]`);
-        } else if (c._titleMatchStrength !== 'strong') {
-          c._titleMatchStrength = 'weak';
-        }
+    // كل الكلمات topic words (مفيش intent words اتشالت) → STRONG
+    c._titleMatchStrength = 'strong';
+    console.log(`✅ All topic words in title (word-split STRONG): "${c.title}"`);
+} else if (_topicWords.length >= 1) {
+    // 🆕 FIX #119: تغيير من >= 2 إلى >= 1
+    // لو فيه حتى topic word واحدة بس وهي موجودة في العنوان → ده STRONG
+    // آمن لأن: isWordBoundaryMatch اتشيك على كل الكلمات قبل ما نوصل هنا
+    // يعني الكلمة فعلاً موجودة في عنوان الكورس كـ word boundary match
+    c._titleMatchStrength = 'strong';
+    console.log(`✅ FIX #119: ${_topicWords.length} topic word(s) matched title (STRONG): "${c.title}" topics=[${_topicWords.join(",")}]`);
+} else if (c._titleMatchStrength !== 'strong') {
+    // 0 topic words = كل الكلمات كانت intent words (تعلم/كورس/دورة/شرح...)
+    // ده فعلاً ضعيف → WEAK
+    c._titleMatchStrength = 'weak';
+    console.log(`📋 Title-match (WEAK — 0 topic words): "${c.title}"`);
+}
         return true;
       }
       return false;
@@ -4534,6 +4574,7 @@ if (extractedName) {
 
     
 
+
     if (possName.length >= 3) {
       console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
       return {
@@ -4759,6 +4800,116 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX #62v4: GPT Rescue Validation
+// Last-chance rescue before showing "no results"
+// Only runs when relevantCourses=0 but scored courses exist
+// Uses GPT to verify: are these courses ACTUALLY relevant?
+// ═══════════════════════════════════════════════════════════
+async function gptRescueValidation(userMessage, candidates, searchTerms) {
+  if (!openai || !candidates || candidates.length === 0) return [];
+
+  try {
+    const courseList = candidates.map((c, i) => ({
+      index: i,
+      title: c.title || "",
+      subtitle: (c.subtitle || "").replace(/<[^>]*>/g, "").substring(0, 100),
+      domain: c.domain || "",
+      score: c.relevanceScore || 0,
+    }));
+
+    const searchTermsStr = (searchTerms || [])
+      .filter(t => t.length > 1)
+      .slice(0, 8)
+      .join(", ");
+
+    const resp = await gptWithRetry(() =>
+      openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `أنت مراجع نتائج بحث في منصة تعليمية.
+
+المستخدم كتب: "${userMessage.substring(0, 200)}"
+كلمات البحث: [${searchTermsStr}]
+
+الكورسات دي اتلقت في البحث بس الفلتر الأوتوماتيكي استبعدها كلها.
+مهمتك: راجع هل فيه كورس منهم فعلاً مناسب لطلب المستخدم.
+
+الكورسات:
+${JSON.stringify(courseList, null, 1)}
+
+ارجع JSON فقط:
+{"relevant": [0, 2]}
+أو
+{"relevant": []}
+
+قواعد:
+- "تعلم الفرنسية" ↔ "تعلم اللغة الفرنسية" = نفس الموضوع ✅
+- "كورس اكسل" ↔ "Microsoft Excel" = نفس الموضوع ✅  
+- لو اسم الكورس أو الـ domain عن نفس الموضوع → relevant
+- لو الكورس عن موضوع مختلف تماماً → مش relevant
+- لو مش متأكد → خليه relevant (أحسن من إنه يختفي)
+- ارجع [] فاضية فقط لو فعلاً مفيش أي كورس له أي علاقة`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 50,
+        temperature: 0,
+      })
+    );
+
+    const raw = resp.choices[0].message.content;
+    let result;
+    try {
+      result = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      result = match ? JSON.parse(match[0]) : { relevant: [] };
+    }
+
+    const indices = Array.isArray(result.relevant) ? result.relevant : [];
+
+    const rescued = indices
+      .filter((i) => typeof i === "number" && i >= 0 && i < candidates.length)
+      .map((i) => candidates[i]);
+
+    if (rescued.length > 0) {
+      console.log(
+        `🆘 GPT Rescue: ${rescued.length}/${candidates.length} courses validated:`,
+        rescued.map((c) => `"${c.title}"`).join(", ")
+      );
+    } else {
+      console.log(
+        `🆘 GPT Rescue: confirmed 0/${candidates.length} courses are relevant`
+      );
+    }
+
+    return rescued;
+  } catch (e) {
+    console.error("❌ gptRescueValidation error:", e.message);
+    return [];
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: Context-Aware Guard
+// Returns true when user has an active conversation
+// 100% safe: only READS sessionMemory - changes nothing
+// When returns false → zero impact on existing behavior
+// ═══════════════════════════════════════════════════════════
+
+function hasActiveConversationContext(sessionId) {
+  const mem = sessionMemory.get(sessionId);
+  if (!mem) return false;
+  // _totalMsgs is incremented at top of smartChat for EVERY message (including early returns)
+  if (!mem._totalMsgs || mem._totalMsgs <= 1) return false;
+  // Only consider conversations within last 10 minutes
+  if (Date.now() - mem.lastActivity > 10 * 60 * 1000) return false;
+  return true;
+}
 
 
 /* ═══════════════════════════════════
@@ -4793,6 +4944,11 @@ async function smartChat(message, sessionId) {
     message = _botNameCleaned;
   }
 
+// 🆕 FIX: Track total messages per session (before ANY early return)
+  // Safe: uses new field _totalMsgs that nothing else touches
+  const _ctxMem = getSessionMemory(sessionId);
+  _ctxMem._totalMsgs = (_ctxMem._totalMsgs || 0) + 1;
+  _ctxMem.lastActivity = Date.now();
 
   // 🆕 Direct diploma button (bypass GPT)
   const _btnClean = message.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '').trim();
@@ -4864,9 +5020,11 @@ if (_isCouponAsk) {
   const _allCorrections = await loadAllCorrections();
   const _allFAQs = await loadAllFAQs();
 
-  // Early correction check
+// Early correction check
   const _earlyCorrectionMatch = await findBestCorrectionMatch(message, _allCorrections);
-  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+  // 🆕 FIX: Raise threshold in active conversations (let GPT handle with context)
+  const _earlyCorrThreshold = hasActiveConversationContext(sessionId) ? 0.85 : CORRECTION_DIRECT_THRESHOLD;
+  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= _earlyCorrThreshold) {
     const { correction: _earlyCorr, score: _earlyScore } = _earlyCorrectionMatch;
     
     if (_earlyCorr.corrected_reply && _earlyCorr.corrected_reply.trim().length > 0) {
@@ -4886,7 +5044,8 @@ if (_isCouponAsk) {
 
   // Early FAQ check
   const _earlyFaqMatch = await findBestFAQMatch(message, _allFAQs);
-  if (_earlyFaqMatch && _earlyFaqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_DIRECT_THRESHOLD;
+  if (_earlyFaqMatch && _earlyFaqMatch.score >= _earlyFaqThreshold) {
     const { faq: _earlyFaq, score: _earlyFaqScore } = _earlyFaqMatch;
     
     console.log(`✅ [Early FAQ] DIRECT MATCH! Score: ${_earlyFaqScore.toFixed(3)} | FAQ #${_earlyFaq.id}`);
@@ -4900,6 +5059,12 @@ if (_isCouponAsk) {
       intent: "FAQ",
       suggestions: ["عايز اتعلم حاجة 📘", "🎓 الدبلومات", "ازاي ادفع؟ 💳"],
     };
+// 🆕 FIX: Log when correction skipped due to active conversation
+  if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD 
+      && _earlyCorrectionMatch.score < _earlyCorrThreshold) {
+    console.log(`🔄 [Early Correction] Skipped — active conversation (score=${_earlyCorrectionMatch.score.toFixed(3)}, needs >=${_earlyCorrThreshold})`);
+  }
+
   }
 
 
@@ -5373,7 +5538,7 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
   const sessionMem = getSessionMemory(sessionId);
 // Check response cache (skip for follow-ups)
   const cacheKey = getResponseCacheKey(message);
-  if (cacheKey && !isFollowUpMessage(message)) {
+if (cacheKey && !isFollowUpMessage(message) && !hasActiveConversationContext(sessionId)) {
     const cached = getCachedResponse(cacheKey);
     if (cached) {
       return cached;
@@ -5407,7 +5572,8 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
     console.log(`💰 Skipping corrections for payment question: "${message}"`);
   }
 
-  if (!_skipCorrForSub && _correctionMatch && _correctionMatch.score >= CORRECTION_DIRECT_THRESHOLD) {
+const _mainCorrThreshold = hasActiveConversationContext(sessionId) ? 0.85 : CORRECTION_DIRECT_THRESHOLD;
+  if (!_skipCorrForSub && _correctionMatch && _correctionMatch.score >= _mainCorrThreshold) {
     const { correction: _corr, score: _corrScore } = _correctionMatch;
 
     console.log(`✅ [Correction L1] DIRECT MATCH! Score: ${_corrScore.toFixed(3)} | Correction #${_corr.id}`);
@@ -5495,7 +5661,8 @@ _corrReply += `<br><br>💡 مع الاشتراك السنوي تقدر تدخل
 
 const _faqMatch = await findBestFAQMatch(message, _allFAQs);
 
-  if (_faqMatch && _faqMatch.score >= FAQ_DIRECT_THRESHOLD) {
+const _mainFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_DIRECT_THRESHOLD;
+  if (_faqMatch && _faqMatch.score >= _mainFaqThreshold) {
     const { faq: _faq, score: _faqScore } = _faqMatch;
 
     console.log(`✅ [FAQ] DIRECT MATCH! Score: ${_faqScore.toFixed(3)} | FAQ #${_faq.id} | Section: "${_faq.section}"`);
@@ -5675,10 +5842,20 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   // Catches cases where GPT misclassifies as CHAT/SEARCH
   // Must run BEFORE FIX #77 (which converts specific DIPLOMAS → SEARCH)
   // ═══════════════════════════════════════════════════════════
+// 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
+  const _gptMadeContextualDecision = 
+    analysis.response_message && 
+    analysis.response_message.trim().length > 20 &&
+    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action);
+
   if (isGeneralDiplomaRequest(enrichedMessage)) {
-    console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
-    analysis.action = "DIPLOMAS";
-    analysis.search_terms = [];
+    if (_gptMadeContextualDecision) {
+      console.log(`📋 FIX #79 SKIPPED: GPT made contextual decision (action=${analysis.action}, response=${analysis.response_message.substring(0, 60)}...) — trusting GPT over regex`);
+    } else {
+      console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
+      analysis.action = "DIPLOMAS";
+      analysis.search_terms = [];
+    }
   }
 
 
@@ -5761,9 +5938,14 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
   if (_allTermsGeneric) {
     const _msgNorm = normalizeArabic((enrichedMessage || "").toLowerCase());
     if (/كل|جميع|كلهم|الكل/.test(_msgNorm)) {
-      console.log(`🔄 FIX: "all courses" pattern → CATEGORIES (was SEARCH with terms: [${analysis.search_terms.join(', ')}])`);
-      analysis.action = "CATEGORIES";
-      analysis.search_terms = [];
+      // 🆕 لو GPT فاهم السياق (عنده response جاهز) → متغيّرش قراره
+      if (_gptMadeContextualDecision) {
+        console.log(`🔄 "all courses" → CATEGORIES SKIPPED: GPT has contextual response (action=${analysis.action}) — trusting GPT`);
+      } else {
+        console.log(`🔄 FIX: "all courses" pattern → CATEGORIES (was SEARCH with terms: [${analysis.search_terms.join(', ')}])`);
+        analysis.action = "CATEGORIES";
+        analysis.search_terms = [];
+      }
     }
   }
 }
@@ -6995,8 +7177,45 @@ const _topicRelevant = courses.filter(c => {
         // Don't set relevantCourses → falls through to "no results" section below
       }
     
-        } else {
-          console.log(`⚠️ FIX #62v3: No protected courses found — showing "no results"`);
+} else {
+          // 🆕 FIX #62v4: GPT Rescue — آخر فرصة قبل "مفيش كورس"
+          // بنسأل GPT: هل فعلاً مفيش كورس مناسب من دول؟
+          const _rescueCandidates = courses
+            .filter((c) => (c.relevanceScore || 0) >= 300)
+            .slice(0, 5);
+
+          if (_rescueCandidates.length > 0) {
+            console.log(
+              `🆘 FIX #62v4: GPT Rescue — checking ${_rescueCandidates.length} candidates before "no results"`
+            );
+            const _rescued = await gptRescueValidation(
+              message,
+              _rescueCandidates,
+              termsToSearch
+            );
+
+            if (_rescued.length > 0) {
+              relevantCourses = _rescued.slice(0, 3);
+              if (
+                !recommendationMessage ||
+                recommendationMessage.trim().length < 10
+              ) {
+                recommendationMessage =
+                  "إليك الكورسات المتاحة اللي ممكن تناسبك:";
+              }
+              console.log(
+                `🆘 FIX #62v4: GPT Rescue SUCCESS — ${_rescued.length} courses saved from "no results"!`
+              );
+            } else {
+              console.log(
+                `⚠️ FIX #62v4: GPT Rescue confirmed — no relevant courses found`
+              );
+            }
+          } else {
+            console.log(
+              `⚠️ FIX #62v3: No protected courses and no rescue candidates — showing "no results"`
+            );
+          }
         }
       }
 
@@ -7769,8 +7988,7 @@ const _qFilterTerms = questionTerms.filter(t => {
       
       // 🆕 Smart context fallback: لو فيه سياق سابق والرد فاضي → استخدم السياق
       if ((!analysis.response_message || analysis.response_message.length < 15)
-          && sessionMem.topics && sessionMem.topics.length > 0
-          && sessionMem.messageCount > 1
+&& ((sessionMem.topics && sessionMem.topics.length > 0) || (chatHistory && chatHistory.length >= 2))
           && !skipUpsell
           && openai) {
         
