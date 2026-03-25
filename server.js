@@ -6286,6 +6286,11 @@ let termsToSearch = [...new Set(analysis.search_terms)];
       searchDiplomas(termsToSearch),
       searchLessonsInCourses(termsToSearch),
     ]);
+
+// 🆕 حفظ IDs الكورسات اللي جت من بحث اسم/وصف/كلمات الكورس
+    // عشان بعدين نفرّق بينها وبين الكورسات اللي جت من الشانكس بس
+    const _courseSearchIds = new Set(courses.map(c => c.id));
+
 // 🆕 FIX #115a: Filter diplomas by TITLE topic relevance
     // Problem: searchDiplomas uses semantic search → returns "Robot" diploma for "Photoshop"
     // Fix: diploma title MUST contain at least one search term
@@ -6400,6 +6405,10 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
       priorityCourses = await priorityTitleSearch(termsToSearch);
     }
 
+// 🆕 Priority courses كمان جم من بحث العنوان → ضيفهم للمجموعة
+    for (const pc of priorityCourses) {
+      _courseSearchIds.add(pc.id);
+    }
 
     // Merge lesson results
     if (lessonResults && lessonResults.length > 0) {
@@ -6531,6 +6540,28 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
 scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
+
+// 🆕 Course-level priority: لو لقينا كورسات بالعنوان/الوصف → شيل الكورسات اللي جت من الشانكس بس
+// ده بيضمن إن "عاوز كل كورسات excel" يعرض كورسات الاكسيل الأول
+// ولو مفيش كورس بالاسم → ساعتها الشانكس تشتغل عادي
+{
+    const _titleMatchedCourses = courses.filter(c => c._titleMatch === true);
+    if (_titleMatchedCourses.length >= 1) {
+        const _beforePriorityFilter = courses.length;
+        courses = courses.filter(c => {
+            // ✅ كورس عنوانه مطابق → خلّيه
+            if (c._titleMatch) return true;
+            // ✅ كورس جه من بحث الكورسات (وصف/كلمات/domain) → خلّيه
+            if (_courseSearchIds.has(c.id)) return true;
+            // ❌ كورس جه من الشانكس/الدروس بس → شيله
+            console.log(`   🚫 Course-priority removed (lesson/chunk only): "${c.title}"`);
+            return false;
+        });
+        if (courses.length < _beforePriorityFilter) {
+            console.log(`🎯 Course-level priority: ${_beforePriorityFilter} → ${courses.length} courses (${_titleMatchedCourses.length} title matches, removed lesson/chunk-only results)`);
+        }
+    }
+}
 
 
 // ═══════════════════════════════════════════════════════════
