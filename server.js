@@ -3348,8 +3348,9 @@ async function generateSmartRecommendation(
   sessionMem,
   analysis,
   instructors,
-model: "gpt-4o-mini"
+  model = "gpt-4o-mini"
 ) {
+
 const courseData = courses
     .slice(0, 10)
     .map((c, i) => ({
