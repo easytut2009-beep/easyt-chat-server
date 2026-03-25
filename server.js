@@ -4534,7 +4534,6 @@ if (extractedName) {
 
     
 
-javascript
     if (possName.length >= 3) {
       console.log(`👨‍🏫 detectInstructor [possible]: "${possName}"`);
       return {
