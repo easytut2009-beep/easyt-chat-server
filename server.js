@@ -5236,27 +5236,6 @@ const _isSubContentQuestion = (() => {
 })();
 
 
- // ✅ اشتراك في كل الدورات / الكورسات ──────────────
-  const _isSubAll = /(اشتراك|اشترك|باق[ةه]).*(كل|جميع).*(الدورات|الكورسات|الدبلومات)/i.test(message)
-    || /(كل|جميع).*(الدورات|الكورسات).*(اشتراك|اشترك)/i.test(message)
-    || /باق[ةه]\s*(سنو|شهر)/i.test(message);
-
-if (_isSubAll && !_isSubContentQuestion) {
-
-    console.log(`🎓 Subscription for all: "${message}"`);
-    let _subReply = `أهلاً بيك! 🎉<br><br>`;
-    _subReply += `ادخل على صفحة الاشتراك وهتلاقي كل الباقات والعروض المتاحة 👇<br><br>`;
-    _subReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a>`;
-    _subReply = finalizeReply(_subReply);
-    return {
-      reply: _subReply,
-      intent: "SUBSCRIPTION",
-      suggestions: ["💰 طرق الدفع", "🎓 الدبلومات", "📞 تواصل معانا"]
-    };
-  }
-
-
-
 // ✅ مشترك وبيسأل عن الدبلومات في الاشتراك
 const _isSubDiplomas = /(مشترك|اشتراك).*(دبلوم|الدبلوم)/i.test(message)
   || /(دبلوم|الدبلوم).*(اشتراك|مشترك)/i.test(message)
@@ -5330,7 +5309,7 @@ const _isSubConfirm = (
   /^(انا\s+)?(اشتركت|سجلت|دفعت)\s*(الان|للتو|دلوقتي|خلاص)?/i.test(message.trim())
   || /^(خلاص|تم)\s*(اشتركت|الاشتراك|التسجيل|الدفع)/i.test(message.trim())
   || /^(اشتركت)\s*(في|فى)?\s*(ال)?(اشتراك|العام|السنوي)/i.test(message.trim())
-) && !_isSubIssue;
+);
 
 if (_isSubConfirm) {
   console.log(`🎉 Subscription confirmation: "${message}"`);
