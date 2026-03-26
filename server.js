@@ -5157,7 +5157,7 @@ const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_
 
   if (_msgWordCount <= 5 && !_hasLearningWord) {
 
-var _payMethodNorm = normalizeArabic((_msgTrim || '').toLowerCase());
+var _payMethodNorm = normalizeArabic((message || '').toLowerCase());
     const _isPaymentBtn =
       /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
       /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm) ||
@@ -5348,48 +5348,6 @@ if (_isSubConfirm) {
     suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
   };
 }
-
-  // ═══════════════════════════════════════════════════════════
-  // 🆕 FIX: Payment method name detection
-  // "انستاباي", "فودافون كاش", "تحويل بنكي", "instapay", "bank transfer", etc.
-  // When user mentions a specific payment method → payment info directly
-  // ═══════════════════════════════════════════════════════════
-  if (!_hasLearningWord) {
-    const _lowerMsg = message.toLowerCase();
-    const _normMsg = normalizeArabic(_lowerMsg);
-    const _isPaymentMethodMention =
-      /(ال)?انستا\s*با[يى]/.test(_normMsg) ||
-      /instapay|insta\s*pay/.test(_lowerMsg) ||
-      /فودافون\s*كاش/.test(_normMsg) ||
-      /vodafone\s*cash/.test(_lowerMsg) ||
-      /(ال)?تحويل[ات]?\s*(ال)?بنكي[ةه]?/.test(_normMsg) ||
-      /bank\s*transfer/.test(_lowerMsg) ||
-      /سكريل/.test(_normMsg) ||
-      /skrill/.test(_lowerMsg) ||
-      /(باي|بي)\s*بال/.test(_normMsg) ||
-      /paypal/.test(_lowerMsg);
-
-    if (_isPaymentMethodMention) {
-      console.log(`💳 Payment method name detected: "${message}"`);
-      let _pmReply = `أهلاً بيك! 🎉<br><br>`;
-      _pmReply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
-      _pmReply += `1. 💳 <strong>Visa / MasterCard</strong><br>`;
-      _pmReply += `2. 🅿️ <strong>PayPal</strong><br>`;
-      _pmReply += `3. 📱 <strong>InstaPay</strong><br>`;
-      _pmReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
-      _pmReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
-      _pmReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      _pmReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
-      _pmReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
-      _pmReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-      _pmReply = finalizeReply(_pmReply);
-      return {
-        reply: _pmReply,
-        intent: "SUBSCRIPTION",
-        suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
-      };
-    }
-  }
 
 
 // ═══════════════════════════════════════════
@@ -7570,7 +7528,7 @@ else if (analysis.action === "SUBSCRIPTION") {
       if (!reply.includes('easyt.online/p/Payments')) {
         reply += `<br><a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
       }
-    } else {
+} else {
       // Fallback — generic (no hardcoded prices)
       reply = `أهلاً بيك! 🎉<br><br>`;
       reply += `<strong>💰 طرق الدفع المتاحة:</strong><br><br>`;
@@ -7580,13 +7538,10 @@ else if (analysis.action === "SUBSCRIPTION") {
       reply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
       reply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
       reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      reply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
-      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+      reply += `📌 للدفع بأحد الطرق البديلة المتاحة والتعرف على التفاصيل ادخل إلى صفحة طرق الدفع 👇<br><br>`;
+      reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك ←</a><br>`;
       reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-    }
-    intent = "SUBSCRIPTION";
-  }
-   
+    }   
 
   /* ═══════════════════════════════════
      ACTION: DIPLOMAS
