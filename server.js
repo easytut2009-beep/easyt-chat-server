@@ -6611,8 +6611,10 @@ const _gateIntentWords = new Set([
     'كورسات', 'كورس', 'تعلم', 'اتعلم', 'عايز', 'عاوز', 'محتاج',
     'بدي', 'ابغي', 'ابغى', 'عن', 'اريد', 'اعرف', 'شرح', 'اشرح',
     'اشرحلي', 'وريني', 'قولي', 'فين', 'وين', 'هل', 'في', 'فيه',
-    'search', 'find', 'want', 'need', 'about', 'for', 'the', 'a', 'an',
+'search', 'find', 'want', 'need', 'about', 'for', 'the', 'a', 'an',
     'i', 'me', 'my', 'is', 'are', 'how', 'what',
+    'course', 'courses', 'learn', 'learning', 'teach', 'tutorial',
+    'tutorials', 'lesson', 'lessons', 'class', 'classes', 'training',
     // Arabic question/filler words (not topics)
     'ايه', 'اية', 'ايش', 'شو', 'وش', 'موجود', 'موجوده', 'موجودة',
     'متاح', 'متاحه', 'متاحة', 'المتاحة', 'الموجودة', 'الموجوده',
@@ -6669,6 +6671,14 @@ const _gateIntentWords = new Set([
     const _gateBeforeCount = courses.length;
 
 courses = courses.filter(function(c) {
+courses = courses.filter(function(c) {
+      // 🆕 FIX: titleMatch courses ALWAYS pass the gate
+      // titleMatch = course title genuinely contains search term (word-boundary verified)
+      if (c._titleMatch === true) {
+          console.log('   ✅ Gate PASS: "' + c.title + '" (titleMatch protected)');
+          return true;
+      }
+
       var _cTitleNorm = normalizeArabic((c.title || '').toLowerCase());
       var _cSubNorm = normalizeArabic((c.subtitle || '').toLowerCase());
       var _cTitleRaw = (c.title || '').toLowerCase();
