@@ -5157,9 +5157,16 @@ const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_
 
   if (_msgWordCount <= 5 && !_hasLearningWord) {
 
-const _isPaymentBtn =
-/^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
-      /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm);
+var _payMethodNorm = normalizeArabic((_msgTrim || '').toLowerCase());
+    const _isPaymentBtn =
+      /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
+      /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm) ||
+      /instapay|انستا\s*باي|انستباي/.test(_payMethodNorm) ||
+      /فودافون\s*كاش|vodafone\s*cash/.test(_payMethodNorm) ||
+      /تحويل\s*بنكي|تحويل\s*بنك/.test(_payMethodNorm) ||
+      /paypal|باي\s*بال|بايبال/.test(_payMethodNorm) ||
+      /skrill|سكريل/.test(_payMethodNorm) ||
+      /فيزا|visa|mastercard|ماستر\s*كارد/.test(_payMethodNorm);
 
     if (_isPaymentBtn) {
       console.log(`💳 Direct payment button: "${message}"`);
@@ -5180,6 +5187,8 @@ const _isPaymentBtn =
         suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"],
       };
     }
+
+
 
     // ✅ تم الدفع / رفع الإيصال
 const _isPaymentDone = /^(تم|خلاص|خلصت|دفعت)?\s*(ال)?(دفع|تحويل|سداد)$/i.test(_btnNorm)
