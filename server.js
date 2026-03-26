@@ -6670,7 +6670,7 @@ const _gateIntentWords = new Set([
   if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
     const _gateBeforeCount = courses.length;
 
-courses = courses.filter(function(c) {
+
 courses = courses.filter(function(c) {
       // 🆕 FIX: titleMatch courses ALWAYS pass the gate
       // titleMatch = course title genuinely contains search term (word-boundary verified)
