@@ -7540,8 +7540,10 @@ else if (analysis.action === "SUBSCRIPTION") {
       reply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
       reply += `📌 للدفع بأحد الطرق البديلة المتاحة والتعرف على التفاصيل ادخل إلى صفحة طرق الدفع 👇<br><br>`;
       reply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك ←</a><br>`;
-      reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
-    }   
+reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
+    }
+    intent = "SUBSCRIPTION";
+  }
 
   /* ═══════════════════════════════════
      ACTION: DIPLOMAS
