@@ -5158,7 +5158,7 @@ const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_
   if (_msgWordCount <= 5 && !_hasLearningWord) {
 
 const _isPaymentBtn =
-      /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
+/^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
       /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm);
 
     if (_isPaymentBtn) {
@@ -5171,8 +5171,7 @@ const _isPaymentBtn =
       _payReply += `4. 📱 <strong>فودافون كاش</strong> — 01027007899<br>`;
       _payReply += `5. 🏦 <strong>تحويل بنكي</strong> — بنك الإسكندرية: 202069901001<br>`;
       _payReply += `6. 💰 <strong>Skrill</strong> — info@easyt.online<br><br>`;
-      _payReply += `📌 تفاصيل الأسعار والعروض الحالية على صفحة الاشتراك 👇<br><br>`;
-      _payReply += `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الاشتراك والعروض ←</a><br>`;
+      _payReply += `📌 للدفع بأحد الطرق البديلة المتاحة والتعرف على التفاصيل ادخل إلى صفحة طرق الدفع 👇<br><br>`;
       _payReply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة طرق الدفع ←</a>`;
       _payReply = finalizeReply(_payReply);
       return {
