@@ -5161,7 +5161,8 @@ var _payMethodNorm = normalizeArabic((message || '').toLowerCase());
     const _isPaymentBtn =
       /^(طرق|طريق[ةه])?\s*(ال)?(دفع)$/.test(_btnNorm) ||
       /^(ازاي|كيف|عايز|عاوز)?\s*(ا)?(دفع)$/.test(_btnNorm) ||
-      /instapay|انستا\s*باي|انستباي/.test(_payMethodNorm) ||
+/طر[قي]ق?\s*(ال)?دفع/.test(_payMethodNorm) ||      
+/instapay|انستا\s*باي|انستباي/.test(_payMethodNorm) ||
       /فودافون\s*كاش|vodafone\s*cash/.test(_payMethodNorm) ||
       /تحويل\s*بنكي|تحويل\s*بنك/.test(_payMethodNorm) ||
       /paypal|باي\s*بال|بايبال/.test(_payMethodNorm) ||
