@@ -7616,7 +7616,7 @@ reply = formatCategoriesList();
             },
             { role: "user", content: message }
           ],
-          max_tokens: 1000,
+          max_tokens: 500,
           temperature: 0.5,
         });
         reply = _cqResp.choices[0].message.content || getSmartFallback(sessionId);
