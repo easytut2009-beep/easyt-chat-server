@@ -5337,11 +5337,9 @@ const _isSubConfirm = (
 
 if (_isSubConfirm) {
   console.log(`🎉 Subscription confirmation: "${message}"`);
-  let _confirmReply = `🎉 مبروك عليك الاشتراك! منورنا 💪<br><br>`;
-  _confirmReply += `تقدر تبدأ تتعلم دلوقتي من أي دبلومة أو دورة على المنصة 🚀<br><br>`;
-  _confirmReply += `💡 لو عايز توصية بكورس معين — قولي المجال اللي مهتم بيه وأنا أرشحلك! 😊<br><br>`;
-  _confirmReply += `❓ ولو واجهتك أي مشكلة في الوصول للمحتوى 👇<br>`;
-  _confirmReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 تواصل مع الدعم ←</a>`;
+let _confirmReply = `⏳ تفعيل الاشتراك بياخد لحد <strong>24 ساعة</strong> من وقت الدفع.<br><br>`;
+  _confirmReply += `لو عندك أي استفسار أو محتاج مساعدة، تواصل مع فريق الدعم 👇<br><br>`;
+  _confirmReply += `<a href="https://api.whatsapp.com/send/?phone=%2B201027007899&text&type=phone_number&app_absent=0" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">📱 تواصل مع الدعم ←</a>`;
   _confirmReply = finalizeReply(_confirmReply);
   return {
     reply: _confirmReply,
