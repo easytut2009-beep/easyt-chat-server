@@ -5585,7 +5585,7 @@ async function classifyDiplomaIntent(userMessage) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🆕 Diploma Content Questions Handler (LLM-powered)
+// 🆕 Diploma Content Questions Handler (LLM-powered) — FIXED
 // ═══════════════════════════════════════════════════════════
 {
   var _dcNorm = normalizeArabic(message.toLowerCase());
@@ -5593,13 +5593,61 @@ async function classifyDiplomaIntent(userMessage) {
 
   if (_dcHasDiploma) {
 
-    // ════════════════════════════════════════════
-    // 🧠 Step 1: Let LLM understand the question
-    // ════════════════════════════════════════════
-    var _classified = await classifyDiplomaIntent(message);
+    // ════════════════════════════════════════════════════════
+    // 🔥 FIX: REGEX PRE-CHECK
+    // "كورس X في دبلومة ايه" → force COURSE_IN_DIPLOMA
+    // حتى لو فيه دبلومة بنفس اسم الكورس!
+    // ════════════════════════════════════════════════════════
+    var _forceCourseLookup = false;
+    var _forcedCourseName = '';
+
+    var _cidPatterns = [
+      // كورس X موجود في/ضمن دبلومة ايه
+      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:موجود[ةه]?\s*)?(?:في|فى|ضمن|تابع[ةه]?\s*ل?)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\s*دبلوم/,
+      // كورس X ده في دبلومة ايه
+      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:ده?[يى]?\s+)?(?:في|فى|ضمن)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\s*دبلوم/,
+      // كورس X تبع دبلومة ايه
+      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:تبع|تابع[ةه]?\s*ل?)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\s*دبلوم/,
+      // دبلومة ايه فيها كورس X
+      /دبلوم[ةه]?\s+(?:ايه|إيه|اي|أي|انه[يى]|ايش|شو)\s+(?:فيها|فيه)\s+(?:كورس|دورة|دوره)\s+(.+)/,
+      // X موجود في دبلومة ايه (بدون كلمة كورس)
+      /^(.+?)\s+موجود[ةه]?\s+(?:في|فى|ضمن)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\s*دبلوم/,
+    ];
+
+    for (var _pi = 0; _pi < _cidPatterns.length; _pi++) {
+      var _pm = _dcNorm.match(_cidPatterns[_pi]);
+      if (_pm && _pm[1]) {
+        var _cleaned = _pm[1].trim()
+          .replace(/\s+(ده|دي|دى|هو|هي|بتاع[تة]?)$/g, '')
+          .trim();
+        if (_cleaned.length >= 3) {
+          _forceCourseLookup = true;
+          _forcedCourseName = _cleaned;
+          console.log('🔥 FIX: Regex caught COURSE_IN_DIPLOMA pattern → course="' + _forcedCourseName + '"');
+          break;
+        }
+      }
+    }
 
     // ════════════════════════════════════════════
-    // 📌 Step 2: Route based on LLM classification
+    // 🧠 Step 1: Classify
+    // ════════════════════════════════════════════
+    var _classified = null;
+
+    if (_forceCourseLookup) {
+      // 🔥 Skip LLM — regex already determined the intent
+      _classified = {
+        intent: 'COURSE_IN_DIPLOMA',
+        entity_name: _forcedCourseName,
+        entity_type: 'course'
+      };
+      console.log('🔥 FIX: Forced COURSE_IN_DIPLOMA (skipped LLM)');
+    } else {
+      _classified = await classifyDiplomaIntent(message);
+    }
+
+    // ════════════════════════════════════════════
+    // 📌 Step 2: Route based on classification
     // ════════════════════════════════════════════
 
     // ─── Intent A: DIPLOMA_CONTENT or DIPLOMA_START ───
@@ -5611,13 +5659,11 @@ async function classifyDiplomaIntent(userMessage) {
       var _dcTarget = null;
       var _dcEntityName = (_classified.entity_name || '').trim();
 
-      // Try LLM-extracted name first
       if (_dcEntityName.length >= 3) {
         _dcTarget = await getDiplomaWithCourses(_dcEntityName);
         if (_dcTarget) console.log('📚 Found diploma by LLM name: "' + _dcTarget.diploma.title + '"');
       }
 
-      // Fallback: session memory
       if (!_dcTarget) {
         var _dcLastDipIds = sessionMem.lastShownDiplomaIds || [];
         if (_dcLastDipIds.length > 0) {
@@ -5666,29 +5712,23 @@ async function classifyDiplomaIntent(userMessage) {
         };
       }
 
-      // ══════════════════════════════════════════════════════
-      // 🔴 FIX: الدبلومة مش موجودة! يمكن LLM غلط والمستخدم
-      // كان بيسأل عن كورس مش دبلومة → نحوّل لـ COURSE_IN_DIPLOMA
-      // ══════════════════════════════════════════════════════
       else {
         console.log('📚 FIX: Diploma "' + _dcEntityName + '" not found. Redirecting to COURSE_IN_DIPLOMA...');
         _classified.intent = 'COURSE_IN_DIPLOMA';
         _classified.entity_name = _dcEntityName;
         _classified.entity_type = 'course';
-        // ↓↓↓ هيكمّل على طول للـ Intent B تحت ↓↓↓
       }
     }
 
     // ─── Intent B: COURSE_IN_DIPLOMA ───
     if (_classified && _classified.intent === 'COURSE_IN_DIPLOMA') {
 
-      console.log('📚 LLM says COURSE_IN_DIPLOMA for: "' + message + '"');
+      console.log('📚 COURSE_IN_DIPLOMA for: "' + message + '"');
 
       var _dcEntityName2 = (_classified.entity_name || '').trim();
       var _dcFoundCourseId = null;
-      var _dcFoundCourseTitle = ''; // 🔴 FIX: track title early
+      var _dcFoundCourseTitle = '';
 
-      // Try LLM-extracted course name
       if (_dcEntityName2.length >= 2) {
         try {
           var _dcSearchRes = await searchCourses([_dcEntityName2]);
@@ -5700,7 +5740,6 @@ async function classifyDiplomaIntent(userMessage) {
         } catch (_dce) { console.error("Course search error:", _dce.message); }
       }
 
-      // Fallback: session memory
       if (!_dcFoundCourseId) {
         var _dcLastCIds = sessionMem.lastShownCourseIds || [];
         if (_dcLastCIds.length > 0) {
@@ -5759,9 +5798,6 @@ async function classifyDiplomaIntent(userMessage) {
         }
       }
 
-      // ══════════════════════════════════════════════════════
-      // 🔴 FIX: الكورس مش موجود خالص → رسالة واضحة بدل السكوت
-      // ══════════════════════════════════════════════════════
       else {
         var _notFoundName = _dcEntityName2 || '';
         var _nfReply = '🔍 ';
@@ -5789,43 +5825,30 @@ async function classifyDiplomaIntent(userMessage) {
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 FIX: Follow-up diploma questions WITHOUT "دبلومة" word
-// User saw a diploma → asks "ايه الكورسات اللي فيها" 
-// without saying "دبلومة" again → use session memory
 // ═══════════════════════════════════════════════════════════
 {
   var _fuDipNorm = normalizeArabic(message.toLowerCase());
   var _fuHasDiplomaWord = /دبلوم/.test(_fuDipNorm);
 
-  // Only trigger when NO "دبلوم" in message (existing handler covers that)
   if (!_fuHasDiplomaWord) {
     var _fuMem = getSessionMemory(sessionId);
     var _fuLastDipIds = (_fuMem.lastShownDiplomaIds || []);
 
     if (_fuLastDipIds.length > 0) {
       var _fuIsDiplomaFollowUp = (
-        // "ايه الكورسات اللي فيها" / "الكورسات فيها" / "الدورات اللي فيها"
         /(ال)?(كورسات|دورات)\s*(اللي|اللى)?\s*(في|فى|فيها|جو[اه])/.test(_fuDipNorm) ||
-        // "فيها ايه" / "فيها كورسات" / "فيها كام كورس"
         /فيها\s*(ايه|إيه|اية|ايش|شو|كام|كورس|كورسات|دور|دورات|درس|محاضر)/.test(_fuDipNorm) ||
-        // "ايه اللي فيها" / "ايه محتوياتها"
         /(ايه|إيه|اية|ايش|شو)\s*(اللي|اللى)?\s*(في|فى|فيها|محتو)/.test(_fuDipNorm) ||
-        // "محتوياتها" / "محتواها"
         /(محتوياتها|محتواها)/.test(_fuDipNorm) ||
-        // "كورساتها" / "دوراتها" / "بتاعتها"
         /(كورساتها|دوراتها|بتاعتها|بتاعها)/.test(_fuDipNorm) ||
-        // "ابدأ فيها" / "ابدأها ازاي"
         /ابد[أا]\s*(فيها|ها)/.test(_fuDipNorm) ||
-        // "ترتيبها" / "مسارها" / "خطواتها"
         /(ترتيبها|مسارها|خطواتها)/.test(_fuDipNorm) ||
-        // "اللي فيها" (with optional ايه prefix)
         /(ايه|إيه)?\s*(اللي|اللى)\s*فيها/.test(_fuDipNorm) ||
-        // "جواها ايه" / "جواها"
         /جواها/.test(_fuDipNorm)
       );
 
       if (_fuIsDiplomaFollowUp) {
-        console.log('📚 FIX: Follow-up diploma question (no "دبلومة" word): "' + message + '"');
-        console.log('   Last shown diploma IDs:', JSON.stringify(_fuLastDipIds));
+        console.log('📚 FIX: Follow-up diploma question: "' + message + '"');
 
         var _fuTarget = await getDiplomaWithCourses(parseInt(_fuLastDipIds[0]));
 
