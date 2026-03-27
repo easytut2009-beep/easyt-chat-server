@@ -3627,11 +3627,31 @@ STEP 2: MANDATORY RULES
    → "متوسط" → Can skip Phase 1 basics
    → "متقدم" → Focus on Phase 2-3
 
-📌 RULE 8 — RELEVANCE FILTER:
-   → ONLY include courses RELEVANT to what the user asked!
-   → A marketing funnel course is NOT relevant to "Full Stack developer"
-   → An interior design course is NOT relevant to "programming"
-   → Be STRICT — fewer relevant courses beats many irrelevant ones
+📌 RULE 8 — RELEVANCE (MOST IMPORTANT RULE!):
+   For EACH course, ask: "Is this a CORE skill for the specific path the user described?"
+   
+   ⚠️ Matching a KEYWORD ≠ being RELEVANT!
+   Examples of WRONG inclusions:
+   → User says "Full Stack Web" → "Go programming" matches "programming" but Go is NOT a standard Full Stack technology → EXCLUDE
+   → User says "AI in web development" → "ComfyUI for AI images" matches "AI" but is NOT web development → EXCLUDE  
+   → User says "web developer" → "Blockchain with Solidity" matches "programming" but is NOT web development → EXCLUDE
+   → User says "mobile apps" → "Oracle ADF" matches "programming" but is NOT mobile development → EXCLUDE
+   → User says "Full Stack" → "25 ways to profit from AI" matches "AI" but is NOT a technical skill → EXCLUDE
+   
+   The professional test: "Would a career advisor include THIS course in a [user's specific goal] learning plan?"
+   → If the answer isn't a confident YES → EXCLUDE IT!
+   → 3-4 truly relevant courses >>> 8 loosely related courses
+   
+   ⛔ NEVER pad the roadmap with loosely related courses just to fill phases!
+   ⛔ If only 3 courses are truly relevant, return 3! Empty Phase 3 is better than wrong Phase 3!
+   ⛔ "This course has the word 'programming' in it" is NOT a reason to include it!
+
+📌 RULE 10 — MAXIMUM COURSES:
+   → Total courses + diplomas COMBINED should be 4-8 maximum
+   → If user asked about 1 topic (e.g. "Full Stack") → max 5-6 items total
+   → If user asked about multiple topics → max 8 items total
+   → NEVER return more items just because they exist in the data!
+   → Quality over quantity ALWAYS!
 
 📌 RULE 9 — SELF-CHECK BEFORE RESPONDING:
    Before finalizing, verify EACH course placement:
@@ -7280,6 +7300,13 @@ const [recommendation, questionAnswer] = await Promise.all([
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
+
+// 🗺️ Roadmap mode: GPT's selection is FINAL — no force-includes!
+      const _skipForceInclude = !!analysis.is_roadmap_request;
+      if (_skipForceInclude) {
+        console.log(`🗺️ Roadmap: GPT selected ${relevantCourses.length} courses + ${relevantDiplomas.length} diplomas — skipping ALL force-includes`);
+      }
+
 // ✅ Diploma filtering merged into generateSmartRecommendation (saves 1 GPT call)
 
 // === FIX: Force-include high-score diplomas (like titleMatch for courses) ===
@@ -7325,6 +7352,7 @@ if (diplomas.length > 0 && relevantDiplomas.length < 2) {
       );
 
 // 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
+if (!_skipForceInclude) {
 let titleMatchMustShow = courses.filter(c => {
   if (relevantCourses.find(rc => rc.id === c.id)) return false;
   return c._titleMatch === true;
@@ -7352,6 +7380,18 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
           console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
           continue;
         }
+        relevantCourses.unshift(tmc);
+        console.log("FIX63 Must-show title-match added:", tmc.title);
+      }
+} else {
+  console.log(`🗺️ Roadmap: skipped titleMatchMustShow force-include`);
+}
+
+for (const tmc of titleMatchMustShow.slice(0, 3)) {
+        if (_gptExcludedIds.has(tmc.id)) {
+          console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
+          continue;
+        }
 if (analysis.is_roadmap_request) {
           // 🗺️ Roadmap: add at END to preserve GPT's phase order
           relevantCourses.push(tmc);
@@ -7364,8 +7404,7 @@ if (analysis.is_roadmap_request) {
 
 
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
-      // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
-      // but RAG didn't select
+if (!_skipForceInclude) {
 const allProtectedMatched = courses.filter(c => c._titleMatch === true);
 
       for (const tm of allProtectedMatched) {
@@ -7378,6 +7417,18 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true);
               continue;
             }
           }
+if (_gptExcludedIds.has(tm.id)) {
+            console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
+            continue;
+          }
+          relevantCourses.push(tm);
+          console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
+        }
+      }
+} else {
+  console.log(`🗺️ Roadmap: skipped allProtectedMatched force-include`);
+}
+
 if (_gptExcludedIds.has(tm.id)) {
             console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
             continue;
@@ -7488,7 +7539,7 @@ const _topicRelevant = courses.filter(c => {
       }
 
 // 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
-if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
+if (!_skipForceInclude && savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
 for (const stm of savedTitleMatchCourses) {
           // 🆕 Skip if titleMatch was revoked by Relevance Gate
           if (!stm._titleMatch) {
