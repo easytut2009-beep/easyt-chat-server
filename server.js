@@ -2709,10 +2709,30 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 
 القاعدة: لو الرسالة فيها سؤال عن المنصة/خدمة/ميزة (وكلاء، شهادات، دعم، توظيف...) → action: "SUPPORT" أو "CHAT" — مش SEARCH!
 
+
+═══ 🔴 COURSE_IN_DIPLOMA — كورس في أنهي دبلومة ═══
+لو المستخدم بيسأل كورس معين موجود في أنهي دبلومة / ضمن دبلومة ايه / تابع لأي دبلومة:
+→ action = "COURSE_IN_DIPLOMA"
+→ search_terms = ["اسم الكورس"]
+→ response_message = ""
+
+أمثلة:
+• "كورس الفوتوشوب في دبلومة ايه" → COURSE_IN_DIPLOMA, search_terms: ["فوتوشوب"]
+• "اساسيات الامن السيبراني موجود داخل دبلومة ايه" → COURSE_IN_DIPLOMA, search_terms: ["اساسيات الامن السيبراني"]
+• "الكورس ده ضمن أنهي دبلومة" → COURSE_IN_DIPLOMA
+• "الكورس ده تابع لدبلومة؟" → COURSE_IN_DIPLOMA
+
+🔴 الفرق المهم:
+- DIPLOMA_CONTENT = عايز يشوف محتوى/كورسات دبلومة معينة ("ايه الكورسات في دبلومة X")
+- COURSE_IN_DIPLOMA = عايز يعرف كورس معين ده في أنهي دبلومة ("كورس X في دبلومة ايه")
+
+═══ المطلوب ═══                    ← ده اللي كان موجود أصلاً
+
+
 ═══ المطلوب ═══
 
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|DIPLOMA_CONTENT|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
+"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|DIPLOMA_CONTENT|COURSE_IN_DIPLOMA|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -5501,12 +5521,52 @@ async function classifyDiplomaIntent(userMessage) {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         temperature: 0,
-        max_tokens: 100,
+        max_tokens: 150,
         response_format: { type: "json_object" },
         messages: [
           {
             role: 'system',
-            content: 'أنت مصنف أسئلة لمنصة تعليمية عربية.\n\nالمستخدم بيسأل عن دبلومات وكورسات. صنف سؤاله لواحد من:\n\n1) DIPLOMA_CONTENT = عايز يعرف الكورسات اللي جوه دبلومة معينة (يعني هو عارف الدبلومة وعايز يشوف محتواها)\n2) COURSE_IN_DIPLOMA = عايز يعرف كورس معين موجود في أنهي دبلومة (يعني هو عارف الكورس وعايز يعرف تبع أنهي دبلومة)\n3) DIPLOMA_START = عايز يعرف يبدأ دبلومة معينة ازاي أو ترتيب دراستها\n4) UNKNOWN = مش واضح أو مش متعلق\n\nرد بـ JSON فقط بالشكل ده:\n{"intent": "...", "entity_name": "اسم الدبلومة أو الكورس المذكور", "entity_type": "diploma أو course"}'
+            content: `أنت مصنف أسئلة لمنصة تعليمية عربية. صنف سؤال المستخدم لواحد من 4 أنواع:
+
+═══ الأنواع ═══
+
+1) COURSE_IN_DIPLOMA = المستخدم عنده كورس معين وعايز يعرف هو موجود في أنهي دبلومة
+   🔴 الكلمات المفتاحية: "في دبلومة ايه" / "ضمن دبلومة ايه" / "تابع لأنهي دبلومة" / "موجود في دبلومة" / "داخل دبلومة ايه" / "بتاع أنهي دبلومة"
+   🔴 entity_name = اسم الكورس (مش الدبلومة!)
+   🔴 entity_type = "course"
+   
+   أمثلة:
+   - "كورس اساسيات الامن السيبراني موجود داخل دبلومة ايه" → COURSE_IN_DIPLOMA, entity_name: "اساسيات الامن السيبراني"
+   - "كورس الفوتوشوب في دبلومة ايه" → COURSE_IN_DIPLOMA, entity_name: "فوتوشوب"
+   - "الكورس ده ضمن أنهي دبلومة" → COURSE_IN_DIPLOMA, entity_name: ""
+   - "كورس بايثون تابع لدبلومة ايه" → COURSE_IN_DIPLOMA, entity_name: "بايثون"
+   - "كورس SEO موجود في دبلومة؟" → COURSE_IN_DIPLOMA, entity_name: "SEO"
+   - "الكورس ده في دبلومة ولا لا" → COURSE_IN_DIPLOMA, entity_name: ""
+
+2) DIPLOMA_CONTENT = المستخدم عنده دبلومة معينة وعايز يشوف الكورسات اللي جواها
+   🔴 الكلمات المفتاحية: "فيها ايه" / "كورساتها" / "محتواها" / "ايه اللي فيها" / "الكورسات اللي في دبلومة X"
+   🔴 entity_name = اسم الدبلومة
+   🔴 entity_type = "diploma"
+   
+   أمثلة:
+   - "دبلومة الأمن السيبراني فيها ايه" → DIPLOMA_CONTENT, entity_name: "الأمن السيبراني"
+   - "ايه الكورسات في دبلومة التسويق" → DIPLOMA_CONTENT, entity_name: "التسويق"
+   - "محتوى دبلومة البرمجة" → DIPLOMA_CONTENT, entity_name: "البرمجة"
+   - "الدبلومة دي فيها كام كورس" → DIPLOMA_CONTENT, entity_name: ""
+
+3) DIPLOMA_START = عايز يعرف يبدأ دبلومة ازاي أو ترتيب دراستها
+   أمثلة:
+   - "ابدأ دبلومة التسويق ازاي" → DIPLOMA_START, entity_name: "التسويق"
+   - "ترتيب دراسة الدبلومة" → DIPLOMA_START, entity_name: ""
+
+4) UNKNOWN = مش واضح أو مش متعلق
+
+═══ 🔴🔴🔴 القاعدة الذهبية ═══
+لو الرسالة فيها "كورس X ... دبلومة ايه/أنهي/إيه" → ده COURSE_IN_DIPLOMA دايماً!
+لو الرسالة فيها "دبلومة X ... فيها ايه/كورساتها" → ده DIPLOMA_CONTENT دايماً!
+
+رد بـ JSON فقط:
+{"intent": "...", "entity_name": "اسم الكورس أو الدبلومة", "entity_type": "diploma أو course"}`
           },
           { role: 'user', content: userMessage }
         ],
