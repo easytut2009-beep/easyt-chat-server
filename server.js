@@ -6925,6 +6925,31 @@ if (!analysis.is_roadmap_request) {
 }
 }
 
+// ═══ Unified Scoring (ONE pass, ONE sort) ═══
+scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level, !!analysis.is_roadmap_request);
+
+// ═══ 🆕 ROADMAP: Domain diversity — prevent one topic from dominating ═══
+if (analysis.is_roadmap_request && courses.length > 5) {
+  const _domainTracker = {};
+  // courses are already sorted by _score (highest first)
+  courses.forEach(c => {
+    const _d = (c.domain || c.category_name || 'other');
+    _domainTracker[_d] = (_domainTracker[_d] || 0) + 1;
+    
+    // 3rd+ course from same domain → cap its score
+    if (_domainTracker[_d] > 2) {
+      const _oldScore = c._score || 0;
+      c._score = Math.min(_oldScore, 200);
+      if (c.relevanceScore) c.relevanceScore = c._score;
+      console.log(`🗺️ Roadmap diversity: capped "${c.title}" [${_d}] ${_oldScore} → ${c._score}`);
+    }
+  });
+  
+  // Re-sort after capping
+  courses.sort((a, b) => (b._score || 0) - (a._score || 0));
+  console.log(`🗺️ Roadmap diversity applied: ${Object.keys(_domainTracker).length} domains`);
+}
+
 // ═══════════════════════════════════════════════════════════
 // 🆕 SAFE Relevance Gate v2
 // Removes courses that match only 1 generic word from a multi-word query
