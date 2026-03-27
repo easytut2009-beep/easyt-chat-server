@@ -2473,6 +2473,18 @@ const memCtx = sessionMem.messageCount > 0
 آخر بحث: ${sessionMem.lastSearchTopic || "-"}
 كلمات البحث: ${sessionMem.lastSearchTerms.join(", ") || "-"}
 مستوى المستخدم: ${sessionMem.userLevel || "-"}
+${sessionMem._lastDiplomaName ? `آخر دبلومة اتعرضت للمستخدم: "${sessionMem._lastDiplomaName}"
+
+🔴🔴🔴 قاعدة الدبلومة المعروضة — أعلى أولوية:
+المستخدم شاف دبلومة "${sessionMem._lastDiplomaName}" قبل كده.
+لو رسالته الحالية بتسأل عن محتوى/كورسات/تفاصيل الحاجة اللي شافها — حتى لو مقالش كلمة "دبلومة" ولا ذكر اسمها:
+أمثلة: "فيها ايه" / "ايه اللي فيها" / "محتواها" / "كورساتها" / "ابدأها ازاي" / "قولي عنها" / "عرفني أكتر" / "دي كويسة؟" / "تنفع مبتدئ؟" / "بتشمل ايه" / أي سؤال عن "هي/دي/فيها/عنها/ليها"
+→ action = "DIPLOMA_CONTENT"
+→ search_terms = []
+→ response_message = ""
+🔴 ده مش SEARCH ومش CLARIFY — ده DIPLOMA_CONTENT!
+🔴 فقط لو المستخدم ذكر موضوع جديد مختلف تماماً (مثلاً "عايز كورس فوتوشوب") → ساعتها SEARCH عادي
+` : ''}
 
 ⚠️ تعليمات مهمة:
 1. ده مش أول رسالة — ممنوع تحية تاني!
@@ -2698,7 +2710,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 ═══ المطلوب ═══
 
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|DIPLOMA_CONTENT|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -2944,6 +2956,8 @@ SEARCH = بيدور على كورس أو عايز يتعلم موضوع معين
 CLARIFY = الرسالة فيها نية تعلم لكن مفيش موضوع واضح → اسأل سؤال توضيحي واحد مع اقتراحات
 SUBSCRIPTION = أي حاجة عن فلوس/دفع/اشتراك/أسعار — حتى لو مفيش كلمة "اشتراك"
 DIPLOMAS = عايز يتصفح أو يشوف قائمة كل الدبلومات بشكل عام (بدون ما يذكر مجال أو موضوع محدد)
+DIPLOMA_CONTENT = المستخدم بيسأل عن محتوى أو كورسات أو تفاصيل دبلومة شافها قبل كده (اسمها في الذاكرة فوق) — حتى لو مقالش "دبلومة" صراحةً. فاهم من السياق إنه بيسأل عن اللي اتعرض
+
 ⚠️⚠️⚠️ قاعدة DIPLOMAS vs SEARCH — مهمة جداً:
 - لو المستخدم عايز يتصفح/يشوف/يعرف الدبلومات المتاحة بدون ذكر موضوع → DIPLOMAS + search_terms: []
 - لو المستخدم ذكر مجال أو موضوع أو تخصص معين مع كلمة دبلومة → SEARCH + search_terms تحتوي الموضوع + "دبلومة"
@@ -5637,6 +5651,91 @@ let _confirmReply = `⏳ تفعيل الاشتراك بياخد لحد <strong>2
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: Follow-up diploma questions WITHOUT "دبلومة" word
+// User saw a diploma → asks "ايه الكورسات اللي فيها" 
+// without saying "دبلومة" again → use session memory
+// ═══════════════════════════════════════════════════════════
+{
+  var _fuDipNorm = normalizeArabic(message.toLowerCase());
+  var _fuHasDiplomaWord = /دبلوم/.test(_fuDipNorm);
+
+  // Only trigger when NO "دبلوم" in message (existing handler covers that)
+  if (!_fuHasDiplomaWord) {
+    var _fuMem = getSessionMemory(sessionId);
+    var _fuLastDipIds = (_fuMem.lastShownDiplomaIds || []);
+
+    if (_fuLastDipIds.length > 0) {
+      var _fuIsDiplomaFollowUp = (
+        // "ايه الكورسات اللي فيها" / "الكورسات فيها" / "الدورات اللي فيها"
+        /(ال)?(كورسات|دورات)\s*(اللي|اللى)?\s*(في|فى|فيها|جو[اه])/.test(_fuDipNorm) ||
+        // "فيها ايه" / "فيها كورسات" / "فيها كام كورس"
+        /فيها\s*(ايه|إيه|اية|ايش|شو|كام|كورس|كورسات|دور|دورات|درس|محاضر)/.test(_fuDipNorm) ||
+        // "ايه اللي فيها" / "ايه محتوياتها"
+        /(ايه|إيه|اية|ايش|شو)\s*(اللي|اللى)?\s*(في|فى|فيها|محتو)/.test(_fuDipNorm) ||
+        // "محتوياتها" / "محتواها"
+        /(محتوياتها|محتواها)/.test(_fuDipNorm) ||
+        // "كورساتها" / "دوراتها" / "بتاعتها"
+        /(كورساتها|دوراتها|بتاعتها|بتاعها)/.test(_fuDipNorm) ||
+        // "ابدأ فيها" / "ابدأها ازاي"
+        /ابد[أا]\s*(فيها|ها)/.test(_fuDipNorm) ||
+        // "ترتيبها" / "مسارها" / "خطواتها"
+        /(ترتيبها|مسارها|خطواتها)/.test(_fuDipNorm) ||
+        // "اللي فيها" (with optional ايه prefix)
+        /(ايه|إيه)?\s*(اللي|اللى)\s*فيها/.test(_fuDipNorm) ||
+        // "جواها ايه" / "جواها"
+        /جواها/.test(_fuDipNorm)
+      );
+
+      if (_fuIsDiplomaFollowUp) {
+        console.log('📚 FIX: Follow-up diploma question (no "دبلومة" word): "' + message + '"');
+        console.log('   Last shown diploma IDs:', JSON.stringify(_fuLastDipIds));
+
+        var _fuTarget = await getDiplomaWithCourses(parseInt(_fuLastDipIds[0]));
+
+        if (_fuTarget && _fuTarget.courses && _fuTarget.courses.length > 0) {
+          var _fuCourses = _fuTarget.courses;
+          var _fuDiploma = _fuTarget.diploma;
+          var _fuInstructors = await getInstructors();
+          await injectDiplomaInfo(_fuCourses);
+
+          var _fuIsStartQ = /(ابد[أا]|ابدء|ترتيب|مسار|خطوات|ازاي\s*(ادرس|اتعلم|ابدا|ابدأ))/.test(_fuDipNorm);
+
+          var _fuReply = '';
+          if (_fuIsStartQ) {
+            _fuReply = '📋 <strong>ترتيب دراسة دبلومة "' + escapeHtml(_fuDiploma.title) + '":</strong><br>';
+            _fuReply += 'ابدأ بالترتيب ده خطوة بخطوة 👇<br><br>';
+          } else {
+            _fuReply = '📚 <strong>الكورسات اللي في دبلومة "' + escapeHtml(_fuDiploma.title) + '" (' + _fuCourses.length + ' كورس):</strong><br><br>';
+          }
+
+          _fuCourses.forEach(function(c, i) {
+            _fuReply += formatCourseCard(c, _fuInstructors, i + 1);
+          });
+
+          if (_fuDiploma.link) {
+            _fuReply += '<br><a href="' + _fuDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة والاشتراك ←</a>';
+          }
+          _fuReply += '<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي';
+          _fuReply = finalizeReply(_fuReply);
+
+          updateSessionMemory(sessionId, {
+            lastShownCourseIds: _fuCourses.map(function(c) { return String(c.id); }),
+            lastShownDiplomaIds: [String(_fuDiploma.id)],
+            topics: [_fuDiploma.title],
+            lastSearchTopic: _fuDiploma.title,
+          });
+
+          return {
+            reply: _fuReply,
+            intent: "DIPLOMA_CONTENT_FOLLOWUP",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        }
+      }
+    }
+  }
+}
 
 // ═══════════════════════════════════════════
 // 🛡️ GPT Instructor Intent Validator
@@ -6099,6 +6198,28 @@ const finalQuickReply = finalizeReply(markdownToHtml(quickReply));
     };
   }
 
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 FIX: Inject last shown diploma name into session memory
+// So GPT analyzer knows what "فيها/عنها/محتواها" refers to
+// ═══════════════════════════════════════════════════════════
+if (sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0) {
+  try {
+    var _dipLookupMap = await loadDiplomaCourseMap();
+    var _lastDipId = sessionMem.lastShownDiplomaIds[sessionMem.lastShownDiplomaIds.length - 1];
+    var _dipLookupInfo = _dipLookupMap.diplomaMap[String(_lastDipId)];
+    if (_dipLookupInfo && _dipLookupInfo.title) {
+      sessionMem._lastDiplomaName = _dipLookupInfo.title;
+      console.log('📚 Diploma context injected: "' + _dipLookupInfo.title + '" (id=' + _lastDipId + ')');
+    }
+  } catch (_dipLookupErr) {
+    console.error("Diploma name lookup error:", _dipLookupErr.message);
+  }
+} else {
+  sessionMem._lastDiplomaName = null;
+}
+
+
   // Phase 1: Analyze
 const analysis = await analyzeMessage(
     enrichedMessage,
@@ -6494,6 +6615,24 @@ if (analysis.action !== "CLARIFY") {
 sessionMem.clarifyCount = 0;
     }
   }
+
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 Safety Net: Diploma follow-up when GPT missed DIPLOMA_CONTENT
+  // Triggers ONLY when: follow-up + no search terms + diploma in memory
+  // ═══════════════════════════════════════════════════════════
+  if (analysis.is_follow_up
+      && analysis.action !== "DIPLOMA_CONTENT"
+      && analysis.action !== "SUBSCRIPTION"
+      && analysis.action !== "SUPPORT"
+      && sessionMem._lastDiplomaName
+      && sessionMem.lastShownDiplomaIds && sessionMem.lastShownDiplomaIds.length > 0
+      && (!analysis.search_terms || analysis.search_terms.length === 0)) {
+    console.log('📚 Safety Net: is_follow_up + empty terms + diploma "' + sessionMem._lastDiplomaName + '" in memory → DIPLOMA_CONTENT');
+    analysis.action = "DIPLOMA_CONTENT";
+  }
+
+
 
   // ═══════════════════════════════════════════════════════════
   // 🏆 POPULARITY SEARCH — "افضل دورة الناس طالبينها"
@@ -7844,6 +7983,62 @@ reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-we
     reply = formatDiplomasList(allDiplomas);
     intent = "DIPLOMAS";
   }
+
+
+/* ═══════════════════════════════════
+     ACTION: DIPLOMA_CONTENT — follow-up about a previously shown diploma
+     GPT understood the user is asking about the diploma from context
+     ═══════════════════════════════════ */
+  else if (analysis.action === "DIPLOMA_CONTENT") {
+    var _dfuLastDipIds = sessionMem.lastShownDiplomaIds || [];
+    if (_dfuLastDipIds.length > 0) {
+      var _dfuDipId = parseInt(_dfuLastDipIds[_dfuLastDipIds.length - 1]);
+      console.log('📚 DIPLOMA_CONTENT: Fetching diploma id=' + _dfuDipId);
+      var _dfuTarget = await getDiplomaWithCourses(_dfuDipId);
+
+      if (_dfuTarget && _dfuTarget.courses && _dfuTarget.courses.length > 0) {
+        var _dfuCourses = _dfuTarget.courses;
+        var _dfuDiploma = _dfuTarget.diploma;
+        var _dfuInstructors = await getInstructors();
+        await injectDiplomaInfo(_dfuCourses);
+
+        var _dfuNorm = normalizeArabic(message.toLowerCase());
+        var _dfuIsStartQ = /(ابد[أا]|ابدء|ترتيب|مسار|خطوات|ازاي\s*(ادرس|اتعلم|ابدا|ابدأ))/.test(_dfuNorm);
+
+        if (_dfuIsStartQ) {
+          reply = '📋 <strong>ترتيب دراسة دبلومة "' + escapeHtml(_dfuDiploma.title) + '":</strong><br>';
+          reply += 'ابدأ بالترتيب ده خطوة بخطوة 👇<br><br>';
+        } else {
+          reply = '📚 <strong>الكورسات اللي في دبلومة "' + escapeHtml(_dfuDiploma.title) + '" (' + _dfuCourses.length + ' كورس):</strong><br><br>';
+        }
+
+        _dfuCourses.forEach(function(c, i) {
+          reply += formatCourseCard(c, _dfuInstructors, i + 1);
+        });
+
+        if (_dfuDiploma.link) {
+          reply += '<br><a href="' + _dfuDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة والاشتراك ←</a>';
+        }
+        reply += '<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي';
+
+        updateSessionMemory(sessionId, {
+          lastShownCourseIds: _dfuCourses.map(function(c) { return String(c.id); }),
+          lastShownDiplomaIds: [String(_dfuDiploma.id)],
+          topics: [_dfuDiploma.title],
+          lastSearchTopic: _dfuDiploma.title,
+        });
+
+        intent = "DIPLOMA_CONTENT";
+      } else {
+        reply = analysis.response_message || getSmartFallback(sessionId);
+        intent = "CHAT";
+      }
+    } else {
+      reply = analysis.response_message || getSmartFallback(sessionId);
+      intent = "CHAT";
+    }
+  }
+
 
 /* ═══════════════════════════════════
 ACTION: CATEGORIES
