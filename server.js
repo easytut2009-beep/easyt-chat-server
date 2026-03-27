@@ -7402,6 +7402,14 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true);
               continue;
             }
           }
+
+// 🆕 Skip freelance/unrelated courses
+      const tmLower = normalizeArabic((tm.title || "").toLowerCase());
+      if (/عمل حر|فريلانس|freelanc/.test(tmLower)) {
+        console.log(`🗺️ Skipping freelance: "${tm.title}"`);
+        continue;
+      }
+
 if (_gptExcludedIds.has(tm.id)) {
             console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
             continue;
@@ -7414,6 +7422,22 @@ if (_gptExcludedIds.has(tm.id)) {
   console.log(`🗺️ Roadmap: skipped allProtectedMatched force-include`);
 }
 
+// 🆕 فلتر: اعرض بس الكورسات اللي GPT ذكرها في الرودماب
+    if (_skipForceInclude) {
+      const replyLow = normalizeArabic((reply || "").toLowerCase());
+      relevantCourses = relevantCourses.filter(c => {
+        const words = normalizeArabic((c.title || "").toLowerCase())
+          .split(/\s+/).filter(w => w.length >= 3);
+        if (words.length === 0) return true;
+        let hits = 0;
+        for (const w of words) { if (replyLow.includes(w)) hits++; }
+        if (hits / words.length < 0.5) {
+          console.log(`🚫 Hidden card: "${c.title}"`);
+          return false;
+        }
+        return true;
+      });
+    }
 
       // 🆕 FIX #62: Fallback
 
