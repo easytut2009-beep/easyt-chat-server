@@ -7387,21 +7387,6 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
   console.log(`🗺️ Roadmap: skipped titleMatchMustShow force-include`);
 }
 
-for (const tmc of titleMatchMustShow.slice(0, 3)) {
-        if (_gptExcludedIds.has(tmc.id)) {
-          console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
-          continue;
-        }
-if (analysis.is_roadmap_request) {
-          // 🗺️ Roadmap: add at END to preserve GPT's phase order
-          relevantCourses.push(tmc);
-          console.log("🗺️ FIX63 Must-show added at END (roadmap):", tmc.title);
-        } else {
-          relevantCourses.unshift(tmc);
-          console.log("FIX63 Must-show title-match added:", tmc.title);
-        }
-      }
-
 
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
 if (!_skipForceInclude) {
@@ -7429,14 +7414,6 @@ if (_gptExcludedIds.has(tm.id)) {
   console.log(`🗺️ Roadmap: skipped allProtectedMatched force-include`);
 }
 
-if (_gptExcludedIds.has(tm.id)) {
-            console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
-            continue;
-          }
-          relevantCourses.push(tm);
-          console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
-        }
-      }
 
       // 🆕 FIX #62: Fallback
 
