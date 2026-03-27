@@ -6237,6 +6237,28 @@ const analysis = await analyzeMessage(
     _faqsForContext
   );
 
+// ═══════════════════════════════════════════════════════════════
+// 🔴 SAFETY NET: لو حد قال "كورسات دبلومة X" → اجبره DIPLOMA_CONTENT
+// ═══════════════════════════════════════════════════════════════
+(function() {
+  var _sn = normalizeArabic(message.toLowerCase());
+
+  var _hasDip = /دبلوم/.test(_sn);
+
+  var _asksContent = /(كورسات|محتو[ىي]|فيها|ايه.*في|اللي\s*في|الموجود|ضمن|داخل|بتشمل|تشمل|تحتوي|يوجد|موجود|عايز\s*اعرف|اعرف\s*ايه|بتقدم|تقدم|فيه\s*ايه|كام\s*كورس|عدد)/.test(_sn);
+
+  if (_hasDip && _asksContent && analysis.action !== "DIPLOMA_CONTENT") {
+    console.log('🔴 SAFETY NET TRIGGERED: forcing DIPLOMA_CONTENT');
+
+    var _nameMatch = _sn.match(/دبلوم[ةه]?\s+(.+?)(?:\?|؟|\.|!|$)/);
+    if (_nameMatch && _nameMatch[1]) {
+      analysis.action = "DIPLOMA_CONTENT";
+      analysis.search_terms = [_nameMatch[1].trim()];
+      console.log('🔴 Extracted diploma name: "' + analysis.search_terms[0] + '"');
+    }
+  }
+})();
+
 // 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
 // For everything else, GPT's analysis wins — it understands context
 if (quickCheck && quickCheck.confidence >= 0.9) {
