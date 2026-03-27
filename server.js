@@ -8287,10 +8287,10 @@ const _qFilterTerms = questionTerms.filter(t => {
               .slice(0, 3);
 
 
-            if (topCourses.length > 0) {
+if (topCourses.length > 0) {
+              await injectDiplomaInfo(topCourses);
               reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
               topCourses.forEach((c, i) => {
-await injectDiplomaInfo(topCourses);
                 reply += formatCourseCard(c, instructors, i + 1);
               });
             }
