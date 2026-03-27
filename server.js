@@ -9002,6 +9002,84 @@ app.delete("/admin/diplomas/:id", adminAuth, async (req, res) => {
   }
 });
 
+// === Diploma Courses Management ===
+app.get("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const diplomaId = req.params.id;
+
+    const { data, error } = await supabase
+      .from("diploma_courses")
+      .select("id, course_id, course_order")
+      .eq("diploma_id", diplomaId)
+      .order("course_order", { ascending: true });
+
+    if (error) throw error;
+
+    // جيب بيانات الكورسات
+    const courseIds = (data || []).map(dc => dc.course_id);
+    let coursesMap = {};
+
+    if (courseIds.length > 0) {
+      const { data: courses, error: cErr } = await supabase
+        .from("courses")
+        .select("id, title, price")
+        .in("id", courseIds);
+
+      if (!cErr && courses) {
+        courses.forEach(c => { coursesMap[c.id] = c; });
+      }
+    }
+
+    const result = (data || []).map(dc => ({
+      id: dc.id,
+      course_id: dc.course_id,
+      course_order: dc.course_order,
+      course_title: coursesMap[dc.course_id] ? coursesMap[dc.course_id].title : "",
+      course_price: coursesMap[dc.course_id] ? coursesMap[dc.course_id].price : ""
+    }));
+
+    res.json({ success: true, courses: result });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.put("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const diplomaId = req.params.id;
+    const { courses } = req.body;
+
+    // امسح القديم
+    const { error: delError } = await supabase
+      .from("diploma_courses")
+      .delete()
+      .eq("diploma_id", diplomaId);
+
+    if (delError) throw delError;
+
+    // أضف الجديد
+    if (courses && courses.length > 0) {
+      const rows = courses.map(c => ({
+        diploma_id: parseInt(diplomaId),
+        course_id: c.course_id,
+        course_order: c.course_order || 1
+      }));
+
+      const { error: insError } = await supabase
+        .from("diploma_courses")
+        .insert(rows);
+
+      if (insError) throw insError;
+    }
+
+    res.json({ success: true, count: (courses || []).length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // === Instructors Admin ===
 app.get("/admin/instructors", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
