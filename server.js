@@ -2484,6 +2484,8 @@ ${sessionMem._lastDiplomaName ? `آخر دبلومة اتعرضت للمستخد
 → response_message = ""
 🔴 ده مش SEARCH ومش CLARIFY — ده DIPLOMA_CONTENT!
 🔴 فقط لو المستخدم ذكر موضوع جديد مختلف تماماً (مثلاً "عايز كورس فوتوشوب") → ساعتها SEARCH عادي
+🔴 لو المستخدم ذكر اسم دبلومة بالتحديد وعايز كورساتها (مثلاً "ايه الكورسات في دبلومة X") → ده DIPLOMA_CONTENT حتى لو مفيش دبلومة في الذاكرة — وحط اسم الدبلومة في search_terms
+
 ` : ''}
 
 ⚠️ تعليمات مهمة:
@@ -2956,7 +2958,11 @@ SEARCH = بيدور على كورس أو عايز يتعلم موضوع معين
 CLARIFY = الرسالة فيها نية تعلم لكن مفيش موضوع واضح → اسأل سؤال توضيحي واحد مع اقتراحات
 SUBSCRIPTION = أي حاجة عن فلوس/دفع/اشتراك/أسعار — حتى لو مفيش كلمة "اشتراك"
 DIPLOMAS = عايز يتصفح أو يشوف قائمة كل الدبلومات بشكل عام (بدون ما يذكر مجال أو موضوع محدد)
-DIPLOMA_CONTENT = المستخدم بيسأل عن محتوى أو كورسات أو تفاصيل دبلومة شافها قبل كده (اسمها في الذاكرة فوق) — حتى لو مقالش "دبلومة" صراحةً. فاهم من السياق إنه بيسأل عن اللي اتعرض
+DIPLOMA_CONTENT = المستخدم بيسأل عن محتوى أو كورسات أو تفاصيل دبلومة معينة. ده بيحصل في حالتين:
+  (أ) شاف دبلومة قبل كده وبيسأل عنها بضمير (فيها/عنها/محتواها) — اسمها في الذاكرة فوق
+  (ب) ذكر اسم الدبلومة صراحةً وعايز يعرف كورساتها — مثلاً: "ايه الكورسات في دبلومة الامن السيبراني" / "كورسات دبلومة الجرافيك" / "عايز محتوى دبلومة التسويق" / "عايز اعرف دبلومة X فيها ايه"
+  في الحالة (ب): حط اسم الدبلومة في search_terms — مثلاً: search_terms: ["الأمن السيبراني"] أو ["جرافيك"]
+
 
 ⚠️⚠️⚠️ قاعدة DIPLOMAS vs SEARCH — مهمة جداً:
 - لو المستخدم عايز يتصفح/يشوف/يعرف الدبلومات المتاحة بدون ذكر موضوع → DIPLOMAS + search_terms: []
@@ -7986,14 +7992,66 @@ reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-we
 
 
 /* ═══════════════════════════════════
-     ACTION: DIPLOMA_CONTENT — follow-up about a previously shown diploma
-     GPT understood the user is asking about the diploma from context
+     ACTION: DIPLOMA_CONTENT — courses inside a specific diploma
+     Case A: diploma ID already in session memory (follow-up)
+     Case B: user mentioned diploma by name (first-time ask)
      ═══════════════════════════════════ */
   else if (analysis.action === "DIPLOMA_CONTENT") {
     var _dfuLastDipIds = sessionMem.lastShownDiplomaIds || [];
+    var _dfuDipId = null;
+    var _dfuFoundByName = false;
+
+    // ── Case A: diploma ID already in memory ──
     if (_dfuLastDipIds.length > 0) {
-      var _dfuDipId = parseInt(_dfuLastDipIds[_dfuLastDipIds.length - 1]);
-      console.log('📚 DIPLOMA_CONTENT: Fetching diploma id=' + _dfuDipId);
+      _dfuDipId = parseInt(_dfuLastDipIds[_dfuLastDipIds.length - 1]);
+      console.log('📚 DIPLOMA_CONTENT (Case A): Using stored diploma id=' + _dfuDipId);
+    }
+
+    // ── Case B: no ID in memory → find diploma by name from search_terms ──
+    if (!_dfuDipId && analysis.search_terms && analysis.search_terms.length > 0) {
+      console.log('📚 DIPLOMA_CONTENT (Case B): Searching diploma by name:', analysis.search_terms);
+      try {
+        var _dfuAllDiplomas = await loadAllDiplomas();
+        var _dfuSearchText = normalizeArabic(analysis.search_terms.join(" ").toLowerCase());
+
+        // Try to match diploma title
+        var _dfuBestMatch = null;
+        var _dfuBestScore = 0;
+
+        _dfuAllDiplomas.forEach(function(dip) {
+          var _dipTitleNorm = normalizeArabic((dip.title || "").toLowerCase());
+          var _searchWords = _dfuSearchText.split(/\s+/).filter(function(w) { return w.length > 2; });
+          var _matchCount = 0;
+
+          _searchWords.forEach(function(word) {
+            if (_dipTitleNorm.includes(word)) {
+              _matchCount++;
+            }
+          });
+
+          var _score = _searchWords.length > 0 ? (_matchCount / _searchWords.length) : 0;
+
+          if (_score > _dfuBestScore) {
+            _dfuBestScore = _score;
+            _dfuBestMatch = dip;
+          }
+        });
+
+        // Accept match if at least 50% of search words found in diploma title
+        if (_dfuBestMatch && _dfuBestScore >= 0.5) {
+          _dfuDipId = parseInt(_dfuBestMatch.id);
+          _dfuFoundByName = true;
+          console.log('📚 Matched diploma by name: "' + _dfuBestMatch.title + '" (id=' + _dfuDipId + ', score=' + _dfuBestScore.toFixed(2) + ')');
+        } else {
+          console.log('📚 No diploma name match found (best score=' + _dfuBestScore.toFixed(2) + ')');
+        }
+      } catch (_nameSearchErr) {
+        console.error("Diploma name search error:", _nameSearchErr.message);
+      }
+    }
+
+    // ── Now fetch and display the diploma courses ──
+    if (_dfuDipId) {
       var _dfuTarget = await getDiplomaWithCourses(_dfuDipId);
 
       if (_dfuTarget && _dfuTarget.courses && _dfuTarget.courses.length > 0) {
@@ -8030,12 +8088,44 @@ reply += `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-we
 
         intent = "DIPLOMA_CONTENT";
       } else {
+        // Diploma found but no courses
+        reply = 'لقيت الدبلومة بس مش لاقي كورسات مربوطة بيها حالياً 🤔<br>ممكن تتواصل مع الدعم لو محتاج مساعدة';
+        intent = "CHAT";
+      }
+} else {
+      // No diploma found → do a normal search inline
+      if (analysis.search_terms && analysis.search_terms.length > 0) {
+        console.log('📚 DIPLOMA_CONTENT: No diploma matched, doing inline search with terms:', analysis.search_terms);
+        
+        var _fbResults = await searchCourses(analysis.search_terms);
+        
+        if (_fbResults && _fbResults.length > 0) {
+          var _fbInstructors = await getInstructors();
+          await injectDiplomaInfo(_fbResults);
+          
+          reply = '📚 مش لاقي دبلومة بالاسم ده بالظبط، بس لقيت كورسات ليها علاقة 👇<br><br>';
+          
+          _fbResults.forEach(function(c, i) {
+            reply += formatCourseCard(c, _fbInstructors, i + 1);
+          });
+          
+          reply += '<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي';
+          
+          updateSessionMemory(sessionId, {
+            lastShownCourseIds: _fbResults.map(function(c) { return String(c.id); }),
+            topics: analysis.search_terms,
+            lastSearchTopic: analysis.search_terms.join(" "),
+          });
+          
+          intent = "SEARCH";
+        } else {
+          reply = 'مش لاقي دبلومة أو كورسات بالاسم ده 🤔<br>ممكن تحاول بكلمات تانية أو تتصفح الأقسام';
+          intent = "CHAT";
+        }
+      } else {
         reply = analysis.response_message || getSmartFallback(sessionId);
         intent = "CHAT";
       }
-    } else {
-      reply = analysis.response_message || getSmartFallback(sessionId);
-      intent = "CHAT";
     }
   }
 
