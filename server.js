@@ -1966,7 +1966,8 @@ card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:1
     card += `<div style="margin-top:6px;padding:6px 10px;background:linear-gradient(135deg,#fff5f5,#ffe8ea);border-radius:8px;border-right:3px solid #e63946;font-size:12px">`;
     course._diplomaInfo.forEach(function(di) {
       var dUrl = di.diplomaLink || "https://easyt.online/p/easyt-diplomas";
-      card += `🎓 هذا الكورس موجود ضمن <a href="${dUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">دبلومة ${escapeHtml(di.diplomaTitle)}</a><br>`;
+var _cardDipName = /^دبلوم[ةه]?\s/i.test(di.diplomaTitle) ? di.diplomaTitle : 'دبلومة ' + di.diplomaTitle;
+      card += `🎓 هذا الكورس موجود ضمن <a href="${dUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${escapeHtml(_cardDipName)}</a><br>`;
     });
     card += `</div>`;
   }
@@ -5589,7 +5590,7 @@ async function classifyDiplomaIntent(userMessage) {
 // ═══════════════════════════════════════════════════════════
 {
   var _dcNorm = normalizeArabic(message.toLowerCase());
-  var _dcHasDiploma = /دبلوم/.test(_dcNorm);
+var _dcHasDiploma = /دبلوم|ديبلوم|ديبوم/.test(_dcNorm);
 
   if (_dcHasDiploma) {
 
@@ -5601,17 +5602,13 @@ async function classifyDiplomaIntent(userMessage) {
     var _forceCourseLookup = false;
     var _forcedCourseName = '';
 
+var _dipW = '(?:دبلوم|ديبلوم|ديبوم)';
     var _cidPatterns = [
-      // كورس X موجود في/ضمن دبلومة ايه
-      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:موجود[ةه]?\s*)?(?:في|فى|ضمن|تابع[ةه]?\s*ل?)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\s*دبلوم/,
-      // كورس X ده في دبلومة ايه
-      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:ده?[يى]?\s+)?(?:في|فى|ضمن)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\s*دبلوم/,
-      // كورس X تبع دبلومة ايه
-      /(?:كورس|دورة|دوره)\s+(.+?)\s+(?:تبع|تابع[ةه]?\s*ل?)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\s*دبلوم/,
-      // دبلومة ايه فيها كورس X
-      /دبلوم[ةه]?\s+(?:ايه|إيه|اي|أي|انه[يى]|ايش|شو)\s+(?:فيها|فيه)\s+(?:كورس|دورة|دوره)\s+(.+)/,
-      // X موجود في دبلومة ايه (بدون كلمة كورس)
-      /^(.+?)\s+موجود[ةه]?\s+(?:في|فى|ضمن)\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\s*دبلوم/,
+      new RegExp('(?:كورس|دورة|دوره)\\s+(.+?)\\s+(?:موجود[ةه]?\\s*)?(?:في|فى|ضمن|تابع[ةه]?\\s*ل?)\\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\\s*' + _dipW),
+      new RegExp('(?:كورس|دورة|دوره)\\s+(.+?)\\s+(?:ده?[يى]?\\s+)?(?:في|فى|ضمن)\\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))\\s*' + _dipW),
+      new RegExp('(?:كورس|دورة|دوره)\\s+(.+?)\\s+(?:تبع|تابع[ةه]?\\s*ل?)\\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\\s*' + _dipW),
+      new RegExp(_dipW + '[ةه]?\\s+(?:ايه|إيه|اي|أي|انه[يى]|ايش|شو)\\s+(?:فيها|فيه)\\s+(?:كورس|دورة|دوره)\\s+(.+)'),
+      new RegExp('^(.+?)\\s+موجود[ةه]?\\s+(?:في|فى|ضمن)\\s*(?:انه[يى]|[اأإ](?:ي[ةه]?|نهي))?\\s*' + _dipW),
     ];
 
     for (var _pi = 0; _pi < _cidPatterns.length; _pi++) {
@@ -5740,11 +5737,22 @@ async function classifyDiplomaIntent(userMessage) {
         } catch (_dce) { console.error("Course search error:", _dce.message); }
       }
 
-      if (!_dcFoundCourseId) {
-        var _dcLastCIds = sessionMem.lastShownCourseIds || [];
-        if (_dcLastCIds.length > 0) {
-          _dcFoundCourseId = _dcLastCIds[0];
-          console.log('📚 Using session course ID: ' + _dcFoundCourseId);
+if (!_dcFoundCourseId) {
+        // 🆕 FIX: Use getSessionMemory instead of sessionMem (not declared yet)
+        var _dcSessMem = getSessionMemory(sessionId);
+        // Priority 1: Last COURSE_IN_DIPLOMA query
+        if (_dcSessMem._lastCIDCourseId) {
+          _dcFoundCourseId = _dcSessMem._lastCIDCourseId;
+          _dcFoundCourseTitle = _dcSessMem._lastCIDCourseName || '';
+          console.log('📚 Using last COURSE_IN_DIPLOMA context: "' + _dcFoundCourseTitle + '" (id=' + _dcFoundCourseId + ')');
+        }
+        // Priority 2: Last shown courses
+        else {
+          var _dcLastCIds = _dcSessMem.lastShownCourseIds || [];
+          if (_dcLastCIds.length > 0) {
+            _dcFoundCourseId = _dcLastCIds[0];
+            console.log('📚 Using session course ID: ' + _dcFoundCourseId);
+          }
         }
       }
 
@@ -5760,37 +5768,86 @@ async function classifyDiplomaIntent(userMessage) {
           } catch (_dce2) {}
         }
 
-        if (_dcEntries.length > 0) {
+if (_dcEntries.length > 0) {
           var _dcBReply = '';
+
+          // 🆕 FIX: Fetch course link for clickable name
+          var _dcCourseLink = '';
+          try {
+            var _dcCLinkRes = await supabase.from("courses").select("link").eq("id", _dcFoundCourseId).single();
+            if (_dcCLinkRes.data && _dcCLinkRes.data.link) _dcCourseLink = _dcCLinkRes.data.link;
+          } catch (_dcCLE) {}
+
+          // 🆕 FIX: Helper to format diploma name (prevent "دبلومة دبلومة")
+          var _fmtDipName = function(title) {
+            if (/^دبلوم[ةه]?\s/i.test(title)) return title;
+            return 'دبلومة ' + title;
+          };
+
+          // 🆕 FIX: Course name as clickable link
+          var _dcCourseHtml = '';
+          if (_dcCourseTitle) {
+            if (_dcCourseLink) {
+              _dcCourseHtml = 'كورس <a href="' + _dcCourseLink + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📖 ' + escapeHtml(_dcCourseTitle) + '</a> ';
+            } else {
+              _dcCourseHtml = 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
+            }
+          } else {
+            _dcCourseHtml = 'الكورس ده ';
+          }
+
           if (_dcEntries.length === 1) {
             var _dcD = _dcEntries[0];
             var _dcDUrl = _dcD.diplomaLink || ALL_DIPLOMAS_URL;
-            _dcBReply = '✅ ';
-            if (_dcCourseTitle) _dcBReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
-            else _dcBReply += 'الكورس ده ';
-            _dcBReply += 'موجود ضمن <a href="' + _dcDUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 دبلومة ' + escapeHtml(_dcD.diplomaTitle) + '</a>';
+            _dcBReply = '✅ ' + _dcCourseHtml;
+            _dcBReply += 'موجود ضمن <a href="' + _dcDUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ' + escapeHtml(_fmtDipName(_dcD.diplomaTitle)) + '</a>';
           } else {
-            _dcBReply = '✅ ';
-            if (_dcCourseTitle) _dcBReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
-            else _dcBReply += 'الكورس ده ';
+            _dcBReply = '✅ ' + _dcCourseHtml;
             _dcBReply += 'موجود في <strong>' + _dcEntries.length + ' دبلومات</strong>:<br><br>';
             _dcEntries.forEach(function(de, idx) {
               var deUrl = de.diplomaLink || ALL_DIPLOMAS_URL;
-              _dcBReply += (idx + 1) + '. <a href="' + deUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ' + escapeHtml(de.diplomaTitle) + '</a><br>';
+              _dcBReply += (idx + 1) + '. <a href="' + deUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ' + escapeHtml(_fmtDipName(de.diplomaTitle)) + '</a><br>';
             });
           }
           _dcBReply += '<br><br>💡 كل الدبلومات والكورسات متاحة مع الاشتراك السنوي';
-          return {
+    
+// 🆕 FIX: Save course context for follow-ups
+          var _dcSaveSession = getSessionMemory(sessionId);
+          _dcSaveSession._lastCIDCourseId = _dcFoundCourseId;
+          _dcSaveSession._lastCIDCourseName = _dcCourseTitle;
+
+      return {
             reply: finalizeReply(_dcBReply),
             intent: "COURSE_IN_DIPLOMA",
             suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
           };
         } else {
+// 🆕 FIX: Course link for "not in diploma" response too
+          var _dcNoLink = '';
+          try {
+            var _dcNLRes = await supabase.from("courses").select("link").eq("id", _dcFoundCourseId).single();
+            if (_dcNLRes.data && _dcNLRes.data.link) _dcNoLink = _dcNLRes.data.link;
+          } catch (_dcNLE) {}
+
           var _dcNoReply = 'ℹ️ ';
-          if (_dcCourseTitle) _dcNoReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
-          else _dcNoReply += 'الكورس ده ';
+          if (_dcCourseTitle) {
+            if (_dcNoLink) {
+              _dcNoReply += 'كورس <a href="' + _dcNoLink + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📖 ' + escapeHtml(_dcCourseTitle) + '</a> ';
+            } else {
+              _dcNoReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
+            }
+          } else {
+            _dcNoReply += 'الكورس ده ';
+          }
           _dcNoReply += 'مش ضمن أي دبلومة حالياً، لكنه متاح لوحده ضمن الاشتراك السنوي 😊';
-          return {
+        
+// 🆕 FIX: Save course context for follow-ups
+          var _dcSaveSession2 = getSessionMemory(sessionId);
+          _dcSaveSession2._lastCIDCourseId = _dcFoundCourseId;
+          _dcSaveSession2._lastCIDCourseName = _dcCourseTitle;
+
+
+  return {
             reply: finalizeReply(_dcNoReply),
             intent: "COURSE_IN_DIPLOMA",
             suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
