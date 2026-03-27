@@ -8933,7 +8933,7 @@ app.get("/admin/diplomas", adminAuth, async (req, res) => {
 
     let query = supabase
       .from("diplomas")
-      .select("id, title, link, description, price", { count: "exact" })
+.select("id, title, slug, link, description, price, courses_count, books_count, hours", { count: "exact" })
       .order("title", { ascending: true })
       .range(offset, offset + limit - 1);
 
