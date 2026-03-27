@@ -2589,8 +2589,14 @@ true لما المستخدم يطلب خارطة طريق أو مسار تعلي
 ⚠️ لما is_roadmap_request=true:
 → action = "SEARCH" دايماً (❌ ممنوع CHAT!)
 → response_message = "" (فاضي! الرد هيتبني من الكورسات الفعلية)
-→ search_terms = المجال الرئيسي + أهم التخصصات الفرعية (مثلاً: ["برمجة", "programming", "frontend", "backend", "javascript", "python", "أساسيات البرمجة", "دبلومة"])
+→ search_terms = 🔴🔴🔴 لازم تشمل كل موضوع/تخصص/تقنية ذكرها المستخدم بدون استثناء!
+   - كل موضوع ذكره → لازم يكون ليه كلمة بحث بالعربي والإنجليزي
+   - ❌ ممنوع تتجاهل أي موضوع ذكره المستخدم حتى لو كتير!
+   - مثال: لو المستخدم قال "Full Stack + AI + Security + Testing + DevOps + Desktop + Mobile + UI/UX"
+     → search_terms = ["Full Stack", "web development", "frontend", "backend", "react", "node", "PHP", "javascript", "ذكاء اصطناعي", "AI", "artificial intelligence", "سكيورتي", "security", "حماية", "اختبار", "testing", "DevOps", "ديسكتوب", "desktop", "تطبيقات سطح مكتب", "موبايل", "mobile", "تطبيقات الهواتف", "UI", "UX", "تصميم واجهات", "برمجة", "programming", "أساسيات البرمجة", "دبلومة"]
+   - 🔴 كل موضوع فرعي ذكره لازم يكون ممثل بـ 2-3 كلمات بحث على الأقل (عربي + إنجليزي)
 → user_level = حدده من كلام المستخدم ("مبتدئ" لو قال "من الصفر")
+
 
 🔴🔴🔴 ممنوع نهائياً تكتب خطوات أو خارطة طريق عامة في response_message!
 🔴 ممنوع ترقّم خطوات (1. أساسيات 2. Frontend...) بدون كورسات فعلية!
@@ -3594,6 +3600,22 @@ STEP 2: MANDATORY RULES
    → If choose one → they are alternatives → pick one only!
    → If use both → they are complementary → include both
 
+   🔴🔴🔴 COMMON ALTERNATIVES (memorize these!):
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   | Category        | Alternatives (PICK ONE!)         | Recommended      |
+   |-----------------|----------------------------------|------------------|
+   | Backend Lang    | PHP vs ASP.Net vs Python/Django  | PHP (most common)|
+   | Frontend FW     | React vs Angular vs Vue          | React (most jobs)|
+   | Mobile          | Flutter vs React Native vs Swift | Flutter or RN    |
+   | CSS Framework   | Bootstrap vs Tailwind            | Bootstrap        |
+   | Database        | MySQL vs PostgreSQL vs MongoDB   | Pick ONE SQL     |
+   | CMS             | WordPress vs Drupal vs Joomla    | WordPress        |
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   
+   ⛔ If you see PHP AND ASP.Net in the data → PICK ONE ONLY!
+   ⛔ If you see React AND Angular in the data → PICK ONE ONLY!
+   ⛔ NEVER include both alternatives "just in case"!
+
 📌 RULE 3 — NO DESCRIPTIONS IN MESSAGE:
    ❌ Do NOT write what each course teaches!
    ❌ Do NOT explain course content!
@@ -3720,6 +3742,19 @@ FINAL CHECKLIST:
 ☐ relevant_course_indices in phase order (1→2→3)?
 ☐ Only relevant courses included?
 ☐ No empty phases?
+${analysis._roadmapTopicCoverage ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 TOPIC COVERAGE (from search results):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${analysis._roadmapTopicCoverage}
+
+🔴 For EVERY topic marked ❌ above:
+→ You MUST mention it in your response with ⚠️
+→ Say: "حالياً مش متاح على المنصة، بس بيتضاف محتوى جديد كل شهر!"
+→ Do NOT invent courses for ❌ topics!
+→ Do NOT skip any ❌ topic — the user specifically asked about it!
+` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ═══════════════════════════════════════════════════════
 ` : "";
 
@@ -6717,6 +6752,59 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
 
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 ROADMAP: Supplementary batch search
+    // Problem: searchCourses caps at 8 terms → topics like AI/Security get cut
+    // Fix: For roadmap with 7+ terms, search remaining terms in batches
+    // Safe: only runs for roadmap, only ADDS courses, never removes
+    // ═══════════════════════════════════════════════════════════
+    if (analysis.is_roadmap_request && termsToSearch.length > 6) {
+      const _existingIds = new Set(courses.map(c => c.id));
+      const _existingDipIds = new Set(diplomas.map(d => d.id));
+      const ROADMAP_BATCH = 6;
+      
+      // The initial searchCourses only used first ~8 terms (internal limit)
+      // Search remaining terms in batches to cover all user topics
+      for (let _bi = ROADMAP_BATCH; _bi < termsToSearch.length; _bi += ROADMAP_BATCH) {
+        const _batch = termsToSearch.slice(_bi, _bi + ROADMAP_BATCH);
+        if (_batch.length === 0) break;
+        
+        try {
+          const [_batchCourses, _batchDiplomas] = await Promise.all([
+            searchCourses(_batch, [], null),
+            searchDiplomas(_batch),
+          ]);
+          
+          let _addedC = 0;
+          for (const c of _batchCourses) {
+            if (!_existingIds.has(c.id)) {
+              courses.push(c);
+              _existingIds.add(c.id);
+              _addedC++;
+            }
+          }
+          
+          for (const d of _batchDiplomas) {
+            if (!_existingDipIds.has(d.id)) {
+              diplomas.push(d);
+              _existingDipIds.add(d.id);
+            }
+          }
+          
+          if (_addedC > 0) {
+            console.log(`🗺️ Roadmap batch [${_batch.join(', ')}] → +${_addedC} courses`);
+          }
+        } catch (_batchErr) {
+          console.error(`🗺️ Roadmap batch error:`, _batchErr.message);
+        }
+      }
+      
+      // Re-sort after adding supplementary results
+      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+      console.log(`🗺️ Roadmap total after supplementary: ${courses.length} courses, ${diplomas.length} diplomas`);
+    }
+
+
 // 🆕 FIX: Chunk content fallback — when normal search finds 0 courses
     // Searches inside lesson transcripts (chunks) for the topic
     if (courses.length === 0 && diplomas.length === 0 && supabase) {
@@ -7259,6 +7347,50 @@ const instructors = _searchInstructors;
       const questionAnswerPromise = analysis.user_intent === "QUESTION"
         ? answerFromChunksOrKnowledge(message, termsToSearch)
         : Promise.resolve(null);
+
+// ═══════════════════════════════════════════════════════════
+      // 🆕 ROADMAP: Build topic coverage for GPT
+      // Tells GPT which topics have matching courses and which don't
+      // So GPT can properly report missing topics with ⚠️ (Rule 4)
+      // ═══════════════════════════════════════════════════════════
+      let _roadmapTopicCoverage = "";
+      if (analysis.is_roadmap_request && termsToSearch.length > 3) {
+        const _skipWords = new Set([
+          'دبلومة', 'دبلوم', 'كورس', 'كورسات', 'دوره', 'دورة', 'دورات',
+          'تعلم', 'اتعلم', 'أساسيات', 'اساسيات', 'برمجة', 'programming',
+          'عايز', 'عاوز', 'محتاج', 'من', 'الصفر', 'مبتدئ',
+        ]);
+        
+        const _topicTerms = termsToSearch.filter(t => {
+          const nt = normalizeArabic(t.toLowerCase());
+          return nt.length > 2 && !_skipWords.has(nt) && !BASIC_STOP_WORDS.has(t.toLowerCase());
+        });
+        
+        const _coverageLines = [];
+        for (const t of _topicTerms) {
+          const nt = normalizeArabic(t.toLowerCase());
+          const tLower = t.toLowerCase();
+          const found = courses.some(c => {
+            const cTitle = normalizeArabic((c.title || '').toLowerCase());
+            const cTitleRaw = (c.title || '').toLowerCase();
+            const cSub = normalizeArabic((c.subtitle || '').toLowerCase());
+            const cDomain = normalizeArabic((c.domain || '').toLowerCase());
+            const cKeywords = normalizeArabic((c.keywords || '').toLowerCase());
+            return cTitle.includes(nt) || cTitleRaw.includes(tLower) 
+              || cSub.includes(nt) || cDomain.includes(nt) || cKeywords.includes(nt);
+          });
+          _coverageLines.push(`${t}: ${found ? '✅ موجود' : '❌ مش موجود'}`);
+        }
+        
+        _roadmapTopicCoverage = _coverageLines.join('\n');
+        console.log(`🗺️ Topic coverage:\n${_roadmapTopicCoverage}`);
+        
+        // Attach to analysis for the recommender to use
+        analysis._roadmapTopicCoverage = _roadmapTopicCoverage;
+      }
+
+      // Phase 2: Smart Recommendation (runs in parallel with question answer)
+
 
       // Phase 2: Smart Recommendation (runs in parallel with question answer)
 const [recommendation, questionAnswer] = await Promise.all([
