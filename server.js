@@ -3535,69 +3535,143 @@ const _isRoadmap = !!analysis.is_roadmap_request;
 
 const roadmapBlock = _isRoadmap ? `
 
-═══ 🗺️ وضع خارطة الطريق — إجباري ═══
-المستخدم طلب مسار تعليمي / خارطة طريق.
+═══════════════════════════════════════════════════════
+🗺️ ROADMAP MODE — STRICT MANDATORY RULES
+═══════════════════════════════════════════════════════
 
-═══ 🔴🔴🔴 قواعد ترتيب المراحل — تقنية وإجبارية! ═══
+The user wants a LEARNING ROADMAP. You MUST follow these rules EXACTLY.
 
-**مرحلة الأساسيات MUST تحتوي حاجة من دي (لو متاحة):**
-- أساسيات الكمبيوتر / أساسيات البرمجة / مقدمة / "من الصفر"
-- Python / بايثون (أول لغة برمجة لأي مبتدئ)
-- HTML + CSS + JavaScript (لأي حد عايز ويب)
-- أساسيات التصميم / فوتوشوب (لأي حد عايز تصميم)
-- دبلومة شاملة (أول اختيار دايماً لو فيه!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: PREREQUISITE CHAIN ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**مرحلة الأساسيات ❌ ممنوع تحتوي:**
-- Frameworks (Django/React/Angular/Laravel/Flutter) ← دي مرحلة 2!
-- AI/ML ← دي مرحلة 2 أو 3!
-- Security/DevOps ← دي مرحلة 3!
-- أي حاجة فيها كلمة "احترافي" أو "متقدم"
+For EVERY course in the data, ask yourself this ONE question:
+"What must a student ALREADY KNOW before starting this course?"
 
-**ترتيب المراحل الصح (إجباري):**
-🟢 المرحلة 1 = الأساسيات: لغات البرمجة الأساسية + مبادئ + دبلومات
-🟡 المرحلة 2 = التخصص: Frameworks + مكتبات + أدوات متخصصة
-🔴 المرحلة 3 = المتقدم: Security + DevOps + AI + Testing + Performance
+Based on your answer, assign a phase:
 
-**قاعدة الـ Framework:**
-- React OR Angular — ❌ ممنوع تحط الاتنين! هم بدائل لبعض
-- لو المستخدم مبتدئ → رشّح React (أكثر طلباً في السوق)
-- Django/Laravel/Express → مرحلة 2 (محتاجين أساسيات اللغة أولاً)
+🟢 PHASE 1 — Courses where the student needs ZERO or MINIMAL prior technical knowledge:
+   → Language basics, introductions, "from scratch" courses, comprehensive diplomas
+   → Courses whose prerequisites are only: basic computer usage
 
-**قاعدة ترتيب الكورسات داخل كل مرحلة:**
-- الدبلومة أولاً (لو فيه)
-- بعدين كورسات "أساسيات/مقدمة/من الصفر"
-- بعدين الكورسات المتخصصة
-- الكورسات المتقدمة/الاحترافية آخر حاجة
+🟡 PHASE 2 — Courses that REQUIRE Phase 1 knowledge to understand:
+   → Frameworks (they require knowing the base language FIRST!)
+   → Libraries, specialized tools, applied projects
+   → Courses whose prerequisites include: a programming language, design basics, etc.
 
-═══ شكل الـ message ═══
+🔴 PHASE 3 — Courses that REQUIRE Phase 1 + Phase 2 knowledge:
+   → Security topics (require understanding what you are securing)
+   → Testing (requires knowing what you are testing)
+   → Advanced optimization, architecture, DevOps
+   → AI/ML applied projects (require programming + math basics)
 
-اكتب الخارطة كده بالظبط:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2: MANDATORY RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-"🗺️ خارطة الطريق من الكورسات المتاحة على المنصة:
+📌 RULE 1 — PREREQUISITE CHAIN (most important rule!):
+   Think about it logically:
+   → To use a Framework, you MUST know the base language first
+   → To do Security testing, you MUST understand systems first
+   → To build AI apps, you MUST know programming first
+   → To do advanced design, you MUST know basic tools first
+   
+   ⛔ A course that REQUIRES prior knowledge can NEVER be in Phase 1!
+   ⛔ Ask: "Can a complete beginner with ZERO knowledge start this course?" 
+      If NO → it's NOT Phase 1!
+   
+   🔄 IF no true beginner courses exist in the data:
+   → Name Phase 1 "ابدأ من هنا" (NOT "الأساسيات")
+   → Add a note: recommend learning basics from free resources first
+   → Put the LEAST demanding courses in Phase 1
 
-🟢 المرحلة 1 — الأساسيات:
-(اكتب أرقام الكورسات من البيانات — بدون وصف! الكاردات هتعرض التفاصيل)
+📌 RULE 2 — NO COMPETING ALTERNATIVES:
+   If two or more courses teach tools that serve the SAME PURPOSE:
+   → Include ONLY ONE! Pick the most popular/beginner-friendly one.
+   → You may briefly mention why you chose it.
+   
+   How to detect alternatives — ask: "Would a professional typically use BOTH of these, or choose ONE?"
+   → If choose one → they are alternatives → pick one only!
+   → If use both → they are complementary → include both
 
-🟡 المرحلة 2 — التخصص:
-(نفس الكلام)
+📌 RULE 3 — NO DESCRIPTIONS IN MESSAGE:
+   ❌ Do NOT write what each course teaches!
+   ❌ Do NOT explain course content!
+   ✅ Course cards will appear BELOW your message with full details automatically.
+   ✅ Write ONLY the course NAME under each phase.
+   ✅ Keep the entire message SHORT and clean.
 
-🔴 المرحلة 3 — المتقدم:
-(نفس الكلام)
+📌 RULE 4 — MISSING TOPICS:
+   If the user mentioned a topic but NO course exists for it:
+   → Mention it with ⚠️
+   → Say it's not available yet on the platform
 
-⚠️ بخصوص [المواضيع الناقصة]: مش متاحة حالياً — بيتضاف محتوى جديد كل شهر!
+📌 RULE 5 — relevant_course_indices ORDER:
+   🔴🔴🔴 THIS IS CRITICAL! 🔴🔴🔴
+   Return relevant_course_indices in ROADMAP PHASE ORDER:
+   → Phase 1 course indices FIRST
+   → Then Phase 2 indices
+   → Then Phase 3 indices LAST
+   
+   THIS ORDER CONTROLS THE CARD DISPLAY ORDER!
+   Wrong order = cards appear in wrong order = confused student!
 
-💡 ابدأ بالمرحلة الأولى وكمّل بالترتيب 🚀"
+📌 RULE 6 — FLEXIBLE PHASES:
+   → 1-2 courses total? → 1 phase only
+   → 3-5 courses? → 2 phases maximum
+   → 6+ courses? → 2-3 phases
+   → NEVER create an empty phase!
 
-═══ 🔴🔴🔴 قواعد حاسمة ═══
-- relevant_course_indices = الكورسات مرتبة بترتيب الخارطة! (أساسيات أول → متقدم آخر)
-- ممكن لحد 8 كورسات + 4 دبلومات
-- ❌ ممنوع تكتب وصف الكورس في الـ message — الكاردات فيها الوصف!
-- ❌ ممنوع تذكر كورس مش في البيانات
-- ❌ ممنوع React + Angular مع بعض (اختار واحد)
-- ❌ ممنوع Framework في مرحلة الأساسيات
-- ❌ ممنوع تتجاهل مجال المستخدم طلبه — اذكره حتى لو مفيش كورسات
-- ✅ لو مستوى المستخدم "مبتدئ" → كورسات الأساسيات أولوية عليا
-- ✅ الكاردات هتظهر تحت الرسالة بالترتيب — فمتكررش أسماء الكورسات
+📌 RULE 7 — USER LEVEL:
+   → "مبتدئ"/"من الصفر" → Start from Phase 1, include easiest content
+   → "متوسط" → Can skip Phase 1 basics
+   → "متقدم" → Focus on Phase 2-3
+
+📌 RULE 8 — RELEVANCE FILTER:
+   → ONLY include courses RELEVANT to what the user asked!
+   → A marketing funnel course is NOT relevant to "Full Stack developer"
+   → An interior design course is NOT relevant to "programming"
+   → Be STRICT — fewer relevant courses beats many irrelevant ones
+
+📌 RULE 9 — SELF-CHECK BEFORE RESPONDING:
+   Before finalizing, verify EACH course placement:
+   □ "Can a complete beginner start this course?" → If NO → NOT Phase 1
+   □ "Does this course require another course as prerequisite?" → If YES → later phase
+   □ "Is there another course in my list that does the same thing?" → If YES → remove one
+   □ "Is this course relevant to what the user asked?" → If NO → remove it
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3: MESSAGE TEMPLATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use this structure (adapt phase names to context):
+
+🗺️ خارطة الطريق من الكورسات المتاحة على المنصة:
+
+🟢 المرحلة 1 — [phase name]:
+- [course name only — NO description!]
+
+🟡 المرحلة 2 — [phase name]:
+- [course name only]
+
+🔴 المرحلة 3 — [phase name]:
+- [course name only]
+
+⚠️ بخصوص [missing topics]: حالياً مش متاح على المنصة، بس بيتضاف محتوى جديد كل شهر!
+
+💡 [one short encouragement sentence] 🚀
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FINAL CHECKLIST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☐ Every course placement justified by prerequisite logic?
+☐ No course requiring prior knowledge in Phase 1?
+☐ No competing alternatives (same-purpose tools)?
+☐ No course descriptions in message text?
+☐ relevant_course_indices in phase order (1→2→3)?
+☐ Only relevant courses included?
+☐ No empty phases?
+═══════════════════════════════════════════════════════
 ` : "";
 
 
@@ -7278,8 +7352,14 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
           console.log(`🤖 Skipping GPT-excluded must-show: "${tmc.title}"`);
           continue;
         }
-        relevantCourses.unshift(tmc);
-        console.log("FIX63 Must-show title-match added:", tmc.title);
+if (analysis.is_roadmap_request) {
+          // 🗺️ Roadmap: add at END to preserve GPT's phase order
+          relevantCourses.push(tmc);
+          console.log("🗺️ FIX63 Must-show added at END (roadmap):", tmc.title);
+        } else {
+          relevantCourses.unshift(tmc);
+          console.log("FIX63 Must-show title-match added:", tmc.title);
+        }
       }
 
 
@@ -7430,11 +7510,18 @@ for (const stm of savedTitleMatchCourses) {
       }
 
 
-      // Ensure must-show courses are included
-      relevantCourses.sort(
-        (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
-      );
-
+// Ensure must-show courses are included
+      if (analysis.is_roadmap_request) {
+        // 🗺️ Roadmap mode: PRESERVE GPT's phase order!
+        // GPT returned relevant_course_indices in roadmap order (Phase 1 → 2 → 3)
+        // Re-sorting by relevanceScore would DESTROY this carefully planned order!
+        console.log(`🗺️ Roadmap mode: preserving GPT phase order for ${relevantCourses.length} courses (NOT re-sorting)`);
+      } else {
+        // Normal mode: sort by relevance score (highest first)
+        relevantCourses.sort(
+          (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
+        );
+      }
 
 
 
