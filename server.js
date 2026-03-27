@@ -4226,7 +4226,7 @@ function isWordBoundaryMatch(textNorm, term) {
 }
 
 
-function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null) {
+function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null, isRoadmap = false) {
   if (!courses || courses.length === 0) return;
 
   const stripPrefix = (w) => normalizeArabic(w.toLowerCase())
@@ -4628,9 +4628,11 @@ if (courses.length > 0) {
     const topScore = courses[0].relevanceScore || 0;
     const hasTitleMatch = courses.some(c => c._titleMatch);
     // 🔧 FIX: Dynamic threshold — strict when title matches exist, lenient otherwise
-    const minRelevantScore = hasTitleMatch
-        ? Math.max(400, topScore * 0.3)
-        : Math.max(50, topScore * 0.3);
+const minRelevantScore = isRoadmap
+        ? Math.max(30, topScore * 0.02)
+        : hasTitleMatch
+            ? Math.max(400, topScore * 0.3)
+            : Math.max(50, topScore * 0.3);
     const beforeCount = courses.length;
 for (let i = courses.length - 1; i >= 0; i--) {
 if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMatch && !courses[i]._lessonMatch && !courses[i]._chunkMatch) {
@@ -6897,11 +6899,12 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
-scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
+scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level, !!analysis.is_roadmap_request);
 
 // 🆕 Course-level priority: لو لقينا كورسات بالعنوان/الوصف → شيل الكورسات اللي جت من الشانكس بس
 // ده بيضمن إن "عاوز كل كورسات excel" يعرض كورسات الاكسيل الأول
 // ولو مفيش كورس بالاسم → ساعتها الشانكس تشتغل عادي
+if (!analysis.is_roadmap_request) {
 {
     const _titleMatchedCourses = courses.filter(c => c._titleMatch === true);
     if (_titleMatchedCourses.length >= 1) {
@@ -6920,7 +6923,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
         }
     }
 }
-
+}
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 SAFE Relevance Gate v2
@@ -6989,7 +6992,7 @@ const _gateIntentWords = new Set([
   console.log(`   Search term words: [${_gateAllSearchWords.join(', ')}]`);
 
   // === Only activate for 2+ topic words in original message ===
-  if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
+if (_gateMsgTopicWords.length >= 2 && courses.length > 0 && !analysis.is_roadmap_request) {
     const _gateBeforeCount = courses.length;
 
 
@@ -7255,8 +7258,10 @@ if (_corrWithReply) {
 
 
 const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) : null;
+if (!analysis.is_roadmap_request) {
     courses = applyQualityFilters(courses);
-    console.log(`📊 After filters: ${courses.length} courses`);
+}
+console.log(`📊 After filters: ${courses.length} courses`);
 
 // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #93: Follow-up "في حاجة تانية" — no new alternatives
@@ -7395,15 +7400,20 @@ for (const t of _topicTerms) {
     const cDomain = normalizeArabic((c.domain || '').toLowerCase());
     const cKeywords = normalizeArabic((c.keywords || '').toLowerCase());
     const cDesc = normalizeArabic(((c.description || '').replace(/<[^>]*>/g, '')).toLowerCase());
-    const cAll = cTitle + ' ' + cSub + ' ' + cDomain + ' ' + cKeywords + ' ' + cDesc;
+const cSyllabus = normalizeArabic(((c.syllabus || '').replace(/<[^>]*>/g, '')).toLowerCase());
+const cObjectives = normalizeArabic(((c.objectives || '').replace(/<[^>]*>/g, '')).toLowerCase());
+const cAll = cTitle + ' ' + cSub + ' ' + cDomain + ' ' + cKeywords + ' ' + cDesc + ' ' + cSyllabus + ' ' + cObjectives;
     const cAllStripped = _stripAlFromWords(cAll);
 
     // Check 1: Direct substring (existing logic)
     if (cTitle.includes(nt) || cTitleRaw.includes(tLower)) return true;
     if (cSub.includes(nt) || cDomain.includes(nt) || cKeywords.includes(nt)) return true;
 
-    // Check 2: English case-insensitive in raw title
-    if (/^[a-zA-Z\s\/]+$/.test(t) && cTitleRaw.includes(tLower)) return true;
+// Check 2: English case-insensitive in all raw fields
+if (/^[a-zA-Z\s\/\-]+$/.test(t)) {
+  const rawAll = ((c.title || '') + ' ' + (c.subtitle || '') + ' ' + (c.keywords || '') + ' ' + (c.domain || '')).toLowerCase();
+  if (rawAll.includes(tLower)) return true;
+}
 
     // Check 3: ال-tolerant matching (strip ال from both sides)
     if (ntStripped.length > 2 && cAllStripped.includes(ntStripped)) return true;
