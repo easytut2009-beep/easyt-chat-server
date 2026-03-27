@@ -576,7 +576,114 @@ async function loadAllDiplomas() {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 Diploma ↔ Course Mapping (for content questions + card badges)
+// ═══════════════════════════════════════════════════════════
+let _diplomaCourseMapCache = { data: null, ts: 0 };
+const DIPLOMA_COURSE_MAP_TTL = 10 * 60 * 1000;
 
+async function loadDiplomaCourseMap() {
+  if (_diplomaCourseMapCache.data && Date.now() - _diplomaCourseMapCache.ts < DIPLOMA_COURSE_MAP_TTL) {
+    return _diplomaCourseMapCache.data;
+  }
+  if (!supabase) return { courseToD: {}, dToCourses: {}, diplomaMap: {} };
+  try {
+    const [dcResult, dResult] = await Promise.all([
+      supabase.from("diploma_courses").select("diploma_id, course_id, course_order").order("course_order", { ascending: true }),
+      supabase.from("diplomas").select("id, title, link, price")
+    ]);
+    const dcRows = dcResult.data || [];
+    const diplomas = dResult.data || [];
+    const diplomaMap = {};
+    diplomas.forEach(function(d) { diplomaMap[String(d.id)] = d; });
+    var courseToD = {};
+    var dToCourses = {};
+    for (var i = 0; i < dcRows.length; i++) {
+      var row = dcRows[i];
+      var d = diplomaMap[String(row.diploma_id)];
+      if (!d) continue;
+      var cKey = String(row.course_id);
+      var dKey = String(row.diploma_id);
+      if (!courseToD[cKey]) courseToD[cKey] = [];
+      courseToD[cKey].push({ diplomaId: row.diploma_id, diplomaTitle: d.title, diplomaLink: d.link, courseOrder: row.course_order });
+      if (!dToCourses[dKey]) dToCourses[dKey] = [];
+      dToCourses[dKey].push({ courseId: row.course_id, courseOrder: row.course_order });
+    }
+    for (var dk in dToCourses) {
+      dToCourses[dk].sort(function(a, b) { return (a.courseOrder || 0) - (b.courseOrder || 0); });
+    }
+    _diplomaCourseMapCache.data = { courseToD: courseToD, dToCourses: dToCourses, diplomaMap: diplomaMap };
+    _diplomaCourseMapCache.ts = Date.now();
+    console.log("📋 Diploma-Course map loaded: " + dcRows.length + " relations, " + diplomas.length + " diplomas");
+    return _diplomaCourseMapCache.data;
+  } catch (e) {
+    console.error("loadDiplomaCourseMap error:", e.message);
+    return _diplomaCourseMapCache.data || { courseToD: {}, dToCourses: {}, diplomaMap: {} };
+  }
+}
+
+async function injectDiplomaInfo(courses) {
+  if (!courses || courses.length === 0) return;
+  try {
+    var map = await loadDiplomaCourseMap();
+    var courseToD = map.courseToD;
+    for (var i = 0; i < courses.length; i++) {
+      var c = courses[i];
+      var entries = courseToD[String(c.id)];
+      if (entries && entries.length > 0) {
+        c._diplomaInfo = entries;
+      }
+    }
+  } catch (e) {
+    console.error("injectDiplomaInfo error:", e.message);
+  }
+}
+
+async function getDiplomaWithCourses(diplomaIdOrTitle) {
+  if (!supabase) return null;
+  try {
+    var map = await loadDiplomaCourseMap();
+    var dToCourses = map.dToCourses;
+    var diplomaMap = map.diplomaMap;
+    var diploma = null;
+    var diplomaId = null;
+    if (typeof diplomaIdOrTitle === 'number' || /^\d+$/.test(String(diplomaIdOrTitle))) {
+      var idStr = String(diplomaIdOrTitle);
+      if (diplomaMap[idStr]) { diploma = diplomaMap[idStr]; diplomaId = idStr; }
+    }
+    if (!diploma && typeof diplomaIdOrTitle === 'string') {
+      var normSearch = normalizeArabic(diplomaIdOrTitle.toLowerCase().trim());
+      var bestScore = 0;
+      for (var id in diplomaMap) {
+        var d = diplomaMap[id];
+        var normTitle = normalizeArabic((d.title || '').toLowerCase());
+        var score = 0;
+        if (normTitle === normSearch) score = 100;
+        else if (normTitle.includes(normSearch) || normSearch.includes(normTitle)) score = 85;
+        else {
+          var words = normSearch.split(/\s+/).filter(function(w) { return w.length > 2; });
+          var matched = words.filter(function(w) { return normTitle.includes(w); });
+          if (words.length > 0 && matched.length > 0) score = 40 + Math.round((matched.length / words.length) * 40);
+        }
+        if (score < 40) score = Math.max(score, similarityRatio(normSearch, normTitle));
+        if (score > bestScore && score >= 40) { bestScore = score; diploma = d; diplomaId = id; }
+      }
+    }
+    if (!diploma || !diplomaId) return null;
+    var courseEntries = dToCourses[diplomaId] || [];
+    if (courseEntries.length === 0) return { diploma: diploma, courses: [] };
+    var courseIds = courseEntries.map(function(e) { return e.courseId; });
+    var result = await supabase.from("courses").select(COURSE_SELECT_COLS).in("id", courseIds);
+    var courses = result.data || [];
+    var orderMap = {};
+    courseEntries.forEach(function(e) { orderMap[String(e.courseId)] = e.courseOrder; });
+    courses.sort(function(a, b) { return (orderMap[String(a.id)] || 999) - (orderMap[String(b.id)] || 999); });
+    return { diploma: diploma, courses: courses };
+  } catch (e) {
+    console.error("getDiplomaWithCourses error:", e.message);
+    return null;
+  }
+}
 
 
 function formatDiplomasList(diplomas) {
@@ -1813,7 +1920,7 @@ const instructor = course.instructor_id
       : typeof rawPrice === "number"
       ? rawPrice
       : 0;
-  const priceText = priceNum === 0 ? "مجاناً 🎉" : `${priceNum}$`;
+const priceText = priceNum === 0 ? "متاح فقط ضمن الاشتراك العام" : `${priceNum}$`;
 
   let desc = "";
   if (course.description) {
@@ -1852,7 +1959,18 @@ card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:
     card += `</div>`;
   }
 
-  card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+card += `<a href="${courseUrl}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+
+  // 🆕 Diploma badge — show if course belongs to a diploma
+  if (course._diplomaInfo && course._diplomaInfo.length > 0) {
+    card += `<div style="margin-top:6px;padding:6px 10px;background:linear-gradient(135deg,#fff5f5,#ffe8ea);border-radius:8px;border-right:3px solid #e63946;font-size:12px">`;
+    course._diplomaInfo.forEach(function(di) {
+      var dUrl = di.diplomaLink || "https://easyt.online/p/easyt-diplomas";
+      card += `🎓 هذا الكورس موجود ضمن <a href="${dUrl}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">دبلومة ${escapeHtml(di.diplomaTitle)}</a><br>`;
+    });
+    card += `</div>`;
+  }
+
   card += `</div>`;
   return card;
 }
@@ -5349,6 +5467,177 @@ let _confirmReply = `⏳ تفعيل الاشتراك بياخد لحد <strong>2
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// 🆕 Diploma Content Questions Handler
+// "الدبلومة فيها ايه" / "كورسات الدبلومة" / "ابدأ الدبلومة ازاي"
+// "الكورس ده في دبلومة ايه"
+// ═══════════════════════════════════════════════════════════
+{
+  var _dcNorm = normalizeArabic(message.toLowerCase());
+  var _dcHasDiploma = /دبلوم/.test(_dcNorm);
+
+  if (_dcHasDiploma) {
+    // --- Pattern A: What's inside a diploma / how to start ---
+    var _dcIsContentQ = /(فيها?\s*(ايه|إيه|اية|ايش|شو|كورس|دور)|محتو[يى]|كورسات\s*(ال)?دبلوم|دورات\s*(ال)?دبلوم|دبلوم[ةه]?\s*(فيها?|محتو)|ابد[أا]\s*(في\s*)?.*دبلوم|دبلوم.*ابد[أا]|ترتيب.*دبلوم|دبلوم.*ترتيب|مسار.*دبلوم|دبلوم.*مسار|ازاي\s*(ادرس|اتعلم|ابدا|ابدأ).*دبلوم)/.test(_dcNorm);
+
+    if (_dcIsContentQ) {
+      console.log('📚 Diploma content question detected: "' + message + '"');
+
+      // Extract diploma name
+      var _dcSearchText = _dcNorm
+        .replace(/(ال)?(دبلوم[ةه]?)/g, '')
+        .replace(/(فيها?|محتو[يى]|كورسات|دورات|ابد[أا]|ابدء|ترتيب|مسار|خطوات|ازاي|ادرس|اتعلم|عايز|عاوز|محتاج|اعرف|قولي|وريني|ايه|إيه|اية|ايش|شو|دي|ده|دا|هيه|هيا|هو|هي|اللي|بتاع[ةه]?|في|فى|عن|من|اى|أي|انهي|أنهي|جو[هة]|ضمن)\s*/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      var _dcTarget = null;
+
+      // If no name extracted → use session memory
+      if (_dcSearchText.length < 3) {
+        var _dcLastDipIds = sessionMem.lastShownDiplomaIds || [];
+        if (_dcLastDipIds.length > 0) {
+          _dcTarget = await getDiplomaWithCourses(parseInt(_dcLastDipIds[0]));
+          if (_dcTarget) console.log('📚 Using session diploma: "' + _dcTarget.diploma.title + '"');
+        }
+      }
+
+      // Search by name
+      if (!_dcTarget && _dcSearchText.length >= 3) {
+        _dcTarget = await getDiplomaWithCourses(_dcSearchText);
+        if (_dcTarget) console.log('📚 Found diploma by name: "' + _dcTarget.diploma.title + '"');
+      }
+
+      if (_dcTarget && _dcTarget.courses && _dcTarget.courses.length > 0) {
+        var _dcCourses = _dcTarget.courses;
+        var _dcDiploma = _dcTarget.diploma;
+        var _dcInstructors = await getInstructors();
+        await injectDiplomaInfo(_dcCourses);
+
+        var _dcIsStartQ = /(ابد[أا]|ابدء|ترتيب|مسار|خطوات|ازاي\s*(ادرس|اتعلم|ابدا|ابدأ))/.test(_dcNorm);
+
+        var _dcReply = '';
+        if (_dcIsStartQ) {
+          _dcReply = '📋 <strong>ترتيب دراسة دبلومة "' + escapeHtml(_dcDiploma.title) + '":</strong><br>';
+          _dcReply += 'ابدأ بالترتيب ده خطوة بخطوة 👇<br><br>';
+        } else {
+          _dcReply = '📚 <strong>محتوى دبلومة "' + escapeHtml(_dcDiploma.title) + '" (' + _dcCourses.length + ' كورس):</strong><br><br>';
+        }
+
+        _dcCourses.forEach(function(c, i) {
+          _dcReply += formatCourseCard(c, _dcInstructors, i + 1);
+        });
+
+        if (_dcDiploma.link) {
+          _dcReply += '<br><a href="' + _dcDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة والاشتراك ←</a>';
+        }
+        _dcReply += '<br><br>💡 كل الكورسات دي متاحة مع الاشتراك السنوي';
+        _dcReply = finalizeReply(_dcReply);
+
+        updateSessionMemory(sessionId, {
+          lastShownCourseIds: _dcCourses.map(function(c) { return String(c.id); }),
+          lastShownDiplomaIds: [String(_dcDiploma.id)],
+          topics: [_dcDiploma.title],
+          lastSearchTopic: _dcDiploma.title,
+        });
+
+        return {
+          reply: _dcReply,
+          intent: "DIPLOMA_CONTENT",
+          suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+        };
+      }
+    }
+
+    // --- Pattern B: Which diploma contains this course ---
+    var _dcIsCourseInDiploma = (
+      /(كورس|دور[ةه]).*(في|فى|جو[هة]|ضمن|موجود|تابع).*(دبلوم)/.test(_dcNorm) ||
+      /(دبلوم).*(في[هة]?|جو[هة]|ضمن|موجود).*(كورس|دور[ةه])/.test(_dcNorm) ||
+      /(كورس|دور[ةه]).*(انهي|أنهي|اي|أي)\s*(دبلوم)/.test(_dcNorm)
+    );
+
+    if (_dcIsCourseInDiploma) {
+      console.log('📚 Course-in-diploma question detected: "' + message + '"');
+
+      var _dcCourseSearch = _dcNorm
+        .replace(/(كورس|دور[ةه]|دبلوم[ةه]?|الدبلوم[ةه]?|موجود|في|فى|جو[هة]|ضمن|تابع|بتاع[ةه]?|ايه|إيه|اية|ايش|شو|انهي|أنهي|اي|أي|ده|دي|دا|هو|هي)\s*/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      var _dcFoundCourseId = null;
+
+      // If empty → use session memory
+      if (_dcCourseSearch.length < 3) {
+        var _dcLastCIds = sessionMem.lastShownCourseIds || [];
+        if (_dcLastCIds.length > 0) {
+          _dcFoundCourseId = _dcLastCIds[0];
+          console.log('📚 Using session course ID: ' + _dcFoundCourseId);
+        }
+      }
+
+      // Search by name
+      if (!_dcFoundCourseId && _dcCourseSearch.length >= 2) {
+        try {
+          var _dcSearchRes = await searchCourses([_dcCourseSearch]);
+          if (_dcSearchRes.length > 0) {
+            _dcFoundCourseId = String(_dcSearchRes[0].id);
+            console.log('📚 Found course: "' + _dcSearchRes[0].title + '" (id=' + _dcFoundCourseId + ')');
+          }
+        } catch (_dce) { console.error("Course search error:", _dce.message); }
+      }
+
+      if (_dcFoundCourseId) {
+        var _dcMap = await loadDiplomaCourseMap();
+        var _dcEntries = _dcMap.courseToD[String(_dcFoundCourseId)] || [];
+
+        // Get course title for display
+        var _dcCourseTitle = '';
+        try {
+          var _dcCRes = await supabase.from("courses").select("title").eq("id", _dcFoundCourseId).single();
+          if (_dcCRes.data) _dcCourseTitle = _dcCRes.data.title;
+        } catch (_dce2) {}
+
+        if (_dcEntries.length > 0) {
+          var _dcBReply = '';
+          if (_dcEntries.length === 1) {
+            var _dcD = _dcEntries[0];
+            var _dcDUrl = _dcD.diplomaLink || ALL_DIPLOMAS_URL;
+            _dcBReply = '✅ ';
+            if (_dcCourseTitle) _dcBReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
+            else _dcBReply += 'الكورس ده ';
+            _dcBReply += 'موجود ضمن <a href="' + _dcDUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 دبلومة ' + escapeHtml(_dcD.diplomaTitle) + '</a>';
+          } else {
+            _dcBReply = '✅ ';
+            if (_dcCourseTitle) _dcBReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
+            else _dcBReply += 'الكورس ده ';
+            _dcBReply += 'موجود في <strong>' + _dcEntries.length + ' دبلومات</strong>:<br><br>';
+            _dcEntries.forEach(function(de, idx) {
+              var deUrl = de.diplomaLink || ALL_DIPLOMAS_URL;
+              _dcBReply += (idx + 1) + '. <a href="' + deUrl + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 ' + escapeHtml(de.diplomaTitle) + '</a><br>';
+            });
+          }
+          _dcBReply += '<br><br>💡 كل الدبلومات والكورسات متاحة مع الاشتراك السنوي';
+          return {
+            reply: finalizeReply(_dcBReply),
+            intent: "COURSE_IN_DIPLOMA",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        } else {
+          var _dcNoReply = 'ℹ️ ';
+          if (_dcCourseTitle) _dcNoReply += 'كورس "<strong>' + escapeHtml(_dcCourseTitle) + '</strong>" ';
+          else _dcNoReply += 'الكورس ده ';
+          _dcNoReply += 'مش ضمن أي دبلومة حالياً، لكنه متاح لوحده ضمن الاشتراك السنوي 😊';
+          return {
+            reply: finalizeReply(_dcNoReply),
+            intent: "COURSE_IN_DIPLOMA",
+            suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
+          };
+        }
+      }
+    }
+  }
+}
+
+
 // ═══════════════════════════════════════════
 // 🛡️ GPT Instructor Intent Validator
 // ═══════════════════════════════════════════
@@ -5412,6 +5701,7 @@ const _instructorCheck = detectInstructorQuestion(message);
         const _courseInst = _topCourse.instructor_id
           ? _hintInstructors.find(i => String(i.id) === String(_topCourse.instructor_id))
           : null;
+await injectDiplomaInfo([_topCourse]);
         let _whoReply = _courseInst
           ? `👨‍🏫 محاضر كورس "<strong>${escapeHtml(_topCourse.title)}</strong>" هو <strong>${escapeHtml(_courseInst.name)}</strong> 😊<br><br>`
           : `📚 لقيت الكورس! 😊<br><br>`;
@@ -5445,7 +5735,7 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
         if (instructor && courses.length > 0) {
           let _instReply = `👨‍🏫 <strong>${escapeHtml(instructor.name)}</strong><br>`;
           _instReply += `📚 عنده <strong>${courses.length}</strong> كورس على المنصة:<br><br>`;
-
+await injectDiplomaInfo(courses);
           courses.slice(0, 5).forEach((c, i) => {
             _instReply += formatCourseCard(c, _instInstructors, i + 1);
           });
@@ -5514,7 +5804,7 @@ if (_instructorCheck && _instructorCheck.isInstructorQuestion && !_instructorChe
 
       let _possReply = `👨‍🏫 <strong>${escapeHtml(_possInst.name)}</strong><br>`;
       _possReply += `📚 عنده <strong>${_possCourses.length}</strong> كورس على المنصة:<br><br>`;
-
+await injectDiplomaInfo(_possCourses);
       _possCourses.slice(0, 5).forEach((c, i) => {
         _possReply += formatCourseCard(c, _possInstructors, i + 1);
       });
@@ -5616,7 +5906,7 @@ const _mainCorrThreshold = hasActiveConversationContext(sessionId) ? 0.85 : CORR
         if (!_corrErr && _corrCourses && _corrCourses.length > 0) {
           const _corrInstructors = await getInstructors();
           let _corrReply = `إليك الكورسات اللي ممكن تفيدك 😊<br><br>`;
-
+await injectDiplomaInfo(_corrCourses);
           _corrCourses.forEach((c, i) => {
             _corrReply += formatCourseCard(c, _corrInstructors, i + 1);
           });
@@ -6240,7 +6530,7 @@ sessionMem.clarifyCount = 0;
         const showCount = Math.min(popCourses.length, 8);
 
 reply = `🏆 <strong>الكورسات الأكثر مبيعاً على المنصة:</strong><br><br>`;
-
+await injectDiplomaInfo(popCourses);
         for (let i = 0; i < showCount; i++) {
           reply += formatCourseCard(popCourses[i], instructors, i + 1);
         }
@@ -7315,6 +7605,7 @@ for (const stm of savedTitleMatchCourses) {
 
 if (relevantCourses.length > 0) {
         await injectInstructorNames(relevantCourses);
+await injectDiplomaInfo(relevantCourses);
         const _rcInstructors = await getInstructors();
         relevantCourses.slice(0, 5).forEach((c, i) => {
           reply += formatCourseCard(c, _rcInstructors, i + 1);
@@ -7346,6 +7637,7 @@ let _instructorFallbackHandled = false;
         if (_instFB.instructor && _instFB.courses.length > 0) {
           reply = `👨‍🏫 <strong>${escapeHtml(_instFB.instructor.name)}</strong><br>`;
           reply += `📚 عنده <strong>${_instFB.courses.length}</strong> كورس على المنصة:<br><br>`;
+await injectDiplomaInfo(_instFB.courses);
           _instFB.courses.slice(0, 5).forEach((c, i) => {
             reply += formatCourseCard(c, _searchInstructors, i + 1);
           });
@@ -7998,6 +8290,7 @@ const _qFilterTerms = questionTerms.filter(t => {
             if (topCourses.length > 0) {
               reply += `<br><br>💡 <strong>كورسات على المنصة هتفيدك في الموضوع ده:</strong><br>`;
               topCourses.forEach((c, i) => {
+await injectDiplomaInfo(topCourses);
                 reply += formatCourseCard(c, instructors, i + 1);
               });
             }
@@ -9071,9 +9364,11 @@ app.put("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
         .from("diploma_courses")
         .insert(rows);
 
-      if (insError) throw insError;
+if (insError) throw insError;
     }
 
+    _diplomaCourseMapCache = { data: null, ts: 0 };
+    console.log("🗑️ Diploma-Course map cache cleared");
     res.json({ success: true, count: (courses || []).length });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
