@@ -1713,11 +1713,24 @@ function openEditModal(entity, item) {
     } else if (f.type === 'textarea') {
       html += '<textarea id="modal_' + f.key + '" rows="3" style="margin-top:4px">' + esc(v) + '</textarea>';
     } else {
-html += '<input type="' + (f.inputType || 'text') + '" id="modal_' + f.key + '" value="' + esc(v) + '" style="margin-top:4px">';
+      html += '<input type="' + (f.inputType || 'text') + '" id="modal_' + f.key + '" value="' + esc(v) + '" style="margin-top:4px">';
     }
   });
+
+  // لو دبلومة — أضف قسم الكورسات
+  if (entity === 'diplomas') {
+    html += '<hr style="margin:20px 0;border-color:#e2e8f0">';
+    html += '<h4 style="margin:0 0 12px;color:#7c3aed;font-size:15px">📚 كورسات الدبلومة</h4>';
+    html += '<div id="diplomaCoursesSection"><p style="text-align:center;color:#94a3b8;padding:10px">⏳ جاري تحميل الكورسات...</p></div>';
+  }
+
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('show');
+
+  // لو دبلومة — حمّل الكورسات
+  if (entity === 'diplomas') {
+    loadDiplomaCoursesInModal(item.id);
+  }
 }
 
 async function saveModal() {
@@ -1761,8 +1774,13 @@ fields.forEach(function(f) {
     if (v) body[f.key] = f.inputType === 'number' ? (parseFloat(v.value) || 0) : v.value;
   }
 });
-    if(modalState.type==='add') await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
+if(modalState.type==='add') await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
     else await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
+
+    // لو دبلومة — احفظ الكورسات كمان
+    if(modalState.entity==='diplomas' && modalState.type==='edit' && _currentDiplomaId) {
+      await saveDiplomaCourses();
+    }
     closeModal(); toast('تم ✅');
     delete _allCrudItems[modalState.entity];
     loadCrud(modalState.entity, _crudPages[modalState.entity] || 1, true);
@@ -1882,6 +1900,149 @@ async function saveDiplomaCourses() {
   } catch(e) { toast('خطأ: ' + e.message, 'error'); }
 }
 
+document.addEventListener('click', function(e) {
+  var sr = document.getElementById('dcSearchResults');
+  var si = document.getElementById('dcSearchInput');
+  if (sr && si && !sr.contains(e.target) && e.target !== si) sr.style.display = 'none';
+});
+
+// ═══════════════════════════════════════
+// DIPLOMA COURSES INSIDE EDIT MODAL
+// ═══════════════════════════════════════
+var _diplomaCoursesList = [];
+var _allCoursesSearch = [];
+var _currentDiplomaId = null;
+
+async function loadDiplomaCoursesInModal(diplomaId) {
+  _currentDiplomaId = diplomaId;
+  _diplomaCoursesList = [];
+  var section = document.getElementById('diplomaCoursesSection');
+  if (!section) return;
+
+  try {
+    // حمّل كورسات الدبلومة
+    var dcResp = await apiCall('/admin/diplomas/' + diplomaId + '/courses');
+    _diplomaCoursesList = (dcResp.courses || dcResp.items || dcResp.data || []).map(function(dc) {
+      return {
+        course_id: dc.course_id || dc.id,
+        course_title: dc.course_title || dc.title || '',
+        course_price: dc.course_price || dc.price || '',
+        course_order: dc.course_order || 1
+      };
+    });
+
+    // حمّل كل الكورسات للبحث
+    if (!_allCoursesSearch.length) {
+      var cResp = await apiCall('/admin/courses?limit=2000');
+      _allCoursesSearch = cResp.courses || cResp.items || cResp.data || [];
+    }
+
+    renderDCSection();
+  } catch(e) {
+    section.innerHTML = '<p style="color:#ef4444;text-align:center;padding:10px">❌ ' + esc(e.message) + '</p>';
+  }
+}
+
+function renderDCSection() {
+  var section = document.getElementById('diplomaCoursesSection');
+  if (!section) return;
+
+  var h = '';
+
+  // حقل البحث
+  h += '<div style="position:relative;margin-bottom:12px">';
+  h += '<input type="text" id="dcSearchInput" placeholder="🔍 ابحث عن كورس لإضافته..." oninput="filterDCSearch()" onfocus="filterDCSearch()">';
+  h += '<div id="dcSearchResults" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:0 0 8px 8px;max-height:200px;overflow-y:auto;display:none;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>';
+  h += '</div>';
+
+  // عداد
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff">';
+  h += '<span style="font-weight:700;color:#7c3aed;font-size:13px">📋 ' + _diplomaCoursesList.length + ' كورس</span>';
+  if (_diplomaCoursesList.length > 0) {
+    h += '<button type="button" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;font-size:10px" onclick="_diplomaCoursesList=[];renderDCSection()">🗑️ إزالة الكل</button>';
+  }
+  h += '</div>';
+
+  // قايمة الكورسات
+  if (_diplomaCoursesList.length === 0) {
+    h += '<div style="text-align:center;padding:20px;background:#f8fafc;border-radius:8px;border:2px dashed #e2e8f0">';
+    h += '<div style="font-size:24px;margin-bottom:4px">📭</div>';
+    h += '<p style="color:#94a3b8;margin:0;font-size:12px">مفيش كورسات — ابحث وأضف من فوق</p></div>';
+  } else {
+    _diplomaCoursesList.sort(function(a,b) { return (a.course_order||1) - (b.course_order||1); });
+    _diplomaCoursesList.forEach(function(dc, idx) {
+      h += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:4px;background:' + (idx%2===0?'#faf5ff':'#fff') + '">';
+      h += '<input type="number" value="' + (dc.course_order||idx+1) + '" min="1" style="width:45px;text-align:center;font-weight:700;padding:4px" onchange="updateDCOrder('+idx+',this.value)">';
+      h += '<div style="flex:1;overflow:hidden"><div style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(dc.course_title) + '</div>';
+      if (dc.course_price) h += '<span style="font-size:10px;color:#64748b">💰 ' + esc(String(dc.course_price)) + '</span>';
+      h += '</div>';
+      h += '<button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;font-size:10px" onclick="removeDC('+idx+')">✕</button></div>';
+    });
+  }
+
+  section.innerHTML = h;
+}
+
+function filterDCSearch() {
+  var q = (document.getElementById('dcSearchInput').value || '').trim().toLowerCase();
+  var div = document.getElementById('dcSearchResults');
+  if (!div) return;
+  if (q.length < 1) { div.style.display = 'none'; return; }
+
+  var addedIds = _diplomaCoursesList.map(function(dc) { return String(dc.course_id); });
+  var matches = _allCoursesSearch.filter(function(c) {
+    if (addedIds.indexOf(String(c.id)) !== -1) return false;
+    return (c.title||'').toLowerCase().indexOf(q) !== -1 || (c.subtitle||'').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 8);
+
+  if (!matches.length) {
+    div.innerHTML = '<div style="padding:10px;color:#94a3b8;font-size:12px;text-align:center">لا توجد نتائج</div>';
+  } else {
+    div.innerHTML = matches.map(function(c) {
+      return '<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px" onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'#fff\'" onclick="addDC(\'' + c.id + '\')"><div style="font-weight:600">' + esc(c.title||'') + '</div><div style="font-size:10px;color:#64748b">' + (c.price ? '💰 ' + esc(String(c.price)) : '') + '</div></div>';
+    }).join('');
+  }
+  div.style.display = 'block';
+}
+
+function addDC(courseId) {
+  var c = _allCoursesSearch.find(function(x) { return String(x.id) === String(courseId); });
+  if (!c) return;
+  _diplomaCoursesList.push({
+    course_id: courseId,
+    course_title: c.title || '',
+    course_price: c.price || '',
+    course_order: _diplomaCoursesList.length + 1
+  });
+  document.getElementById('dcSearchInput').value = '';
+  var div = document.getElementById('dcSearchResults');
+  if (div) div.style.display = 'none';
+  renderDCSection();
+  toast('✅ تم إضافة: ' + (c.title||'').slice(0,30), 'info');
+}
+
+function removeDC(idx) {
+  _diplomaCoursesList.splice(idx, 1);
+  _diplomaCoursesList.forEach(function(dc, i) { dc.course_order = i + 1; });
+  renderDCSection();
+}
+
+function updateDCOrder(idx, val) {
+  _diplomaCoursesList[idx].course_order = parseInt(val) || 1;
+}
+
+async function saveDiplomaCourses() {
+  if (!_currentDiplomaId) return;
+  var courses = _diplomaCoursesList.map(function(dc) {
+    return { course_id: dc.course_id, course_order: dc.course_order || 1 };
+  });
+  await apiCall('/admin/diplomas/' + _currentDiplomaId + '/courses', {
+    method: 'PUT',
+    body: JSON.stringify({ courses: courses })
+  });
+}
+
+// أخفي نتائج البحث لما أدوس برا
 document.addEventListener('click', function(e) {
   var sr = document.getElementById('dcSearchResults');
   var si = document.getElementById('dcSearchInput');
