@@ -2580,33 +2580,7 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 ═══ المطلوب ═══
 
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false,"is_roadmap_request":false}
-
-═══ 🗺️ is_roadmap_request ═══
-true لما المستخدم يطلب خارطة طريق أو مسار تعليمي أو ترتيب كورسات أو "ابدأ منين" أو "ابدأ بإيه الأول" أو "رحلة تعلم" أو "خطة دراسة شاملة"
-أو لما يقول "عايز أكون Full Stack / مطور / مصمم..." ويطلب المسار الكامل
-
-⚠️ لما is_roadmap_request=true:
-→ action = "SEARCH" دايماً (❌ ممنوع CHAT!)
-→ response_message = "" (فاضي! الرد هيتبني من الكورسات الفعلية)
-→ search_terms = 🔴🔴🔴 لازم تشمل كل موضوع/تخصص/تقنية ذكرها المستخدم بدون استثناء!
-   - كل موضوع ذكره → لازم يكون ليه كلمة بحث بالعربي والإنجليزي
-   - ❌ ممنوع تتجاهل أي موضوع ذكره المستخدم حتى لو كتير!
-   - مثال: لو المستخدم قال "Full Stack + AI + Security + Testing + DevOps + Desktop + Mobile + UI/UX"
-     → search_terms = ["Full Stack", "web development", "frontend", "backend", "react", "node", "PHP", "javascript", "ذكاء اصطناعي", "AI", "artificial intelligence", "سكيورتي", "security", "حماية", "اختبار", "testing", "DevOps", "ديسكتوب", "desktop", "تطبيقات سطح مكتب", "موبايل", "mobile", "تطبيقات الهواتف", "UI", "UX", "تصميم واجهات", "برمجة", "programming", "أساسيات البرمجة", "دبلومة"]
-   - 🔴 كل موضوع فرعي ذكره لازم يكون ممثل بـ 2-3 كلمات بحث على الأقل (عربي + إنجليزي)
-→ user_level = حدده من كلام المستخدم ("مبتدئ" لو قال "من الصفر")
-
-
-🔴🔴🔴 ممنوع نهائياً تكتب خطوات أو خارطة طريق عامة في response_message!
-🔴 ممنوع ترقّم خطوات (1. أساسيات 2. Frontend...) بدون كورسات فعلية!
-🔴 ممنوع response_message يكون فيه نصائح عامة — خلّيه فاضي!
-✅ الرد الصح هيتبني تلقائياً من الكورسات الفعلية اللي على المنصة
-
-أمثلة true: "عايز خارطة طريق Full Stack" / "ابدأ منين في البرمجة" / "مسار تعلم التصميم" / "عايز أكون مطور" / "رحلة من الصفر للاحتراف"
-أمثلة false: "عايز كورس فوتوشوب" (طلب كورس محدد) / "ازاي ادفع" (مش تعليمي)
-
-
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -3308,8 +3282,7 @@ detected_category: null,
         previous_topic_reference: null,
         audience_filter: null,
         language: "ar",
-is_popularity_search: false,
-        is_roadmap_request: false,
+        is_popularity_search: false,
       };
     }
 
@@ -3331,8 +3304,7 @@ follow_up_type: result.follow_up_type || null,
 
 audience_filter: result.audience_filter || null,
       language: result.language || "ar",
-is_popularity_search: !!result.is_popularity_search,
-      is_roadmap_request: !!result.is_roadmap_request,
+      is_popularity_search: !!result.is_popularity_search,
     };
 
 } catch (e) {
@@ -3448,8 +3420,7 @@ async function generateSmartRecommendation(
   sessionMem,
   analysis,
   instructors,
-  model = "gpt-4o",
-  botInstructions = ""
+  model = "gpt-4o"
 ) {
 const courseData = courses
     .slice(0, 10)
@@ -3535,230 +3506,6 @@ const userLevelBlock = analysis.user_level
 const _adviseRegex = /محتار|ابدا\s*ب|ابدأ\s*ب|انهي\s*فيهم|أنهي\s*فيهم|الفرق\s*بين|ليهم\s*علاق|لهم\s*علاق|العلاق[ةه]\s*بين|مرتبطين|مكملين|ايهم\s*افضل|ايهم\s*احسن|اختار\s*انهي|اختار\s*ايه|ترتيب|انهي\s*الاول|انهي\s*اول/;
 const _isAdvisory = _adviseRegex.test(normalizeArabic((message || "").toLowerCase()));
 
-
-// 🆕 Roadmap mode detection
-const _isRoadmap = !!analysis.is_roadmap_request;
-
-const roadmapBlock = _isRoadmap ? `
-
-═══════════════════════════════════════════════════════
-🗺️ ROADMAP MODE — STRICT MANDATORY RULES
-═══════════════════════════════════════════════════════
-
-The user wants a LEARNING ROADMAP. You MUST follow these rules EXACTLY.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1: PREREQUISITE CHAIN ANALYSIS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-For EVERY course in the data, ask yourself this ONE question:
-"What must a student ALREADY KNOW before starting this course?"
-
-Based on your answer, assign a phase:
-
-🟢 PHASE 1 — Courses where the student needs ZERO or MINIMAL prior technical knowledge:
-   → Language basics, introductions, "from scratch" courses, comprehensive diplomas
-   → Courses whose prerequisites are only: basic computer usage
-
-🟡 PHASE 2 — Courses that REQUIRE Phase 1 knowledge to understand:
-   → Frameworks (they require knowing the base language FIRST!)
-   → Libraries, specialized tools, applied projects
-   → Courses whose prerequisites include: a programming language, design basics, etc.
-
-🔴 PHASE 3 — Courses that REQUIRE Phase 1 + Phase 2 knowledge:
-   → Security topics (require understanding what you are securing)
-   → Testing (requires knowing what you are testing)
-   → Advanced optimization, architecture, DevOps
-   → AI/ML applied projects (require programming + math basics)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2: MANDATORY RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📌 RULE 1 — PREREQUISITE CHAIN (most important rule!):
-   Think about it logically:
-   → To use a Framework, you MUST know the base language first
-   → To do Security testing, you MUST understand systems first
-   → To build AI apps, you MUST know programming first
-   → To do advanced design, you MUST know basic tools first
-   
-   ⛔ A course that REQUIRES prior knowledge can NEVER be in Phase 1!
-   ⛔ Ask: "Can a complete beginner with ZERO knowledge start this course?" 
-      If NO → it's NOT Phase 1!
-   
-   🔄 IF no true beginner courses exist in the data:
-   → Name Phase 1 "ابدأ من هنا" (NOT "الأساسيات")
-   → Add a note: recommend learning basics from free resources first
-   → Put the LEAST demanding courses in Phase 1
-
-📌 RULE 2 — NO COMPETING ALTERNATIVES:
-   If two or more courses teach tools that serve the SAME PURPOSE:
-   → Include ONLY ONE! Pick the most popular/beginner-friendly one.
-   → You may briefly mention why you chose it.
-   
-   How to detect alternatives — ask: "Would a professional typically use BOTH of these, or choose ONE?"
-   → If choose one → they are alternatives → pick one only!
-   → If use both → they are complementary → include both
-
-   🔴🔴🔴 COMMON ALTERNATIVES (memorize these!):
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   | Category        | Alternatives (PICK ONE!)         | Recommended      |
-   |-----------------|----------------------------------|------------------|
-   | Backend Lang    | PHP vs ASP.Net vs Python/Django  | PHP (most common)|
-   | Frontend FW     | React vs Angular vs Vue          | React (most jobs)|
-   | Mobile          | Flutter vs React Native vs Swift | Flutter or RN    |
-   | CSS Framework   | Bootstrap vs Tailwind            | Bootstrap        |
-   | Database        | MySQL vs PostgreSQL vs MongoDB   | Pick ONE SQL     |
-   | CMS             | WordPress vs Drupal vs Joomla    | WordPress        |
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   
-   ⛔ If you see PHP AND ASP.Net in the data → PICK ONE ONLY!
-   ⛔ If you see React AND Angular in the data → PICK ONE ONLY!
-   ⛔ NEVER include both alternatives "just in case"!
-
-📌 RULE 3 — NO DESCRIPTIONS IN MESSAGE:
-   ❌ Do NOT write what each course teaches!
-   ❌ Do NOT explain course content!
-   ✅ Course cards will appear BELOW your message with full details automatically.
-   ✅ Write ONLY the course NAME under each phase.
-   ✅ Keep the entire message SHORT and clean.
-
-📌 RULE 4 — MISSING TOPICS:
-   If the user mentioned a topic but NO course exists for it:
-   → Mention it with ⚠️
-   → Say it's not available yet on the platform
-
-📌 RULE 5 — relevant_course_indices ORDER:
-   🔴🔴🔴 THIS IS CRITICAL! 🔴🔴🔴
-   Return relevant_course_indices in ROADMAP PHASE ORDER:
-   → Phase 1 course indices FIRST
-   → Then Phase 2 indices
-   → Then Phase 3 indices LAST
-   
-   THIS ORDER CONTROLS THE CARD DISPLAY ORDER!
-   Wrong order = cards appear in wrong order = confused student!
-
-📌 RULE 6 — FLEXIBLE PHASES:
-   → 1-2 courses total? → 1 phase only
-   → 3-5 courses? → 2 phases maximum
-   → 6+ courses? → 2-3 phases
-   → NEVER create an empty phase!
-
-📌 RULE 7 — USER LEVEL:
-   → "مبتدئ"/"من الصفر" → Start from Phase 1, include easiest content
-   → "متوسط" → Can skip Phase 1 basics
-   → "متقدم" → Focus on Phase 2-3
-
-📌 RULE 8 — RELEVANCE (MOST IMPORTANT RULE!):
-   For EACH course, ask: "Is this a CORE skill for the specific path the user described?"
-   
-   ⚠️ Matching a KEYWORD ≠ being RELEVANT!
-   Examples of WRONG inclusions:
-   → User says "Full Stack Web" → "Go programming" matches "programming" but Go is NOT a standard Full Stack technology → EXCLUDE
-   → User says "AI in web development" → "ComfyUI for AI images" matches "AI" but is NOT web development → EXCLUDE  
-   → User says "web developer" → "Blockchain with Solidity" matches "programming" but is NOT web development → EXCLUDE
-   → User says "mobile apps" → "Oracle ADF" matches "programming" but is NOT mobile development → EXCLUDE
-   → User says "Full Stack" → "25 ways to profit from AI" matches "AI" but is NOT a technical skill → EXCLUDE
-   
-   The professional test: "Would a career advisor include THIS course in a [user's specific goal] learning plan?"
-   → If the answer isn't a confident YES → EXCLUDE IT!
-   → 3-4 truly relevant courses >>> 8 loosely related courses
-   
-   ⛔ NEVER pad the roadmap with loosely related courses just to fill phases!
-   ⛔ If only 3 courses are truly relevant, return 3! Empty Phase 3 is better than wrong Phase 3!
-   ⛔ "This course has the word 'programming' in it" is NOT a reason to include it!
-
-📌 RULE 10 — MAXIMUM COURSES:
-   → Total courses + diplomas COMBINED should be 4-8 maximum
-   → If user asked about 1 topic (e.g. "Full Stack") → max 5-6 items total
-   → If user asked about multiple topics → max 8 items total
-   → NEVER return more items just because they exist in the data!
-   → Quality over quantity ALWAYS!
-
-📌 RULE 9 — SELF-CHECK BEFORE RESPONDING:
-   Before finalizing, verify EACH course placement:
-   □ "Can a complete beginner start this course?" → If NO → NOT Phase 1
-   □ "Does this course require another course as prerequisite?" → If YES → later phase
-   □ "Is there another course in my list that does the same thing?" → If YES → remove one
-   □ "Is this course relevant to what the user asked?" → If NO → remove it
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⛔ FINAL ABSOLUTE FILTER — DO THIS LAST!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-After building your roadmap, go through EVERY course ONE LAST TIME.
-
-For each course, say this sentence out loud:
-"A professional [USER'S SPECIFIC GOAL] developer uses [COURSE TOPIC] daily at work."
-
-If the sentence sounds WRONG → DELETE THE COURSE IMMEDIATELY!
-
-🚫 HARD-BANNED combinations (no exceptions!):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-| User wants         | NEVER include                              |
-|--------------------|--------------------------------------------|
-| Full Stack Web     | Blockchain, Solidity, Go, Rust, Flutter    |
-| Mobile Development | Oracle, ADF, Blockchain, DevOps            |
-| AI / ML            | Blockchain, Solidity, WordPress            |
-| Front-End only     | PHP, Node.js, databases                    |
-| Back-End only      | Figma, UI/UX, Photoshop                    |
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🧪 THE CAREER TEST:
-Go to LinkedIn, search "[user's goal] developer" jobs.
-→ Would THIS course appear in job requirements? 
-→ NO? → REMOVE IT!
-
-⚠️ FEWER RELEVANT COURSES = BETTER ROADMAP!
-3 perfect courses >>> 8 loosely related ones!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3: MESSAGE TEMPLATE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Use this structure (adapt phase names to context):
-
-🗺️ خارطة الطريق من الكورسات المتاحة على المنصة:
-
-🟢 المرحلة 1 — [phase name]:
-- [course name only — NO description!]
-
-🟡 المرحلة 2 — [phase name]:
-- [course name only]
-
-🔴 المرحلة 3 — [phase name]:
-- [course name only]
-
-⚠️ بخصوص [missing topics]: حالياً مش متاح على المنصة، بس بيتضاف محتوى جديد كل شهر!
-
-💡 [one short encouragement sentence] 🚀
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FINAL CHECKLIST:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-☐ Every course placement justified by prerequisite logic?
-☐ No course requiring prior knowledge in Phase 1?
-☐ No competing alternatives (same-purpose tools)?
-☐ No course descriptions in message text?
-☐ relevant_course_indices in phase order (1→2→3)?
-☐ Only relevant courses included?
-☐ No empty phases?
-${analysis._roadmapTopicCoverage ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 TOPIC COVERAGE (from search results):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${analysis._roadmapTopicCoverage}
-
-🔴 For EVERY topic marked ❌ above:
-→ You MUST mention it in your response with ⚠️
-→ Say: "حالياً مش متاح على المنصة، بس بيتضاف محتوى جديد كل شهر!"
-→ Do NOT invent courses for ❌ topics!
-→ Do NOT skip any ❌ topic — the user specifically asked about it!
-` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-═══════════════════════════════════════════════════════
-` : "";
-
-
 const adviseBlock = _isAdvisory ? `
 
 ═══ 🧠 وضع الاستشارة — إجباري ═══
@@ -3777,9 +3524,8 @@ const adviseBlock = _isAdvisory ? `
 ❌ ممنوع تعرض الكورسات من غير ترتيب أو مقارنة حسب طلبه` : "";
 
 const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
-${botInstructions ? `\n═══ ⚙️ تعليمات الأدمن — أعلى أولوية! ═══\n${botInstructions}\n═══ نهاية تعليمات الأدمن ═══\n` : ''}
 
-الرسالة: "${message}"${userLevelBlock}${roadmapBlock}${adviseBlock}
+الرسالة: "${message}"${userLevelBlock}${adviseBlock}
 
 ═══ البيانات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
@@ -3868,15 +3614,7 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
   "has_exact_match": true/false,
   "suggestion": ""
 }
-ممنوع أسعار | ممنوع اختراع كورسات | أقصى ${_isRoadmap ? '8 كورسات + 3 دبلومات (roadmap)' : '3 كورسات + 2 دبلومات'}
-
-
-═══ 🔴 قاعدة المصداقية ═══
-- لو relevant_course_indices فاضية [] → ❌ ممنوع تقول "رشحتهالك" أو "دي أبرز الكورسات" أو "شوف الكورسات دي"
-- لو فاضية → قول بصراحة: "حالياً مفيش كورسات متخصصة عن [الموضوع] على المنصة"
-- لو فيها كورسات بس مش بالظبط اللي المستخدم طلبه → قول: "مفيش كورس متخصص بس دي أقرب حاجة متاحة:"
-- ❌ ممنوع نهائياً تدّي المستخدم أمل كاذب بكورسات مش موجودة!
-
+ممنوع أسعار | ممنوع اختراع كورسات | أقصى 3 كورسات + 2 دبلومات
 
 ═══ 🔴🔴🔴 قاعدة الرد الأهم ═══
 الـ message لازم يكون مقدمة قصيرة فقط (سطر أو اتنين).
@@ -4226,7 +3964,7 @@ function isWordBoundaryMatch(textNorm, term) {
 }
 
 
-function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null, isRoadmap = false) {
+function scoreAndRankCourses(courses, termsToSearch, analysisSearchTerms, userLevel = null) {
   if (!courses || courses.length === 0) return;
 
   const stripPrefix = (w) => normalizeArabic(w.toLowerCase())
@@ -4628,11 +4366,9 @@ if (courses.length > 0) {
     const topScore = courses[0].relevanceScore || 0;
     const hasTitleMatch = courses.some(c => c._titleMatch);
     // 🔧 FIX: Dynamic threshold — strict when title matches exist, lenient otherwise
-const minRelevantScore = isRoadmap
-        ? Math.max(30, topScore * 0.02)
-        : hasTitleMatch
-            ? Math.max(400, topScore * 0.3)
-            : Math.max(50, topScore * 0.3);
+    const minRelevantScore = hasTitleMatch
+        ? Math.max(400, topScore * 0.3)
+        : Math.max(50, topScore * 0.3);
     const beforeCount = courses.length;
 for (let i = courses.length - 1; i >= 0; i--) {
 if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMatch && !courses[i]._lessonMatch && !courses[i]._chunkMatch) {
@@ -6084,48 +5820,6 @@ const analysis = await analyzeMessage(
     _faqsForContext
   );
 
-
-// 🆕 FIX: Roadmap safety net — prevent CHAT with generic roadmap
-  // If analyzer returned CHAT with numbered steps (generic roadmap) but has search_terms → force SEARCH
-  if (analysis.action === "CHAT" && analysis.response_message) {
-    const _rmNorm = normalizeArabic((analysis.response_message || '').toLowerCase());
-    const _hasNumberedSteps = /\d\.\s/.test(analysis.response_message) && 
-      (analysis.response_message.match(/\d\.\s/g) || []).length >= 3;
-    const _hasRoadmapWords = /(اساسيات|frontend|backend|مرحل|خطو|ابدأ\s*ب|تعلم\s*اساسيات)/i.test(_rmNorm);
-    
-    if (_hasNumberedSteps && _hasRoadmapWords) {
-      console.log(`🗺️ Roadmap safety net: CHAT → SEARCH (detected generic roadmap in response_message)`);
-      analysis.action = "SEARCH";
-      analysis.is_roadmap_request = true;
-      analysis.response_message = ""; // مسح الرد العام — هيتبني من كورسات فعلية
-      
-      // Ensure search terms exist
-      if (!analysis.search_terms || analysis.search_terms.length === 0) {
-        // Extract topics from the generic roadmap
-        const _topicPatterns = [
-          /برمج/i, /program/i, /frontend/i, /backend/i, /تصميم/i, /design/i,
-          /تسويق/i, /market/i, /ذكاء/i, /ai/i, /devops/i, /security/i, /أمن/i
-        ];
-        const _extractedTopics = [];
-        for (const p of _topicPatterns) {
-          if (p.test(enrichedMessage)) {
-            _extractedTopics.push(p.source.replace(/\\/g, '').replace(/\/i/g, ''));
-          }
-        }
-        if (_extractedTopics.length > 0) {
-          analysis.search_terms = _extractedTopics;
-        } else {
-          // Fallback: use words from message
-          analysis.search_terms = enrichedMessage.split(/\s+/)
-            .filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w.toLowerCase()))
-            .slice(0, 5);
-        }
-        console.log(`🗺️ Roadmap extracted terms: [${analysis.search_terms.join(', ')}]`);
-      }
-    }
-  }
-
-
 // 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
 // For everything else, GPT's analysis wins — it understands context
 if (quickCheck && quickCheck.confidence >= 0.9) {
@@ -6754,59 +6448,6 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
     courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
 
-    // ═══════════════════════════════════════════════════════════
-    // 🆕 ROADMAP: Supplementary batch search
-    // Problem: searchCourses caps at 8 terms → topics like AI/Security get cut
-    // Fix: For roadmap with 7+ terms, search remaining terms in batches
-    // Safe: only runs for roadmap, only ADDS courses, never removes
-    // ═══════════════════════════════════════════════════════════
-    if (analysis.is_roadmap_request && termsToSearch.length > 6) {
-      const _existingIds = new Set(courses.map(c => c.id));
-      const _existingDipIds = new Set(diplomas.map(d => d.id));
-      const ROADMAP_BATCH = 6;
-      
-      // The initial searchCourses only used first ~8 terms (internal limit)
-      // Search remaining terms in batches to cover all user topics
-      for (let _bi = ROADMAP_BATCH; _bi < termsToSearch.length; _bi += ROADMAP_BATCH) {
-        const _batch = termsToSearch.slice(_bi, _bi + ROADMAP_BATCH);
-        if (_batch.length === 0) break;
-        
-        try {
-          const [_batchCourses, _batchDiplomas] = await Promise.all([
-            searchCourses(_batch, [], null),
-            searchDiplomas(_batch),
-          ]);
-          
-          let _addedC = 0;
-          for (const c of _batchCourses) {
-            if (!_existingIds.has(c.id)) {
-              courses.push(c);
-              _existingIds.add(c.id);
-              _addedC++;
-            }
-          }
-          
-          for (const d of _batchDiplomas) {
-            if (!_existingDipIds.has(d.id)) {
-              diplomas.push(d);
-              _existingDipIds.add(d.id);
-            }
-          }
-          
-          if (_addedC > 0) {
-            console.log(`🗺️ Roadmap batch [${_batch.join(', ')}] → +${_addedC} courses`);
-          }
-        } catch (_batchErr) {
-          console.error(`🗺️ Roadmap batch error:`, _batchErr.message);
-        }
-      }
-      
-      // Re-sort after adding supplementary results
-      courses.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-      console.log(`🗺️ Roadmap total after supplementary: ${courses.length} courses, ${diplomas.length} diplomas`);
-    }
-
-
 // 🆕 FIX: Chunk content fallback — when normal search finds 0 courses
     // Searches inside lesson transcripts (chunks) for the topic
     if (courses.length === 0 && diplomas.length === 0 && supabase) {
@@ -6899,12 +6540,11 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 
 
   // ═══ Unified Scoring (ONE pass, ONE sort) ═══
-scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level, !!analysis.is_roadmap_request);
+scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level);
 
 // 🆕 Course-level priority: لو لقينا كورسات بالعنوان/الوصف → شيل الكورسات اللي جت من الشانكس بس
 // ده بيضمن إن "عاوز كل كورسات excel" يعرض كورسات الاكسيل الأول
 // ولو مفيش كورس بالاسم → ساعتها الشانكس تشتغل عادي
-if (!analysis.is_roadmap_request) {
 {
     const _titleMatchedCourses = courses.filter(c => c._titleMatch === true);
     if (_titleMatchedCourses.length >= 1) {
@@ -6923,32 +6563,7 @@ if (!analysis.is_roadmap_request) {
         }
     }
 }
-}
 
-// ═══ Unified Scoring (ONE pass, ONE sort) ═══
-scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user_level, !!analysis.is_roadmap_request);
-
-// ═══ 🆕 ROADMAP: Domain diversity — prevent one topic from dominating ═══
-if (analysis.is_roadmap_request && courses.length > 5) {
-  const _domainTracker = {};
-  // courses are already sorted by _score (highest first)
-  courses.forEach(c => {
-    const _d = (c.domain || c.category_name || 'other');
-    _domainTracker[_d] = (_domainTracker[_d] || 0) + 1;
-    
-    // 3rd+ course from same domain → cap its score
-    if (_domainTracker[_d] > 2) {
-      const _oldScore = c._score || 0;
-      c._score = Math.min(_oldScore, 200);
-      if (c.relevanceScore) c.relevanceScore = c._score;
-      console.log(`🗺️ Roadmap diversity: capped "${c.title}" [${_d}] ${_oldScore} → ${c._score}`);
-    }
-  });
-  
-  // Re-sort after capping
-  courses.sort((a, b) => (b._score || 0) - (a._score || 0));
-  console.log(`🗺️ Roadmap diversity applied: ${Object.keys(_domainTracker).length} domains`);
-}
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 SAFE Relevance Gate v2
@@ -7017,7 +6632,7 @@ const _gateIntentWords = new Set([
   console.log(`   Search term words: [${_gateAllSearchWords.join(', ')}]`);
 
   // === Only activate for 2+ topic words in original message ===
-if (_gateMsgTopicWords.length >= 2 && courses.length > 0 && !analysis.is_roadmap_request) {
+  if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
     const _gateBeforeCount = courses.length;
 
 
@@ -7283,10 +6898,8 @@ if (_corrWithReply) {
 
 
 const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) : null;
-if (!analysis.is_roadmap_request) {
     courses = applyQualityFilters(courses);
-}
-console.log(`📊 After filters: ${courses.length} courses`);
+    console.log(`📊 After filters: ${courses.length} courses`);
 
 // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #93: Follow-up "في حاجة تانية" — no new alternatives
@@ -7378,96 +6991,8 @@ const instructors = _searchInstructors;
         ? answerFromChunksOrKnowledge(message, termsToSearch)
         : Promise.resolve(null);
 
-// ═══════════════════════════════════════════════════════════
-      // 🆕 ROADMAP: Build topic coverage for GPT
-      // Tells GPT which topics have matching courses and which don't
-      // So GPT can properly report missing topics with ⚠️ (Rule 4)
-      // ═══════════════════════════════════════════════════════════
-      let _roadmapTopicCoverage = "";
-      if (analysis.is_roadmap_request && termsToSearch.length > 3) {
-        const _skipWords = new Set([
-          'دبلومة', 'دبلوم', 'كورس', 'كورسات', 'دوره', 'دورة', 'دورات',
-          'تعلم', 'اتعلم', 'أساسيات', 'اساسيات', 'برمجة', 'programming',
-          'عايز', 'عاوز', 'محتاج', 'من', 'الصفر', 'مبتدئ',
-        ]);
-        
-        const _topicTerms = termsToSearch.filter(t => {
-          const nt = normalizeArabic(t.toLowerCase());
-          return nt.length > 2 && !_skipWords.has(nt) && !BASIC_STOP_WORDS.has(t.toLowerCase());
-        });
-        
-const _coverageLines = [];
-
-// Helper: strip ال prefix from each word for tolerant matching
-const _stripAlFromWords = (text) => {
-  return text.split(/\s+/).map(w => {
-    const nw = normalizeArabic(w);
-    if (nw.startsWith('ال') && nw.length > 3) return nw.substring(2);
-    return nw;
-  }).join(' ');
-};
-
-for (const t of _topicTerms) {
-  const nt = normalizeArabic(t.toLowerCase());
-  const tLower = t.toLowerCase();
-  const ntStripped = _stripAlFromWords(nt);
-  // Individual words from term (for word-level matching)
-  const ntWords = nt.split(/\s+/).filter(w => w.length > 2);
-  const ntWordsStripped = ntWords.map(w => {
-    const nw = normalizeArabic(w);
-    return nw.startsWith('ال') && nw.length > 3 ? nw.substring(2) : nw;
-  });
-
-  const found = courses.some(c => {
-    const cTitle = normalizeArabic((c.title || '').toLowerCase());
-    const cTitleRaw = (c.title || '').toLowerCase();
-    const cSub = normalizeArabic((c.subtitle || '').toLowerCase());
-    const cDomain = normalizeArabic((c.domain || '').toLowerCase());
-    const cKeywords = normalizeArabic((c.keywords || '').toLowerCase());
-    const cDesc = normalizeArabic(((c.description || '').replace(/<[^>]*>/g, '')).toLowerCase());
-const cSyllabus = normalizeArabic(((c.syllabus || '').replace(/<[^>]*>/g, '')).toLowerCase());
-const cObjectives = normalizeArabic(((c.objectives || '').replace(/<[^>]*>/g, '')).toLowerCase());
-const cAll = cTitle + ' ' + cSub + ' ' + cDomain + ' ' + cKeywords + ' ' + cDesc + ' ' + cSyllabus + ' ' + cObjectives;
-    const cAllStripped = _stripAlFromWords(cAll);
-
-    // Check 1: Direct substring (existing logic)
-    if (cTitle.includes(nt) || cTitleRaw.includes(tLower)) return true;
-    if (cSub.includes(nt) || cDomain.includes(nt) || cKeywords.includes(nt)) return true;
-
-// Check 2: English case-insensitive in all raw fields
-if (/^[a-zA-Z\s\/\-]+$/.test(t)) {
-  const rawAll = ((c.title || '') + ' ' + (c.subtitle || '') + ' ' + (c.keywords || '') + ' ' + (c.domain || '')).toLowerCase();
-  if (rawAll.includes(tLower)) return true;
-}
-
-    // Check 3: ال-tolerant matching (strip ال from both sides)
-    if (ntStripped.length > 2 && cAllStripped.includes(ntStripped)) return true;
-
-    // Check 4: All individual words present (handles "ذكاء اصطناعي" vs "الذكاء الاصطناعي")
-    if (ntWordsStripped.length >= 1) {
-      const allWordsFound = ntWordsStripped.every(w => 
-        w.length > 2 && cAllStripped.includes(w)
-      );
-      if (allWordsFound) return true;
-    }
-
-    return false;
-  });
-  _coverageLines.push(`${t}: ${found ? '✅ موجود' : '❌ مش موجود'}`);
-}
-        
-        _roadmapTopicCoverage = _coverageLines.join('\n');
-        console.log(`🗺️ Topic coverage:\n${_roadmapTopicCoverage}`);
-        
-        // Attach to analysis for the recommender to use
-        analysis._roadmapTopicCoverage = _roadmapTopicCoverage;
-      }
-
       // Phase 2: Smart Recommendation (runs in parallel with question answer)
-
-
-      // Phase 2: Smart Recommendation (runs in parallel with question answer)
-const [recommendation, questionAnswer] = await Promise.all([
+      const [recommendation, questionAnswer] = await Promise.all([
         generateSmartRecommendation(
 	message,
           courses,
@@ -7475,11 +7000,11 @@ const [recommendation, questionAnswer] = await Promise.all([
           sessionMem,
           analysis,
           instructors,
-          phase2Model,
-          botInstructions
+          phase2Model
         ),
         questionAnswerPromise,
       ]);
+
 
 // 🆕 FIX: SEARCH-QUESTION — chunk-derived courses are the CORRECT courses
       if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
@@ -7535,28 +7060,6 @@ const [recommendation, questionAnswer] = await Promise.all([
         .filter((i) => i >= 0 && i < diplomas.length)
         .map((i) => diplomas[i]);
 
-
-// 🗺️ Roadmap mode: GPT's selection is preferred, but with safety net
-const _gptRoadmapTotal = (
-  recommendation.relevantCourseIndices.filter(i => i >= 0 && i < courses.length).length +
-  recommendation.relevantDiplomaIndices.filter(i => i >= 0 && i < diplomas.length).length
-);
-
-// Only skip force-includes if GPT selected enough items (4+)
-// If GPT selected too few, force-include topic-matched items
-const _skipForceInclude = analysis.is_roadmap_request && _gptRoadmapTotal >= 4;
-
-if (analysis.is_roadmap_request) {
-  if (_skipForceInclude) {
-    console.log(`🗺️ Roadmap: GPT selected ${_gptRoadmapTotal} items — sufficient, skipping force-includes`);
-  } else {
-    console.log(`🗺️ Roadmap: GPT selected only ${_gptRoadmapTotal} items (min: 4) — force-includes ENABLED`);
-  }
-}
-      if (_skipForceInclude) {
-        console.log(`🗺️ Roadmap: GPT selected ${relevantCourses.length} courses + ${relevantDiplomas.length} diplomas — skipping ALL force-includes`);
-      }
-
 // ✅ Diploma filtering merged into generateSmartRecommendation (saves 1 GPT call)
 
 // === FIX: Force-include high-score diplomas (like titleMatch for courses) ===
@@ -7602,7 +7105,6 @@ if (diplomas.length > 0 && relevantDiplomas.length < 2) {
       );
 
 // 🆕 FIX #63+#68: Must-show courses with title match (respects beginner level)
-if (!_skipForceInclude) {
 let titleMatchMustShow = courses.filter(c => {
   if (relevantCourses.find(rc => rc.id === c.id)) return false;
   return c._titleMatch === true;
@@ -7633,13 +7135,11 @@ for (const tmc of titleMatchMustShow.slice(0, 3)) {
         relevantCourses.unshift(tmc);
         console.log("FIX63 Must-show title-match added:", tmc.title);
       }
-} else {
-  console.log(`🗺️ Roadmap: skipped titleMatchMustShow force-include`);
-}
 
 
 // 🆕 FIX: Force-include ALL titleMatch courses (even if RAG missed them)
-if (!_skipForceInclude) {
+      // This catches courses like "الفوتوشوب المعماري" that have titleMatch 
+      // but RAG didn't select
 const allProtectedMatched = courses.filter(c => c._titleMatch === true);
 
       for (const tm of allProtectedMatched) {
@@ -7652,14 +7152,6 @@ const allProtectedMatched = courses.filter(c => c._titleMatch === true);
               continue;
             }
           }
-
-// 🆕 Skip freelance/unrelated courses
-      const tmLower = normalizeArabic((tm.title || "").toLowerCase());
-      if (/عمل حر|فريلانس|freelanc/.test(tmLower)) {
-        console.log(`🗺️ Skipping freelance: "${tm.title}"`);
-        continue;
-      }
-
 if (_gptExcludedIds.has(tm.id)) {
             console.log(`🤖 Skipping GPT-excluded force-include: "${tm.title}"`);
             continue;
@@ -7668,48 +7160,6 @@ if (_gptExcludedIds.has(tm.id)) {
           console.log(`🆕 Force-include protected: "${tm.title}" (${tm._titleMatch ? 'titleMatch' : 'lessonMatch'})`);
         }
       }
-} else {
-  console.log(`🗺️ Roadmap: skipped allProtectedMatched force-include`);
-}
-
-// 🆕 فلتر: اعرض بس الكورسات اللي GPT ذكرها في الرودماب
-// Only apply if GPT selected enough items (safety net allows force-includes otherwise)
-if (_skipForceInclude && analysis.is_roadmap_request) {
-  const replyLow = normalizeArabic((recommendationMessage || "").toLowerCase());
-  const beforeHiddenFilter = relevantCourses.length;
-  
-  relevantCourses = relevantCourses.filter(c => {
-    const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-    const words = titleNorm.split(/\s+/).filter(w => w.length >= 3);
-    if (words.length === 0) return true;
-    
-    // Strip ال from words for tolerant matching
-    const wordsStripped = words.map(w => 
-      w.startsWith('ال') && w.length > 3 ? w.substring(2) : w
-    );
-    
-    let hits = 0;
-    for (const w of wordsStripped) {
-      if (replyLow.includes(w)) hits++;
-    }
-    
-    // More lenient: 20% word match instead of 30%
-    if (hits / wordsStripped.length < 0.2) {
-      console.log(`🚫 Hidden card: "${c.title}" (${hits}/${wordsStripped.length} words)`);
-      return false;
-    }
-    return true;
-  });
-  
-  // Safety: if hidden filter removed ALL courses, restore them
-  if (relevantCourses.length === 0 && beforeHiddenFilter > 0) {
-    console.log(`⚠️ Hidden card filter removed ALL ${beforeHiddenFilter} courses — restoring top 4`);
-    relevantCourses = recommendation.relevantCourseIndices
-      .filter(i => i >= 0 && i < courses.length)
-      .map(i => courses[i])
-      .slice(0, 4);
-  }
-}
 
       // 🆕 FIX #62: Fallback
 
@@ -7812,7 +7262,7 @@ const _topicRelevant = courses.filter(c => {
       }
 
 // 🆕 FIX #99: Re-add ALL saved titleMatch courses that got lost in filtering
-if (!_skipForceInclude && savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
+if (savedTitleMatchCourses && savedTitleMatchCourses.length > 0) {
 for (const stm of savedTitleMatchCourses) {
           // 🆕 Skip if titleMatch was revoked by Relevance Gate
           if (!stm._titleMatch) {
@@ -7834,18 +7284,11 @@ for (const stm of savedTitleMatchCourses) {
       }
 
 
-// Ensure must-show courses are included
-      if (analysis.is_roadmap_request) {
-        // 🗺️ Roadmap mode: PRESERVE GPT's phase order!
-        // GPT returned relevant_course_indices in roadmap order (Phase 1 → 2 → 3)
-        // Re-sorting by relevanceScore would DESTROY this carefully planned order!
-        console.log(`🗺️ Roadmap mode: preserving GPT phase order for ${relevantCourses.length} courses (NOT re-sorting)`);
-      } else {
-        // Normal mode: sort by relevance score (highest first)
-        relevantCourses.sort(
-          (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
-        );
-      }
+      // Ensure must-show courses are included
+      relevantCourses.sort(
+        (a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)
+      );
+
 
 
 
@@ -7864,9 +7307,8 @@ for (const stm of savedTitleMatchCourses) {
         reply = recommendationMessage + "<br><br>";
       }
 
-if (relevantDiplomas.length > 0) {
-        const _maxDiplomas = analysis.is_roadmap_request ? 4 : 3;
-        relevantDiplomas.slice(0, _maxDiplomas).forEach((d) => {
+      if (relevantDiplomas.length > 0) {
+        relevantDiplomas.slice(0, 3).forEach((d) => {
           reply += formatDiplomaCard(d);
         });
       }
@@ -7874,8 +7316,7 @@ if (relevantDiplomas.length > 0) {
 if (relevantCourses.length > 0) {
         await injectInstructorNames(relevantCourses);
         const _rcInstructors = await getInstructors();
-        const _maxCards = analysis.is_roadmap_request ? 8 : 5;
-        relevantCourses.slice(0, _maxCards).forEach((c, i) => {
+        relevantCourses.slice(0, 5).forEach((c, i) => {
           reply += formatCourseCard(c, _rcInstructors, i + 1);
         });
       }
