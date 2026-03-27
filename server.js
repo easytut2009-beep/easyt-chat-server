@@ -3659,6 +3659,35 @@ STEP 2: MANDATORY RULES
    □ "Does this course require another course as prerequisite?" → If YES → later phase
    □ "Is there another course in my list that does the same thing?" → If YES → remove one
    □ "Is this course relevant to what the user asked?" → If NO → remove it
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⛔ FINAL ABSOLUTE FILTER — DO THIS LAST!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After building your roadmap, go through EVERY course ONE LAST TIME.
+
+For each course, say this sentence out loud:
+"A professional [USER'S SPECIFIC GOAL] developer uses [COURSE TOPIC] daily at work."
+
+If the sentence sounds WRONG → DELETE THE COURSE IMMEDIATELY!
+
+🚫 HARD-BANNED combinations (no exceptions!):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+| User wants         | NEVER include                              |
+|--------------------|--------------------------------------------|
+| Full Stack Web     | Blockchain, Solidity, Go, Rust, Flutter    |
+| Mobile Development | Oracle, ADF, Blockchain, DevOps            |
+| AI / ML            | Blockchain, Solidity, WordPress            |
+| Front-End only     | PHP, Node.js, databases                    |
+| Back-End only      | Figma, UI/UX, Photoshop                    |
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🧪 THE CAREER TEST:
+Go to LinkedIn, search "[user's goal] developer" jobs.
+→ Would THIS course appear in job requirements? 
+→ NO? → REMOVE IT!
+
+⚠️ FEWER RELEVANT COURSES = BETTER ROADMAP!
+3 perfect courses >>> 8 loosely related ones!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3: MESSAGE TEMPLATE
@@ -7431,7 +7460,7 @@ if (_gptExcludedIds.has(tm.id)) {
         if (words.length === 0) return true;
         let hits = 0;
         for (const w of words) { if (replyLow.includes(w)) hits++; }
-        if (hits / words.length < 0.5) {
+        if (hits / words.length < 0.3) {
           console.log(`🚫 Hidden card: "${c.title}"`);
           return false;
         }
