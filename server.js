@@ -2580,7 +2580,27 @@ detected_category لازم يكون اسم قسم بالظبط من القائم
 ═══ المطلوب ═══
 
 حلل الرسالة → JSON فقط:
-{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false}
+{"action":"SEARCH|CLARIFY|SUBSCRIPTION|CATEGORIES|DIPLOMAS|CHAT|SUPPORT","detected_category":"أقرب قسم من القائمة فوق يناسب الموضوع (لازم يكون اسم قسم من القائمة مش اسم أداة أو برنامج) أو null","parent_field":"المجال الأم للموضوع — يتستخدم لمطابقة الدبلومات الشاملة. مثال: media buying→تسويق إلكتروني | SEO→تسويق إلكتروني | React→برمجة مواقع | فوتوشوب→تصميم جرافيك | Excel→أساسيات الكمبيوتر. لو الموضوع هو المجال نفسه→parent_field=نفس الكلمة. أو null لو مش SEARCH","user_intent":"FIND_COURSE|QUESTION|UNCLEAR","search_terms":["مصطلح1"],"response_message":"ردك لغير SEARCH","intent":"وصف","user_level":"مبتدئ|متوسط|متقدم|null","topics":["موضوع"],"is_follow_up":true/false,"follow_up_type":"CLARIFY|ALTERNATIVE|null","previous_topic_reference":null,"audience_filter":null,"language":"ar|en","is_popularity_search":false,"is_roadmap_request":false}
+
+═══ 🗺️ is_roadmap_request ═══
+true لما المستخدم يطلب خارطة طريق أو مسار تعليمي أو ترتيب كورسات أو "ابدأ منين" أو "ابدأ بإيه الأول" أو "رحلة تعلم" أو "خطة دراسة شاملة"
+أو لما يقول "عايز أكون Full Stack / مطور / مصمم..." ويطلب المسار الكامل
+
+⚠️ لما is_roadmap_request=true:
+→ action = "SEARCH" دايماً (❌ ممنوع CHAT!)
+→ response_message = "" (فاضي! الرد هيتبني من الكورسات الفعلية)
+→ search_terms = المجال الرئيسي + أهم التخصصات الفرعية (مثلاً: ["برمجة", "programming", "frontend", "backend", "javascript", "python", "أساسيات البرمجة", "دبلومة"])
+→ user_level = حدده من كلام المستخدم ("مبتدئ" لو قال "من الصفر")
+
+🔴🔴🔴 ممنوع نهائياً تكتب خطوات أو خارطة طريق عامة في response_message!
+🔴 ممنوع ترقّم خطوات (1. أساسيات 2. Frontend...) بدون كورسات فعلية!
+🔴 ممنوع response_message يكون فيه نصائح عامة — خلّيه فاضي!
+✅ الرد الصح هيتبني تلقائياً من الكورسات الفعلية اللي على المنصة
+
+أمثلة true: "عايز خارطة طريق Full Stack" / "ابدأ منين في البرمجة" / "مسار تعلم التصميم" / "عايز أكون مطور" / "رحلة من الصفر للاحتراف"
+أمثلة false: "عايز كورس فوتوشوب" (طلب كورس محدد) / "ازاي ادفع" (مش تعليمي)
+
+
 
 ═══ is_popularity_search ═══
 true لما المستخدم بيسأل عن أفضل/أقوى/أشهر/أكثر الكورسات مبيعاً أو طلباً على المنصة بشكل عام بدون ذكر مجال محدد.
@@ -3282,7 +3302,8 @@ detected_category: null,
         previous_topic_reference: null,
         audience_filter: null,
         language: "ar",
-        is_popularity_search: false,
+is_popularity_search: false,
+        is_roadmap_request: false,
       };
     }
 
@@ -3304,7 +3325,8 @@ follow_up_type: result.follow_up_type || null,
 
 audience_filter: result.audience_filter || null,
       language: result.language || "ar",
-      is_popularity_search: !!result.is_popularity_search,
+is_popularity_search: !!result.is_popularity_search,
+      is_roadmap_request: !!result.is_roadmap_request,
     };
 
 } catch (e) {
@@ -3420,7 +3442,8 @@ async function generateSmartRecommendation(
   sessionMem,
   analysis,
   instructors,
-  model = "gpt-4o"
+  model = "gpt-4o",
+  botInstructions = ""
 ) {
 const courseData = courses
     .slice(0, 10)
@@ -3506,6 +3529,46 @@ const userLevelBlock = analysis.user_level
 const _adviseRegex = /محتار|ابدا\s*ب|ابدأ\s*ب|انهي\s*فيهم|أنهي\s*فيهم|الفرق\s*بين|ليهم\s*علاق|لهم\s*علاق|العلاق[ةه]\s*بين|مرتبطين|مكملين|ايهم\s*افضل|ايهم\s*احسن|اختار\s*انهي|اختار\s*ايه|ترتيب|انهي\s*الاول|انهي\s*اول/;
 const _isAdvisory = _adviseRegex.test(normalizeArabic((message || "").toLowerCase()));
 
+
+// 🆕 Roadmap mode detection
+const _isRoadmap = !!analysis.is_roadmap_request;
+
+const roadmapBlock = _isRoadmap ? `
+
+═══ 🗺️ وضع خارطة الطريق — إجباري ═══
+المستخدم طلب مسار تعليمي / خارطة طريق. لازم تعمل الآتي:
+
+1️⃣ **رتّب الكورسات المتاحة بترتيب تعليمي منطقي** (أساسيات أولاً → متوسط → متقدم)
+2️⃣ **اعرض مراحل واضحة** — كل مرحلة تحتها الكورسات المتاحة
+3️⃣ **كن صريح** — لو فيه مجال المستخدم طلبه بس مفيش كورسات ليه → قول بوضوح "غير متاح حالياً"
+4️⃣ **قدّم الدبلومة أول حاجة** لو فيه دبلومة شاملة في المجال (مسار كامل أحسن من كورسات متفرقة)
+
+شكل الـ message المطلوب:
+
+"🗺️ خارطة الطريق المقترحة من الكورسات المتاحة على المنصة:
+
+🟢 المرحلة 1 — الأساسيات:
+[اختار الكورسات المناسبة من البيانات]
+
+🟡 المرحلة 2 — [التخصص]:
+[اختار الكورسات المناسبة]
+
+🔴 المرحلة 3 — [المتقدم]:
+[اختار الكورسات المناسبة]
+
+⚠️ بخصوص [المجالات الناقصة]: حالياً مفيش كورسات متاحة ليها على المنصة، بس بيتضاف محتوى جديد كل شهر!
+
+💡 ابدأ بالمرحلة الأولى وكمّل بالترتيب 🚀"
+
+🔴 القواعد:
+- relevant_course_indices = كل الكورسات المناسبة (مش 3 بس — ممكن لحد 8!)
+- لو مفيش كورس في مرحلة معينة → اذكر إنها مش متاحة حالياً
+- ❌ ممنوع تذكر كورس مش في البيانات
+- ❌ ممنوع تتجاهل مجالات المستخدم طلبها — اذكرها حتى لو مفيش كورسات ليها
+- ✅ شجّع المستخدم وقوله يبدأ بإيه
+` : "";
+
+
 const adviseBlock = _isAdvisory ? `
 
 ═══ 🧠 وضع الاستشارة — إجباري ═══
@@ -3524,8 +3587,9 @@ const adviseBlock = _isAdvisory ? `
 ❌ ممنوع تعرض الكورسات من غير ترتيب أو مقارنة حسب طلبه` : "";
 
 const systemPrompt = `أنت "زيكو" 🤖 — مستشار تعليمي ذكي في منصة easyT.
+${botInstructions ? `\n═══ ⚙️ تعليمات الأدمن — أعلى أولوية! ═══\n${botInstructions}\n═══ نهاية تعليمات الأدمن ═══\n` : ''}
 
-الرسالة: "${message}"${userLevelBlock}${adviseBlock}
+الرسالة: "${message}"${userLevelBlock}${roadmapBlock}${adviseBlock}
 
 ═══ البيانات المتاحة ═══
 ${JSON.stringify(allItems, null, 1)}
@@ -3614,7 +3678,15 @@ titleMatch=true → أولوية عالية (اسم الكورس عن الموض
   "has_exact_match": true/false,
   "suggestion": ""
 }
-ممنوع أسعار | ممنوع اختراع كورسات | أقصى 3 كورسات + 2 دبلومات
+ممنوع أسعار | ممنوع اختراع كورسات | أقصى ${_isRoadmap ? '8 كورسات + 3 دبلومات (roadmap)' : '3 كورسات + 2 دبلومات'}
+
+
+═══ 🔴 قاعدة المصداقية ═══
+- لو relevant_course_indices فاضية [] → ❌ ممنوع تقول "رشحتهالك" أو "دي أبرز الكورسات" أو "شوف الكورسات دي"
+- لو فاضية → قول بصراحة: "حالياً مفيش كورسات متخصصة عن [الموضوع] على المنصة"
+- لو فيها كورسات بس مش بالظبط اللي المستخدم طلبه → قول: "مفيش كورس متخصص بس دي أقرب حاجة متاحة:"
+- ❌ ممنوع نهائياً تدّي المستخدم أمل كاذب بكورسات مش موجودة!
+
 
 ═══ 🔴🔴🔴 قاعدة الرد الأهم ═══
 الـ message لازم يكون مقدمة قصيرة فقط (سطر أو اتنين).
@@ -5820,6 +5892,48 @@ const analysis = await analyzeMessage(
     _faqsForContext
   );
 
+
+// 🆕 FIX: Roadmap safety net — prevent CHAT with generic roadmap
+  // If analyzer returned CHAT with numbered steps (generic roadmap) but has search_terms → force SEARCH
+  if (analysis.action === "CHAT" && analysis.response_message) {
+    const _rmNorm = normalizeArabic((analysis.response_message || '').toLowerCase());
+    const _hasNumberedSteps = /\d\.\s/.test(analysis.response_message) && 
+      (analysis.response_message.match(/\d\.\s/g) || []).length >= 3;
+    const _hasRoadmapWords = /(اساسيات|frontend|backend|مرحل|خطو|ابدأ\s*ب|تعلم\s*اساسيات)/i.test(_rmNorm);
+    
+    if (_hasNumberedSteps && _hasRoadmapWords) {
+      console.log(`🗺️ Roadmap safety net: CHAT → SEARCH (detected generic roadmap in response_message)`);
+      analysis.action = "SEARCH";
+      analysis.is_roadmap_request = true;
+      analysis.response_message = ""; // مسح الرد العام — هيتبني من كورسات فعلية
+      
+      // Ensure search terms exist
+      if (!analysis.search_terms || analysis.search_terms.length === 0) {
+        // Extract topics from the generic roadmap
+        const _topicPatterns = [
+          /برمج/i, /program/i, /frontend/i, /backend/i, /تصميم/i, /design/i,
+          /تسويق/i, /market/i, /ذكاء/i, /ai/i, /devops/i, /security/i, /أمن/i
+        ];
+        const _extractedTopics = [];
+        for (const p of _topicPatterns) {
+          if (p.test(enrichedMessage)) {
+            _extractedTopics.push(p.source.replace(/\\/g, '').replace(/\/i/g, ''));
+          }
+        }
+        if (_extractedTopics.length > 0) {
+          analysis.search_terms = _extractedTopics;
+        } else {
+          // Fallback: use words from message
+          analysis.search_terms = enrichedMessage.split(/\s+/)
+            .filter(w => w.length > 3 && !BASIC_STOP_WORDS.has(w.toLowerCase()))
+            .slice(0, 5);
+        }
+        console.log(`🗺️ Roadmap extracted terms: [${analysis.search_terms.join(', ')}]`);
+      }
+    }
+  }
+
+
 // 🆕 FIX #61: quickCheck only overrides for trivial cases (greetings, pure payment)
 // For everything else, GPT's analysis wins — it understands context
 if (quickCheck && quickCheck.confidence >= 0.9) {
@@ -6992,7 +7106,7 @@ const instructors = _searchInstructors;
         : Promise.resolve(null);
 
       // Phase 2: Smart Recommendation (runs in parallel with question answer)
-      const [recommendation, questionAnswer] = await Promise.all([
+const [recommendation, questionAnswer] = await Promise.all([
         generateSmartRecommendation(
 	message,
           courses,
@@ -7000,11 +7114,11 @@ const instructors = _searchInstructors;
           sessionMem,
           analysis,
           instructors,
-          phase2Model
+          phase2Model,
+          botInstructions
         ),
         questionAnswerPromise,
       ]);
-
 
 // 🆕 FIX: SEARCH-QUESTION — chunk-derived courses are the CORRECT courses
       if (analysis.user_intent === "QUESTION" && questionAnswer && questionAnswer.relatedCourses && questionAnswer.relatedCourses.length > 0) {
@@ -7307,8 +7421,9 @@ for (const stm of savedTitleMatchCourses) {
         reply = recommendationMessage + "<br><br>";
       }
 
-      if (relevantDiplomas.length > 0) {
-        relevantDiplomas.slice(0, 3).forEach((d) => {
+if (relevantDiplomas.length > 0) {
+        const _maxDiplomas = analysis.is_roadmap_request ? 4 : 3;
+        relevantDiplomas.slice(0, _maxDiplomas).forEach((d) => {
           reply += formatDiplomaCard(d);
         });
       }
@@ -7316,7 +7431,8 @@ for (const stm of savedTitleMatchCourses) {
 if (relevantCourses.length > 0) {
         await injectInstructorNames(relevantCourses);
         const _rcInstructors = await getInstructors();
-        relevantCourses.slice(0, 5).forEach((c, i) => {
+        const _maxCards = analysis.is_roadmap_request ? 8 : 5;
+        relevantCourses.slice(0, _maxCards).forEach((c, i) => {
           reply += formatCourseCard(c, _rcInstructors, i + 1);
         });
       }
