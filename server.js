@@ -5586,8 +5586,6 @@ async function classifyDiplomaIntent(userMessage) {
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 Diploma Content Questions Handler (LLM-powered)
-// "الدبلومة فيها ايه" / "كورسات الدبلومة" / "ابدأ الدبلومة ازاي"
-// "الكورس ده في دبلومة ايه"
 // ═══════════════════════════════════════════════════════════
 {
   var _dcNorm = normalizeArabic(message.toLowerCase());
@@ -5667,6 +5665,18 @@ async function classifyDiplomaIntent(userMessage) {
           suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
         };
       }
+
+      // ══════════════════════════════════════════════════════
+      // 🔴 FIX: الدبلومة مش موجودة! يمكن LLM غلط والمستخدم
+      // كان بيسأل عن كورس مش دبلومة → نحوّل لـ COURSE_IN_DIPLOMA
+      // ══════════════════════════════════════════════════════
+      else {
+        console.log('📚 FIX: Diploma "' + _dcEntityName + '" not found. Redirecting to COURSE_IN_DIPLOMA...');
+        _classified.intent = 'COURSE_IN_DIPLOMA';
+        _classified.entity_name = _dcEntityName;
+        _classified.entity_type = 'course';
+        // ↓↓↓ هيكمّل على طول للـ Intent B تحت ↓↓↓
+      }
     }
 
     // ─── Intent B: COURSE_IN_DIPLOMA ───
@@ -5676,6 +5686,7 @@ async function classifyDiplomaIntent(userMessage) {
 
       var _dcEntityName2 = (_classified.entity_name || '').trim();
       var _dcFoundCourseId = null;
+      var _dcFoundCourseTitle = ''; // 🔴 FIX: track title early
 
       // Try LLM-extracted course name
       if (_dcEntityName2.length >= 2) {
@@ -5683,7 +5694,8 @@ async function classifyDiplomaIntent(userMessage) {
           var _dcSearchRes = await searchCourses([_dcEntityName2]);
           if (_dcSearchRes.length > 0) {
             _dcFoundCourseId = String(_dcSearchRes[0].id);
-            console.log('📚 Found course: "' + _dcSearchRes[0].title + '" (id=' + _dcFoundCourseId + ')');
+            _dcFoundCourseTitle = _dcSearchRes[0].title || '';
+            console.log('📚 Found course: "' + _dcFoundCourseTitle + '" (id=' + _dcFoundCourseId + ')');
           }
         } catch (_dce) { console.error("Course search error:", _dce.message); }
       }
@@ -5701,11 +5713,13 @@ async function classifyDiplomaIntent(userMessage) {
         var _dcMap = await loadDiplomaCourseMap();
         var _dcEntries = _dcMap.courseToD[String(_dcFoundCourseId)] || [];
 
-        var _dcCourseTitle = '';
-        try {
-          var _dcCRes = await supabase.from("courses").select("title").eq("id", _dcFoundCourseId).single();
-          if (_dcCRes.data) _dcCourseTitle = _dcCRes.data.title;
-        } catch (_dce2) {}
+        var _dcCourseTitle = _dcFoundCourseTitle;
+        if (!_dcCourseTitle) {
+          try {
+            var _dcCRes = await supabase.from("courses").select("title").eq("id", _dcFoundCourseId).single();
+            if (_dcCRes.data) _dcCourseTitle = _dcCRes.data.title;
+          } catch (_dce2) {}
+        }
 
         if (_dcEntries.length > 0) {
           var _dcBReply = '';
@@ -5743,6 +5757,25 @@ async function classifyDiplomaIntent(userMessage) {
             suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "📂 الأقسام"],
           };
         }
+      }
+
+      // ══════════════════════════════════════════════════════
+      // 🔴 FIX: الكورس مش موجود خالص → رسالة واضحة بدل السكوت
+      // ══════════════════════════════════════════════════════
+      else {
+        var _notFoundName = _dcEntityName2 || '';
+        var _nfReply = '🔍 ';
+        if (_notFoundName) {
+          _nfReply += 'دوّرت على "<strong>' + escapeHtml(_notFoundName) + '</strong>" بس مش لاقيه في الكورسات عندنا.<br><br>';
+          _nfReply += '💡 جرب تكتب الاسم بطريقة تانية، أو شوف كل الدبلومات المتاحة 👇';
+        } else {
+          _nfReply += 'مش واضح أنهي كورس تقصده. قولي اسم الكورس وهقولك في أنهي دبلومة 😊';
+        }
+        return {
+          reply: finalizeReply(_nfReply),
+          intent: "COURSE_IN_DIPLOMA",
+          suggestions: ["🎓 الدبلومات", "📂 الأقسام", "📞 تواصل معانا"],
+        };
       }
     }
 
