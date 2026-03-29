@@ -5413,18 +5413,16 @@ const _isSubContentQuestion = (() => {
   return false;
 })();
 
+
 // ✅ مشترك وبيسأل عن الدبلومات في الاشتراك
-const _isSubDiplomas = /(مشترك|اشتراك|اشتركت|اشترك).*(دبلوم|الدبلوم)/i.test(message)
-  || /(دبلوم|الدبلوم).*(اشتراك|مشترك|اشتركت|اشترك)/i.test(message)
-  || /(مشترك|اشتركت|اشترك).*(مش شايف|مش ظاهر|لا يظهر|مبيظهرش|فين|مش لاقي|مش لاقى)/i.test(message)
-  || /(مش كل|مش لاقي|مش لاقى|مش ظاهر).*(دور|كورس|دبلوم)/i.test(message)
-  || /(دور|كورس|دبلوم).*(مش ظاهر|مش موجود)/i.test(message)
+const _isSubDiplomas = /(مشترك|اشتراك).*(دبلوم|الدبلوم)/i.test(message)
+  || /(دبلوم|الدبلوم).*(اشتراك|مشترك)/i.test(message)
+  || /(مشترك).*(مش شايف|مش ظاهر|لا يظهر|مبيظهرش|فين)/i.test(message)
+  || /(مش كل|مش لاقي|مش ظاهر).*(دور|كورس)/i.test(message)
+  || /(دور|كورس).*(مش ظاهر|مش موجود)/i.test(message)
   || /(وصول كامل)/i.test(message);
 
-// 🚫 استثناء: لو بيسأل عن حجب أو سياسة → سيبه لـ GPT
-const _isPolicyQuestion = /(حجب|هتتحجب|يتحجب|هيتشال|مستقبل|طول مدة|طول فترة|دائم|مؤقت|هتفضل متاحة|سيكون حجب|بيشمل كل|فيه قيود)/i.test(message);
-
-if (_isSubDiplomas && !_isPolicyQuestion) {
+if (_isSubDiplomas) {
   console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
   let _subDipReply = `أهلاً بيك! 😊<br><br>`;
   _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
@@ -5443,6 +5441,7 @@ if (_isSubDiplomas && !_isPolicyQuestion) {
     suggestions: ["🎓 الدبلومات", "📞 تواصل معانا", "💰 تجديد الاشتراك"]
   };
 }
+
 
 // ✅ موعد الدعم أو خدمة العملاء
 const _isSupportSchedule = /موعد\s*(خدم[ةه]\s*العملاء|الدعم)/i.test(message)
