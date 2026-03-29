@@ -5423,51 +5423,61 @@ const _CONTENT = `دبلوم|دبلومه|دبلومة|دبلومات|الدبل
 
 const _NOTFOUND = `مش لاقي|مش لاقى|مش لاقيها|مش لاقيهم|مش لاقيه|ملقتش|مالقيتش|مبلاقيش|مش ظاهر|مش ظاهره|مش ظاهرة|مش ظاهرين|مبيظهرش|مبتظهرش|لا يظهر|لا تظهر|مش موجود|مش موجوده|مش موجودة|مش شايف|مش شايفها|مش شايفهم|مش شايفه|مبيبانش|مبانش|مش بتبان|مش باين|مش باينه|مش باينة|ماظهرش|ماظهروش|مظهرتش|مش متاح|مش متاحه|مش متاحة|مقفول|مقفوله|مقفولة|مش مفعل|مش مفعله|مش مفعلة|مفيش|محصلش|مش شغال|مش شغاله|مش شغالة|فين`;
 
-const _isSubDiplomas =
-  // 🔹 اشتراك + محتوى (أي ترتيب)
-  new RegExp(`(${_SUB}).*(${_CONTENT})`, 'i').test(message)
-  || new RegExp(`(${_CONTENT}).*(${_SUB})`, 'i').test(message)
+// ═══════════════════════════════════════════════════
+// 📚 أول حاجة: لو بيتكلم عن كتاب → سيبه لـ GPT فوراً
+// ═══════════════════════════════════════════════════
+const _isBookQuestion = /(كتاب|الكتاب|كتابي|الكتب|كتب|كتيب|الكتيب|أتوكاد)/i.test(message);
 
-  // 🔹 اشتراك + مش لاقي (بدون ذكر محتوى)
-  || new RegExp(`(${_SUB}).*(${_NOTFOUND})`, 'i').test(message)
+if (_isBookQuestion) {
+  console.log(`📚 Book question detected, skipping to GPT: "${message}"`);
+  // مش بنعمل return - سيبه يعدي ويروح لـ GPT
+} else {
+  // ═══════════════════════════════════════════════════
+  // 🎓 لو مش كتاب → شوف لو بيسأل عن الدبلومات
+  // ═══════════════════════════════════════════════════
+  const _isSubDiplomas =
+    // 🔹 اشتراك + محتوى (أي ترتيب)
+    new RegExp(`(${_SUB}).*(${_CONTENT})`, 'i').test(message)
+    || new RegExp(`(${_CONTENT}).*(${_SUB})`, 'i').test(message)
 
-  // 🔹 مش لاقي + محتوى (أي ترتيب)
-  || new RegExp(`(${_NOTFOUND}).*(${_CONTENT})`, 'i').test(message)
-  || new RegExp(`(${_CONTENT}).*(${_NOTFOUND})`, 'i').test(message)
+    // 🔹 اشتراك + مش لاقي (بدون ذكر محتوى)
+    || new RegExp(`(${_SUB}).*(${_NOTFOUND})`, 'i').test(message)
 
-  // 🔹 وصول كامل
-  || /(وصول كامل)/i.test(message)
+    // 🔹 مش لاقي + محتوى (أي ترتيب)
+    || new RegExp(`(${_NOTFOUND}).*(${_CONTENT})`, 'i').test(message)
+    || new RegExp(`(${_CONTENT}).*(${_NOTFOUND})`, 'i').test(message)
 
-  // 🔹 مش عارف/قادر + اوصل/ادخل + محتوى
-  || /(مش عارف|مش قادر).*(اوصل|أوصل|ادخل|أدخل|الاقي|ألاقي|الاقى|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message)
+    // 🔹 وصول كامل
+    || /(وصول كامل)/i.test(message)
 
-  // 🔹 ازاي + اوصل/ادخل + محتوى
-  || /(ازاي|إزاي|كيف).*(اوصل|أوصل|ادخل|أدخل|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message);
+    // 🔹 مش عارف/قادر + اوصل/ادخل + محتوى
+    || /(مش عارف|مش قادر).*(اوصل|أوصل|ادخل|أدخل|الاقي|ألاقي|الاقى|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message)
 
-// 🚫 استثناء: لو بيسأل عن حجب أو سياسة → سيبه لـ GPT
-const _isPolicyQuestion = /(حجب|هتتحجب|يتحجب|هيتشال|مستقبل|طول مدة|طول فترة|دائم|مؤقت|هتفضل متاحة|سيكون حجب|بيشمل كل|فيه قيود)/i.test(message);
+    // 🔹 ازاي + اوصل/ادخل + محتوى
+    || /(ازاي|إزاي|كيف).*(اوصل|أوصل|ادخل|أدخل|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message);
 
-// 📚 استثناء: لو بيتكلم عن كتاب → سيبه لـ GPT يرد من التعليمات
-const _isBookQuestion = /(كتاب|الكتاب|كتابي|الكتب|كتب|كتيب|الكتيب)/i.test(message);
+  // 🚫 استثناء: لو بيسأل عن حجب أو سياسة → سيبه لـ GPT
+  const _isPolicyQuestion = /(حجب|هتتحجب|يتحجب|هيتشال|مستقبل|طول مدة|طول فترة|دائم|مؤقت|هتفضل متاحة|سيكون حجب|بيشمل كل|فيه قيود)/i.test(message);
 
-if (_isSubDiplomas && !_isPolicyQuestion && !_isBookQuestion) {
-  console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
-  let _subDipReply = `أهلاً بيك! 😊<br><br>`;
-  _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
-  _subDipReply += `لكن <b>كل الدورات اللي جوه كل دبلومة متاحة ليك بالفعل!</b> ✅<br><br>`;
-  _subDipReply += `📌 <b>عشان توصلها:</b><br>`;
-  _subDipReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
-  _subDipReply += `2️⃣ هتلاقي كل الكورسات داخل الدبلومات متاحة ليك<br>`;
-  _subDipReply += `3️⃣ اختار أي كورس وابدأ على طول 🎉<br><br>`;
-  _subDipReply += `⏳ لو دورات لسه مش ظاهرة، استنى <b>24 ساعة</b> للتفعيل الكامل.<br><br>`;
-  _subDipReply += `❌ لو بعد 24 ساعة لسه فيه مشكلة، كلم الدعم فوراً 👇<br>`;
-  _subDipReply += `📞 <a href="https://wa.me/201030072067" target="_blank" style="color:#25D366;font-weight:bold;text-decoration:none;">واتساب الدعم الفني ←</a>`;
-  _subDipReply = finalizeReply(_subDipReply);
-  return {
-    reply: _subDipReply,
-    intent: "SUBSCRIPTION_DIPLOMAS",
-    suggestions: ["🎓 الدبلومات", "📞 تواصل معانا", "💰 تجديد الاشتراك"]
-  };
+  if (_isSubDiplomas && !_isPolicyQuestion) {
+    console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
+    let _subDipReply = `أهلاً بيك! 😊<br><br>`;
+    _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
+    _subDipReply += `لكن <b>كل الدورات اللي جوه كل دبلومة متاحة ليك بالفعل!</b> ✅<br><br>`;
+    _subDipReply += `📌 <b>عشان توصلها:</b><br>`;
+    _subDipReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
+    _subDipReply += `2️⃣ هتلاقي كل الكورسات داخل الدبلومات متاحة ليك<br>`;
+    _subDipReply += `3️⃣ اختار أي كورس وابدأ على طول 🎉<br><br>`;
+    _subDipReply += `⏳ لو دورات لسه مش ظاهرة، استنى <b>24 ساعة</b> للتفعيل الكامل.<br><br>`;
+    _subDipReply += `❌ لو بعد 24 ساعة لسه فيه مشكلة، كلم الدعم فوراً 👇<br>`;
+    _subDipReply += `📞 <a href="https://wa.me/201030072067" target="_blank" style="color:#25D366;font-weight:bold;text-decoration:none;">واتساب الدعم الفني ←</a>`;
+    _subDipReply = finalizeReply(_subDipReply);
+    return {
+      reply: _subDipReply,
+      intent: "SUBSCRIPTION_DIPLOMAS",
+      suggestions: ["🎓 الدبلومات", "📞 تواصل معانا", "💰 تجديد الاشتراك"]
+    };
+  }
 }
 
 // ✅ موعد الدعم أو خدمة العملاء
