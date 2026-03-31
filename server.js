@@ -6672,16 +6672,20 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
   // 🆕 FIX #131 FINAL: Explicit subscription → force SUBSCRIPTION
-  // Runs LAST so nothing can override it (not #79, #69, #77)
+  // Runs LAST so nothing can override it
+  // Always clears response_message for explicit requests
   // ═══════════════════════════════════════════════════════════
-  if (_explicitlyWantsToSubscribe && analysis.action !== 'SUBSCRIPTION') {
-    console.log(`🔄 FIX #131 FINAL: Forcing SUBSCRIPTION (was: ${analysis.action})`);
-    analysis.action = 'SUBSCRIPTION';
+  if (_explicitlyWantsToSubscribe) {
+    if (analysis.action !== 'SUBSCRIPTION') {
+      console.log(`🔄 FIX #131 FINAL: Forcing SUBSCRIPTION (was: ${analysis.action})`);
+      analysis.action = 'SUBSCRIPTION';
+    }
     analysis.search_terms = [];
+    // 🆕 Always clear GPT response — let SUBSCRIPTION handler show proper info
     if (analysis.response_message) {
-      console.log(`🔄 FIX #131: Clearing wrong GPT response: "${analysis.response_message.substring(0, 50)}..."`);
+      console.log(`🔄 FIX #131: Clearing GPT response: "${analysis.response_message.substring(0, 50)}..."`);
       analysis.response_message = '';
     }
   }
