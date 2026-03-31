@@ -5432,6 +5432,29 @@ if (_isBookQuestion) {
   console.log(`📚 Book question detected, skipping to GPT: "${message}"`);
   // مش بنعمل return - سيبه يعدي ويروح لـ GPT
 } else {
+
+// ═══════════════════════════════════════════════════════════
+  // 🛑 استثناء: بيسأل عن توفر كورس في مجال معين (مش مشكلة اشتراك)
+  // ═══════════════════════════════════════════════════════════
+  const _CONTENT_WORDS = `كورس|كورسات|دورة|دوره|دورات|دبلوم[ةه]?|دبلومات`;
+  const _DESCRIPTORS = `شامل[ةه]?|كامل[ةه]?|متقدم[ةه]?|مبتدئ[ةه]?|متخصص[ةه]?|متكامل[ةه]?|مجاني[ةه]?|اونلاين|اون لاين|online|احترافي[ةه]?|تأسيسي[ةه]?|مكثف[ةه]?`;
+  const _PREPOSITIONS = `في|فى|عن|ل|بتاع[ةه]?|حق|خاص[ةه]?\\s*ب|بخصوص`;
+
+  const _isAskingCourseAvailability =
+      new RegExp(
+        `(مفيش|مافيش|فيه|هل في|هل فيه|عندكم|عندكو)\\s*(${_CONTENT_WORDS})\\s*(${_DESCRIPTORS})?\\s*(${_PREPOSITIONS})`,
+        'i'
+      ).test(message)
+      ||
+      new RegExp(
+        `(مفيش|مافيش)\\s*(${_CONTENT_WORDS})\\s+(${_DESCRIPTORS})`,
+        'i'
+      ).test(message);
+
+  if (_isAskingCourseAvailability) {
+    console.log(`🔍 Course availability question, passing to GPT: "${message}"`);
+  }
+
   // ═══════════════════════════════════════════════════
   // 🎓 لو مش كتاب → شوف لو بيسأل عن الدبلومات
   // ═══════════════════════════════════════════════════
@@ -5459,7 +5482,7 @@ if (_isBookQuestion) {
   // 🚫 استثناء: لو بيسأل عن حجب أو سياسة → سيبه لـ GPT
   const _isPolicyQuestion = /(حجب|هتتحجب|يتحجب|هيتشال|مستقبل|طول مدة|طول فترة|دائم|مؤقت|هتفضل متاحة|سيكون حجب|بيشمل كل|فيه قيود)/i.test(message);
 
-  if (_isSubDiplomas && !_isPolicyQuestion) {
+if (_isSubDiplomas && !_isPolicyQuestion && !_isAskingCourseAvailability) {
     console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
     let _subDipReply = `أهلاً بيك! 😊<br><br>`;
     _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
