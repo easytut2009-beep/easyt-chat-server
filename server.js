@@ -5414,34 +5414,6 @@ const _isSubContentQuestion = (() => {
 })();
 
 
-// ✅ مشترك وبيسأل عن الدبلومات في الاشتراك
-const _isSubDiplomas = /(مشترك|اشتراك).*(دبلوم|الدبلوم)/i.test(message)
-  || /(دبلوم|الدبلوم).*(اشتراك|مشترك)/i.test(message)
-  || /(مشترك).*(مش شايف|مش ظاهر|لا يظهر|مبيظهرش|فين)/i.test(message)
-  || /(مش كل|مش لاقي|مش ظاهر).*(دور|كورس)/i.test(message)
-  || /(دور|كورس).*(مش ظاهر|مش موجود)/i.test(message)
-  || /(وصول كامل)/i.test(message);
-
-if (_isSubDiplomas) {
-  console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
-  let _subDipReply = `أهلاً بيك! 😊<br><br>`;
-  _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
-  _subDipReply += `لكن <b>كل الدورات اللي جوه كل دبلومة متاحة ليك بالفعل!</b> ✅<br><br>`;
-  _subDipReply += `📌 <b>عشان توصلها:</b><br>`;
-  _subDipReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
-  _subDipReply += `2️⃣ هتلاقي كل الكورسات داخل الدبلومات متاحة ليك<br>`;
-  _subDipReply += `3️⃣ اختار أي كورس وابدأ على طول 🎉<br><br>`;
-  _subDipReply += `⏳ لو دورات لسه مش ظاهرة، استنى <b>24 ساعة</b> للتفعيل الكامل.<br><br>`;
-  _subDipReply += `❌ لو بعد 24 ساعة لسه فيه مشكلة، كلم الدعم فوراً 👇<br>`;
-  _subDipReply += `📞 <a href="https://wa.me/201030072067" target="_blank" style="color:#25D366;font-weight:bold;text-decoration:none;">واتساب الدعم الفني ←</a>`;
-  _subDipReply = finalizeReply(_subDipReply);
-  return {
-    reply: _subDipReply,
-    intent: "SUBSCRIPTION_DIPLOMAS",
-    suggestions: ["🎓 الدبلومات", "📞 تواصل معانا", "💰 تجديد الاشتراك"]
-  };
-}
-
 
 // ✅ موعد الدعم أو خدمة العملاء
 const _isSupportSchedule = /موعد\s*(خدم[ةه]\s*العملاء|الدعم)/i.test(message)
