@@ -5423,9 +5423,13 @@ const _CONTENT = `دبلوم|دبلومه|دبلومة|دبلومات|الدبل
 
 const _NOTFOUND = `مش لاقي|مش لاقى|مش لاقيها|مش لاقيهم|مش لاقيه|ملقتش|مالقيتش|مبلاقيش|مش ظاهر|مش ظاهره|مش ظاهرة|مش ظاهرين|مبيظهرش|مبتظهرش|لا يظهر|لا تظهر|مش موجود|مش موجوده|مش موجودة|مش شايف|مش شايفها|مش شايفهم|مش شايفه|مبيبانش|مبانش|مش بتبان|مش باين|مش باينه|مش باينة|ماظهرش|ماظهروش|مظهرتش|مش متاح|مش متاحه|مش متاحة|مقفول|مقفوله|مقفولة|مش مفعل|مش مفعله|مش مفعلة|مفيش|محصلش|مش شغال|مش شغاله|مش شغالة|فين`;
 
+
 // ═══════════════════════════════════════════════════
 // 📚 أول حاجة: لو بيتكلم عن كتاب → سيبه لـ GPT فوراً
 // ═══════════════════════════════════════════════════
+let _forceCourseSearch = false;
+let _courseSearchTopic = '';
+
 const _isBookQuestion = /(كتاب|الكتاب|كتابي|الكتب|كتب|كتيب|الكتيب|أتوكاد)/i.test(message);
 
 if (_isBookQuestion) {
@@ -5451,8 +5455,18 @@ if (_isBookQuestion) {
         'i'
       ).test(message);
 
-  if (_isAskingCourseAvailability) {
-    console.log(`🔍 Course availability question, passing to GPT: "${message}"`);
+if (_isAskingCourseAvailability) {
+    console.log(`🔍 Course availability question, will force SEARCH: "${message}"`);
+    _forceCourseSearch = true;
+    
+    // استخراج الموضوع من الرسالة
+    const _topicMatch = message.match(
+      /(?:كورس|كورسات|دورة|دوره|دورات|دبلوم[ةه]?|دبلومات)\s*(?:شامل[ةه]?|كامل[ةه]?|متقدم[ةه]?|مبتدئ[ةه]?|متخصص[ةه]?|متكامل[ةه]?|مجاني[ةه]?|احترافي[ةه]?|تأسيسي[ةه]?|مكثف[ةه]?)?\s*(?:في|فى|عن|ل|بخصوص)\s+(.+?)(?:\?|؟|\.|!|$)/i
+    );
+    if (_topicMatch && _topicMatch[1]) {
+      _courseSearchTopic = _topicMatch[1].trim();
+      console.log(`🔍 Extracted topic: "${_courseSearchTopic}"`);
+    }
   }
 
   // ═══════════════════════════════════════════════════
@@ -6633,6 +6647,27 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
     }
   }
+
+// ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #130: Course availability question → force SEARCH
+  // "مفيش كورس شامل في إدارة الأعمال" = بيسأل عن توفر كورس
+  // الكود المبكر حدد إنه سؤال توفر، دلوقتي نجبر البحث
+  // ═══════════════════════════════════════════════════════════
+  if (_forceCourseSearch && analysis.action !== "SEARCH") {
+    console.log(`🔄 FIX #130: Forcing SEARCH for course availability question (was: ${analysis.action})`);
+    analysis.action = "SEARCH";
+    if (_courseSearchTopic && (!analysis.search_terms || analysis.search_terms.length === 0)) {
+      const topicWords = _courseSearchTopic.split(/\s+/).filter(w => w.length > 2);
+      if (_courseSearchTopic.includes(' ') && topicWords.length >= 2) {
+        analysis.search_terms = [_courseSearchTopic, ...topicWords];
+      } else {
+        analysis.search_terms = [_courseSearchTopic];
+      }
+      analysis.search_terms = [...new Set(analysis.search_terms)];
+      console.log(`🔄 FIX #130: Search terms: [${analysis.search_terms.join(', ')}]`);
+    }
+  }
+
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 FIX: "كل الدورات" / "كل الكورسات" = browse ALL → CATEGORIES
