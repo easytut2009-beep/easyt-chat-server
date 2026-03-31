@@ -6562,15 +6562,42 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
 
 // ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #131: Detect explicit subscription requests
+  // Must be defined BEFORE everything else
+  // ═══════════════════════════════════════════════════════════
+  const _normForSub131 = normalizeArabic(message.toLowerCase());
+
+  // 🛡️ Safety: detect negation BEFORE "اشتراك/اشترك"
+  const _negatedSub = /(مش|مو|ما\s|لا\s|ماني|مني|ما\s*بدي|لا\s*اريد|مابي|ما\s*ابغ[يى])/i.test(
+    _normForSub131.split(/(اشتراك|اشترك)/)[0]
+  );
+
+  // 🛡️ Safety: detect cancellation
+  const _cancelSub = /(الغ[يى]?|الغاء|إلغاء|كانسل|cancel|وقف|اوقف|ايقاف|إيقاف|فك|فكك)/i.test(_normForSub131);
+
+  const _explicitlyWantsToSubscribe = !_negatedSub && !_cancelSub && (
+    /(بدي|عايز|عاوز|محتاج|ابغ[يى]|اريد|أريد|نفسي|حابب?)\s*.{0,10}(اشتراك|اشترك)/i.test(_normForSub131)
+    || /(اشتراك)\s*.{0,5}(عام|سنو[يى]|شهر[يى]|جميع|كل|شامل)/i.test(_normForSub131)
+    || /ازا[يى]\s*(اشترك|الاشتراك|اسجل)/i.test(_normForSub131)
+    || /كيف\s*(اشترك|الاشتراك|اسجل)/i.test(_normForSub131)
+    || /(عايز|عاوز|بدي|محتاج)\s*(ادفع|أدفع|افعل|أفعّل)/i.test(_normForSub131)
+  );
+
+  if (_explicitlyWantsToSubscribe) {
+    console.log('🔵 FIX #131: Detected explicit subscription request');
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #79: Force DIPLOMAS for general diploma requests
   // Catches cases where GPT misclassifies as CHAT/SEARCH
   // Must run BEFORE FIX #77 (which converts specific DIPLOMAS → SEARCH)
   // ═══════════════════════════════════════════════════════════
-// 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
+  // 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
   const _gptMadeContextualDecision = 
     analysis.response_message && 
     analysis.response_message.trim().length > 20 &&
-    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action);
+    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action)
+    && !_explicitlyWantsToSubscribe;  // 🆕 FIX #131: don't block fixes for subscription requests
 
   if (isGeneralDiplomaRequest(enrichedMessage)) {
     if (_gptMadeContextualDecision) {
@@ -6582,8 +6609,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-
-// 🆕 FIX #120: If GPT said SEARCH but message is clearly about payment → SUBSCRIPTION
+  // 🆕 FIX #120: If GPT said SEARCH but message is clearly about payment → SUBSCRIPTION
   if (analysis.action === "SEARCH" && analysis.search_terms) {
     const paymentOnlyTerms = analysis.search_terms.every(t => {
       const nt = normalizeArabic(t.toLowerCase());
@@ -6597,7 +6623,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-// 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
+  // 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
   if (analysis.action === "SUBSCRIPTION") {
     const educationalOverride = hasNewExplicitTopic(enrichedMessage);
     if (educationalOverride) {
@@ -6606,14 +6632,14 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
         analysis.search_terms = [educationalOverride];
       }
-} else if (analysis.detected_category) {
+    } else if (analysis.detected_category) {
       // GPT detected an educational category → override to SEARCH
       console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (detected_category: "${analysis.detected_category}")`);
       analysis.action = "SEARCH";
     }
   }
 
-// 🆕 FIX #77 (v2): If DIPLOMAS but message has specific topic → SEARCH
+  // 🆕 FIX #77 (v2): If DIPLOMAS but message has specific topic → SEARCH
   // 🆕 FIX #81: Keep full phrase for better matching
   if (analysis.action === "DIPLOMAS") {
     const normDiplMsg = normalizeArabic(enrichedMessage.toLowerCase());
@@ -6634,12 +6660,10 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         // 🆕 FIX #81: Keep full phrase + individual words
         const words = diplomaStripped.split(/\s+/).filter(w => w.length > 2);
         if (diplomaStripped.includes(' ') && words.length >= 2) {
-          // Multi-word phrase: keep phrase as first term for exact matching
           analysis.search_terms = [diplomaStripped, ...words];
         } else {
           analysis.search_terms = words;
         }
-        // Remove duplicates
         analysis.search_terms = [...new Set(analysis.search_terms)];
       }
       if (!analysis.search_terms.some(t => normalizeArabic(t).includes('دبلوم'))) {
@@ -6647,6 +6671,21 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
     }
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 FIX #131 FINAL: Explicit subscription → force SUBSCRIPTION
+  // Runs LAST so nothing can override it (not #79, #69, #77)
+  // ═══════════════════════════════════════════════════════════
+  if (_explicitlyWantsToSubscribe && analysis.action !== 'SUBSCRIPTION') {
+    console.log(`🔄 FIX #131 FINAL: Forcing SUBSCRIPTION (was: ${analysis.action})`);
+    analysis.action = 'SUBSCRIPTION';
+    analysis.search_terms = [];
+    if (analysis.response_message) {
+      console.log(`🔄 FIX #131: Clearing wrong GPT response: "${analysis.response_message.substring(0, 50)}..."`);
+      analysis.response_message = '';
+    }
+  }
+
 
 // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #130: Course availability question → force SEARCH
