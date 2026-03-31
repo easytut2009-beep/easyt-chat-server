@@ -5427,8 +5427,6 @@ const _NOTFOUND = `مش لاقي|مش لاقى|مش لاقيها|مش لاقيه
 // ═══════════════════════════════════════════════════
 // 📚 أول حاجة: لو بيتكلم عن كتاب → سيبه لـ GPT فوراً
 // ═══════════════════════════════════════════════════
-let _forceCourseSearch = false;
-let _courseSearchTopic = '';
 
 const _isBookQuestion = /(كتاب|الكتاب|كتابي|الكتب|كتب|كتيب|الكتيب|أتوكاد)/i.test(message);
 
@@ -5455,67 +5453,10 @@ if (_isBookQuestion) {
         'i'
       ).test(message);
 
-if (_isAskingCourseAvailability) {
-    console.log(`🔍 Course availability question, will force SEARCH: "${message}"`);
-    _forceCourseSearch = true;
-    
-    // استخراج الموضوع من الرسالة
-    const _topicMatch = message.match(
-      /(?:كورس|كورسات|دورة|دوره|دورات|دبلوم[ةه]?|دبلومات)\s*(?:شامل[ةه]?|كامل[ةه]?|متقدم[ةه]?|مبتدئ[ةه]?|متخصص[ةه]?|متكامل[ةه]?|مجاني[ةه]?|احترافي[ةه]?|تأسيسي[ةه]?|مكثف[ةه]?)?\s*(?:في|فى|عن|ل|بخصوص)\s+(.+?)(?:\?|؟|\.|!|$)/i
-    );
-    if (_topicMatch && _topicMatch[1]) {
-      _courseSearchTopic = _topicMatch[1].trim();
-      console.log(`🔍 Extracted topic: "${_courseSearchTopic}"`);
-    }
+  if (_isAskingCourseAvailability) {
+    console.log(`🔍 Course availability question, passing to GPT: "${message}"`);
   }
 
-  // ═══════════════════════════════════════════════════
-  // 🎓 لو مش كتاب → شوف لو بيسأل عن الدبلومات
-  // ═══════════════════════════════════════════════════
-  const _isSubDiplomas =
-    // 🔹 اشتراك + محتوى (أي ترتيب)
-    new RegExp(`(${_SUB}).*(${_CONTENT})`, 'i').test(message)
-    || new RegExp(`(${_CONTENT}).*(${_SUB})`, 'i').test(message)
-
-    // 🔹 اشتراك + مش لاقي (بدون ذكر محتوى)
-    || new RegExp(`(${_SUB}).*(${_NOTFOUND})`, 'i').test(message)
-
-    // 🔹 مش لاقي + محتوى (أي ترتيب)
-    || new RegExp(`(${_NOTFOUND}).*(${_CONTENT})`, 'i').test(message)
-    || new RegExp(`(${_CONTENT}).*(${_NOTFOUND})`, 'i').test(message)
-
-    // 🔹 وصول كامل
-    || /(وصول كامل)/i.test(message)
-
-    // 🔹 مش عارف/قادر + اوصل/ادخل + محتوى
-    || /(مش عارف|مش قادر).*(اوصل|أوصل|ادخل|أدخل|الاقي|ألاقي|الاقى|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message)
-
-    // 🔹 ازاي + اوصل/ادخل + محتوى
-    || /(ازاي|إزاي|كيف).*(اوصل|أوصل|ادخل|أدخل|افتح|أفتح).*(دبلوم|دبلومه|دبلومة|كورس|دور)/i.test(message);
-
-  // 🚫 استثناء: لو بيسأل عن حجب أو سياسة → سيبه لـ GPT
-  const _isPolicyQuestion = /(حجب|هتتحجب|يتحجب|هيتشال|مستقبل|طول مدة|طول فترة|دائم|مؤقت|هتفضل متاحة|سيكون حجب|بيشمل كل|فيه قيود)/i.test(message);
-
-if (_isSubDiplomas && !_isPolicyQuestion && !_isAskingCourseAvailability) {
-    console.log(`🎓 Subscriber asking about diplomas: "${message}"`);
-    let _subDipReply = `أهلاً بيك! 😊<br><br>`;
-    _subDipReply += `اسم الدبلومة مش هيظهرلك ضمن الاشتراك العام وده طبيعي 👌<br><br>`;
-    _subDipReply += `لكن <b>كل الدورات اللي جوه كل دبلومة متاحة ليك بالفعل!</b> ✅<br><br>`;
-    _subDipReply += `📌 <b>عشان توصلها:</b><br>`;
-    _subDipReply += `1️⃣ ادخل على <b>"دوراتي"</b> من القائمة الرئيسية<br>`;
-    _subDipReply += `2️⃣ هتلاقي كل الكورسات داخل الدبلومات متاحة ليك<br>`;
-    _subDipReply += `3️⃣ اختار أي كورس وابدأ على طول 🎉<br><br>`;
-    _subDipReply += `⏳ لو دورات لسه مش ظاهرة، استنى <b>24 ساعة</b> للتفعيل الكامل.<br><br>`;
-    _subDipReply += `❌ لو بعد 24 ساعة لسه فيه مشكلة، كلم الدعم فوراً 👇<br>`;
-    _subDipReply += `📞 <a href="https://wa.me/201030072067" target="_blank" style="color:#25D366;font-weight:bold;text-decoration:none;">واتساب الدعم الفني ←</a>`;
-    _subDipReply = finalizeReply(_subDipReply);
-    return {
-      reply: _subDipReply,
-      intent: "SUBSCRIPTION_DIPLOMAS",
-      suggestions: ["🎓 الدبلومات", "📞 تواصل معانا", "💰 تجديد الاشتراك"]
-    };
-  }
-}
 
 // ✅ موعد الدعم أو خدمة العملاء
 const _isSupportSchedule = /موعد\s*(خدم[ةه]\s*العملاء|الدعم)/i.test(message)
@@ -6562,42 +6503,15 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
 
 // ═══════════════════════════════════════════════════════════
-  // 🆕 FIX #131: Detect explicit subscription requests
-  // Must be defined BEFORE everything else
-  // ═══════════════════════════════════════════════════════════
-  const _normForSub131 = normalizeArabic(message.toLowerCase());
-
-  // 🛡️ Safety: detect negation BEFORE "اشتراك/اشترك"
-  const _negatedSub = /(مش|مو|ما\s|لا\s|ماني|مني|ما\s*بدي|لا\s*اريد|مابي|ما\s*ابغ[يى])/i.test(
-    _normForSub131.split(/(اشتراك|اشترك)/)[0]
-  );
-
-  // 🛡️ Safety: detect cancellation
-  const _cancelSub = /(الغ[يى]?|الغاء|إلغاء|كانسل|cancel|وقف|اوقف|ايقاف|إيقاف|فك|فكك)/i.test(_normForSub131);
-
-  const _explicitlyWantsToSubscribe = !_negatedSub && !_cancelSub && (
-    /(بدي|عايز|عاوز|محتاج|ابغ[يى]|اريد|أريد|نفسي|حابب?)\s*.{0,10}(اشتراك|اشترك)/i.test(_normForSub131)
-    || /(اشتراك)\s*.{0,5}(عام|سنو[يى]|شهر[يى]|جميع|كل|شامل)/i.test(_normForSub131)
-    || /ازا[يى]\s*(اشترك|الاشتراك|اسجل)/i.test(_normForSub131)
-    || /كيف\s*(اشترك|الاشتراك|اسجل)/i.test(_normForSub131)
-    || /(عايز|عاوز|بدي|محتاج)\s*(ادفع|أدفع|افعل|أفعّل)/i.test(_normForSub131)
-  );
-
-  if (_explicitlyWantsToSubscribe) {
-    console.log('🔵 FIX #131: Detected explicit subscription request');
-  }
-
-  // ═══════════════════════════════════════════════════════════
   // 🆕 FIX #79: Force DIPLOMAS for general diploma requests
   // Catches cases where GPT misclassifies as CHAT/SEARCH
   // Must run BEFORE FIX #77 (which converts specific DIPLOMAS → SEARCH)
   // ═══════════════════════════════════════════════════════════
-  // 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
+// 🆕 GPT فاهم السياق لو رجّع response_message + action سياقي
   const _gptMadeContextualDecision = 
     analysis.response_message && 
     analysis.response_message.trim().length > 20 &&
-    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action)
-    && !_explicitlyWantsToSubscribe;  // 🆕 FIX #131: don't block fixes for subscription requests
+    ['CHAT', 'SUBSCRIPTION', 'SUPPORT'].includes(analysis.action);
 
   if (isGeneralDiplomaRequest(enrichedMessage)) {
     if (_gptMadeContextualDecision) {
@@ -6609,7 +6523,8 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-  // 🆕 FIX #120: If GPT said SEARCH but message is clearly about payment → SUBSCRIPTION
+
+// 🆕 FIX #120: If GPT said SEARCH but message is clearly about payment → SUBSCRIPTION
   if (analysis.action === "SEARCH" && analysis.search_terms) {
     const paymentOnlyTerms = analysis.search_terms.every(t => {
       const nt = normalizeArabic(t.toLowerCase());
@@ -6623,7 +6538,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
     }
   }
 
-  // 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
+// 🆕 FIX #69: If SUBSCRIPTION but message has educational topic → SEARCH
   if (analysis.action === "SUBSCRIPTION") {
     const educationalOverride = hasNewExplicitTopic(enrichedMessage);
     if (educationalOverride) {
@@ -6632,14 +6547,14 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
         analysis.search_terms = [educationalOverride];
       }
-    } else if (analysis.detected_category) {
+} else if (analysis.detected_category) {
       // GPT detected an educational category → override to SEARCH
       console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (detected_category: "${analysis.detected_category}")`);
       analysis.action = "SEARCH";
     }
   }
 
-  // 🆕 FIX #77 (v2): If DIPLOMAS but message has specific topic → SEARCH
+// 🆕 FIX #77 (v2): If DIPLOMAS but message has specific topic → SEARCH
   // 🆕 FIX #81: Keep full phrase for better matching
   if (analysis.action === "DIPLOMAS") {
     const normDiplMsg = normalizeArabic(enrichedMessage.toLowerCase());
@@ -6660,10 +6575,12 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         // 🆕 FIX #81: Keep full phrase + individual words
         const words = diplomaStripped.split(/\s+/).filter(w => w.length > 2);
         if (diplomaStripped.includes(' ') && words.length >= 2) {
+          // Multi-word phrase: keep phrase as first term for exact matching
           analysis.search_terms = [diplomaStripped, ...words];
         } else {
           analysis.search_terms = words;
         }
+        // Remove duplicates
         analysis.search_terms = [...new Set(analysis.search_terms)];
       }
       if (!analysis.search_terms.some(t => normalizeArabic(t).includes('دبلوم'))) {
@@ -6671,46 +6588,6 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       }
     }
   }
-
-// ═══════════════════════════════════════════════════════════
-  // 🆕 FIX #131 FINAL: Explicit subscription → force SUBSCRIPTION
-  // Runs LAST so nothing can override it
-  // Always clears response_message for explicit requests
-  // ═══════════════════════════════════════════════════════════
-  if (_explicitlyWantsToSubscribe) {
-    if (analysis.action !== 'SUBSCRIPTION') {
-      console.log(`🔄 FIX #131 FINAL: Forcing SUBSCRIPTION (was: ${analysis.action})`);
-      analysis.action = 'SUBSCRIPTION';
-    }
-    analysis.search_terms = [];
-    // 🆕 Always clear GPT response — let SUBSCRIPTION handler show proper info
-    if (analysis.response_message) {
-      console.log(`🔄 FIX #131: Clearing GPT response: "${analysis.response_message.substring(0, 50)}..."`);
-      analysis.response_message = '';
-    }
-  }
-
-
-// ═══════════════════════════════════════════════════════════
-  // 🆕 FIX #130: Course availability question → force SEARCH
-  // "مفيش كورس شامل في إدارة الأعمال" = بيسأل عن توفر كورس
-  // الكود المبكر حدد إنه سؤال توفر، دلوقتي نجبر البحث
-  // ═══════════════════════════════════════════════════════════
-  if (_forceCourseSearch && analysis.action !== "SEARCH") {
-    console.log(`🔄 FIX #130: Forcing SEARCH for course availability question (was: ${analysis.action})`);
-    analysis.action = "SEARCH";
-    if (_courseSearchTopic && (!analysis.search_terms || analysis.search_terms.length === 0)) {
-      const topicWords = _courseSearchTopic.split(/\s+/).filter(w => w.length > 2);
-      if (_courseSearchTopic.includes(' ') && topicWords.length >= 2) {
-        analysis.search_terms = [_courseSearchTopic, ...topicWords];
-      } else {
-        analysis.search_terms = [_courseSearchTopic];
-      }
-      analysis.search_terms = [...new Set(analysis.search_terms)];
-      console.log(`🔄 FIX #130: Search terms: [${analysis.search_terms.join(', ')}]`);
-    }
-  }
-
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 FIX: "كل الدورات" / "كل الكورسات" = browse ALL → CATEGORIES
