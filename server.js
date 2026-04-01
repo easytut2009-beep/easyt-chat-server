@@ -11528,42 +11528,38 @@ let cachedExchangeRate = null;
 let lastRateFetch = 0;
 
 async function getExchangeRate() {
-  const ONE_HOUR = 60 * 60 * 1000;
-  
-  // لو السعر متخزن ومش عدت ساعة → رجّع المتخزن
+  var ONE_HOUR = 60 * 60 * 1000;
+
   if (cachedExchangeRate && (Date.now() - lastRateFetch) < ONE_HOUR) {
-    console.log('✅ Using cached exchange rate:', cachedExchangeRate);
+    console.log('Using cached exchange rate:', cachedExchangeRate);
     return cachedExchangeRate;
   }
 
-  try {
-    const https = require('https');
-    return new Promise((resolve) => {
-      https.get('https://api.exchangerate-api.com/v4/latest/USD', (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            cachedExchangeRate = json.rates.EGP;
-            lastRateFetch = Date.now();
-            console.log('✅ Exchange rate fetched:', cachedExchangeRate);
-            resolve(cachedExchangeRate);
-} catch (e) {
-            console.log('❌ Exchange rate parse error');
-            resolve(cachedExchangeRate || null);
-          }
-        });
-      }).on('error', (err) => {
-        console.log('❌ Exchange rate fetch error:', err.message);
-        resolve(cachedExchangeRate || null);
+  var https = require('https');
+
+  return new Promise(function(resolve) {
+    https.get('https://api.exchangerate-api.com/v4/latest/USD', function(res) {
+      var data = '';
+      res.on('data', function(chunk) { data += chunk; });
+      res.on('end', function() {
+        try {
+          var json = JSON.parse(data);
+          cachedExchangeRate = json.rates.EGP;
+          lastRateFetch = Date.now();
+          console.log('Exchange rate fetched:', cachedExchangeRate);
+          resolve(cachedExchangeRate);
+        } catch (e) {
+          console.log('Exchange rate parse error:', e.message);
+          resolve(cachedExchangeRate || null);
+        }
       });
+    }).on('error', function(err) {
+      console.log('Exchange rate fetch error:', err.message);
+      resolve(cachedExchangeRate || null);
     });
-  } catch (error) {
-    console.error('❌ Exchange rate error:', error);
-    return cachedExchangeRate || null;
-  }
+  });
 }
+
 
 /* ═══════════════════════════════════════════════════════════════
    🆕 FIX #45: buildGuideSystemPrompt v3.0 — optimized & clean
