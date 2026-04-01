@@ -11524,14 +11524,44 @@ function isCurrentLesson(lectureTitle, dbTitle) {
   );
 }
 
+let cachedExchangeRate = null;
+let lastRateFetch = 0;
+
 async function getExchangeRate() {
+  const ONE_HOUR = 60 * 60 * 1000;
+  
+  // لو السعر متخزن ومش عدت ساعة → رجّع المتخزن
+  if (cachedExchangeRate && (Date.now() - lastRateFetch) < ONE_HOUR) {
+    console.log('✅ Using cached exchange rate:', cachedExchangeRate);
+    return cachedExchangeRate;
+  }
+
   try {
-    const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-    const data = await response.json();
-    return data.rates.EGP;
+    const https = require('https');
+    return new Promise((resolve) => {
+      https.get('https://api.exchangerate-api.com/v4/latest/USD', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            cachedExchangeRate = json.rates.EGP;
+            lastRateFetch = Date.now();
+            console.log('✅ Exchange rate fetched:', cachedExchangeRate);
+            resolve(cachedExchangeRate);
+          } catch {
+            console.log('❌ Exchange rate parse error');
+            resolve(cachedExchangeRate || null);
+          }
+        });
+      }).on('error', (err) => {
+        console.log('❌ Exchange rate fetch error:', err.message);
+        resolve(cachedExchangeRate || null);
+      });
+    });
   } catch (error) {
-    console.error('Error fetching exchange rate:', error);
-    return null;
+    console.error('❌ Exchange rate error:', error);
+    return cachedExchangeRate || null;
   }
 }
 
@@ -11973,7 +12003,17 @@ const finalSystemPrompt = buildGuideSystemPrompt({
 
 // ═══ Conversation Management ═══
       // 🆕 FIX #49: Clear history when lesson changes
-      if (!guideConversations[session_id]) {
+if (!guideConversations[session_id]) {
+  guideConversations[session_id] = {
+    messages: [{ role: "system", content: finalSystemPrompt }],
+    lastActivity: Date.now(),
+    lastLecture: lecture_title || "",
+    lastCourse: course_name || "",
+  };
+} else {
+  // حدّث الـ system prompt بس من غير ما تمسح المحادثة
+  guideConversations[session_id].messages[0].content = finalSystemPrompt;
+}
         guideConversations[session_id] = {
           messages: [{ role: "system", content: finalSystemPrompt }],
           lastActivity: Date.now(),
