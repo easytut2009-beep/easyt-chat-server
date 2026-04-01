@@ -12007,20 +12007,13 @@ if (!guideConversations[session_id]) {
     lastCourse: course_name || "",
   };
 } else {
-  // حدّث الـ system prompt بس من غير ما تمسح المحادثة
   guideConversations[session_id].messages[0].content = finalSystemPrompt;
 }
-        guideConversations[session_id] = {
-          messages: [{ role: "system", content: finalSystemPrompt }],
-          lastActivity: Date.now(),
-          lastLecture: lecture_title || "",
-          lastCourse: course_name || "",
-        };
-      }
 
       const conv = guideConversations[session_id];
       
       // 🆕 FIX #49: Detect lesson change → clear history
+
       const lectureChanged = lecture_title && conv.lastLecture && conv.lastLecture !== lecture_title;
       const courseChanged = course_name && conv.lastCourse && conv.lastCourse !== course_name;
       
