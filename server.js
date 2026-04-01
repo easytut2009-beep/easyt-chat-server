@@ -11549,7 +11549,7 @@ async function getExchangeRate() {
             lastRateFetch = Date.now();
             console.log('✅ Exchange rate fetched:', cachedExchangeRate);
             resolve(cachedExchangeRate);
-          } catch {
+} catch (e) {
             console.log('❌ Exchange rate parse error');
             resolve(cachedExchangeRate || null);
           }
