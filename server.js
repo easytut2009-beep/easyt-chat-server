@@ -11971,17 +11971,6 @@ const finalSystemPrompt = buildGuideSystemPrompt({
     exchangeRate: exchangeRate,  // ← الجديد
 });
 
-    courseName: course_name || "",
-    lectureTitle: lecture_title || "",
-    clientPrompt: system_prompt || "",
-    currentLessonContext,
-    otherLessonsContext,
-    allCourseLessons,
-    lessonFound: !!lessonMatch,
-    otherCourseRecommendation,
-    botInstructions: guideInstructions,
-});
-
 // ═══ Conversation Management ═══
       // 🆕 FIX #49: Clear history when lesson changes
       if (!guideConversations[session_id]) {
