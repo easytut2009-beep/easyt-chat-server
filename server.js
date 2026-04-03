@@ -1194,19 +1194,6 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (cached) return cached;
 
   try {
-    // Early exit: لو كل كلمات البحث عامة وملهاش معنى
-    const genericTerms = ["كورس", "دورة", "تعلم", "كورسات", "دورات", "class", "course"];
-    const searchTermsLower = searchTerms.map(t => t.toLowerCase());
-    const isGenericOnly = searchTermsLower.every(t => genericTerms.includes(t));
-    
-    if (isGenericOnly && searchTerms.length > 0) {
-      console.log("⚠️ Generic search terms only (e.g., 'كورس' alone), returning empty");
-      return [];
-    }
-
-    const allTerms = prepareSearchTerms(searchTerms);
-    if (allTerms.length === 0) return [];
-
     const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
@@ -1313,10 +1300,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
     }
 
     // ========== حساب درجة المطابقة (سريع ومحسن) ==========
-    // ========== حساب درجة المطابقة (محسن مع Early Exit) ==========
-    const scored = [];
-    
-    for (const c of filtered) {
+    const scored = filtered.map((c) => {
       let score = 0;
       let isTitleMatch = false;
 
@@ -1330,10 +1314,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 500;
       if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 100;
 
-      // Early exit لو الدرجة عالية
       for (const term of allTerms) {
-        if (score > 1000) break; // مش محتاج تكمل لو الدرجة عالية
-        
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
         
@@ -1351,21 +1332,17 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
         score += Math.round(semSim * 100);
       }
 
-      scored.push({ ...c, relevanceScore: score, _titleMatch: isTitleMatch });
-    }
+      return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
+    });
 
-    // ترتيب النتائج
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    // طباعة أفضل 5 نتائج (للتصحيح)
     console.log(`🔍 Top results:`);
-    for (let i = 0; i < Math.min(5, scored.length); i++) {
-      const c = scored[i];
+    scored.slice(0, 5).forEach((c, i) => {
       console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}`);
-    }
+    });
 
     const result = scored.slice(0, 15);
-
     setCachedSearch(cacheKey, result);
     return result;
     
