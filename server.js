@@ -1194,124 +1194,95 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (cached) return cached;
 
   try {
-const allTerms = prepareSearchTerms(searchTerms);
+    // Early exit: لو كل كلمات البحث عامة وملهاش معنى
+    const genericTerms = ["كورس", "دورة", "تعلم", "كورسات", "دورات", "class", "course"];
+    const searchTermsLower = searchTerms.map(t => t.toLowerCase());
+    const isGenericOnly = searchTermsLower.every(t => genericTerms.includes(t));
+    
+    if (isGenericOnly && searchTerms.length > 0) {
+      console.log("⚠️ Generic search terms only (e.g., 'كورس' alone), returning empty");
+      return [];
+    }
+
+    const allTerms = prepareSearchTerms(searchTerms);
+    if (allTerms.length === 0) return [];
+
+    const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
     console.log("🔍 Search terms:", allTerms);
 
-const limitedTerms = allTerms.slice(0, 8);
+    const limitedTerms = allTerms.slice(0, 8);
+    const ilikeTerms = expandArabicVariants(limitedTerms);
+    const cappedIlikeTerms = ilikeTerms.slice(0, 16);
 
-// ═══ Expand Arabic variants for ilike matching ═══
-const ilikeTerms = expandArabicVariants(limitedTerms);
-console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
+    // ========== استعلام واحد يجمع كل حاجة ==========
+    const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+    
+    const coreFilters = cappedIlikeTerms
+      .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
+      .join(",");
 
-// 🔧 FIX: Cap terms to avoid Supabase query length limits
-// Max ~80 filter conditions (16 terms × 5 cols)
-const cappedIlikeTerms = ilikeTerms.slice(0, 16);
+    console.log("🔍 Running unified search query...");
 
-// 🔧 Phase 1: Search core fields only
-const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
-
-const coreFilters = cappedIlikeTerms
-  .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
-  .join(",");
-
-console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
-
-    const ilikePromise = supabase
+    let query = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
       .or(coreFilters)
       .limit(30);
 
+    const { data: courses, error } = await query;
 
-    const semanticPromise = openai
-      ? (async () => {
-          try {
-            const queryText = searchTerms.join(" ");
-const embResp = await openai.embeddings.create({
-      model: COURSE_EMBEDDING_MODEL,
-      input: queryText.substring(0, 2000),
-    });
-            const { data } = await supabase.rpc("match_courses", {
-              query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.75,
-              match_count: 10,
-            });
-            return data || [];
-          } catch (e) {            return [];
-          }
-        })()
-      : Promise.resolve([]);
-
-const [ilikeResult, semanticResults] = await Promise.all([
-      ilikePromise,
-      semanticPromise,
-    ]);
-
-    const { data: courses, error } = ilikeResult;
     if (error) {
-      console.error("❌ ilike query FAILED:", error.message);
-      console.error("   ilikeTerms count:", ilikeTerms.length);
-      console.error("   coreFilters length:", coreFilters.length);
-    }
-
-    let allCourses = error ? [] : (courses || []);
-    
-    // 🔧 Don't throw away semantic results if ilike failed!
-
-// 🔧 Phase 2: If few core results, expand to deep content (syllabus, full_content, etc.)
-    if (allCourses.length < 3 && limitedTerms.length <= 4) {
-      console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
-      
-      const deepCols = [
-        "title", "description", "subtitle",
-        "full_content", "page_content", "syllabus",
-        "objectives", "domain", "keywords",
-      ];
-      
-const deepIlikeTerms = expandArabicVariants(limitedTerms).slice(0, 10);
-const deepFilters = deepIlikeTerms
-  .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
-  .join(",");
-
-      const { data: deepResults } = await supabase
-        .from("courses")
-        .select(COURSE_SELECT_COLS)
-        .or(deepFilters)
-        .limit(30);
-
-      if (deepResults && deepResults.length > 0) {
-        const existingIds = new Set(allCourses.map(c => c.id));
-        const newResults = deepResults.filter(c => !existingIds.has(c.id));
-        allCourses = [...allCourses, ...newResults];
-        console.log(`🔍 Phase 2 added ${newResults.length} deep results`);
-      }
-    }
-
-    const semanticMap = new Map();
-
-    if (semanticResults.length > 0) {
-      semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
-
-      const ilikeIds = new Set(allCourses.map((c) => c.id));
-      const semanticOnlyIds = [...semanticMap.keys()].filter(
-        (id) => !ilikeIds.has(id)
-      );
-
-      if (semanticOnlyIds.length > 0) {
-        const { data: semCourses } = await supabase
-          .from("courses")
-          .select(COURSE_SELECT_COLS)
-          .in("id", semanticOnlyIds);
-        if (semCourses) allCourses = [...allCourses, ...semCourses];
-      }
-    }
-
-    if (allCourses.length === 0) {
+      console.error("❌ Search query FAILED:", error.message);
       return await fuzzySearchFallback(allTerms);
     }
 
+    let allCourses = courses || [];
+
+    // ========== بحث دلالي (semantic) - اختياري، يشغل بس لو فيه نتائج قليلة ==========
+    let semanticMap = new Map();
+    
+    if (openai && allCourses.length < 5) {
+      console.log("🔍 Few results, trying semantic search...");
+      try {
+        const queryText = searchTerms.join(" ");
+        const embResp = await openai.embeddings.create({
+          model: COURSE_EMBEDDING_MODEL,
+          input: queryText.substring(0, 2000),
+        });
+        
+        const { data: semanticResults } = await supabase.rpc("match_courses", {
+          query_embedding: embResp.data[0].embedding,
+          match_threshold: 0.70,
+          match_count: 8,
+        });
+
+        if (semanticResults && semanticResults.length > 0) {
+          semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
+          
+          const existingIds = new Set(allCourses.map((c) => c.id));
+          const semanticOnlyIds = [...semanticMap.keys()].filter(
+            (id) => !existingIds.has(id)
+          );
+
+          if (semanticOnlyIds.length > 0) {
+            const { data: semCourses } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", semanticOnlyIds);
+            if (semCourses) {
+              allCourses = [...allCourses, ...semCourses];
+              console.log(`🔍 Semantic search added ${semCourses.length} courses`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Semantic search error:", e.message);
+      }
+    }
+
+    // ========== فلترة النتائج ==========
     let filtered = allCourses;
 
     if (excludeTerms.length > 0) {
@@ -1333,9 +1304,7 @@ const deepFilters = deepIlikeTerms
           (c.subtitle || "")
         ).toLowerCase();
         if (audience === "مبتدئ")
-          return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(
-            combined
-          );
+          return /مبتدئ|اساسيات|أساسيات|بداية|beginner|basics|من الصفر/.test(combined);
         if (audience === "متقدم")
           return /متقدم|advanced|محترف|pro|احتراف|mastery/.test(combined);
         return true;
@@ -1343,88 +1312,63 @@ const deepFilters = deepIlikeTerms
       if (af.length > 0) filtered = af;
     }
 
-const scored = filtered.map((c) => {
-    let score = 0;
-    let isTitleMatch = false;
+    // ========== حساب درجة المطابقة (سريع ومحسن) ==========
+    // ========== حساب درجة المطابقة (محسن مع Early Exit) ==========
+    const scored = [];
+    
+    for (const c of filtered) {
+      let score = 0;
+      let isTitleMatch = false;
 
-    const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
       const subtitleNorm = normalizeArabic((c.subtitle || "").toLowerCase());
-      const pageNorm = normalizeArabic((c.page_content || "").toLowerCase());
-      const syllabusNorm = normalizeArabic((c.syllabus || "").toLowerCase());
-      const objectivesNorm = normalizeArabic(
-        (c.objectives || "").toLowerCase()
-      );
-      const descNorm = normalizeArabic((c.description || "").toLowerCase());
-      const fullNorm = normalizeArabic((c.full_content || "").toLowerCase());
       const domainNorm = normalizeArabic((c.domain || "").toLowerCase());
       const keywordsNorm = normalizeArabic((c.keywords || "").toLowerCase());
 
-const fullQuery = normalizeArabic(
-        searchTerms.join(" ").toLowerCase()
-      );
+      const fullQuery = normalizeArabic(searchTerms.join(" ").toLowerCase());
+      
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 500;
       if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 100;
 
+      // Early exit لو الدرجة عالية
       for (const term of allTerms) {
+        if (score > 1000) break; // مش محتاج تكمل لو الدرجة عالية
+        
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
-if (isWordBoundaryMatch(titleNorm, nt)) {
-  score += 150;
-  isTitleMatch = true;
-}
-        // 🌿 Root matching fallback for Arabic terms
-        if (!isTitleMatch && /[\u0600-\u06FF]/.test(nt) && nt.length >= 3) {
-          const _titleWords = titleNorm.split(/\s+/);
-          for (const _tw of _titleWords) {
-            if (_tw.length >= 3 && shareArabicRoot(nt, _tw)) {
-              score += 80;
-              console.log(`🌿 Root match in search: "${nt}" ↔ "${_tw}" in "${c.title || ''}"`);
-              break;
-            }
-          }
+        
+        if (titleNorm.includes(nt)) {
+          score += 150;
+          isTitleMatch = true;
         }
         if (subtitleNorm.includes(nt)) score += 30;
         if (domainNorm.includes(nt)) score += 10;
         if (keywordsNorm.includes(nt)) score += 40;
-        if (pageNorm.includes(nt)) score += 5;
-        if (syllabusNorm.includes(nt)) score += 4;
-        if (objectivesNorm.includes(nt)) score += 4;
-        if (descNorm.includes(nt)) score += 1;
-        if (fullNorm.includes(nt)) score += 1;
       }
-
-      const titleHits = allTerms.filter((t) =>
-        titleNorm.includes(normalizeArabic(t.toLowerCase()))
-      ).length;
-      if (titleHits >= 2) score += 40;
-
-      if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
 
       if (semanticMap.has(c.id)) {
         const semSim = semanticMap.get(c.id);
         score += Math.round(semSim * 100);
-        if (score <= Math.round(semSim * 100)) {
-          score += Math.round(semSim * 50);
-        }
       }
 
-return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
-    });
+      scored.push({ ...c, relevanceScore: score, _titleMatch: isTitleMatch });
+    }
 
-
+    // ترتيب النتائج
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    scored.slice(0, 5).forEach((c, i) => {
-      console.log(
-        `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
-          c.domain ? ` (${c.domain})` : ""
-        }`
-      );
-    });
+    // طباعة أفضل 5 نتائج (للتصحيح)
+    console.log(`🔍 Top results:`);
+    for (let i = 0; i < Math.min(5, scored.length); i++) {
+      const c = scored[i];
+      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}`);
+    }
 
     const result = scored.slice(0, 15);
+
     setCachedSearch(cacheKey, result);
     return result;
+    
   } catch (e) {
     console.error("searchCourses error:", e.message);
     return [];
@@ -1437,7 +1381,7 @@ async function fuzzySearchFallback(terms) {
     const { data: all, error } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .limit(500);
+      .limit(200);
     if (error || !all) return [];
 
 const searchable = prepareSearchTerms(terms);
