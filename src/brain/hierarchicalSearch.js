@@ -260,6 +260,54 @@ function courseTitleOrSubtitleHitsTerm(course, terms) {
   return false;
 }
 
+/** عنوان الدبلومة يطابق مصطلحات السؤال — بدون الاعتماد على وصف أو دلالة ضعيفة. */
+function diplomaTitleHitsAnchoredTerms(diploma, terms) {
+  const title = normalizeArabic((diploma.title || "").toLowerCase());
+  const titleRaw = String(diploma.title || "").toLowerCase();
+  for (const term of terms) {
+    const nt = normalizeArabic(String(term).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
+    if (title.includes(nt)) return true;
+    if (/[a-z]{2,}/i.test(nt)) {
+      const low = String(term).trim().toLowerCase();
+      if (titleRaw.includes(low)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (مثل workflow في محتوى درس فقط).
+ */
+function filterDiplomasForAnchoredTitles(
+  diplomas,
+  userClean,
+  intent,
+  searchTerms,
+  broadDiplomaListing
+) {
+  if (!diplomas?.length || broadDiplomaListing) return diplomas || [];
+  const limitedTerms = searchTerms.slice(0, 8);
+  const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
+  if (!hasNarrowTopicTerms(userClean, lexicalTerms, intent)) {
+    return diplomas;
+  }
+  const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  const effectiveTerms =
+    anchored.length > 0
+      ? anchored
+      : userDerived.length > 0
+        ? userDerived
+        : lexicalTerms;
+  const filtered = diplomas.filter((d) =>
+    diplomaTitleHitsAnchoredTerms(d, effectiveTerms)
+  );
+  return filtered.length > 0 ? filtered : [];
+}
+
 function termsAnchoredInQuery(userClean, lexicalTerms, intent) {
   const u = normalizeArabic(String(userClean || "").toLowerCase());
   const rawLower = String(userClean || "").toLowerCase();
@@ -433,7 +481,7 @@ async function extractSearchIntent(userMessage) {
 - skip_catalog: true إذا كانت الرسالة تحية/شكر/صغيرة جداً/لا تتعلق بالبحث عن تعلم أو منتجات (مثلاً "هلا"، "تمام شكراً").
 - search_text: جملة واحدة بالعربية وإن أمكن مصطلحات إنجليزية تقنية للبحث الدلالي (embedding) — صِغ ما يبحث عنه المستخدم فعلياً (مثلاً "عايز أعمل جدول" → "Excel جداول بيانات spreadsheets").
 - terms_ar: كلمات عربية ظهرت في رسالة المستخدم أو مرادف مباشر جداً للموضوع فقط؛ لا تضف مجالات مجاورة (مثلاً لسؤال عن Excel لا تضف "تحليل" أو "بيانات" أو "مالية" إلا إذا ذكرها المستخدم صراحة).
-- terms_en: مصفوفة أدوات/مصطلحات إنجليزية تقنية فعلية (Excel, VBA, Photoshop, ...).
+- terms_en: أدوات/مصطلحات إنجليزية فعلية كما كتبها المستخدم أو شكلها المعتاد (workflow, Excel, Shortcuts, n8n, …) حتى لو كتبها بالعربي حرفياً (مثلاً وورك فلو → workflow في terms_en).
 - tools: أسماء أدوات/برامج إن وُجدت.
 
 لا تضف شرحاً خارج JSON.`,
@@ -479,7 +527,7 @@ async function searchDiplomasLayer(searchTerms, queryForEmb) {
         "match_diplomas",
         {
           query_embedding: embResponse.data[0].embedding,
-          match_threshold: 0.72,
+          match_threshold: 0.8,
           match_count: 8,
         }
       );
@@ -951,6 +999,9 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
 
   if (chunks.length > 0) {
     lines.push("", "## مقتطفات من محتوى الدروس (للسياق — ليست كروت)");
+    lines.push(
+      "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة واذكر اسم الكورس والدرس بوضوح."
+    );
     for (const ch of chunks) {
       const head = [ch.course_title, ch.lesson_title].filter(Boolean).join(" — ");
       lines.push(`- ${head ? `«${head}» ` : ""}${ch.excerpt}`);
@@ -965,7 +1016,7 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   } else if (chunks.length > 0) {
     lines.push(
       "",
-      "يمكنك الاستناد للمقتطفات أعلاه في جملة قصيرة فقط إن لزم؛ دون إعادة تعداد الكورسات الظاهرة في الكروت."
+      "إن لم تُعرض كروت دبلومات/كورسات أو كان الموضوع داخل المقتطفات فقط: اجب من المقتطفات واذكر الكورس والدرس؛ جملة ترحيب قصيرة مسموحة ثم الإجابة."
     );
   }
 
@@ -1011,6 +1062,16 @@ async function runCatalogSearch(userClean, intent) {
     ]);
   }
 
+  const diplomasForCatalog = broadDiplomaListing
+    ? diplomas
+    : filterDiplomasForAnchoredTitles(
+        diplomas,
+        userClean,
+        intent,
+        searchTerms,
+        broadDiplomaListing
+      );
+
   const coursesForCards = courses.map((c) => ({ ...c }));
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
   mergeLessonsIntoCourses(coursesForCards, lessons);
@@ -1019,14 +1080,20 @@ async function runCatalogSearch(userClean, intent) {
     coursesForCards
   );
   const cardsAppendHtml = buildCatalogCardsAppendHtml(
-    diplomas,
+    diplomasForCatalog,
     coursesForCards,
     instructors
   );
 
-  const text = formatCatalogBlock(diplomas, courses, lessons, chunks, {
-    omitListsForCards: Boolean(cardsAppendHtml),
-  });
+  const text = formatCatalogBlock(
+    diplomasForCatalog,
+    courses,
+    lessons,
+    chunks,
+    {
+      omitListsForCards: Boolean(cardsAppendHtml),
+    }
+  );
   return { text, cardsAppendHtml, intent, searchTerms };
 }
 
