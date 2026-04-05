@@ -314,6 +314,30 @@ function escapeRegExp(s) {
 }
 
 /**
+ * يزيل مصطلحات لاتينية قصيرة تُغطّيها كلمة أطول في القائمة (مثل work ← workflow)
+ * حتى لا يُبنى ilike.%work% ويطابق SolidWorks أو غيره.
+ */
+function pruneEnglishSubstringsFromTerms(terms) {
+  if (!terms?.length) return terms || [];
+  const arr = terms.map((t) => String(t).trim()).filter(Boolean);
+  const lower = arr.map((t) => t.toLowerCase());
+  const removeIdx = new Set();
+  for (let i = 0; i < arr.length; i++) {
+    if (!/^[a-z0-9._+-]+$/i.test(arr[i]) || lower[i].length < 3) continue;
+    for (let j = 0; j < arr.length; j++) {
+      if (i === j) continue;
+      if (!/^[a-z0-9._+-]+$/i.test(arr[j])) continue;
+      const a = lower[i];
+      const b = lower[j];
+      if (a.length >= b.length) continue;
+      if (b.length < 5) continue;
+      if (b.startsWith(a) && b.length - a.length >= 2) removeIdx.add(i);
+    }
+  }
+  return arr.filter((_, i) => !removeIdx.has(i));
+}
+
+/**
  * تطابق عربي ليس بادئة داخل كلمة أطول (مثلاً «وورك» داخل «ووركس» لـ SolidWorks).
  */
 function arabicBoundedOccurrence(haystackNorm, nt) {
@@ -408,6 +432,18 @@ function courseTitleOrSubtitleHitsTerm(course, terms) {
     if (isCourseLexicalNoiseTerm(term)) continue;
     if (textFieldMatchesTerm(title, titleRaw, term)) return true;
     if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) return true;
+  }
+  return false;
+}
+
+/** يطابق عنوان الدرس نفس قواعد العنوان (كلمة كاملة إنجليزياً) — لا ilike.%work% على SolidWorks. */
+function lessonRowMatchesSearchTerms(lesson, preparedTerms) {
+  const title = normalizeArabic((lesson.title || "").toLowerCase());
+  const titleRaw = String(lesson.title || "").toLowerCase();
+  for (const term of preparedTerms) {
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (String(term).length < 2) continue;
+    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
   }
   return false;
 }
@@ -565,18 +601,18 @@ function rankAndFilterCourses(
       /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.84;
+        return typeof sim === "number" && sim >= 0.88;
       });
       if (semOk.length > 0) {
         pool = semOk;
       } else {
         const ranked = courses
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim > 0)
+          .filter((x) => x.sim >= 0.86)
           .sort((a, b) => b.sim - a.sim)
-          .slice(0, 8)
+          .slice(0, 6)
           .map((x) => x.c);
-        pool = ranked.length > 0 ? ranked : courses.slice(0, 8);
+        pool = ranked.length > 0 ? ranked : courses.slice(0, 6);
       }
     }
   }
@@ -593,7 +629,12 @@ function rankAndFilterCourses(
 
   let kept;
   if (narrow) {
-    kept = rows;
+    kept = rows.filter((x) => {
+      const titleHit = courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms);
+      if (titleHit) return x.lexT >= 12 || x.sim >= 0.72;
+      return x.sim >= 0.89;
+    });
+    if (kept.length === 0) return [];
   } else {
     kept = rows.filter(
       (x) =>
@@ -782,7 +823,7 @@ async function extractSearchIntent(userMessage) {
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
 - response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
 - terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم.
-- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد عالمياً؛ إذا كتب المستخدم مصطلحاً إنجليزياً بالأحرف العربية أو تحليقة، ضع هنا الشكل الإنجليزي الصحيح حتى يطابق عناوين الدروس والمحتوى المخزّن غالباً بالإنجليزية.
+- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد عالمياً؛ إذا كتب المستخدم مصطلحاً إنجليزياً بالأحرف العربية أو تحليقة، ضع هنا الشكل الإنجليزي الصحيح حتى يطابق عناوين الدروس والمحتوى المخزّن غالباً بالإنجليزية. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل (مثل لا تضف work مع workflow).
 - tools: أسماء أدوات/برامج إن وُجدت.
 - audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
 
@@ -818,7 +859,7 @@ function buildSearchTerms(intent, userClean) {
       (t) => String(t).length > 1
     );
   }
-  return merged.slice(0, 16);
+  return pruneEnglishSubstringsFromTerms(merged.slice(0, 16));
 }
 
 function embeddingQueryText(intent, userClean) {
@@ -1089,8 +1130,8 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.85,
-              match_count: isChild ? 12 : 14,
+              match_threshold: isChild ? 0.88 : 0.87,
+              match_count: isChild ? 12 : 12,
             });
             return data || [];
           } catch (e) {
@@ -1227,18 +1268,18 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.84;
+        return typeof sim === "number" && sim >= 0.88;
       });
       if (semOnly.length > 0) {
         deduped = semOnly;
       } else {
         const ranked = deduped
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim > 0)
+          .filter((x) => x.sim >= 0.86)
           .sort((a, b) => b.sim - a.sim)
-          .slice(0, 10)
+          .slice(0, 8)
           .map((x) => x.c);
-        deduped = ranked.length > 0 ? ranked : deduped.slice(0, 8);
+        deduped = ranked.length > 0 ? ranked : deduped.slice(0, 6);
       }
     }
   }
@@ -1300,7 +1341,12 @@ async function searchLessonsLayer(searchTerms) {
 
   if (error || !lessons?.length) return [];
 
-  const courseIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))];
+  const lessonRows = lessons.filter((l) =>
+    lessonRowMatchesSearchTerms(l, allTerms)
+  );
+  if (!lessonRows.length) return [];
+
+  const courseIds = [...new Set(lessonRows.map((l) => l.course_id).filter(Boolean))];
   let courseMap = new Map();
   if (courseIds.length > 0) {
     const { data: crs } = await supabase
@@ -1310,7 +1356,7 @@ async function searchLessonsLayer(searchTerms) {
     courseMap = new Map((crs || []).map((c) => [c.id, c]));
   }
 
-  return lessons.map((l) => {
+  return lessonRows.map((l) => {
     const c = courseMap.get(l.course_id);
     return {
       id: l.id,
@@ -1798,7 +1844,7 @@ async function runCatalogSearch(userClean, intent) {
   if (searchTerms.length === 0 && !broadDiplomaListing) {
     const uc = String(userClean || "").trim();
     if (uc.length >= 2 && looksLikeTopicOrToolQuery(userClean)) {
-      searchTerms = prepareSearchTerms([uc]);
+      searchTerms = pruneEnglishSubstringsFromTerms(prepareSearchTerms([uc]));
     }
   }
   if (searchTerms.length === 0 && !broadDiplomaListing) {
