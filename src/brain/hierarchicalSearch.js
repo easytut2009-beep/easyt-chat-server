@@ -13,6 +13,93 @@ const {
   COURSE_SELECT_COLS,
 } = require("../config/constants");
 const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
+const { buildCatalogCardsAppendHtml } = require("./catalogCards");
+
+/** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
+let _gptDiplomaMapCache = { data: null, ts: 0 };
+const _GPT_DIPLOMA_MAP_TTL = 10 * 60 * 1000;
+
+async function injectDiplomaInfoForGpt(supabase, courses) {
+  if (!supabase || !courses?.length) return;
+  const now = Date.now();
+  let map = _gptDiplomaMapCache.data;
+  if (!map || now - _gptDiplomaMapCache.ts > _GPT_DIPLOMA_MAP_TTL) {
+    try {
+      const [dcResult, dResult] = await Promise.all([
+        supabase
+          .from("diploma_courses")
+          .select("diploma_id, course_id, course_order")
+          .order("course_order", { ascending: true }),
+        supabase.from("diplomas").select("id, title, link, price"),
+      ]);
+      const dcRows = dcResult.data || [];
+      const diplomas = dResult.data || [];
+      const diplomaMap = {};
+      diplomas.forEach((d) => {
+        diplomaMap[String(d.id)] = d;
+      });
+      const courseToD = {};
+      for (const row of dcRows) {
+        const d = diplomaMap[String(row.diploma_id)];
+        if (!d) continue;
+        const cKey = String(row.course_id);
+        if (!courseToD[cKey]) courseToD[cKey] = [];
+        courseToD[cKey].push({
+          diplomaId: row.diploma_id,
+          diplomaTitle: d.title,
+          diplomaLink: d.link,
+          courseOrder: row.course_order,
+        });
+      }
+      map = { courseToD };
+      _gptDiplomaMapCache = { data: map, ts: now };
+    } catch (e) {
+      console.error("injectDiplomaInfoForGpt:", e.message);
+      return;
+    }
+  }
+  const courseToD = map.courseToD;
+  for (const c of courses) {
+    const entries = courseToD[String(c.id)];
+    if (entries?.length) c._diplomaInfo = entries;
+  }
+}
+
+async function fetchInstructorsForCourses(supabase, courses) {
+  const ids = [
+    ...new Set(courses.map((c) => c.instructor_id).filter(Boolean)),
+  ];
+  if (!ids.length || !supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("instructors")
+      .select("id, name")
+      .in("id", ids);
+    return data || [];
+  } catch (e) {
+    console.error("fetchInstructorsForCourses:", e.message);
+    return [];
+  }
+}
+
+function mergeLessonsIntoCourses(courses, lessons) {
+  const byCourse = new Map();
+  for (const l of lessons) {
+    if (!l.course_id) continue;
+    if (!byCourse.has(l.course_id)) byCourse.set(l.course_id, []);
+    const arr = byCourse.get(l.course_id);
+    if (arr.length < 8) {
+      arr.push({
+        title: l.title || "",
+        timestamp_start: l.timestamp_start,
+      });
+    }
+  }
+  for (const c of courses) {
+    const m = byCourse.get(c.id);
+    if (m?.length) c.matchedLessons = m;
+  }
+}
 
 function expandArabicVariants(terms) {
   const variants = new Set();
@@ -432,12 +519,13 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks) {
   }
 
   const lines = [
-    "═══ نتائج البحث في الكتالوج (مرتبة — روابط وعناوين؛ لا تخترع كورسات) ═══",
-    "أسعار الدبلومات والكورسات: إن وُجد «سعر:» في السطر فهو من الجدول؛ لا تستبدله بسعر الاشتراك العام.",
+    "═══ نتائج البحث في الكتالوج (للسياق فقط — لا تخترع كورسات) ═══",
+    "أسعار الكورسات/الدبلومات من الجدول؛ لا تستبدلها بسعر الاشتراك العام.",
+    "مهم: كروت الدبلومات والكورسات بنفس تنسيق المنصة القديم تُلحق تلقائياً في آخر رسالة البوت — لا تنسخ قوائم طويلة من العناوين؛ اكتب مقدمة قصيرة أو نصيحة ثم اذكر أن التفاصيل في الكروت أسفل الرد.",
   ];
 
   if (diplomas.length > 0) {
-    lines.push("", "## طبقة 1 — دبلومات");
+    lines.push("", "## طبقة 1 — دبلومات (عناوين للمرجعية)");
     for (const d of diplomas) {
       const price = d.price != null ? ` | سعر: ${d.price}` : "";
       lines.push(
@@ -447,7 +535,7 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks) {
   }
 
   if (courses.length > 0) {
-    lines.push("", "## طبقة 2 — كورسات");
+    lines.push("", "## طبقة 2 — كورسات (عناوين للمرجعية)");
     for (const c of courses) {
       const price =
         c.price != null && String(c.price).trim() !== ""
@@ -477,22 +565,22 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks) {
 
   lines.push(
     "",
-    "تعليمات العرض: ردّ على المستخدم بعناوين فرعية واضحة بالترتيب: «دبلومات» ثم «كورسات» ثم «دروس» ثم «مقتطفات من المحتوى» — فقط للأقسام التي فيها عناصر أعلاه. لا تخلط كل شيء في فقرة واحدة."
+    "تعليمات العرض: رتّب الرد بعناوين فرعية عند الحاجة (دبلومات / كورسات / دروس / مقتطفات). لا تكرر محتوى الكروت؛ الكروت تظهر آلياً بعد نصك."
   );
   return lines.join("\n");
 }
 
 /**
- * @returns {{ text: string, intent: object, searchTerms: string[] }}
+ * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
  */
 async function runCatalogSearch(userClean, intent) {
   if (!supabase || intent.skip_catalog) {
-    return { text: "", intent, searchTerms: [] };
+    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
   const searchTerms = buildSearchTerms(intent, userClean);
   if (searchTerms.length === 0) {
-    return { text: "", intent, searchTerms: [] };
+    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
   const queryForEmb = embeddingQueryText(intent, userClean);
@@ -504,8 +592,21 @@ async function runCatalogSearch(userClean, intent) {
     searchChunksLayer(queryForEmb),
   ]);
 
+  const coursesForCards = courses.map((c) => ({ ...c }));
+  await injectDiplomaInfoForGpt(supabase, coursesForCards);
+  mergeLessonsIntoCourses(coursesForCards, lessons);
+  const instructors = await fetchInstructorsForCourses(
+    supabase,
+    coursesForCards
+  );
+  const cardsAppendHtml = buildCatalogCardsAppendHtml(
+    diplomas,
+    coursesForCards,
+    instructors
+  );
+
   const text = formatCatalogBlock(diplomas, courses, lessons, chunks);
-  return { text, intent, searchTerms };
+  return { text, cardsAppendHtml, intent, searchTerms };
 }
 
 module.exports = {

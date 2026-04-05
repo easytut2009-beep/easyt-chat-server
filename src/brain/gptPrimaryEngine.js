@@ -268,7 +268,10 @@ async function smartChat(message, sessionId) {
       extractSearchIntent(clean),
     ]);
 
-  const { text: catalogBlock } = await runCatalogSearch(clean, searchIntent);
+  const { text: catalogBlock, cardsAppendHtml } = await runCatalogSearch(
+    clean,
+    searchIntent
+  );
 
   const linksBlock = [
     `صفحة كل الدورات: ${ALL_COURSES_URL}`,
@@ -286,7 +289,7 @@ async function smartChat(message, sessionId) {
 قواعد تقنية للرد:
 - اربط الرد بسياق المحادثة وبنصوص «السياسة الأساسية» و«تعليمات متغيرة من قاعدة البيانات» و«الكتالوج» و«العناوين المرجعية» أدناه.
 - لا تخترع أسماء كورسات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم.
-- إذا وُجد قسم «نتائج البحث في الكتالوج»، رتّب الرد بعناوين فرعية: دبلومات → كورسات → دروس → مقتطفات؛ بدون خلط في فقرة واحدة.
+- إذا وُجد قسم «نتائج البحث في الكتالوج»، رتّب الرد بعناوين فرعية عند الحاجة؛ لا تكرر قوائم طويلة من الكورسات/الدبلومات لأن كروت HTML منسّقة تُلحق تلقائياً بنهاية الرسالة عند وجود نتائج.
 - استخدم <br> عند الحاجة؛ روابط HTML بسيطة (نص واضح + href).
 - لا تذكر أنك نموذج لغوي.
 
@@ -343,12 +346,16 @@ ${linksBlock}
   }
 
   let reply = markdownToHtml(replyText);
+  if (cardsAppendHtml) {
+    reply += `<br><br>${cardsAppendHtml}`;
+  }
   reply = finalizeReply(reply);
 
   await logChat(sessionId, "bot", reply, "GPT_PRIMARY", {
     engine: "gpt_primary",
     ms: Date.now() - start,
     catalog_search: !!catalogBlock,
+    catalog_cards: !!cardsAppendHtml,
   });
 
   return {
