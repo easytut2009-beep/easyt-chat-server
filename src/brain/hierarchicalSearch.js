@@ -327,6 +327,82 @@ function isCourseLexicalNoiseTerm(t) {
   return _COURSE_LEXICAL_NOISE.has(nt);
 }
 
+/**
+ * كلمات تظهر في عناوين مئات الكورسات؛ لا تكفي وحدها كدليل معجمي عندما وُجدت أيضاً مصطلحات أدق في السؤال
+ * (مثال: «ورك فلو» + «تصميم الصور» — لا نكتفي بمطابقة «تصميم» مع كورس ألعاب أو مواقع).
+ */
+const _CATALOG_EVIDENCE_ULTRA_GENERIC = new Set(
+  [
+    "تصميم",
+    "تصميمات",
+    "برمجة",
+    "برمجيات",
+    "تعلم",
+    "تعليم",
+    "دورة",
+    "دورات",
+    "دوره",
+    "كورس",
+    "كورسات",
+    "اساسيات",
+    "أساسيات",
+    "احتراف",
+    "احترافي",
+    "احترافيه",
+    "احترافية",
+    "متقدم",
+    "مبتدئ",
+    "مبتدأ",
+    "مشروع",
+    "مشاريع",
+    "تطبيق",
+    "تطبيقات",
+    "موقع",
+    "مواقع",
+    "صفحة",
+    "صفحات",
+    "منصة",
+    "منصات",
+    "برنامج",
+    "برامج",
+    "شامل",
+    "شاملة",
+    "شامله",
+    "تطوير",
+    "بناء",
+    "انشاء",
+    "إنشاء",
+    "استخدام",
+    "شهادة",
+    "معتمد",
+    "design",
+    "programming",
+    "course",
+    "courses",
+    "learn",
+    "learning",
+    "basic",
+    "basics",
+    "advanced",
+    "tutorial",
+    "tutorials",
+    "website",
+    "websites",
+    "web",
+    "app",
+    "apps",
+    "application",
+    "building",
+    "development",
+  ].map((w) => normalizeArabic(String(w).toLowerCase()))
+);
+
+function isUltraGenericCatalogEvidenceTerm(t) {
+  const nt = normalizeArabic(String(t).toLowerCase().trim());
+  if (nt.length < 2) return true;
+  return _CATALOG_EVIDENCE_ULTRA_GENERIC.has(nt);
+}
+
 function termsForCourseLexical(limitedTerms, userClean) {
   const filtered = limitedTerms.filter((t) => !isCourseLexicalNoiseTerm(t));
   if (filtered.length > 0) return filtered;
@@ -922,12 +998,12 @@ async function extractSearchIntent(userMessage) {
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
 - للرسالة القصيرة (كلمة أو مصطلح واحد): skip_catalog يجب أن يكون false واملأ search_text وterms_en (والإنجليزي عند الحاجة) وإلا لن يُرجع البحث كورسات من المنصة.
 - إذا كتب المستخدم مصطلحاً تقنياً بالعربي وهو في الأصل لاتيني/إنجليزي: ضع الشكل المعتمد في terms_en واملأ search_text بجملة بحث دلالية تعكس سؤاله فقط دون إضافة مواضيع أو أدوات لم يذكرها.
-- search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
+- search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى، **بما في ذلك الجمل المركّبة** (مثال: شرح سير عمل تصميم الصور أو workflow لصناعة الصور) وليس مجرد أقرب كلمة عامة. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
 - response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
-- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر؛ لا توسّع المجال بدون ذكر من المستخدم.
+- terms_ar: كلمات أو **عبارات قصيرة دالة** من الرسالة أو مرادف مباشر؛ لا توسّع المجال بدون ذكر من المستخدم. إذا كانت الجملة **مركّبة** (تربط موضوعين مثل: سير عمل / ورك فلو + مجال مثل تصميم الصور أو جرافيك)، أدرِج عبارات تحافظ على هذا الربط (مثل: «سير عمل تصميم الصور»، «ورك فلو تصميم») ولا تكتفِ بكلمات منفردة شديدة العمومية مثل «تصميم» أو «برمجة» وحدها إذا حذفت معنى السؤال.
 - terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد؛ إذا كتب المستخدم تحليقة بالعربي ضع الشكل الإنجليزي الصحيح. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل عنها.
 - tools: أسماء أدوات/برامج إن وُجدت.
 - audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
@@ -2101,6 +2177,21 @@ function collectRelevanceTermsForCatalogEvidence(
   return userOnly.slice(0, 14);
 }
 
+function catalogEvidenceMatchBundle(userClean, searchTerms, intent) {
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
+  const narrow = terms.filter((t) => !isUltraGenericCatalogEvidenceTerm(t));
+  const matchTerms = narrow.length > 0 ? narrow : terms;
+  return {
+    terms,
+    matchTerms,
+    strictSemantic: narrow.length > 0,
+  };
+}
+
 /**
  * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords وحدها — غالباً وسوم SEO عامة).
  */
@@ -2110,17 +2201,17 @@ function catalogCourseHasLexicalTopicEvidence(
   searchTerms,
   intent
 ) {
-  const terms = collectRelevanceTermsForCatalogEvidence(
+  const { terms, matchTerms } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
   );
   if (terms.length === 0) return false;
-  if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
+  if (courseTitleOrSubtitleHitsTerm(course, matchTerms)) return true;
   for (const l of course.matchedLessons || []) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
     const lr = String(l.title || "").toLowerCase();
-    for (const term of terms) {
+    for (const term of matchTerms) {
       if (isCourseLexicalNoiseTerm(term)) continue;
       if (textFieldMatchesTerm(lt, lr, term)) return true;
     }
@@ -2133,19 +2224,19 @@ function catalogCourseHasLexicalTopicEvidence(
  * يُقبل تشابه دلالي/Chunk عالٍ فقط كاستثناء.
  */
 function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
-  const terms = collectRelevanceTermsForCatalogEvidence(
+  const { terms, matchTerms, strictSemantic } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
   );
   if (terms.length === 0) return true;
 
-  if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
+  if (courseTitleOrSubtitleHitsTerm(course, matchTerms)) return true;
 
   for (const l of course.matchedLessons || []) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
     const lr = String(l.title || "").toLowerCase();
-    for (const term of terms) {
+    for (const term of matchTerms) {
       if (isCourseLexicalNoiseTerm(term)) continue;
       if (textFieldMatchesTerm(lt, lr, term)) return true;
     }
@@ -2153,8 +2244,10 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
 
   const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
   const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
-  if (vs >= 0.41) return true;
-  if (ch >= 0.7) return true;
+  const minVs = strictSemantic ? 0.47 : 0.41;
+  const minCh = strictSemantic ? 0.72 : 0.7;
+  if (vs >= minVs) return true;
+  if (ch >= minCh) return true;
   return false;
 }
 
@@ -2199,7 +2292,7 @@ function pruneMatchedLessonsForSearchTerms(
   searchTerms,
   intent
 ) {
-  const terms = collectRelevanceTermsForCatalogEvidence(
+  const { terms, matchTerms } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
@@ -2208,7 +2301,7 @@ function pruneMatchedLessonsForSearchTerms(
   const kept = course.matchedLessons.filter((l) => {
     const lt = normalizeArabic((l.title || "").toLowerCase());
     const lr = String(l.title || "").toLowerCase();
-    for (const term of terms) {
+    for (const term of matchTerms) {
       if (isCourseLexicalNoiseTerm(term)) continue;
       if (textFieldMatchesTerm(lt, lr, term)) return true;
     }
@@ -2224,7 +2317,7 @@ function pruneMatchedLessonsForSearchTerms(
 
 /** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
 function scoreCatalogCourse(course, userClean, searchTerms, intent) {
-  const terms = collectRelevanceTermsForCatalogEvidence(
+  const { terms, matchTerms } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
@@ -2243,7 +2336,7 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
   const keywords = normalizeArabic((course.keywords || "").toLowerCase());
   const keywordsRaw = String(course.keywords || "").toLowerCase();
 
-  for (const term of terms) {
+  for (const term of matchTerms) {
     if (textFieldMatchesTerm(title, titleRaw, term)) score += 60;
     if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += 45;
     if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 8;
@@ -2253,7 +2346,7 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
   for (const l of mls) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
     const lr = String(l.title || "").toLowerCase();
-    for (const term of terms) {
+    for (const term of matchTerms) {
       if (textFieldMatchesTerm(lt, lr, term)) score += 50;
     }
     const ls = Number(l.similarity);
