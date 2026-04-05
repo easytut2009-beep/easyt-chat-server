@@ -12,7 +12,7 @@ const { supabase, openai } = require("../lib/clients");
 const MAX_COURSE_CATALOG_CARDS = 6;
 /** أدنى تشابه لقبول chunk من match_lesson_chunks (كان 0.36 في الـ RPC فيدخل أي محتوى). */
 const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
-/** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً (يمرّر LangChain/عام ذكاء اصطناعي لسؤال workflow). */
+/** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً فقط. */
 const SEMANTIC_CHUNK_ONLY_MIN_SIM = 0.7;
 /** كورس جديد يُضاف من الـ chunks فقط (غير ظاهر في طبقة الكورسات) — عتبة أعلى. */
 const CHUNK_ONLY_NEW_COURSE_MIN_SIM = 0.7;
@@ -469,7 +469,7 @@ function courseTitleOrSubtitleHitsTerm(course, terms) {
   return false;
 }
 
-/** مصطلحات إنجليزية قصيرة (مثل key) تطابق «Key frame» بلا صلة؛ n8n وغيرها يُسمح بها. */
+/** مصطلحات إنجليزية قصيرة جداً قد تطابق عناوين بلا صلة؛ الأرقام والرموز تُسمح بها. */
 function isLessonSearchTokenAllowed(term) {
   const s = String(term).trim();
   if (s.length < 2) return false;
@@ -848,22 +848,6 @@ function fallbackIntentFromMessage(userMessage) {
   ) {
     return defaultIntent();
   }
-  const tn = normalizeArabic(t.toLowerCase());
-  /** تحليقة شائعة: بدون مصطلحات إنجليزية يفشل التضمين — نضيف مرادفات البحث الدلالي */
-  if (tn.includes("وورك") && tn.includes("فلو")) {
-    return {
-      skip_catalog: false,
-      search_text: "workflow automation n8n LangChain",
-      terms_ar: [],
-      terms_en: ["workflow", "automation", "n8n"],
-      tools: ["n8n"],
-      audience: null,
-      primary_goal: "",
-      constraints: [],
-      skill_level: null,
-      response_style: null,
-    };
-  }
   return {
     skip_catalog: false,
     search_text: t.slice(0, 500),
@@ -876,23 +860,6 @@ function fallbackIntentFromMessage(userMessage) {
     skill_level: null,
     response_style: null,
   };
-}
-
-/** يكمل نية البحث عندما يكتب المستخدم «وورك فلو» دون مصطلحات إنجليزية في JSON النموذج. */
-function augmentWorkflowTransliterationIntent(userClean, intent) {
-  const n = normalizeArabic(String(userClean || "").toLowerCase());
-  if (!n.includes("وورك") || !n.includes("فلو")) return intent;
-  const base = { ...intent };
-  base.skip_catalog = false;
-  const st = String(base.search_text || "").trim();
-  if (!st || st.length < 10) {
-    base.search_text = "workflow automation n8n";
-  }
-  base.terms_en = [
-    ...new Set([...(base.terms_en || []), "workflow", "automation", "n8n"]),
-  ].slice(0, 12);
-  base.tools = [...new Set([...(base.tools || []), "n8n"])].slice(0, 8);
-  return base;
 }
 
 /**
@@ -916,14 +883,14 @@ async function extractSearchIntent(userMessage) {
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
 - للرسالة القصيرة (كلمة أو مصطلح واحد): skip_catalog يجب أن يكون false واملأ search_text وterms_en (والإنجليزي عند الحاجة) وإلا لن يُرجع البحث كورسات من المنصة.
-- إذا كتب المستخدم مصطلحاً تقنياً بالحروف العربية وهو في الأصل إنجليزي (مثل «وورك فلو» = workflow، «بايثون» = python): ضع الشكل الإنجليزي في terms_en واملأ search_text بجملة بحث دلالية واضحة (مثلاً workflow automation n8n) حتى يطابق عناوين الكورسات والدروس المخزّنة غالباً بالإنجليزية.
+- إذا كتب المستخدم مصطلحاً تقنياً بالعربي وهو في الأصل لاتيني/إنجليزي: ضع الشكل المعتمد في terms_en واملأ search_text بجملة بحث دلالية تعكس سؤاله فقط دون إضافة مواضيع أو أدوات لم يذكرها.
 - search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
 - response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
-- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم. لا تضف «عمل» أو «شغل» كمدخل منفرد (تطابق عناوين لا علاقة لها بالسؤال)؛ استخدم عبارات كاملة مثل «سير العمل» أو «أتمتة» إن وُجدت في السياق.
-- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد عالمياً؛ إذا كتب المستخدم مصطلحاً إنجليزياً بالأحرف العربية أو تحليقة، ضع هنا الشكل الإنجليزي الصحيح حتى يطابق عناوين الدروس والمحتوى المخزّن غالباً بالإنجليزية. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل (مثل لا تضف work مع workflow).
+- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر؛ لا توسّع المجال بدون ذكر من المستخدم.
+- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد؛ إذا كتب المستخدم تحليقة بالعربي ضع الشكل الإنجليزي الصحيح. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل عنها.
 - tools: أسماء أدوات/برامج إن وُجدت.
 - audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
 
@@ -934,9 +901,7 @@ async function extractSearchIntent(userMessage) {
     });
     const text = completion.choices[0]?.message?.content || "{}";
     const j = JSON.parse(text);
-    return normalizeIntent(
-      augmentWorkflowTransliterationIntent(trimmed, normalizeIntent(j))
-    );
+    return normalizeIntent(j);
   } catch (e) {
     console.error("extractSearchIntent:", e.message);
     return fallbackIntentFromMessage(userMessage);
@@ -2000,6 +1965,51 @@ function collectRelevanceTerms(userClean, searchTerms, intent) {
   return out.slice(0, 28);
 }
 
+function termAppearsInUserMessage(t, userClean) {
+  const u = normalizeArabic(String(userClean || "").toLowerCase());
+  const raw = String(userClean || "").toLowerCase();
+  const nt = normalizeArabic(String(t || "").toLowerCase().trim());
+  if (nt.length >= 2 && u.includes(nt)) return true;
+  const s = String(t || "").trim();
+  if (/[a-z]{2,}/i.test(s) && englishWholeWord(raw, s)) return true;
+  return false;
+}
+
+/** نص إرساء: ما كتبه المستخدم + حقول النية المعرّضة للنموذج — لا قائمة كلمات في التطبيق. */
+function buildIntentAnchorBlob(userClean, intent) {
+  const parts = [
+    userClean,
+    intent?.search_text,
+    intent?.primary_goal,
+    ...((intent && intent.constraints) || []),
+  ]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  return parts.join("\n");
+}
+
+/**
+ * مصطلحات المطابقة المعجمية للكروت: من collectRelevanceTerms لكن فقط ما يظهر فعلياً في نص الإرساء
+ * (رسالة + search_text + goal + constraints). ما يُضاف في terms_en فقط دون أن يُذكر في أحد هذه النصوص لا يُستخدم كدليل معجمي.
+ */
+function collectRelevanceTermsForCatalogEvidence(
+  userClean,
+  searchTerms,
+  intent
+) {
+  const broad = collectRelevanceTerms(userClean, searchTerms, intent);
+  const anchor = buildIntentAnchorBlob(userClean, intent);
+  const filtered = broad.filter((t) => {
+    if (isCourseLexicalNoiseTerm(t)) return false;
+    return termAppearsInUserMessage(t, anchor);
+  });
+  if (filtered.length > 0) return filtered;
+  const userOnly = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  return userOnly.slice(0, 14);
+}
+
 /**
  * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords وحدها — غالباً وسوم SEO عامة).
  */
@@ -2009,7 +2019,11 @@ function catalogCourseHasLexicalTopicEvidence(
   searchTerms,
   intent
 ) {
-  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
   if (terms.length === 0) return false;
   if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
   for (const l of course.matchedLessons || []) {
@@ -2028,7 +2042,11 @@ function catalogCourseHasLexicalTopicEvidence(
  * يُقبل تشابه دلالي/Chunk عالٍ فقط كاستثناء.
  */
 function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
-  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
   if (terms.length === 0) return true;
 
   if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
@@ -2055,7 +2073,11 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
  */
 function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
   if (!courses?.length) return courses;
-  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
   if (terms.length === 0) return courses;
   const hasLex = (c) =>
     catalogCourseHasLexicalTopicEvidence(c, userClean, searchTerms, intent);
@@ -2070,7 +2092,11 @@ function pruneMatchedLessonsForSearchTerms(
   searchTerms,
   intent
 ) {
-  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
   if (!terms.length || !course.matchedLessons?.length) return;
   const kept = course.matchedLessons.filter((l) => {
     const lt = normalizeArabic((l.title || "").toLowerCase());
@@ -2091,7 +2117,11 @@ function pruneMatchedLessonsForSearchTerms(
 
 /** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
 function scoreCatalogCourse(course, userClean, searchTerms, intent) {
-  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  const terms = collectRelevanceTermsForCatalogEvidence(
+    userClean,
+    searchTerms,
+    intent
+  );
   let score = 0;
   const sim = typeof course._vecSim === "number" ? course._vecSim : 0;
   score += sim * 200;
