@@ -1199,9 +1199,18 @@ async function searchCoursesLayer(
     intent
   );
   if (narrowTopic) {
-    deduped = deduped.filter((c) =>
+    const lexOnly = deduped.filter((c) =>
       courseTitleOrSubtitleHitsTerm(c, filterTerms)
     );
+    if (lexOnly.length > 0) {
+      deduped = lexOnly;
+    } else {
+      const semOnly = deduped.filter((c) => {
+        const sim = semanticMap.get(c.id);
+        return typeof sim === "number" && sim >= 0.8;
+      });
+      deduped = semOnly.length > 0 ? semOnly : deduped;
+    }
   }
 
   return rankAndFilterCourses(
@@ -1211,6 +1220,33 @@ async function searchCoursesLayer(
     userClean,
     intent
   );
+}
+
+/**
+ * يضيف صفوف كورسات كاملة عندما طبقة الدروس وحدها طابقت (عناوين دروس) وطبقة الكورسات رجعت فارغة —
+ * بدون ذلك لا تُبنى كروت HTML ويظهر GPT قائمة نصية من أسماء الدروس فقط.
+ */
+async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
+  if (!supabase || !lessons?.length) return courses || [];
+  const byId = new Map((courses || []).filter((c) => c?.id).map((c) => [c.id, c]));
+  const needIds = [
+    ...new Set(lessons.map((l) => l.course_id).filter(Boolean)),
+  ].filter((id) => !byId.has(id));
+  if (needIds.length === 0) return [...byId.values()];
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select(COURSE_SELECT_COLS)
+      .in("id", needIds);
+    if (error || !data?.length) return [...byId.values()];
+    for (const row of data) {
+      if (row?.id && !byId.has(row.id)) byId.set(row.id, row);
+    }
+    return [...byId.values()];
+  } catch (e) {
+    console.error("mergeCoursesFromLessonHits:", e.message);
+    return [...byId.values()];
+  }
 }
 
 async function searchLessonsLayer(searchTerms) {
@@ -1227,7 +1263,7 @@ async function searchLessonsLayer(searchTerms) {
     .from("lessons")
     .select("id, title, course_id")
     .or(orFilters)
-    .limit(18);
+    .limit(28);
 
   if (error || !lessons?.length) return [];
 
@@ -1763,6 +1799,8 @@ async function runCatalogSearch(userClean, intent) {
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
       searchLessonsLayer(searchTerms),
     ]);
+
+    courses = await mergeCoursesFromLessonHits(supabase, courses, lessons);
 
     diplomasForCatalog = filterDiplomasForAnchoredTitles(
       diplomas,
