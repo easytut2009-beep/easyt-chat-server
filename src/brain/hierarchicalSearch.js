@@ -21,6 +21,7 @@ const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
 const {
   buildCatalogCardsAppendHtml,
   buildChunkCardsAppendHtml,
+  buildCatalogQueryHintForCards,
 } = require("./catalogCards");
 
 /** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
@@ -1366,19 +1367,29 @@ async function searchCoursesLayer(
 }
 
 /**
- * يضيف كورسات من عناوين الدروس **فقط** عندما طبقة الكورسات فارغة (الموضوع في الدروس وليس في عنوان الكورس).
- * حد أقصى 2 كورسات؛ إن وُجدت كورسات من البحث/الدلالة لا نضيف من الدروس.
+ * يضيف كورسات من عناوين الدروس عندما طبقة الكورسات فارغة، أو (supplementWhenFew) عندما يوجد كورس قليل ونحتاج كورسات إضافية ذات صلة.
  */
-async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
+async function mergeCoursesFromLessonHits(
+  supabase,
+  courses,
+  lessons,
+  options = {}
+) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
-  const MAX_FROM_LESSONS = 2;
+  const supplement = Boolean(options.supplementWhenFew);
   const base = (courses || []).filter((c) => c?.id);
-  if (base.length > 0) return base.slice(0, MAX);
   if (!supabase || !lessons?.length) return base.slice(0, MAX);
+  if (base.length > 0 && !supplement) return base.slice(0, MAX);
+  if (supplement && base.length >= 4) return base.slice(0, MAX);
+
   const byId = new Map(base.map((c) => [c.id, c]));
+  const maxNew = supplement
+    ? Math.min(5, Math.max(0, MAX - byId.size))
+    : Math.min(2, Math.max(0, MAX - byId.size));
+  if (maxNew <= 0) return [...byId.values()].slice(0, MAX);
   const needIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))]
     .filter((id) => !byId.has(id))
-    .slice(0, MAX_FROM_LESSONS);
+    .slice(0, maxNew);
   if (needIds.length === 0) return [...byId.values()].slice(0, MAX);
   try {
     const { data, error } = await supabase
@@ -1960,10 +1971,12 @@ function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) 
   if (best < 8) {
     return scored.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
   }
-  const cutoff = Math.max(10, best * 0.36);
+  const cutoff = Math.max(5, best * 0.22);
   let kept = scored.filter((x) => x.s >= cutoff);
   if (kept.length === 0) {
     kept = scored.slice(0, Math.min(3, scored.length));
+  } else if (kept.length === 1 && scored.length >= 2) {
+    kept = scored.slice(0, Math.min(4, scored.length));
   }
   return kept.map((x) => x.c).slice(0, MAX_COURSE_CATALOG_CARDS);
 }
@@ -2050,13 +2063,25 @@ async function runCatalogSearch(userClean, intent) {
 
     lessons = [];
     chunks = [];
-    /** طبقة 1: دبلومات + كورسات؛ طبقة 2: دروس + chunks فقط إذا لم يُعثر على شيء في الطبقة 1 */
+    /** طبقة 1: دبلومات + كورسات؛ طبقة 2: دروس + chunks إذا لم يُعثر على شيء، أو إذا وُجد كورس أو اثنان فقط (تكميل من الدروس/المحتوى). */
     if (diplomasForCatalog.length === 0 && courses.length === 0) {
       [lessons, chunks] = await Promise.all([
         searchLessonsLayer(searchTerms),
         searchChunksLayer(queryForChunks, userClean, searchTerms),
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons);
+    } else if (
+      diplomasForCatalog.length === 0 &&
+      courses.length > 0 &&
+      courses.length < 3
+    ) {
+      [lessons, chunks] = await Promise.all([
+        searchLessonsLayer(searchTerms),
+        searchChunksLayer(queryForChunks, userClean, searchTerms),
+      ]);
+      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+        supplementWhenFew: true,
+      });
     }
   }
 
@@ -2072,6 +2097,12 @@ async function runCatalogSearch(userClean, intent) {
   courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
+  }
+  const catalogHint = buildCatalogQueryHintForCards(intentEff, searchTerms);
+  if (catalogHint) {
+    for (const c of coursesForCards) {
+      c._catalogQueryHint = catalogHint;
+    }
   }
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
   const instructors = await fetchInstructorsForCourses(
