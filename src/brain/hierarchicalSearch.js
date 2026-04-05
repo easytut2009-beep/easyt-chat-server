@@ -399,12 +399,50 @@ function englishWholeWord(hayRaw, word) {
   return re.test(hayRaw);
 }
 
+/**
+ * «workflow» متعدّد المعاني: كلمة كاملة في «PBR Workflow» ليست نفس طلب المستخدم عن سير عمل/أتمتة.
+ * نختبر نافذة قصيرة حول التطابق — بدون قوائم مواضيع طويلة.
+ */
+function isWorkflowTechnicalCompoundContext(hayRaw) {
+  const r = String(hayRaw || "").toLowerCase();
+  return (
+    /\b(?:pbr|physically\s+based|git|gitea|gitlab|github|ci\/cd|ci\s*cd)\s+workflow\b/.test(
+      r
+    ) ||
+    /\b(?:render|shader|uv|material|texture|bump|normal\s*map|topology|rigging|sculpt)\s+workflow\b/.test(
+      r
+    ) ||
+    /\bworkflow\s+(?:shader|render|texture|map|node|uv|pbr)\b/.test(r)
+  );
+}
+
+/** أول ظهور لـ workflow مقبول للبحث (ليس ضمن مركب تقني مثل PBR Workflow). */
+function findFirstAllowedWorkflowMatch(plain) {
+  const p = String(plain || "");
+  const re = /\bworkflow\b/gi;
+  let m;
+  while ((m = re.exec(p)) !== null) {
+    const win = p.slice(
+      Math.max(0, m.index - 28),
+      Math.min(p.length, m.index + m[0].length + 36)
+    );
+    if (!isWorkflowTechnicalCompoundContext(win)) {
+      return { start: m.index, end: m.index + m[0].length };
+    }
+  }
+  return null;
+}
+
 function textFieldMatchesTerm(fieldNorm, fieldRaw, term) {
   const nt = normalizeArabic(String(term).toLowerCase().trim());
   if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) return false;
   const raw = String(fieldRaw || "").toLowerCase();
   if (/[a-z]{2,}/i.test(String(term).trim())) {
-    return englishWholeWord(raw, String(term).trim());
+    const word = String(term).trim();
+    if (/^workflow$/i.test(word)) {
+      return findFirstAllowedWorkflowMatch(raw) !== null;
+    }
+    return englishWholeWord(raw, word);
   }
   return arabicBoundedOccurrence(fieldNorm, nt);
 }
@@ -1541,6 +1579,11 @@ function findMatchBoundsInPlain(plain, needles) {
   for (const n of needles) {
     const ns = String(n);
     if (ns.length < 2) continue;
+    if (/^workflow$/i.test(ns.trim())) {
+      const fb = findFirstAllowedWorkflowMatch(plain);
+      if (fb) return fb;
+      continue;
+    }
     try {
       const re = new RegExp(ns.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       const m = plain.match(re);
@@ -1662,7 +1705,18 @@ async function fetchChunksLexicalHits(supabase, userClean, searchTerms, intent) 
     }
     if (!data?.length) return [];
 
-    const lessonIds = [...new Set(data.map((c) => c.lesson_id).filter(Boolean))];
+    const needles = buildChunkSearchNeedles(userClean, searchTerms, intent);
+    const dataFiltered = data.filter((chunk) => {
+      const plain = stripChunkPlainText(chunk.content || "");
+      if (!plain) return false;
+      if (!needles.some((x) => /^workflow$/i.test(String(x).trim()))) return true;
+      if (!/\bworkflow\b/i.test(plain)) return true;
+      return findFirstAllowedWorkflowMatch(plain) !== null;
+    });
+
+    const lessonIds = [
+      ...new Set(dataFiltered.map((c) => c.lesson_id).filter(Boolean)),
+    ];
     if (lessonIds.length === 0) return [];
 
     const { data: lessons } = await supabase
@@ -1683,7 +1737,7 @@ async function fetchChunksLexicalHits(supabase, userClean, searchTerms, intent) 
       courseMap = new Map((crs || []).map((c) => [c.id, c]));
     }
 
-    return data.map((chunk) => {
+    return dataFiltered.map((chunk) => {
       const les = lessonMap.get(chunk.lesson_id);
       const crs = les ? courseMap.get(les.course_id) : null;
       return {
