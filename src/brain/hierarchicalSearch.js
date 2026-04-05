@@ -413,6 +413,62 @@ function termsAnchoredInQuery(userClean, lexicalTerms, intent) {
   return out;
 }
 
+function effectiveCourseFilterTerms(userClean, lexicalTerms, intent) {
+  const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  return anchored.length > 0
+    ? anchored
+    : userDerived.length > 0
+      ? userDerived
+      : lexicalTerms;
+}
+
+function wantsWorkflowTopic(userClean, intent) {
+  const raw = String(userClean || "");
+  const u = raw.toLowerCase();
+  const compact = normalizeArabic(u).replace(/[\s\u200c\u200f\-_]+/g, "");
+  if (/ووركفلو|وركفلو|workflow/i.test(compact + u)) return true;
+  if (/^وورك$|^ورك$/i.test(compact)) return true;
+  const blob = [
+    ...(intent?.terms_en || []),
+    ...(intent?.tools || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return /\bworkflow\b|automations?\b/i.test(blob);
+}
+
+/**
+ * ilike بـ %وورك% يطابق «ووركس» في SQL قبل أي فلترة JS — نمنع الكلمة المنفردة ونضيف workflow والعبارة كاملة.
+ */
+function sanitizeForIlikeTerms(forIlike, userClean, intent) {
+  if (!forIlike?.length || !wantsWorkflowTopic(userClean, intent)) {
+    return forIlike;
+  }
+  const nk = (s) => normalizeArabic(String(s).toLowerCase().trim());
+  const out = [];
+  const seen = new Set();
+  const add = (t) => {
+    const k = nk(t);
+    if (k.length < 2 || seen.has(k)) return;
+    seen.add(k);
+    out.push(String(t).trim());
+  };
+  for (const t of forIlike) {
+    const nt = nk(t);
+    if (nt === nk("وورك") || nt === nk("ورك") || nt === "work") continue;
+    add(t);
+  }
+  if (/وورك\s*فلو|ورك\s*فلو/i.test(userClean)) {
+    add("وورك فلو");
+    add("ورك فلو");
+  }
+  add("workflow");
+  return out.length ? out : ["workflow"];
+}
+
 function rankAndFilterCourses(
   courses,
   scoreTerms,
@@ -421,16 +477,11 @@ function rankAndFilterCourses(
   intent
 ) {
   const MAX_CARDS = 8;
-  const anchored = termsAnchoredInQuery(userClean, scoreTerms, intent);
-  const userDerived = prepareSearchTerms([userClean || ""]).filter(
-    (t) => !isCourseLexicalNoiseTerm(t)
+  const effectiveTerms = effectiveCourseFilterTerms(
+    userClean,
+    scoreTerms,
+    intent
   );
-  const effectiveTerms =
-    anchored.length > 0
-      ? anchored
-      : userDerived.length > 0
-        ? userDerived
-        : scoreTerms;
 
   const narrow = hasNarrowTopicTerms(userClean, scoreTerms, intent);
 
@@ -838,6 +889,9 @@ async function searchCoursesLayer(
             );
   if (forIlike.length === 0) return [];
 
+  forIlike = sanitizeForIlikeTerms(forIlike, userClean, intent);
+  if (forIlike.length === 0) return [];
+
   const cappedIlike = expandArabicVariants(forIlike).slice(0, 18);
   const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
   const narrowCols = ["title", "subtitle"];
@@ -962,7 +1016,7 @@ async function searchCoursesLayer(
   }
 
   const seen = new Set();
-  const deduped = [];
+  let deduped = [];
   for (const c of allCourses) {
     if (!c?.id || seen.has(c.id)) continue;
     seen.add(c.id);
@@ -971,6 +1025,17 @@ async function searchCoursesLayer(
   }
 
   const scoreTerms = termsForCourseLexical(limitedTerms, userClean);
+  const filterTerms = effectiveCourseFilterTerms(
+    userClean,
+    lexicalTerms,
+    intent
+  );
+  if (narrowTopic) {
+    deduped = deduped.filter((c) =>
+      courseTitleOrSubtitleHitsTerm(c, filterTerms)
+    );
+  }
+
   return rankAndFilterCourses(
     deduped,
     scoreTerms,
