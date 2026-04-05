@@ -199,33 +199,79 @@ function termsForCourseLexical(limitedTerms, userClean) {
     .slice(0, 6);
 }
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * تطابق عربي ليس بادئة داخل كلمة أطول (مثلاً «وورك» داخل «ووركس» لـ SolidWorks).
+ */
+function arabicBoundedOccurrence(haystackNorm, nt) {
+  if (!haystackNorm || !nt) return false;
+  let idx = 0;
+  while ((idx = haystackNorm.indexOf(nt, idx)) !== -1) {
+    const after = idx + nt.length;
+    if (
+      after < haystackNorm.length &&
+      /[\u0600-\u06FF]/.test(haystackNorm[after])
+    ) {
+      idx += 1;
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** إنجليزي ككلمة مستقلة — يمنع «work» داخل solidworks. */
+function englishWholeWord(hayRaw, word) {
+  if (!hayRaw || !word) return false;
+  const w = escapeRegExp(String(word).trim().toLowerCase());
+  if (w.length < 2) return false;
+  const re = new RegExp(`(?:^|[^a-z0-9])${w}(?:$|[^a-z0-9])`, "i");
+  return re.test(hayRaw);
+}
+
+function textFieldMatchesTerm(fieldNorm, fieldRaw, term) {
+  const nt = normalizeArabic(String(term).toLowerCase().trim());
+  if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) return false;
+  const raw = String(fieldRaw || "").toLowerCase();
+  if (/[a-z]{2,}/i.test(String(term).trim())) {
+    return englishWholeWord(raw, String(term).trim());
+  }
+  return arabicBoundedOccurrence(fieldNorm, nt);
+}
+
 /** تطابق في العنوان/الفرعي/الكلمات المفتاحية/المجال فقط — بدون وصف (الوصف كان يمرّر كلمات عامة زي «تحليل»). */
 function lexicalTitleKeywordsDomainScore(course, terms) {
   const title = normalizeArabic((course.title || "").toLowerCase());
   const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
   const domain = normalizeArabic((course.domain || "").toLowerCase());
   const keywords = normalizeArabic((course.keywords || "").toLowerCase());
+  const titleRaw = String(course.title || "").toLowerCase();
+  const subtitleRaw = String(course.subtitle || "").toLowerCase();
+  const domainRaw = String(course.domain || "").toLowerCase();
+  const keywordsRaw = String(course.keywords || "").toLowerCase();
   let score = 0;
   for (const term of terms) {
-    const nt = normalizeArabic(String(term).toLowerCase().trim());
-    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
-    if (title.includes(nt)) score += 130;
-    else if (subtitle.includes(nt)) score += 82;
-    else if (keywords.includes(nt)) score += 55;
-    else if (domain.includes(nt)) score += 38;
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (textFieldMatchesTerm(title, titleRaw, term)) score += 130;
+    else if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += 82;
+    else if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 55;
+    else if (textFieldMatchesTerm(domain, domainRaw, term)) score += 38;
   }
   return score;
 }
 
 function lexicalScoreCourse(course, terms) {
-  const desc = normalizeArabic(
-    stripHtml(course.description || "").slice(0, 900).toLowerCase()
-  );
+  const descRaw = stripHtml(course.description || "")
+    .slice(0, 900)
+    .toLowerCase();
+  const desc = normalizeArabic(descRaw);
   let score = lexicalTitleKeywordsDomainScore(course, terms);
   for (const term of terms) {
-    const nt = normalizeArabic(String(term).toLowerCase().trim());
-    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
-    if (desc.includes(nt)) score += 12;
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (textFieldMatchesTerm(desc, descRaw, term)) score += 12;
   }
   return score;
 }
@@ -249,13 +295,9 @@ function courseTitleOrSubtitleHitsTerm(course, terms) {
   const titleRaw = String(course.title || "").toLowerCase();
   const subtitleRaw = String(course.subtitle || "").toLowerCase();
   for (const term of terms) {
-    const nt = normalizeArabic(String(term).toLowerCase().trim());
-    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
-    if (title.includes(nt) || subtitle.includes(nt)) return true;
-    if (/[a-z]{2,}/i.test(nt)) {
-      const low = String(term).trim().toLowerCase();
-      if (titleRaw.includes(low) || subtitleRaw.includes(low)) return true;
-    }
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
+    if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) return true;
   }
   return false;
 }
@@ -265,13 +307,8 @@ function diplomaTitleHitsAnchoredTerms(diploma, terms) {
   const title = normalizeArabic((diploma.title || "").toLowerCase());
   const titleRaw = String(diploma.title || "").toLowerCase();
   for (const term of terms) {
-    const nt = normalizeArabic(String(term).toLowerCase().trim());
-    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
-    if (title.includes(nt)) return true;
-    if (/[a-z]{2,}/i.test(nt)) {
-      const low = String(term).trim().toLowerCase();
-      if (titleRaw.includes(low)) return true;
-    }
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
   }
   return false;
 }
