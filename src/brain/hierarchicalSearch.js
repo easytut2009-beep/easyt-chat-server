@@ -1185,7 +1185,148 @@ async function searchLessonsLayer(searchTerms) {
   });
 }
 
-async function searchChunksLayer(queryForEmb) {
+function stripChunkPlainText(html) {
+  return String(html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildChunkSearchNeedles(userClean, searchTerms) {
+  const u = String(userClean || "").trim();
+  const seeds = [];
+  if (u) seeds.push(u);
+  for (const t of searchTerms || []) {
+    const s = String(t || "").trim();
+    if (s) seeds.push(s);
+  }
+  const needles = new Set();
+  for (const t of prepareSearchTerms(seeds.length ? seeds : [u].filter(Boolean))) {
+    if (String(t).length >= 2) needles.add(t);
+  }
+  for (const s of seeds) {
+    if (String(s).length >= 2) needles.add(s);
+  }
+  const compact = normalizeArabic(u.toLowerCase()).replace(/[\s\u200c]+/g, "");
+  if (/ووركفلو|وركفلو|workflow|وورك\s*فلو|ورك\s*فلو/i.test(compact + u)) {
+    [
+      "workflow",
+      "Workflow",
+      "workflows",
+      "وورك فلو",
+      "ورك فلو",
+      "ووركفلو",
+      "وركفلو",
+    ].forEach((x) => needles.add(x));
+  }
+  return [...needles]
+    .filter((n) => String(n).length >= 2)
+    .sort((a, b) => String(b).length - String(a).length);
+}
+
+function compactIndexToPlainRange(plain, cStart, cLen) {
+  let ci = 0;
+  let start = -1;
+  const targetEnd = cStart + cLen;
+  for (let i = 0; i < plain.length; i++) {
+    if (/\s/.test(plain[i])) continue;
+    if (ci === cStart) start = i;
+    ci++;
+    if (ci === targetEnd) {
+      return { start, end: i + 1 };
+    }
+  }
+  if (start >= 0) return { start, end: plain.length };
+  return null;
+}
+
+function findMatchBoundsInPlain(plain, needles) {
+  if (!plain || !needles?.length) return null;
+  for (const n of needles) {
+    const ns = String(n);
+    if (ns.length < 2) continue;
+    try {
+      const re = new RegExp(ns.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const m = plain.match(re);
+      if (m && m.index !== undefined) {
+        return { start: m.index, end: m.index + m[0].length };
+      }
+    } catch (_) {
+      const idx = plain.toLowerCase().indexOf(ns.toLowerCase());
+      if (idx >= 0) return { start: idx, end: idx + ns.length };
+    }
+  }
+  const compactPlain = plain.replace(/\s/g, "");
+  const compactLower = compactPlain.toLowerCase();
+  for (const n of needles) {
+    const nc = String(n).replace(/\s/g, "");
+    if (nc.length < 2) continue;
+    const idx = compactLower.indexOf(nc.toLowerCase());
+    if (idx >= 0) {
+      const range = compactIndexToPlainRange(plain, idx, nc.length);
+      if (range) return range;
+    }
+  }
+  const pLow = plain.toLowerCase();
+  const pNorm = normalizeArabic(pLow);
+  for (const n of needles) {
+    const nn = normalizeArabic(String(n).toLowerCase());
+    if (nn.length < 2) continue;
+    const j = pNorm.indexOf(nn);
+    if (j >= 0) {
+      const est = Math.floor((j / Math.max(1, pNorm.length)) * plain.length);
+      return {
+        start: Math.max(0, est - 8),
+        end: Math.min(plain.length, est + nn.length + 48),
+      };
+    }
+  }
+  return null;
+}
+
+function excerptAroundSearchTerms(rawContent, userClean, searchTerms) {
+  const plain = stripChunkPlainText(rawContent);
+  if (!plain) return "";
+  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+  const maxLen = 300;
+  const bounds = findMatchBoundsInPlain(plain, needles);
+  if (!bounds) {
+    return plain.length > maxLen ? plain.slice(0, maxLen) + "…" : plain;
+  }
+  const { start, end } = bounds;
+  const pad = Math.max(45, Math.floor((maxLen - (end - start)) / 2));
+  let a = Math.max(0, start - pad);
+  let b = Math.min(plain.length, end + pad);
+  if (b - a > maxLen) b = a + maxLen;
+  let slice = plain.slice(a, b).trim();
+  if (a > 0) slice = "…" + slice;
+  if (b < plain.length) slice = slice + "…";
+  return slice;
+}
+
+/**
+ * يحدّ من هيمنة كورس واحد على القائمة: يمرّ على النتائج حسب التشابه ويأخذ حتى N صف لكل course_id.
+ */
+function diversifyChunksByCourseCap(rows, maxPerCourse = 5, maxTotal = 80) {
+  if (!rows?.length) return [];
+  const sorted = [...rows].sort(
+    (a, b) => (b.similarity || 0) - (a.similarity || 0)
+  );
+  const perCourse = new Map();
+  const out = [];
+  for (const r of sorted) {
+    const cid = r.course_id;
+    if (!cid) continue;
+    const n = perCourse.get(cid) || 0;
+    if (n >= maxPerCourse) continue;
+    perCourse.set(cid, n + 1);
+    out.push(r);
+    if (out.length >= maxTotal) break;
+  }
+  return out;
+}
+
+async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
   if (!supabase || !openai || !queryForEmb) return [];
   try {
     const embResponse = await openai.embeddings.create({
@@ -1194,27 +1335,30 @@ async function searchChunksLayer(queryForEmb) {
     });
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: embResponse.data[0].embedding,
-      match_threshold: 0.4,
-      match_count: 22,
+      match_threshold: 0.38,
+      match_count: 120,
       filter_course_id: null,
     });
     if (error) {
       console.error("match_lesson_chunks:", error.message);
       return [];
     }
-    let rows = (data || []).map((row) => ({
+    const rawRows = data || [];
+    let rows = rawRows.map((row) => ({
       similarity: row.similarity,
       lesson_id: row.lesson_id ?? null,
       lesson_title: row.lesson_title || "",
       course_title: row.course_title || "",
       course_id: row.course_id,
       timestamp_start: row.timestamp_start ?? null,
-      excerpt: String(row.content || "")
-        .replace(/<[^>]*>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 220),
+      excerpt: excerptAroundSearchTerms(
+        row.content,
+        userClean,
+        searchTerms
+      ),
     }));
+
+    rows = diversifyChunksByCourseCap(rows, 5, 80);
 
     const courseIds = [
       ...new Set(rows.map((r) => r.course_id).filter(Boolean)),
@@ -1403,7 +1547,7 @@ async function runCatalogSearch(userClean, intent) {
       searchDiplomasLayer(searchTerms, queryForEmb),
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
       searchLessonsLayer(searchTerms),
-      searchChunksLayer(queryForChunks),
+      searchChunksLayer(queryForChunks, userClean, searchTerms),
     ]);
   }
 
