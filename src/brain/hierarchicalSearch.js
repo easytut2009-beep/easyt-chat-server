@@ -234,6 +234,32 @@ function lexicalScoreCourse(course, terms) {
  * كلمات نثق بها للبحث والفلترة: ظاهرة في رسالة المستخدم، أو مصطلحات إنجليزية/أدوات من JSON النية فقط.
  * يمنع توسعة GPT (مثل «تحليل، بيانات») من سحب كورسات مالية/فوركس عند سؤال عن Excel.
  */
+function hasNarrowTopicTerms(userClean, lexicalTerms, intent) {
+  const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  return anchored.length > 0 || userDerived.length > 0;
+}
+
+/** يجب أن يظهر أحد مصطلحات البحث في العنوان أو العنوان الفرعي (الوصف/keywords كان يدخل نتائج عشوائية). */
+function courseTitleOrSubtitleHitsTerm(course, terms) {
+  const title = normalizeArabic((course.title || "").toLowerCase());
+  const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
+  const titleRaw = String(course.title || "").toLowerCase();
+  const subtitleRaw = String(course.subtitle || "").toLowerCase();
+  for (const term of terms) {
+    const nt = normalizeArabic(String(term).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
+    if (title.includes(nt) || subtitle.includes(nt)) return true;
+    if (/[a-z]{2,}/i.test(nt)) {
+      const low = String(term).trim().toLowerCase();
+      if (titleRaw.includes(low) || subtitleRaw.includes(low)) return true;
+    }
+  }
+  return false;
+}
+
 function termsAnchoredInQuery(userClean, lexicalTerms, intent) {
   const u = normalizeArabic(String(userClean || "").toLowerCase());
   const rawLower = String(userClean || "").toLowerCase();
@@ -288,12 +314,19 @@ function rankAndFilterCourses(
     return { c, lexT, lexFull, sim: simN, total };
   });
 
-  const kept = rows.filter(
+  let kept = rows.filter(
     (x) =>
       x.lexT >= 52 ||
       (x.lexT >= 30 && x.sim >= 0.82) ||
       (x.lexT >= 18 && x.sim >= 0.87) ||
       x.sim >= 0.92
+  );
+
+  if (kept.length === 0) return [];
+
+  kept = kept.filter(
+    (x) =>
+      courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms) || x.sim >= 0.965
   );
 
   if (kept.length === 0) return [];
@@ -611,9 +644,13 @@ async function searchCoursesLayer(
 
   const cappedIlike = expandArabicVariants(forIlike).slice(0, 18);
   const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
-  const coreFilters = cappedIlike
-    .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
-    .join(",");
+  const narrowCols = ["title", "subtitle"];
+  const narrowTopic = hasNarrowTopicTerms(userClean, lexicalTerms, intent);
+
+  const buildOr = (cols) =>
+    cappedIlike
+      .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
+      .join(",");
 
   let allCourses = [];
 
@@ -637,11 +674,12 @@ async function searchCoursesLayer(
         })()
       : Promise.resolve([]);
 
+  const primaryFilters = narrowTopic ? buildOr(narrowCols) : buildOr(coreCols);
   const ilikePromise = supabase
     .from("courses")
     .select(COURSE_SELECT_COLS)
-    .or(coreFilters)
-    .limit(32);
+    .or(primaryFilters)
+    .limit(narrowTopic ? 40 : 32);
 
   const [ilikeResult, semanticResults] = await Promise.all([
     ilikePromise,
@@ -661,7 +699,25 @@ async function searchCoursesLayer(
   }
   allCourses = error ? [] : courses || [];
 
-  if (allCourses.length < 5 && forIlike.length > 0) {
+  if (narrowTopic && allCourses.length < 4 && forIlike.length > 0) {
+    const widenFilters = buildOr(coreCols);
+    const { data: wideRows } = await supabase
+      .from("courses")
+      .select(COURSE_SELECT_COLS)
+      .or(widenFilters)
+      .limit(24);
+    if (wideRows?.length) {
+      const ids = new Set(allCourses.map((c) => c.id));
+      for (const c of wideRows) {
+        if (!ids.has(c.id)) {
+          allCourses.push(c);
+          ids.add(c.id);
+        }
+      }
+    }
+  }
+
+  if (!narrowTopic && allCourses.length < 5 && forIlike.length > 0) {
     const deepCols = [
       "title",
       "description",
@@ -693,8 +749,8 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = 0.85;
-  if (semanticMap.size > 0) {
+  const MIN_SEM_ONLY = 0.88;
+  if (!narrowTopic && semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
       .filter(([id, sim]) => !ilikeIds.has(id) && sim >= MIN_SEM_ONLY)
