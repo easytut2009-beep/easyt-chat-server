@@ -448,8 +448,34 @@ function isDiplomaTopicGenericTerm(t) {
 }
 
 /**
+ * لعناوين الدبلومات فقط: من نص المستخدم + terms_en/tools من النية.
+ * لا يُستخرج من search_text حتى لا تطابق كلمات من عبارة طويلة أعادها النموذج عناوين غير ذات صلة (مثل «تعليم» مع دبلومة كمبيوتر عامة).
+ */
+function buildStrictDiplomaAnchorTerms(userClean, intent) {
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  const fromIntent = [
+    ...(intent?.terms_en || []),
+    ...(intent?.tools || []),
+  ]
+    .map((x) => String(x).trim())
+    .filter(Boolean);
+
+  const out = [];
+  const seen = new Set();
+  for (const t of [...userDerived, ...fromIntent]) {
+    const nt = normalizeArabic(String(t).toLowerCase().trim());
+    if (nt.length < 2 || isDiplomaTopicGenericTerm(t) || seen.has(nt)) continue;
+    seen.add(nt);
+    out.push(t);
+  }
+  return out;
+}
+
+/**
  * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (ظهور الموضوع في محتوى درس فقط دون العنوان).
- * دائماً (ما عدا قائمة الدبلومات العامة): لا نعرض كروت دبلومات إلا إن وُجدت كلمات محددة من السؤال في العنوان.
+ * دائماً (ما عدا قائمة الدبلومات العامة): لا نعرض كروت دبلومات إلا إن وُجدت كلمات من السؤال/النية في العنوان.
  */
 function filterDiplomasForAnchoredTitles(
   diplomas,
@@ -459,6 +485,14 @@ function filterDiplomasForAnchoredTitles(
   broadDiplomaListing
 ) {
   if (!diplomas?.length || broadDiplomaListing) return diplomas || [];
+
+  const strict = buildStrictDiplomaAnchorTerms(userClean, intent);
+  if (strict.length > 0) {
+    const filtered = diplomas.filter((d) =>
+      diplomaTitleHitsAnchoredTerms(d, strict)
+    );
+    return filtered.length > 0 ? filtered : [];
+  }
 
   const limitedTerms = searchTerms.slice(0, 8);
   const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
@@ -841,11 +875,17 @@ async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
         "match_diplomas",
         {
           query_embedding: embResponse.data[0].embedding,
-          match_threshold: isChild ? 0.87 : 0.8,
+          match_threshold: isChild ? 0.87 : 0.86,
           match_count: isChild ? 6 : 8,
         }
       );
-      if (!semErr && semanticResults?.length) rawResults = [...semanticResults];
+      if (!semErr && semanticResults?.length) {
+        rawResults = semanticResults.filter((d) => {
+          const s = d.similarity;
+          if (typeof s !== "number") return true;
+          return s >= (isChild ? 0.85 : 0.84);
+        });
+      }
     } catch (e) {
       console.error("match_diplomas:", e.message);
     }
@@ -885,7 +925,11 @@ async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
   if (rawResults.length > 1) {
     const meaningfulTerms = searchTerms.filter((t) => {
       const nt = normalizeArabic(t.toLowerCase());
-      return nt.length > 2 && !/دبلوم/.test(nt);
+      return (
+        nt.length > 2 &&
+        !/دبلوم/.test(nt) &&
+        !isDiplomaTopicGenericTerm(t)
+      );
     });
     if (meaningfulTerms.length > 0) {
       const scored = rawResults.map((d) => {
