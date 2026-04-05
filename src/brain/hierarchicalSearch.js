@@ -305,7 +305,17 @@ function rankAndFilterCourses(
         ? userDerived
         : scoreTerms;
 
-  const rows = courses.map((c) => {
+  const narrow = hasNarrowTopicTerms(userClean, scoreTerms, intent);
+
+  let pool = courses;
+  if (narrow) {
+    pool = courses.filter((c) =>
+      courseTitleOrSubtitleHitsTerm(c, effectiveTerms)
+    );
+  }
+  if (pool.length === 0) return [];
+
+  const rows = pool.map((c) => {
     const sim = semanticMap.get(c.id);
     const simN = typeof sim === "number" ? sim : 0;
     const lexT = lexicalTitleKeywordsDomainScore(c, effectiveTerms);
@@ -314,22 +324,24 @@ function rankAndFilterCourses(
     return { c, lexT, lexFull, sim: simN, total };
   });
 
-  let kept = rows.filter(
-    (x) =>
-      x.lexT >= 52 ||
-      (x.lexT >= 30 && x.sim >= 0.82) ||
-      (x.lexT >= 18 && x.sim >= 0.87) ||
-      x.sim >= 0.92
-  );
-
-  if (kept.length === 0) return [];
-
-  kept = kept.filter(
-    (x) =>
-      courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms) || x.sim >= 0.965
-  );
-
-  if (kept.length === 0) return [];
+  let kept;
+  if (narrow) {
+    kept = rows;
+  } else {
+    kept = rows.filter(
+      (x) =>
+        x.lexT >= 52 ||
+        (x.lexT >= 30 && x.sim >= 0.82) ||
+        (x.lexT >= 18 && x.sim >= 0.87) ||
+        x.sim >= 0.92
+    );
+    if (kept.length === 0) return [];
+    kept = kept.filter(
+      (x) =>
+        courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms) || x.sim >= 0.965
+    );
+    if (kept.length === 0) return [];
+  }
 
   kept.sort((a, b) => b.total - a.total || b.lexT - a.lexT);
   return kept.slice(0, MAX_CARDS).map((x) => x.c);
@@ -655,8 +667,9 @@ async function searchCoursesLayer(
   let allCourses = [];
 
   const semanticPromise =
-    openai && queryForEmb
-      ? (async () => {
+    narrowTopic || !openai || !queryForEmb
+      ? Promise.resolve([])
+      : (async () => {
           try {
             const embResp = await openai.embeddings.create({
               model: COURSE_EMBEDDING_MODEL,
@@ -671,8 +684,7 @@ async function searchCoursesLayer(
           } catch (e) {
             return [];
           }
-        })()
-      : Promise.resolve([]);
+        })();
 
   const primaryFilters = narrowTopic ? buildOr(narrowCols) : buildOr(coreCols);
   const ilikePromise = supabase
@@ -700,7 +712,8 @@ async function searchCoursesLayer(
   allCourses = error ? [] : courses || [];
 
   if (narrowTopic && allCourses.length < 4 && forIlike.length > 0) {
-    const widenFilters = buildOr(coreCols);
+    const narrowWidenCols = ["title", "subtitle", "keywords"];
+    const widenFilters = buildOr(narrowWidenCols);
     const { data: wideRows } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
