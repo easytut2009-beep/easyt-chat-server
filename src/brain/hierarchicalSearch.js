@@ -10,6 +10,8 @@ const { supabase, openai } = require("../lib/clients");
 
 /** أقصى عدد كروت كورسات في الرد — تجنباً لإغراق المستخدم بعشرات النتائج الضعيفة الصلة */
 const MAX_COURSE_CATALOG_CARDS = 6;
+/** إن وُجد هذا العدد أو أكثر من كورسات طبقة الكورسات/الدلالة لا نضيف كورسات جديدة من تطابق عناوين الدروس فقط (غالباً ضوضاء مثل Bones / Key frame). */
+const MIN_COURSE_LAYER_HITS_TO_SKIP_LESSON_ONLY_COURSES = 3;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -340,6 +342,7 @@ function pruneEnglishSubstringsFromTerms(terms) {
       if (a.length >= b.length) continue;
       if (b.length < 5) continue;
       if (b.startsWith(a) && b.length - a.length >= 2) removeIdx.add(i);
+      if (b.endsWith(a) && b.length - a.length >= 2) removeIdx.add(i);
     }
   }
   return arr.filter((_, i) => !removeIdx.has(i));
@@ -444,13 +447,24 @@ function courseTitleOrSubtitleHitsTerm(course, terms) {
   return false;
 }
 
+/** مصطلحات إنجليزية قصيرة (مثل key) تطابق «Key frame» بلا صلة؛ n8n وغيرها يُسمح بها. */
+function isLessonSearchTokenAllowed(term) {
+  const s = String(term).trim();
+  if (s.length < 2) return false;
+  if (isCourseLexicalNoiseTerm(s)) return false;
+  if (/^[a-z0-9._+-]+$/i.test(s)) {
+    if (/\d/.test(s)) return true;
+    if (s.length < 4) return false;
+  }
+  return true;
+}
+
 /** يطابق عنوان الدرس نفس قواعد العنوان (كلمة كاملة إنجليزياً) — لا ilike.%work% على SolidWorks. */
 function lessonRowMatchesSearchTerms(lesson, preparedTerms) {
   const title = normalizeArabic((lesson.title || "").toLowerCase());
   const titleRaw = String(lesson.title || "").toLowerCase();
   for (const term of preparedTerms) {
-    if (isCourseLexicalNoiseTerm(term)) continue;
-    if (String(term).length < 2) continue;
+    if (!isLessonSearchTokenAllowed(term)) continue;
     if (textFieldMatchesTerm(title, titleRaw, term)) return true;
   }
   return false;
@@ -1302,13 +1316,16 @@ async function searchCoursesLayer(
 }
 
 /**
- * يضيف صفوف كورسات كاملة عندما طبقة الدروس وحدها طابقت (عناوين دروس) وطبقة الكورسات رجعت فارغة —
- * بدون ذلك لا تُبنى كروت HTML ويظهر GPT قائمة نصية من أسماء الدروس فقط.
+ * يضيف صفوف كورسات كاملة عندما طبقة الدروس طابقت ولم تُملَأ الكروت بعد؛
+ * إذا وُجدت بالفعل ≥3 كورسات من طبقة الكورسات/الدلالة لا نضيف كورسات «من الدروس فقط» لتجنب نتائج عشوائية.
  */
 async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
   if (!supabase || !lessons?.length) return (courses || []).slice(0, MAX);
   const byId = new Map((courses || []).filter((c) => c?.id).map((c) => [c.id, c]));
+  if (byId.size >= MIN_COURSE_LAYER_HITS_TO_SKIP_LESSON_ONLY_COURSES) {
+    return [...byId.values()].slice(0, MAX);
+  }
   const slots = Math.max(0, MAX - byId.size);
   if (slots === 0) return [...byId.values()].slice(0, MAX);
   const needIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))]
@@ -1333,9 +1350,9 @@ async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
 
 async function searchLessonsLayer(searchTerms) {
   if (!supabase) return [];
-  const allTerms = prepareSearchTerms(searchTerms).filter(
-    (t) => !isCourseLexicalNoiseTerm(t)
-  );
+  const allTerms = prepareSearchTerms(searchTerms)
+    .filter((t) => !isCourseLexicalNoiseTerm(t))
+    .filter(isLessonSearchTokenAllowed);
   if (allTerms.length === 0) return [];
 
   const orFilters = allTerms
