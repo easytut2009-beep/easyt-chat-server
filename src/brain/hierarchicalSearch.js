@@ -1975,13 +1975,19 @@ function termAppearsInUserMessage(t, userClean) {
   return false;
 }
 
-/** نص إرساء: ما كتبه المستخدم + حقول النية المعرّضة للنموذج — لا قائمة كلمات في التطبيق. */
-function buildIntentAnchorBlob(userClean, intent) {
+/**
+ * نص إرساء للكروت فقط: حقول منظّمة + رسالة المستخدم — بدون search_text.
+ * السبب: buildSearchTerms يضمّن search_text فيُشتّت tokens كثيرة (مثلاً حشو من GPT)؛
+ * وإذا كان anchor يحتوي search_text فكلمة من الفقرة تُعتبر «مرساة» وتدخل كورسات تسويق/عامة بمطابقة درس ضعيفة.
+ */
+function buildCatalogEvidenceAnchor(userClean, intent) {
   const parts = [
     userClean,
-    intent?.search_text,
     intent?.primary_goal,
     ...((intent && intent.constraints) || []),
+    ...(intent?.terms_ar || []),
+    ...(intent?.terms_en || []),
+    ...(intent?.tools || []),
   ]
     .map((x) => String(x || "").trim())
     .filter(Boolean);
@@ -1989,16 +1995,47 @@ function buildIntentAnchorBlob(userClean, intent) {
 }
 
 /**
- * مصطلحات المطابقة المعجمية للكروت: من collectRelevanceTerms لكن فقط ما يظهر فعلياً في نص الإرساء
- * (رسالة + search_text + goal + constraints). ما يُضاف في terms_en فقط دون أن يُذكر في أحد هذه النصوص لا يُستخدم كدليل معجمي.
+ * مصطلحات مرشّحة للدليل المعجمي على الكروت: لا نستخدم `searchTerms` من buildSearchTerms
+ * لأنه يستخرج رموزاً من نثر search_text (نفس مشكلة الـ anchor).
+ */
+function collectRelevanceTermsBroadForCatalog(userClean, intent) {
+  const out = [];
+  const seen = new Set();
+  const push = (t) => {
+    const s = String(t || "").trim();
+    if (s.length < 2) return;
+    const k = normalizeArabic(s.toLowerCase());
+    if (seen.has(k)) return;
+    if (isCourseLexicalNoiseTerm(s)) return;
+    seen.add(k);
+    out.push(s);
+  };
+  for (const t of intent?.terms_en || []) push(t);
+  for (const t of intent?.tools || []) push(t);
+  for (const t of intent?.terms_ar || []) push(t);
+  for (const t of prepareSearchTerms([userClean || ""])) push(t);
+  const goalBlock = [
+    intent?.primary_goal,
+    ...((intent && intent.constraints) || []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (goalBlock.trim()) {
+    for (const t of prepareSearchTerms([goalBlock])) push(t);
+  }
+  return out.slice(0, 28);
+}
+
+/**
+ * مصطلحات المطابقة المعجمية للكروت: ما يظهر في buildCatalogEvidenceAnchor (بدون نثر search_text).
  */
 function collectRelevanceTermsForCatalogEvidence(
   userClean,
   searchTerms,
   intent
 ) {
-  const broad = collectRelevanceTerms(userClean, searchTerms, intent);
-  const anchor = buildIntentAnchorBlob(userClean, intent);
+  const broad = collectRelevanceTermsBroadForCatalog(userClean, intent);
+  const anchor = buildCatalogEvidenceAnchor(userClean, intent);
   const filtered = broad.filter((t) => {
     if (isCourseLexicalNoiseTerm(t)) return false;
     return termAppearsInUserMessage(t, anchor);
@@ -2069,7 +2106,7 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
 
 /**
  * إن وُجدت على الأقل كورس واحد فيه دليل معجمي (عنوان/درس)، نعرض فقط هذه الكورسات —
- * يمنع إغراق القائمة بكورسات «دلالة فقط» من الـ embeddings.
+ * ثم نقطع النتائج الضعيفة نسبةً لأفضل درجة (نفس السؤال قد يمرّر كورسين بمطابقة مصطلح عام من terms_en).
  */
 function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
   if (!courses?.length) return courses;
@@ -2082,7 +2119,23 @@ function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
   const hasLex = (c) =>
     catalogCourseHasLexicalTopicEvidence(c, userClean, searchTerms, intent);
   if (!courses.some(hasLex)) return courses;
-  return courses.filter(hasLex).slice(0, MAX_COURSE_CATALOG_CARDS);
+  let kept = courses.filter(hasLex);
+  const scored = kept.map((c) => ({
+    c,
+    s: scoreCatalogCourse(c, userClean, searchTerms, intent),
+  }));
+  scored.sort((a, b) => b.s - a.s);
+  const best = scored[0]?.s ?? 0;
+  if (best > 0 && scored.length > 1) {
+    const minRatio = 0.52;
+    kept = scored
+      .filter((x) => x.s >= best * minRatio)
+      .map((x) => x.c);
+    if (kept.length === 0) kept = [scored[0].c];
+  } else {
+    kept = scored.map((x) => x.c);
+  }
+  return kept.slice(0, MAX_COURSE_CATALOG_CARDS);
 }
 
 /** يزيل من الكارت دروساً ظهرت من تشابه chunk ضعيف بلا كلمة بحث في العنوان أو المقتطف. */
