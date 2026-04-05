@@ -448,7 +448,7 @@ function isDiplomaTopicGenericTerm(t) {
 }
 
 /**
- * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (مثل workflow في محتوى درس فقط).
+ * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (ظهور الموضوع في محتوى درس فقط دون العنوان).
  * دائماً (ما عدا قائمة الدبلومات العامة): لا نعرض كروت دبلومات إلا إن وُجدت كلمات محددة من السؤال في العنوان.
  */
 function filterDiplomasForAnchoredTitles(
@@ -728,14 +728,14 @@ async function extractSearchIntent(userMessage) {
           role: "system",
           content: `أنت تحلّل رسالة مستخدم لمنصة تعليمية وتستخرج حقولاً للبحث في الكتالوج ولتوجيه الرد.
 أعد JSON فقط بالمفاتيح:
-- skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع (مثلاً "هلا"، "تمام شكراً"). أي مصطلح تقني أو اسم أداة أو كتابة عربية حرفية لمصطلح إنجليزي (مثل: وورك فلو، جيت هاب، اكسيل) → skip_catalog: false دائماً لأن المستخدم يبحث في المحتوى.
+- skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
 - search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
 - response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
 - terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم.
-- terms_en: مصطلحات إنجليزية تقنية (workflow, Excel, …) كما يُفترض معناها.
+- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد عالمياً؛ إذا كتب المستخدم مصطلحاً إنجليزياً بالأحرف العربية أو تحليقة، ضع هنا الشكل الإنجليزي الصحيح حتى يطابق عناوين الدروس والمحتوى المخزّن غالباً بالإنجليزية.
 - tools: أسماء أدوات/برامج إن وُجدت.
 - audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
 
@@ -758,11 +758,20 @@ function buildSearchTerms(intent, userClean) {
   if (intent.search_text) parts.push(intent.search_text);
   if (intent.primary_goal) parts.push(intent.primary_goal);
   for (const t of intent.constraints || []) parts.push(t);
-  for (const t of intent.terms_ar) parts.push(t);
-  for (const t of intent.terms_en) parts.push(t);
-  for (const t of intent.tools) parts.push(t);
+  for (const t of intent.terms_ar || []) parts.push(t);
+  for (const t of intent.terms_en || []) parts.push(t);
+  for (const t of intent.tools || []) parts.push(t);
   if (parts.length === 0 && userClean) parts.push(userClean);
-  return prepareSearchTerms(parts);
+
+  let merged = prepareSearchTerms(parts);
+  const uc = String(userClean || "").trim();
+  if (uc.length >= 2) {
+    const userTokens = prepareSearchTerms([uc]);
+    merged = [...new Set([...merged, ...userTokens])].filter(
+      (t) => String(t).length > 1
+    );
+  }
+  return merged.slice(0, 16);
 }
 
 function embeddingQueryText(intent, userClean) {
@@ -771,7 +780,7 @@ function embeddingQueryText(intent, userClean) {
     .join(" ")
     .trim();
   const q = [intent.search_text, extra, userClean].filter(Boolean).join(" ").trim();
-  return q.slice(0, 2000) || userClean.slice(0, 2000);
+  return q.slice(0, 2000) || String(userClean || "").slice(0, 2000);
 }
 
 /** يمنع إسكات البحث عن دروس/chunks لرسائل تبدو سؤالاً عن أداة أو مصطلح. */
@@ -1222,18 +1231,6 @@ function buildChunkSearchNeedles(userClean, searchTerms) {
   for (const s of seeds) {
     if (String(s).length >= 2) needles.add(s);
   }
-  const compact = normalizeArabic(u.toLowerCase()).replace(/[\s\u200c]+/g, "");
-  if (/ووركفلو|وركفلو|workflow|وورك\s*فلو|ورك\s*فلو/i.test(compact + u)) {
-    [
-      "workflow",
-      "Workflow",
-      "workflows",
-      "وورك فلو",
-      "ورك فلو",
-      "ووركفلو",
-      "وركفلو",
-    ].forEach((x) => needles.add(x));
-  }
   return [...needles]
     .filter((n) => String(n).length >= 2)
     .sort((a, b) => String(b).length - String(a).length);
@@ -1349,13 +1346,6 @@ function buildLexicalIlikeTerms(userClean, searchTerms) {
     const s = String(n).trim();
     if (s.length >= 3 && s.length <= 90) out.add(s);
   }
-  const u = String(userClean || "");
-  const compact = normalizeArabic(u.toLowerCase()).replace(/[\s\u200c]+/g, "");
-  if (/workflow|ووركفلو|وركفلو|وورك\s*فلو|ورك\s*فلو/i.test(compact + u)) {
-    ["workflow", "Workflow", "workflows", "وورك فلو", "ورك فلو", "ووركفلو", "وركفلو"].forEach(
-      (x) => out.add(x)
-    );
-  }
   return [...out].slice(0, 18);
 }
 
@@ -1461,12 +1451,15 @@ function chunkContentHasSearchHit(content, userClean, searchTerms) {
 }
 
 async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
-  if (!supabase || !openai || !queryForEmb) return [];
+  if (!supabase || !openai) return [];
+  const embInput =
+    String(queryForEmb || "").trim() || String(userClean || "").trim();
+  if (!embInput) return [];
   try {
     const [embResponse, lexicalRows] = await Promise.all([
       openai.embeddings.create({
         model: CHUNK_EMBEDDING_MODEL,
-        input: queryForEmb.substring(0, 2000),
+        input: embInput.substring(0, 2000),
       }),
       fetchChunksLexicalHits(supabase, userClean, searchTerms),
     ]);
@@ -1633,7 +1626,7 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
     } else {
       lines.push("", "## مقتطفات من محتوى الدروس (للسياق)");
       lines.push(
-        "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة واذكر اسم الكورس والدرس إن احتجت."
+        "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة واذكر اسم الكورس والدرس إن احتجت."
       );
       for (const ch of chunks) {
         const head = [ch.course_title, ch.lesson_title]
@@ -1688,7 +1681,13 @@ async function runCatalogSearch(userClean, intent) {
     };
   }
 
-  const searchTerms = buildSearchTerms(intentEff, userClean);
+  let searchTerms = buildSearchTerms(intentEff, userClean);
+  if (searchTerms.length === 0 && !broadDiplomaListing) {
+    const uc = String(userClean || "").trim();
+    if (uc.length >= 2 && looksLikeTopicOrToolQuery(userClean)) {
+      searchTerms = prepareSearchTerms([uc]);
+    }
+  }
   if (searchTerms.length === 0 && !broadDiplomaListing) {
     return {
       text: "",
