@@ -646,6 +646,13 @@ function defaultIntent() {
   };
 }
 
+/** يمنع اعتبار skip_catalog = true عندما يعيد النموذج نصاً مثل "false" بدل boolean */
+function parseIntentSkipCatalog(raw) {
+  const v = raw && raw.skip_catalog;
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  return false;
+}
+
 function normalizeIntent(raw) {
   if (!raw || typeof raw !== "object") return defaultIntent();
   const aud = String(raw.audience || "").toLowerCase();
@@ -673,7 +680,7 @@ function normalizeIntent(raw) {
     : [];
 
   return {
-    skip_catalog: !!raw.skip_catalog,
+    skip_catalog: parseIntentSkipCatalog(raw),
     search_text: String(raw.search_text || raw.query || "").trim(),
     terms_ar: Array.isArray(raw.terms_ar)
       ? raw.terms_ar.map((x) => String(x).trim()).filter(Boolean)
@@ -694,7 +701,14 @@ function normalizeIntent(raw) {
 
 function fallbackIntentFromMessage(userMessage) {
   const t = (userMessage || "").trim();
-  if (t.length < 6) return defaultIntent();
+  if (t.length < 2) return defaultIntent();
+  if (
+    t.length < 6 &&
+    typeof looksLikeTopicOrToolQuery === "function" &&
+    !looksLikeTopicOrToolQuery(userMessage)
+  ) {
+    return defaultIntent();
+  }
   return {
     skip_catalog: false,
     search_text: t.slice(0, 500),
@@ -729,6 +743,7 @@ async function extractSearchIntent(userMessage) {
           content: `أنت تحلّل رسالة مستخدم لمنصة تعليمية وتستخرج حقولاً للبحث في الكتالوج ولتوجيه الرد.
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
+- للرسالة القصيرة (كلمة أو مصطلح واحد): skip_catalog يجب أن يكون false واملأ search_text وterms_en (والإنجليزي عند الحاجة) وإلا لن يُرجع البحث كورسات من المنصة.
 - search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
@@ -779,7 +794,14 @@ function embeddingQueryText(intent, userClean) {
     .filter(Boolean)
     .join(" ")
     .trim();
-  const q = [intent.search_text, extra, userClean].filter(Boolean).join(" ").trim();
+  const tech = [...(intent.terms_en || []), ...(intent.tools || [])]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const q = [intent.search_text, extra, tech, userClean]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   return q.slice(0, 2000) || String(userClean || "").slice(0, 2000);
 }
 
@@ -1771,4 +1793,5 @@ async function runCatalogSearch(userClean, intent) {
 module.exports = {
   extractSearchIntent,
   runCatalogSearch,
+  looksLikeTopicOrToolQuery,
 };

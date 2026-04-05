@@ -20,7 +20,11 @@ const {
   finalizeReply,
   markdownToHtml,
 } = require("./textUtils");
-const { extractSearchIntent, runCatalogSearch } = require("./hierarchicalSearch");
+const {
+  extractSearchIntent,
+  runCatalogSearch,
+  looksLikeTopicOrToolQuery,
+} = require("./hierarchicalSearch");
 const {
   buildSalesCorePolicy,
   DB_PRICING_CATEGORIES,
@@ -365,6 +369,14 @@ ${linksBlock}
 
   if (catalogBlock) {
     system += `\n${catalogBlock}\n`;
+  } else if (
+    looksLikeTopicOrToolQuery(clean) &&
+    !String(cardsAppendHtml || "").trim()
+  ) {
+    system += `
+═══ تنبيه (لا يوجد قسم «نتائج البحث في الكتالوج» لهذه الرسالة) ═══
+لم يُرجع البحث في قاعدة البيانات كورسات/دبلومات/مقتطفات لهذا الطلب. لا تقدّم تعريفاً موسوعياً عن المصطلح ولا تقل إن المنصة «لا تحتوي» محتوى إن لم يُذكر ذلك صراحة في السياق أعلاه. اكتب جملة قصيرة بلهجة مصرية: جرّب صياغة أخرى أو تصفح روابط الدورات/الدعم أدناه؛ لا تخترع أسماء كورسات.
+`;
   }
 
   const chatMessages = [{ role: "system", content: system }];
