@@ -288,6 +288,12 @@ const _COURSE_LEXICAL_NOISE = new Set(
     "اشتراك",
     "مجاني",
     "مجانى",
+    /** تظهر في مئات العناوين؛ تُستخرج من «سير العمل» فتطابق «مساحة العمل» وغيرها خطأ */
+    "عمل",
+    "العمل",
+    "شغل",
+    "الشغل",
+    "work",
   ].map((w) => normalizeArabic(w.toLowerCase()))
 );
 
@@ -305,7 +311,9 @@ function termsForCourseLexical(limitedTerms, userClean) {
   );
   if (fromUser.length > 0) return fromUser.slice(0, 10);
   return limitedTerms
-    .filter((t) => String(t).trim().length >= 3)
+    .filter(
+      (t) => String(t).trim().length >= 3 && !isCourseLexicalNoiseTerm(t)
+    )
     .slice(0, 6);
 }
 
@@ -601,14 +609,14 @@ function rankAndFilterCourses(
       /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.88;
+        return typeof sim === "number" && sim >= 0.89;
       });
       if (semOk.length > 0) {
         pool = semOk;
       } else {
         const ranked = courses
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.86)
+          .filter((x) => x.sim >= 0.87)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 6)
           .map((x) => x.c);
@@ -632,7 +640,7 @@ function rankAndFilterCourses(
     kept = rows.filter((x) => {
       const titleHit = courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms);
       if (titleHit) return x.lexT >= 12 || x.sim >= 0.72;
-      return x.sim >= 0.89;
+      return x.sim >= 0.91;
     });
     if (kept.length === 0) return [];
   } else {
@@ -822,7 +830,7 @@ async function extractSearchIntent(userMessage) {
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
 - response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
-- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم.
+- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم. لا تضف «عمل» أو «شغل» كمدخل منفرد (تطابق عناوين لا علاقة لها بالسؤال)؛ استخدم عبارات كاملة مثل «سير العمل» أو «أتمتة» إن وُجدت في السياق.
 - terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد عالمياً؛ إذا كتب المستخدم مصطلحاً إنجليزياً بالأحرف العربية أو تحليقة، ضع هنا الشكل الإنجليزي الصحيح حتى يطابق عناوين الدروس والمحتوى المخزّن غالباً بالإنجليزية. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل (مثل لا تضف work مع workflow).
 - tools: أسماء أدوات/برامج إن وُجدت.
 - audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
@@ -1130,7 +1138,7 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.87,
+              match_threshold: isChild ? 0.88 : 0.89,
               match_count: isChild ? 12 : 12,
             });
             return data || [];
@@ -1229,7 +1237,7 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = isChild ? 0.9 : 0.88;
+  const MIN_SEM_ONLY = isChild ? 0.9 : 0.89;
   if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
@@ -1268,14 +1276,14 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.88;
+        return typeof sim === "number" && sim >= 0.89;
       });
       if (semOnly.length > 0) {
         deduped = semOnly;
       } else {
         const ranked = deduped
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.86)
+          .filter((x) => x.sim >= 0.87)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 8)
           .map((x) => x.c);
@@ -1325,7 +1333,9 @@ async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
 
 async function searchLessonsLayer(searchTerms) {
   if (!supabase) return [];
-  const allTerms = prepareSearchTerms(searchTerms);
+  const allTerms = prepareSearchTerms(searchTerms).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
   if (allTerms.length === 0) return [];
 
   const orFilters = allTerms
