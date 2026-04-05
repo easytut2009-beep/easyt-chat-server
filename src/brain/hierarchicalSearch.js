@@ -199,14 +199,12 @@ function termsForCourseLexical(limitedTerms, userClean) {
     .slice(0, 6);
 }
 
-function lexicalScoreCourse(course, terms) {
+/** تطابق في العنوان/الفرعي/الكلمات المفتاحية/المجال فقط — بدون وصف (الوصف كان يمرّر كلمات عامة زي «تحليل»). */
+function lexicalTitleKeywordsDomainScore(course, terms) {
   const title = normalizeArabic((course.title || "").toLowerCase());
   const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
   const domain = normalizeArabic((course.domain || "").toLowerCase());
   const keywords = normalizeArabic((course.keywords || "").toLowerCase());
-  const desc = normalizeArabic(
-    stripHtml(course.description || "").slice(0, 900).toLowerCase()
-  );
   let score = 0;
   for (const term of terms) {
     const nt = normalizeArabic(String(term).toLowerCase().trim());
@@ -215,30 +213,93 @@ function lexicalScoreCourse(course, terms) {
     else if (subtitle.includes(nt)) score += 82;
     else if (keywords.includes(nt)) score += 55;
     else if (domain.includes(nt)) score += 38;
-    else if (desc.includes(nt)) score += 15;
   }
   return score;
 }
 
-function rankAndFilterCourses(courses, scoreTerms, semanticMap) {
+function lexicalScoreCourse(course, terms) {
+  const desc = normalizeArabic(
+    stripHtml(course.description || "").slice(0, 900).toLowerCase()
+  );
+  let score = lexicalTitleKeywordsDomainScore(course, terms);
+  for (const term of terms) {
+    const nt = normalizeArabic(String(term).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
+    if (desc.includes(nt)) score += 12;
+  }
+  return score;
+}
+
+/**
+ * كلمات نثق بها للبحث والفلترة: ظاهرة في رسالة المستخدم، أو مصطلحات إنجليزية/أدوات من JSON النية فقط.
+ * يمنع توسعة GPT (مثل «تحليل، بيانات») من سحب كورسات مالية/فوركس عند سؤال عن Excel.
+ */
+function termsAnchoredInQuery(userClean, lexicalTerms, intent) {
+  const u = normalizeArabic(String(userClean || "").toLowerCase());
+  const rawLower = String(userClean || "").toLowerCase();
+  const fromIntentTech = new Set();
+  for (const t of [...(intent?.tools || []), ...(intent?.terms_en || [])]) {
+    const s = normalizeArabic(String(t).toLowerCase().trim());
+    if (s.length >= 2) fromIntentTech.add(s);
+  }
+  const out = [];
+  const seen = new Set();
+  for (const t of lexicalTerms) {
+    const nt = normalizeArabic(String(t).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(t)) continue;
+    let ok = false;
+    if (u.includes(nt)) ok = true;
+    else if (/[a-z0-9._+-]/i.test(nt) && rawLower.includes(String(t).trim().toLowerCase()))
+      ok = true;
+    else if (fromIntentTech.has(nt)) ok = true;
+    if (ok && !seen.has(nt)) {
+      seen.add(nt);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+function rankAndFilterCourses(
+  courses,
+  scoreTerms,
+  semanticMap,
+  userClean,
+  intent
+) {
   const MAX_CARDS = 8;
+  const anchored = termsAnchoredInQuery(userClean, scoreTerms, intent);
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  const effectiveTerms =
+    anchored.length > 0
+      ? anchored
+      : userDerived.length > 0
+        ? userDerived
+        : scoreTerms;
+
   const rows = courses.map((c) => {
     const sim = semanticMap.get(c.id);
-    const lex = lexicalScoreCourse(c, scoreTerms);
     const simN = typeof sim === "number" ? sim : 0;
-    const total = lex + Math.floor(simN * 34);
-    return { c, lex, sim: simN, total };
+    const lexT = lexicalTitleKeywordsDomainScore(c, effectiveTerms);
+    const lexFull = lexicalScoreCourse(c, effectiveTerms);
+    const total = lexFull + Math.floor(simN * 28);
+    return { c, lexT, lexFull, sim: simN, total };
   });
+
   const kept = rows.filter(
     (x) =>
-      x.lex >= 48 ||
-      (x.lex >= 22 && x.sim >= 0.79) ||
-      (x.lex >= 14 && x.sim >= 0.84) ||
-      x.sim >= 0.88
+      x.lexT >= 52 ||
+      (x.lexT >= 30 && x.sim >= 0.82) ||
+      (x.lexT >= 18 && x.sim >= 0.87) ||
+      x.sim >= 0.92
   );
-  const pool = kept.length > 0 ? kept : rows.slice(0, 4);
-  pool.sort((a, b) => b.total - a.total || b.lex - a.lex);
-  return pool.slice(0, MAX_CARDS).map((x) => x.c);
+
+  if (kept.length === 0) return [];
+
+  kept.sort((a, b) => b.total - a.total || b.lexT - a.lexT);
+  return kept.slice(0, MAX_CARDS).map((x) => x.c);
 }
 
 function expandArabicVariants(terms) {
@@ -326,8 +387,8 @@ async function extractSearchIntent(userMessage) {
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true إذا كانت الرسالة تحية/شكر/صغيرة جداً/لا تتعلق بالبحث عن تعلم أو منتجات (مثلاً "هلا"، "تمام شكراً").
 - search_text: جملة واحدة بالعربية وإن أمكن مصطلحات إنجليزية تقنية للبحث الدلالي (embedding) — صِغ ما يبحث عنه المستخدم فعلياً (مثلاً "عايز أعمل جدول" → "Excel جداول بيانات spreadsheets").
-- terms_ar: مصفوفة كلمات عربية للبحث النصي (3 إلى 12 عنصراً).
-- terms_en: مصفوفة كلمات/أدوات إنجليزية (Excel, Photoshop, SEO, ...).
+- terms_ar: كلمات عربية ظهرت في رسالة المستخدم أو مرادف مباشر جداً للموضوع فقط؛ لا تضف مجالات مجاورة (مثلاً لسؤال عن Excel لا تضف "تحليل" أو "بيانات" أو "مالية" إلا إذا ذكرها المستخدم صراحة).
+- terms_en: مصفوفة أدوات/مصطلحات إنجليزية تقنية فعلية (Excel, VBA, Photoshop, ...).
 - tools: أسماء أدوات/برامج إن وُجدت.
 
 لا تضف شرحاً خارج JSON.`,
@@ -521,18 +582,31 @@ async function fetchAllDiplomasBrowse() {
   }
 }
 
-async function searchCoursesLayer(searchTerms, queryForEmb, userClean = "") {
+async function searchCoursesLayer(
+  searchTerms,
+  queryForEmb,
+  userClean = "",
+  intent = {}
+) {
   if (!supabase) return [];
   const limitedTerms = searchTerms.slice(0, 8);
   if (limitedTerms.length === 0) return [];
 
   const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
+  const userDerived = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
   let forIlike =
-    lexicalTerms.length > 0
-      ? lexicalTerms
-      : [String(userClean || "").trim().slice(0, 80)].filter(
-          (s) => s.length >= 2
-        );
+    anchored.length > 0
+      ? anchored
+      : userDerived.length > 0
+        ? userDerived
+        : lexicalTerms.length > 0
+          ? lexicalTerms
+          : [String(userClean || "").trim().slice(0, 80)].filter(
+              (s) => s.length >= 2
+            );
   if (forIlike.length === 0) return [];
 
   const cappedIlike = expandArabicVariants(forIlike).slice(0, 18);
@@ -553,8 +627,8 @@ async function searchCoursesLayer(searchTerms, queryForEmb, userClean = "") {
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.78,
-              match_count: 14,
+              match_threshold: 0.82,
+              match_count: 12,
             });
             return data || [];
           } catch (e) {
@@ -619,7 +693,7 @@ async function searchCoursesLayer(searchTerms, queryForEmb, userClean = "") {
     }
   }
 
-  const MIN_SEM_ONLY = 0.8;
+  const MIN_SEM_ONLY = 0.85;
   if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
@@ -644,7 +718,13 @@ async function searchCoursesLayer(searchTerms, queryForEmb, userClean = "") {
   }
 
   const scoreTerms = termsForCourseLexical(limitedTerms, userClean);
-  return rankAndFilterCourses(deduped, scoreTerms, semanticMap);
+  return rankAndFilterCourses(
+    deduped,
+    scoreTerms,
+    semanticMap,
+    userClean,
+    intent
+  );
 }
 
 async function searchLessonsLayer(searchTerms) {
@@ -856,7 +936,7 @@ async function runCatalogSearch(userClean, intent) {
   } else {
     [diplomas, courses, lessons, chunks] = await Promise.all([
       searchDiplomasLayer(searchTerms, queryForEmb),
-      searchCoursesLayer(searchTerms, queryForEmb, userClean),
+      searchCoursesLayer(searchTerms, queryForEmb, userClean, intent),
       searchLessonsLayer(searchTerms),
       searchChunksLayer(queryForEmb),
     ]);
