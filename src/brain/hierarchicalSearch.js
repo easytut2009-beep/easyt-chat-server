@@ -707,6 +707,76 @@ function rankAndFilterCourses(
   return kept.slice(0, MAX_CARDS).map((x) => x.c);
 }
 
+/**
+ * يزيل كورسات لا يظهر فيها أي مصطلح بحث حقيقي (عنوان/فرعي/كلمات مفتاحية أو درس مرتبط) —
+ * يمنع عرض «تسويق/مالية» لأن الـ embedding خمنها بدون وجود workflow أو غيره في النص الظاهر.
+ */
+function filterCoursesForSearchCoherence(
+  courses,
+  userClean,
+  searchTerms,
+  intent
+) {
+  if (!courses?.length) return courses;
+  const limited = (searchTerms || []).slice(0, 10);
+  const lexicalTerms = termsForCourseLexical(limited, userClean);
+  const filterTerms = effectiveCourseFilterTerms(
+    userClean,
+    lexicalTerms,
+    intent
+  );
+  const needles = buildChunkSearchNeedles(userClean, searchTerms).filter(
+    (n) => String(n).trim().length >= 3 && !isCourseLexicalNoiseTerm(n)
+  );
+  if (needles.length === 0) return courses;
+
+  const kept = [];
+  for (const c of courses) {
+    if (courseTitleOrSubtitleHitsTerm(c, filterTerms)) {
+      kept.push(c);
+      continue;
+    }
+    const title = normalizeArabic((c.title || "").toLowerCase());
+    const titleRaw = String(c.title || "").toLowerCase();
+    const subtitle = normalizeArabic((c.subtitle || "").toLowerCase());
+    const subtitleRaw = String(c.subtitle || "").toLowerCase();
+    const keywords = normalizeArabic((c.keywords || "").toLowerCase());
+    const keywordsRaw = String(c.keywords || "").toLowerCase();
+    const descRaw = stripHtml(c.description || "").toLowerCase();
+    const descNorm = normalizeArabic(descRaw);
+    let hit = false;
+    for (const term of needles) {
+      if (textFieldMatchesTerm(title, titleRaw, term)) hit = true;
+      if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) hit = true;
+      if (textFieldMatchesTerm(keywords, keywordsRaw, term)) hit = true;
+      if (textFieldMatchesTerm(descNorm, descRaw, term)) hit = true;
+    }
+    if (hit) {
+      kept.push(c);
+      continue;
+    }
+    const mls = c.matchedLessons || [];
+    for (const l of mls) {
+      const blob = `${l.title || ""} ${l.excerpt || ""}`;
+      const bn = normalizeArabic(blob.toLowerCase());
+      const br = blob.toLowerCase();
+      for (const term of needles) {
+        if (textFieldMatchesTerm(bn, br, term)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+      if (chunkContentHasSearchHit(blob, userClean, searchTerms)) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) kept.push(c);
+  }
+  return kept.length > 0 ? kept : [];
+}
+
 function expandArabicVariants(terms) {
   const variants = new Set();
   for (const term of terms) {
@@ -1937,9 +2007,16 @@ async function runCatalogSearch(userClean, intent) {
     }
   }
 
-  const coursesForCards = courses.map((c) => ({ ...c }));
+  let coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  coursesForCards = filterCoursesForSearchCoherence(
+    coursesForCards,
+    userClean,
+    searchTerms,
+    intentEff
+  );
+  courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
   }
