@@ -657,11 +657,40 @@ function defaultIntent() {
     terms_ar: [],
     terms_en: [],
     tools: [],
+    audience: null,
+    primary_goal: "",
+    constraints: [],
+    skill_level: null,
+    response_style: null,
   };
 }
 
 function normalizeIntent(raw) {
   if (!raw || typeof raw !== "object") return defaultIntent();
+  const aud = String(raw.audience || "").toLowerCase();
+  let audience = null;
+  if (aud === "child" || aud === "kid" || aud === "kids") audience = "child";
+  else if (aud === "adult" || aud === "professional") audience = "adult";
+
+  const sk = String(raw.skill_level || "").toLowerCase();
+  let skill_level = null;
+  if (sk === "beginner" || sk === "مبتدئ" || sk === "مبتدأ") skill_level = "beginner";
+  else if (sk === "intermediate" || sk === "متوسط") skill_level = "intermediate";
+  else if (sk === "advanced" || sk === "احتراف" || sk === "متقدم") skill_level = "advanced";
+
+  const rs = String(raw.response_style || "").toLowerCase();
+  let response_style = null;
+  if (rs === "brief" || rs === "short" || rs === "مختصر") response_style = "brief";
+  else if (rs === "detailed" || rs === "long" || rs === "مفصل") response_style = "detailed";
+  else if (rs === "normal" || rs === "عادي") response_style = "normal";
+
+  const constraints = Array.isArray(raw.constraints)
+    ? raw.constraints
+        .map((x) => String(x).trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+
   return {
     skip_catalog: !!raw.skip_catalog,
     search_text: String(raw.search_text || raw.query || "").trim(),
@@ -674,6 +703,11 @@ function normalizeIntent(raw) {
     tools: Array.isArray(raw.tools)
       ? raw.tools.map((x) => String(x).trim()).filter(Boolean)
       : [],
+    audience,
+    primary_goal: String(raw.primary_goal || "").trim().slice(0, 400),
+    constraints,
+    skill_level,
+    response_style,
   };
 }
 
@@ -686,6 +720,11 @@ function fallbackIntentFromMessage(userMessage) {
     terms_ar: [],
     terms_en: [],
     tools: [],
+    audience: null,
+    primary_goal: "",
+    constraints: [],
+    skill_level: null,
+    response_style: null,
   };
 }
 
@@ -701,18 +740,23 @@ async function extractSearchIntent(userMessage) {
     const completion = await openai.chat.completions.create({
       model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
       response_format: { type: "json_object" },
-      temperature: 0.15,
-      max_tokens: 400,
+      temperature: 0.12,
+      max_tokens: 520,
       messages: [
         {
           role: "system",
-          content: `أنت تستخرج معلومات بحث عن كتالوج تعليمي (دبلومات، كورسات، دروس).
+          content: `أنت تحلّل رسالة مستخدم لمنصة تعليمية وتستخرج حقولاً للبحث في الكتالوج ولتوجيه الرد.
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع (مثلاً "هلا"، "تمام شكراً"). أي مصطلح تقني أو اسم أداة أو كتابة عربية حرفية لمصطلح إنجليزي (مثل: وورك فلو، جيت هاب، اكسيل) → skip_catalog: false دائماً لأن المستخدم يبحث في المحتوى.
-- search_text: جملة واحدة بالعربية وإن أمكن مصطلحات إنجليزية تقنية للبحث الدلالي (embedding) — صِغ ما يبحث عنه المستخدم فعلياً (مثلاً "عايز أعمل جدول" → "Excel جداول بيانات spreadsheets").
-- terms_ar: كلمات عربية ظهرت في رسالة المستخدم أو مرادف مباشر جداً للموضوع فقط؛ لا تضف مجالات مجاورة (مثلاً لسؤال عن Excel لا تضف "تحليل" أو "بيانات" أو "مالية" إلا إذا ذكرها المستخدم صراحة).
-- terms_en: أدوات/مصطلحات إنجليزية فعلية كما كتبها المستخدم أو شكلها المعتاد (workflow, Excel, Shortcuts, n8n, …) حتى لو كتبها بالعربي حرفياً (مثلاً وورك فلو → workflow في terms_en).
+- search_text: جملة واحدة للبحث الدلالي (embedding) — ما يبحث عنه فعلياً (مثلاً "عايز أعمل جدول" → "Excel جداول بيانات spreadsheets"). إن كان السؤال عن طفل يتعلم برمجة فأضف: تعليم برمجة للأطفال Scratch مبتدئين.
+- primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
+- constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
+- skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
+- response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
+- terms_ar: كلمات عربية من الرسالة أو مرادف مباشر للموضوع؛ لا توسّع المجال بدون ذكر من المستخدم.
+- terms_en: مصطلحات إنجليزية تقنية (workflow, Excel, …) كما يُفترض معناها.
 - tools: أسماء أدوات/برامج إن وُجدت.
+- audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
 
 لا تضف شرحاً خارج JSON.`,
         },
@@ -731,6 +775,8 @@ async function extractSearchIntent(userMessage) {
 function buildSearchTerms(intent, userClean) {
   const parts = [];
   if (intent.search_text) parts.push(intent.search_text);
+  if (intent.primary_goal) parts.push(intent.primary_goal);
+  for (const t of intent.constraints || []) parts.push(t);
   for (const t of intent.terms_ar) parts.push(t);
   for (const t of intent.terms_en) parts.push(t);
   for (const t of intent.tools) parts.push(t);
@@ -739,7 +785,11 @@ function buildSearchTerms(intent, userClean) {
 }
 
 function embeddingQueryText(intent, userClean) {
-  const q = [intent.search_text, userClean].filter(Boolean).join(" ").trim();
+  const extra = [intent.primary_goal, ...(intent.constraints || [])]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const q = [intent.search_text, extra, userClean].filter(Boolean).join(" ").trim();
   return q.slice(0, 2000) || userClean.slice(0, 2000);
 }
 
@@ -798,6 +848,114 @@ function enrichEmbeddingQueryForChunks(userClean, intent) {
     q = `${q} ${uniq.join(" ")}`.trim();
   }
   return q.slice(0, 2000);
+}
+
+/** طفل/عمر صغير أو ذكر ابن/بنت وتعلّم — لاستخدام تصفية الكتالوج */
+function detectYoungLearnerContext(userClean) {
+  const raw = String(userClean || "");
+  const n = normalizeArabic(raw.toLowerCase());
+  let age = null;
+  const m1 = raw.match(/(\d{1,2})\s*(?:سنة|سنه|سنوات)\b/);
+  const m2 = raw.match(/(?:عنده|عمره|عمرها|بعمر)\s*(\d{1,2})\b/i);
+  const m3 = raw.match(/(\d{1,2})\s*years?\s*old/i);
+  if (m1) age = parseInt(m1[1], 10);
+  else if (m2) age = parseInt(m2[1], 10);
+  else if (m3) age = parseInt(m3[1], 10);
+  const mentionsChild =
+    /ابني|ابنى|بنتي|بنتى|ابن|بنت\b|طفل|طفله|أطفال|الاطفال|الأطفال|ولدي|ولد|عيال|صغير|صغيره|للاطفال|للأطفال|ابنى\s|بنتى\s/.test(
+      n + raw
+    );
+  const learning =
+    /يتعلم|تعلم|علم|كورس|دوره|دورة|دبلوم|برمج|مبادئ|يبدأ|ابدأ|ادرس|يدرس|نفسه|نفسها/.test(
+      raw
+    );
+  const active =
+    (age != null && age <= 14) || (mentionsChild && learning);
+  return { active, age };
+}
+
+function isProgrammingLearningQuery(userClean) {
+  const t = normalizeArabic(String(userClean || "").toLowerCase());
+  const raw = String(userClean || "").toLowerCase();
+  return /برمج|برمجه|programming|program|\bcode\b|كود|بايثون|python|جافا|java|سكراتش|scratch|روبوت|robot|ardu|اردوينو|مبرمج/.test(
+    t + raw
+  );
+}
+
+function stripHtmlLite(s) {
+  return String(s || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * درجة ملاءمة لمسار برمجة لطفل: موجب لسكراتش/مبتدئين/أطفال؛ سالب لمسارات احترافية.
+ */
+function youngLearnerProgrammingScore(title, subtitle, description) {
+  const blob = normalizeArabic(
+    `${stripHtmlLite(title)} ${stripHtmlLite(subtitle)} ${stripHtmlLite(description)}`.toLowerCase()
+  );
+  let score = 0;
+  if (/سكراتش|scratch/.test(blob)) score += 42;
+  if (/مبتدئ|للمبتدئين|تعليم البرمجة|تعلم البرمجة|من الصفر|من البداية|اساسيات|أساسيات/.test(blob))
+    score += 22;
+  if (
+    /اطفال|أطفال|للاطفال|للأطفال|للصغار|طفل|صغير|عمر|سن\s*8|\+8|8\+|\+?\s*8\s*سن/.test(
+      blob
+    )
+  )
+    score += 26;
+  if (/بلوك|block|visual|مرئي|العاب|ألعاب|games?/.test(blob)) score += 10;
+  if (/تعليم البرمجة للمبتدئين|تعليم برمجة/.test(blob)) score += 18;
+
+  if (/سليديتي|solidity|بلوكتشين|blockchain|عقود ذكية|smart\s*contract|web3/i.test(blob))
+    score -= 85;
+  if (/vba|ماكرو|macro|excel/.test(blob)) score -= 58;
+  if (
+    /oracle|\badf\b|full\s*stack|فول\s*ستاك|احترافي|احتراف|enterprise|docker|kubernetes|spring\s*boot|\.net\s*core/i.test(
+      blob
+    )
+  )
+    score -= 52;
+  if (/محاسب|مالي|تحليل مالي|تقارير مالية|excel\s*لل/.test(blob)) score -= 38;
+  if (/مواقع\s*احتراف|full\s*stack\s*web|backend|frontend\s*متقدم/.test(blob))
+    score -= 35;
+  return score;
+}
+
+function prioritizeYoungLearnerDiplomas(diplomas, _userClean) {
+  if (!diplomas?.length) return diplomas;
+  const scored = diplomas.map((d) => ({
+    d,
+    s: youngLearnerProgrammingScore(d.title || "", "", d.description || ""),
+  }));
+  scored.sort((a, b) => b.s - a.s);
+  const ok = scored.filter((x) => x.s > -42);
+  const list = (ok.length >= 2 ? ok : scored).map((x) => x.d);
+  return list.slice(0, 5);
+}
+
+function prioritizeYoungLearnerCourses(courses, _userClean) {
+  if (!courses?.length) return courses;
+  const scored = courses.map((c) => ({
+    c,
+    s: youngLearnerProgrammingScore(
+      c.title || "",
+      c.subtitle || "",
+      c.description || ""
+    ),
+  }));
+  scored.sort((a, b) => b.s - a.s);
+  const ok = scored.filter((x) => x.s > -42);
+  const list = (ok.length >= 3 ? ok : scored).map((x) => x.c);
+  return list.slice(0, 8);
+}
+
+function augmentEmbeddingQueryForYoungLearner(q) {
+  const add =
+    " تعليم برمجة للأطفال Scratch مبتدئين visual block coding for kids ";
+  return `${q}${add}`.trim().slice(0, 2000);
 }
 
 async function searchDiplomasLayer(searchTerms, queryForEmb) {
@@ -1683,8 +1841,17 @@ async function runCatalogSearch(userClean, intent) {
     };
   }
 
-  const queryForEmb = embeddingQueryText(intentEff, userClean);
-  const queryForChunks = enrichEmbeddingQueryForChunks(userClean, intentEff);
+  const childCtx = detectYoungLearnerContext(userClean);
+  const programmingKid =
+    (intentEff.audience === "child" || childCtx.active) &&
+    isProgrammingLearningQuery(userClean);
+
+  let queryForEmb = embeddingQueryText(intentEff, userClean);
+  let queryForChunks = enrichEmbeddingQueryForChunks(userClean, intentEff);
+  if (programmingKid) {
+    queryForEmb = augmentEmbeddingQueryForYoungLearner(queryForEmb);
+    queryForChunks = augmentEmbeddingQueryForYoungLearner(queryForChunks);
+  }
 
   let diplomas;
   let courses;
@@ -1703,6 +1870,11 @@ async function runCatalogSearch(userClean, intent) {
       searchLessonsLayer(searchTerms),
       searchChunksLayer(queryForChunks, userClean, searchTerms),
     ]);
+  }
+
+  if (programmingKid && !broadDiplomaListing) {
+    diplomas = prioritizeYoungLearnerDiplomas(diplomas, userClean);
+    courses = prioritizeYoungLearnerCourses(courses, userClean);
   }
 
   const diplomasForCatalog = broadDiplomaListing
@@ -1748,4 +1920,6 @@ async function runCatalogSearch(userClean, intent) {
 module.exports = {
   extractSearchIntent,
   runCatalogSearch,
+  detectYoungLearnerContext,
+  isProgrammingLearningQuery,
 };

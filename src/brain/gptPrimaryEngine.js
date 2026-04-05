@@ -23,6 +23,8 @@ const {
 const {
   extractSearchIntent,
   runCatalogSearch,
+  detectYoungLearnerContext,
+  isProgrammingLearningQuery,
 } = require("./hierarchicalSearch");
 const {
   buildSalesCorePolicy,
@@ -234,6 +236,31 @@ function clearFaqCache() {
   courseTitlesCache = { text: "", ts: 0 };
 }
 
+/** يمرّر للنموذج ملخصاً منظمّاً من extractSearchIntent — بدون إظهار «سلسلة تفكير» للمستخدم */
+function formatIntentBriefForSystem(intent) {
+  if (!intent || intent.skip_catalog) return "";
+  const lines = [];
+  if (intent.primary_goal) lines.push(`• الهدف: ${intent.primary_goal}`);
+  if (intent.constraints?.length) {
+    lines.push(`• قيود: ${intent.constraints.join("؛ ")}`);
+  }
+  if (intent.audience === "child") {
+    lines.push("• الجمهور: طفل/ناشئ — راعِ العمر والبساطة وعدم إسقاط مسارات كبار كخيار أول.");
+  } else if (intent.audience === "adult") {
+    lines.push("• الجمهور: كبار/احتراف — يمكن ترشيح مسارات أعمق إن وافقت الكتالوج.");
+  }
+  if (intent.skill_level) {
+    lines.push(`• مستوى مستنتج: ${intent.skill_level}`);
+  }
+  if (intent.response_style === "brief") {
+    lines.push("• تفضيل المستخدم: رد مختصر.");
+  } else if (intent.response_style === "detailed") {
+    lines.push("• تفضيل المستخدم: شرح أوضح مع تفاصيل مفيدة دون حشو.");
+  }
+  if (!lines.length) return "";
+  return `═══ ملخص فهم الرسالة (استخدمه دون نسخه سطراً بسطر) ═══\n${lines.join("\n")}\n\n`;
+}
+
 async function smartChat(message, sessionId) {
   const start = Date.now();
   activeChatSessions.add(sessionId);
@@ -268,6 +295,10 @@ async function smartChat(message, sessionId) {
       extractSearchIntent(clean),
     ]);
 
+  const youngLearnerProgramming =
+    (searchIntent.audience === "child" || detectYoungLearnerContext(clean).active) &&
+    isProgrammingLearningQuery(clean);
+
   const { text: catalogBlock, cardsAppendHtml } = await runCatalogSearch(
     clean,
     searchIntent
@@ -290,6 +321,13 @@ async function smartChat(message, sessionId) {
 
   let system = `أنت "زيكو" 🤖 المرشد الرسمي لمنصة easyT التعليمية.
 
+═══ التفكير قبل الإجابة (داخلي — لا تكتب للمستخدم خطوات مرقّمة ولا تذكر هذه العنوان) ═══
+- استنتج: من يتكلم؟ وعن من أو عن ماذا يطلب؟ وما أهم قيد (عمر، ميزانية، وقت، مستوى، هدف وظيفي أم تعلّم لطفل)؟
+- التزم بالقيود: لا تقترح مساراً يناقض ما قاله المستخدم صراحة أو ما يتناقض مع «ملخص فهم الرسالة» إن وُجد.
+- المصادر: نتائج الكتالوج والأسئلة الشائعة والروابط الرسمية والتعليمات المتغيرة فقط — لا تخترع أسماء كورسات أو أسعاراً أو روابط.
+- إن وُجدت كروت HTML في السياق: لا تكررها نصاً؛ إن لم توجد كروت: أجب بجمل متماسكة دون حشو.
+- لخص ثم نفّذ: رد واحد واضح بلهجة مصرية ودودة.
+
 قواعد تقنية للرد:
 - اربط الرد بسياق المحادثة وبنصوص «السياسة الأساسية» و«تعليمات متغيرة من قاعدة البيانات» و«الكتالوج» و«العناوين المرجعية» أدناه.
 - لا تخترع أسماء كورسات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم.
@@ -303,6 +341,12 @@ ${buildSalesCorePolicy({ hasDbPricingText })}
 
 `;
 
+  if (youngLearnerProgramming) {
+    system += `═══ سياق متعلّم صغير (برمجة أو تقنية مناسبة للعمر) ═══
+اقرأ رسالة المستخدم (عمر، ابن/بنت، هدف التعلم). رشّح مسارات بصرية أو سكراتش أو مبتدئين ومناسبة للطفل؛ لا تقدّم مسارات احترافية للكبار (مثل VBA محاسبي، سلاسل كتل، Oracle ADF، تطوير مواقع احترافي Full Stack) كأنها الخيار الأول. إن وُجدت كروت في الكتالوج، النظام يفضّل المسارات المناسبة للعمر عند الإمكان — يمكنك توجيه الأهل بلطف دون تكرار كل العناوين.
+`;
+  }
+
   if (botInstructions) {
     system += `═══ تعليمات متغيرة: اشتراك عام (شهري / سنوي) وعروضه ═══
 (category = BOT_DYNAMIC أو PRICING) — **للاشتراك الموحّد فقط**؛ أسعار الكورسات والدبلومات من قسم الكتالوج وليس من هنا.
@@ -315,13 +359,15 @@ ${botInstructions}
 ${linksBlock}
 `;
 
-  if (courseHint) {
+  if (courseHint && !youngLearnerProgramming) {
     system += `\n═══ عناوين مرجعية لعيّنة من الكورسات (ليس بالضرورة كل المحتوى) ═══\n${courseHint}\n`;
   }
 
   if (faqHint) {
     system += `\n═══ أسئلة شائعة مرجعية (استخدمها إن وافقت سؤال المستخدم) ═══\n${faqHint}\n`;
   }
+
+  system += formatIntentBriefForSystem(searchIntent);
 
   if (catalogBlock) {
     system += `\n${catalogBlock}\n`;
@@ -340,11 +386,19 @@ ${linksBlock}
     if (skipGptForCatalogCards) {
       replyText = "";
     } else {
+      const baseTemp = parseFloat(process.env.GPT_CHAT_TEMPERATURE || "0.28", 10);
+      const temperature = Number.isFinite(baseTemp)
+        ? Math.min(0.85, Math.max(0.12, baseTemp))
+        : 0.28;
+      let maxTokens = parseInt(process.env.GPT_CHAT_MAX_TOKENS || "1100", 10);
+      if (!Number.isFinite(maxTokens) || maxTokens < 200) maxTokens = 1100;
+      if (searchIntent.response_style === "brief") maxTokens = Math.min(maxTokens, 480);
+      else if (searchIntent.response_style === "detailed") maxTokens = Math.min(1600, maxTokens + 180);
       const completion = await openai.chat.completions.create({
         model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
         messages: chatMessages,
-        temperature: 0.35,
-        max_tokens: 900,
+        temperature,
+        max_tokens: maxTokens,
       });
       replyText =
         completion.choices[0]?.message?.content ||
