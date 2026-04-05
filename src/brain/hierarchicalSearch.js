@@ -10,8 +10,6 @@ const { supabase, openai } = require("../lib/clients");
 
 /** أقصى عدد كروت كورسات في الرد — تجنباً لإغراق المستخدم بعشرات النتائج الضعيفة الصلة */
 const MAX_COURSE_CATALOG_CARDS = 6;
-/** إن وُجد هذا العدد أو أكثر من كورسات طبقة الكورسات/الدلالة لا نضيف كورسات جديدة من تطابق عناوين الدروس فقط (غالباً ضوضاء مثل Bones / Key frame). */
-const MIN_COURSE_LAYER_HITS_TO_SKIP_LESSON_ONLY_COURSES = 3;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -623,14 +621,14 @@ function rankAndFilterCourses(
       /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.89;
+        return typeof sim === "number" && sim >= 0.9;
       });
       if (semOk.length > 0) {
         pool = semOk;
       } else {
         const ranked = courses
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.87)
+          .filter((x) => x.sim >= 0.88)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 6)
           .map((x) => x.c);
@@ -654,7 +652,7 @@ function rankAndFilterCourses(
     kept = rows.filter((x) => {
       const titleHit = courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms);
       if (titleHit) return x.lexT >= 12 || x.sim >= 0.72;
-      return x.sim >= 0.91;
+      return x.sim >= 0.93;
     });
     if (kept.length === 0) return [];
   } else {
@@ -1152,7 +1150,7 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.89,
+              match_threshold: isChild ? 0.88 : 0.9,
               match_count: isChild ? 12 : 12,
             });
             return data || [];
@@ -1251,7 +1249,7 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = isChild ? 0.9 : 0.89;
+  const MIN_SEM_ONLY = 0.9;
   if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
@@ -1290,14 +1288,14 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.89;
+        return typeof sim === "number" && sim >= 0.9;
       });
       if (semOnly.length > 0) {
         deduped = semOnly;
       } else {
         const ranked = deduped
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.87)
+          .filter((x) => x.sim >= 0.88)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 8)
           .map((x) => x.c);
@@ -1316,14 +1314,14 @@ async function searchCoursesLayer(
 }
 
 /**
- * يضيف صفوف كورسات كاملة عندما طبقة الدروس طابقت ولم تُملَأ الكروت بعد؛
- * إذا وُجدت بالفعل ≥3 كورسات من طبقة الكورسات/الدلالة لا نضيف كورسات «من الدروس فقط» لتجنب نتائج عشوائية.
+ * يضيف صفوف كورسات من عناوين الدروس **فقط** عندما طبقة الكورسات لم ترجع شيئاً —
+ * إن وُجد أي كورس من البحث/الدلالة لا نضيف كورسات إضافية من الدروس (تسبب MOHO/Key frame/عيادات إلخ).
  */
 async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
   if (!supabase || !lessons?.length) return (courses || []).slice(0, MAX);
   const byId = new Map((courses || []).filter((c) => c?.id).map((c) => [c.id, c]));
-  if (byId.size >= MIN_COURSE_LAYER_HITS_TO_SKIP_LESSON_ONLY_COURSES) {
+  if (byId.size > 0) {
     return [...byId.values()].slice(0, MAX);
   }
   const slots = Math.max(0, MAX - byId.size);
