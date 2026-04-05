@@ -1657,30 +1657,39 @@ async function runCatalogSearch(userClean, intent) {
   let courses;
   let lessons;
   let chunks;
+  /** دبلومات بعد تصفية العناوين — يُستخدم أيضاً لقرار جلب الـ chunks */
+  let diplomasForCatalog;
 
   if (broadDiplomaListing) {
     diplomas = await fetchAllDiplomasBrowse();
     courses = [];
     lessons = [];
     chunks = [];
+    diplomasForCatalog = diplomas;
   } else {
-    [diplomas, courses, lessons, chunks] = await Promise.all([
+    [diplomas, courses, lessons] = await Promise.all([
       searchDiplomasLayer(searchTerms, queryForEmb),
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
       searchLessonsLayer(searchTerms),
-      searchChunksLayer(queryForChunks, userClean, searchTerms),
     ]);
-  }
 
-  const diplomasForCatalog = broadDiplomaListing
-    ? diplomas
-    : filterDiplomasForAnchoredTitles(
-        diplomas,
-        userClean,
-        intentEff,
-        searchTerms,
-        broadDiplomaListing
-      );
+    diplomasForCatalog = filterDiplomasForAnchoredTitles(
+      diplomas,
+      userClean,
+      intentEff,
+      searchTerms,
+      broadDiplomaListing
+    );
+
+    const hasDiplomaCourseOrLessonHits =
+      diplomasForCatalog.length > 0 ||
+      courses.length > 0 ||
+      lessons.length > 0;
+
+    chunks = hasDiplomaCourseOrLessonHits
+      ? []
+      : await searchChunksLayer(queryForChunks, userClean, searchTerms);
+  }
 
   const coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
