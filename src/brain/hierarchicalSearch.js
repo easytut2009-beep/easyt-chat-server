@@ -175,17 +175,20 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
   for (const [cid, g] of byCourse) {
     const c = existingById.get(cid);
     if (!c) continue;
+    c._chunkMaxSim = Math.max(Number(c._chunkMaxSim) || 0, g.maxSim || 0);
 
     const fromChunks = [...g.lessons.values()]
       .filter(
         (l) => (Number(l.similarity) || 0) >= MIN_LESSON_CHUNK_SIMILARITY
       )
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-      .map(({ lesson_id, title, timestamp_start, excerpt }) => ({
+      .map(({ lesson_id, title, timestamp_start, excerpt, similarity }) => ({
         lesson_id,
         title,
         timestamp_start,
         excerpt: excerpt || undefined,
+        similarity:
+          typeof similarity === "number" ? similarity : undefined,
       }));
 
     const mergedMap = new Map();
@@ -1348,13 +1351,18 @@ async function searchCoursesLayer(
     }
   }
 
-  return rankAndFilterCourses(
+  const out = rankAndFilterCourses(
     deduped,
     scoreTerms,
     semanticMap,
     userClean,
     intent
   );
+  for (const c of out) {
+    const sim = semanticMap.get(c.id);
+    if (typeof sim === "number") c._vecSim = sim;
+  }
+  return out;
 }
 
 /**
@@ -1881,6 +1889,85 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   return lines.join("\n");
 }
 
+/** مصطلحات مميزة للصلة: نية (إنجليزي/أدوات) + رسالة المستخدم + searchTerms. */
+function collectRelevanceTerms(userClean, searchTerms, intent) {
+  const out = [];
+  const seen = new Set();
+  const push = (t) => {
+    const s = String(t || "").trim();
+    if (s.length < 2) return;
+    const k = normalizeArabic(s.toLowerCase());
+    if (seen.has(k)) return;
+    if (isCourseLexicalNoiseTerm(s)) return;
+    seen.add(k);
+    out.push(s);
+  };
+  for (const t of intent?.terms_en || []) push(t);
+  for (const t of intent?.tools || []) push(t);
+  for (const t of prepareSearchTerms([userClean || ""])) push(t);
+  for (const t of searchTerms || []) push(t);
+  return out.slice(0, 28);
+}
+
+/** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
+function scoreCatalogCourse(course, userClean, searchTerms, intent) {
+  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  let score = 0;
+  const sim = typeof course._vecSim === "number" ? course._vecSim : 0;
+  score += sim * 200;
+  const chMax =
+    typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
+  score += chMax * 120;
+
+  const title = normalizeArabic((course.title || "").toLowerCase());
+  const titleRaw = String(course.title || "").toLowerCase();
+  const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
+  const subtitleRaw = String(course.subtitle || "").toLowerCase();
+  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
+  const keywordsRaw = String(course.keywords || "").toLowerCase();
+
+  for (const term of terms) {
+    if (textFieldMatchesTerm(title, titleRaw, term)) score += 60;
+    if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += 45;
+    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 38;
+  }
+
+  const mls = course.matchedLessons || [];
+  for (const l of mls) {
+    const lt = normalizeArabic((l.title || "").toLowerCase());
+    const lr = String(l.title || "").toLowerCase();
+    for (const term of terms) {
+      if (textFieldMatchesTerm(lt, lr, term)) score += 50;
+    }
+    const ls = Number(l.similarity);
+    if (!Number.isNaN(ls) && ls > 0) score += ls * 55;
+  }
+
+  return score;
+}
+
+/**
+ * ترتيب حسب الصلة ثم إسقاط النتائج الضعيفة جداً مقارنة بأفضل درجة (لا حذف بنصوص طويلة عشوائية).
+ */
+function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) {
+  if (!courses?.length) return courses;
+  const scored = courses.map((c) => ({
+    c,
+    s: scoreCatalogCourse(c, userClean, searchTerms, intent),
+  }));
+  scored.sort((a, b) => b.s - a.s);
+  const best = scored[0].s;
+  if (best < 8) {
+    return scored.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
+  }
+  const cutoff = Math.max(10, best * 0.36);
+  let kept = scored.filter((x) => x.s >= cutoff);
+  if (kept.length === 0) {
+    kept = scored.slice(0, Math.min(3, scored.length));
+  }
+  return kept.map((x) => x.c).slice(0, MAX_COURSE_CATALOG_CARDS);
+}
+
 /**
  * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
  */
@@ -1973,9 +2060,15 @@ async function runCatalogSearch(userClean, intent) {
     }
   }
 
-  const coursesForCards = courses.map((c) => ({ ...c }));
+  let coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  coursesForCards = rankCatalogCoursesByRelevance(
+    coursesForCards,
+    userClean,
+    searchTerms,
+    intentEff
+  );
   courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
