@@ -753,6 +753,33 @@ function effectiveCourseFilterTerms(userClean, lexicalTerms, intent) {
       : lexicalTerms;
 }
 
+/** إزالة تكرار id مع الحفاظ على ترتيب الدمج. */
+function mergeCoursesByIdPreferOrder(primary, secondary) {
+  const seen = new Set();
+  const out = [];
+  for (const c of [...primary, ...secondary]) {
+    if (!c?.id || seen.has(c.id)) continue;
+    seen.add(c.id);
+    out.push(c);
+  }
+  return out;
+}
+
+/**
+ * أفضل كورسات حسب تشابه الـ embedding مع الاستعلام — بدون أسماء ثابتة.
+ * يُستخدم لعدم حذف كورس عنوانه بلغة/صيغة مختلفة عن السؤال لمجرد أن كورساً آخر طابق جزءاً معجمياً (مثل مقطع داخل كلمة أطول).
+ */
+function topCoursesBySemanticSimilarity(courses, semanticMap, limit) {
+  if (!courses?.length || !semanticMap?.size) return [];
+  const n = Math.max(1, Math.min(Number(limit) || 8, 24));
+  return [...courses]
+    .map((c) => ({ c, sim: semanticMap.get(c.id) }))
+    .filter((x) => typeof x.sim === "number")
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, n)
+    .map((x) => x.c);
+}
+
 function rankAndFilterCourses(
   courses,
   scoreTerms,
@@ -775,8 +802,10 @@ function rankAndFilterCourses(
     const lexOk = courses.filter((c) =>
       courseTitleOrSubtitleHitsTerm(c, effectiveTerms)
     );
+    const semTop = topCoursesBySemanticSimilarity(courses, semanticMap, 8);
     if (lexOk.length > 0) {
-      pool = lexOk;
+      /** لا نكتفي بالمعجمي: ندمج أفضل النتائج دلالياً حتى يبقى مرشّح العنوان الإنجليزي/المختلف لغوياً في المنافسة. */
+      pool = mergeCoursesByIdPreferOrder(lexOk, semTop);
     } else {
       /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
@@ -812,7 +841,8 @@ function rankAndFilterCourses(
     kept = rows.filter((x) => {
       const titleHit = courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms);
       if (titleHit) return x.lexT >= 12 || x.sim >= 0.72;
-      return x.sim >= 0.86;
+      /** عنوان بلغة أخرى / بدون تطابق حرفي: عتبة أخف قليلاً عند وجود تشابه دلالي قوي */
+      return x.sim >= 0.83;
     });
     if (kept.length === 0) return [];
   } else {
@@ -1052,7 +1082,8 @@ function embeddingQueryText(intent, userClean) {
     .filter(Boolean)
     .join(" ")
     .trim();
-  const q = [intent.search_text, extra, tech, userClean]
+  /** رسالة المستخدم أولاً — تبقى محور الـ embedding حتى لا يطغى نص من النموذج على صياغة السؤال الفعلية. */
+  const q = [userClean, intent.search_text, extra, tech]
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -1444,8 +1475,9 @@ async function searchCoursesLayer(
     const lexOnly = deduped.filter((c) =>
       courseTitleOrSubtitleHitsTerm(c, filterTerms)
     );
+    const semTop = topCoursesBySemanticSimilarity(deduped, semanticMap, 10);
     if (lexOnly.length > 0) {
-      deduped = lexOnly;
+      deduped = mergeCoursesByIdPreferOrder(lexOnly, semTop);
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
