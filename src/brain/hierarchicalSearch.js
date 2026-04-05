@@ -12,6 +12,10 @@ const { supabase, openai } = require("../lib/clients");
 const MAX_COURSE_CATALOG_CARDS = 6;
 /** أدنى تشابه لقبول chunk من match_lesson_chunks (كان 0.36 في الـ RPC فيدخل أي محتوى). */
 const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
+/** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً (يمرّر كورسات مثل التسويق لسؤال workflow). */
+const SEMANTIC_CHUNK_ONLY_MIN_SIM = 0.62;
+/** كورس جديد يُضاف من الـ chunks فقط (غير ظاهر في طبقة الكورسات) — عتبة أعلى. */
+const CHUNK_ONLY_NEW_COURSE_MIN_SIM = 0.62;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -154,7 +158,7 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
   const chunkOnlyIds = [...byCourse.entries()]
     .filter(
       ([id, g]) =>
-        !existingById.has(id) && g.maxSim >= MIN_LESSON_CHUNK_SIMILARITY
+        !existingById.has(id) && g.maxSim >= CHUNK_ONLY_NEW_COURSE_MIN_SIM
     )
     .sort((a, b) => b[1].maxSim - a[1].maxSim)
     .slice(0, 3)
@@ -478,6 +482,28 @@ function lessonRowMatchesSearchTerms(lesson, preparedTerms) {
     if (textFieldMatchesTerm(title, titleRaw, term)) return true;
   }
   return false;
+}
+
+function prepareLessonLayerTerms(searchTerms) {
+  return prepareSearchTerms(searchTerms || [])
+    .filter((t) => !isCourseLexicalNoiseTerm(t))
+    .filter(isLessonSearchTokenAllowed);
+}
+
+function lessonTitleMatchesSearchTerms(title, preparedTerms) {
+  if (!preparedTerms?.length) return false;
+  return lessonRowMatchesSearchTerms({ title: title || "" }, preparedTerms);
+}
+
+/** لترتيب نتائج الدروس عند التكميل: كورسات لها دروس بعنوان يطابق البحث أولاً. */
+function sortLessonsForSupplementRelevance(lessons, searchTerms) {
+  const terms = prepareLessonLayerTerms(searchTerms);
+  if (!terms.length || !lessons?.length) return lessons || [];
+  return [...lessons].sort((a, b) => {
+    const ga = lessonRowMatchesSearchTerms(a, terms) ? 1 : 0;
+    const gb = lessonRowMatchesSearchTerms(b, terms) ? 1 : 0;
+    return gb - ga;
+  });
 }
 
 /** عنوان الدبلومة يطابق مصطلحات السؤال — بدون الاعتماد على وصف أو دلالة ضعيفة. */
@@ -1377,8 +1403,13 @@ async function mergeCoursesFromLessonHits(
 ) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
   const supplement = Boolean(options.supplementWhenFew);
+  const st = options.searchTerms || [];
+  let lessonRows = lessons || [];
+  if (st.length && lessonRows.length) {
+    lessonRows = sortLessonsForSupplementRelevance(lessonRows, st);
+  }
   const base = (courses || []).filter((c) => c?.id);
-  if (!supabase || !lessons?.length) return base.slice(0, MAX);
+  if (!supabase || !lessonRows.length) return base.slice(0, MAX);
   if (base.length > 0 && !supplement) return base.slice(0, MAX);
   if (supplement && base.length >= 4) return base.slice(0, MAX);
 
@@ -1387,7 +1418,7 @@ async function mergeCoursesFromLessonHits(
     ? Math.min(5, Math.max(0, MAX - byId.size))
     : Math.min(2, Math.max(0, MAX - byId.size));
   if (maxNew <= 0) return [...byId.values()].slice(0, MAX);
-  const needIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))]
+  const needIds = [...new Set(lessonRows.map((l) => l.course_id).filter(Boolean))]
     .filter((id) => !byId.has(id))
     .slice(0, maxNew);
   if (needIds.length === 0) return [...byId.values()].slice(0, MAX);
@@ -1409,9 +1440,7 @@ async function mergeCoursesFromLessonHits(
 
 async function searchLessonsLayer(searchTerms) {
   if (!supabase) return [];
-  const allTerms = prepareSearchTerms(searchTerms)
-    .filter((t) => !isCourseLexicalNoiseTerm(t))
-    .filter(isLessonSearchTokenAllowed);
+  const allTerms = prepareLessonLayerTerms(searchTerms);
   if (allTerms.length === 0) return [];
 
   const orFilters = allTerms
@@ -1739,12 +1768,17 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
       }
     }
 
+    const lessonTerms = prepareLessonLayerTerms(searchTerms);
+
     merged = merged.filter((r) => {
       if (r._lexicalHit) return true;
       const sim = Number(r.similarity) || 0;
       if (chunkContentHasSearchHit(r.content, userClean, searchTerms))
         return true;
-      return sim >= MIN_LESSON_CHUNK_SIMILARITY;
+      if (lessonTitleMatchesSearchTerms(r.lesson_title || "", lessonTerms)) {
+        return sim >= MIN_LESSON_CHUNK_SIMILARITY;
+      }
+      return sim >= SEMANTIC_CHUNK_ONLY_MIN_SIM;
     });
 
     merged.sort((a, b) => {
@@ -1920,6 +1954,39 @@ function collectRelevanceTerms(userClean, searchTerms, intent) {
   return out.slice(0, 28);
 }
 
+/**
+ * رفض نتائج «دلالة فقط» بلا كلمة من موضوع البحث في عنوان الكورس/الكلمات المفتاحية/عنوان درس.
+ * يُستثنى إن كان تشابه الكورس الدلالي أو أقصى تشابه chunk عالياً بما يكفي.
+ */
+function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
+  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  if (terms.length === 0) return true;
+
+  if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
+
+  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
+  const keywordsRaw = String(course.keywords || "").toLowerCase();
+  for (const term of terms) {
+    if (isCourseLexicalNoiseTerm(term)) continue;
+    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) return true;
+  }
+
+  for (const l of course.matchedLessons || []) {
+    const lt = normalizeArabic((l.title || "").toLowerCase());
+    const lr = String(l.title || "").toLowerCase();
+    for (const term of terms) {
+      if (isCourseLexicalNoiseTerm(term)) continue;
+      if (textFieldMatchesTerm(lt, lr, term)) return true;
+    }
+  }
+
+  const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
+  const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
+  if (vs >= 0.36) return true;
+  if (ch >= 0.62) return true;
+  return false;
+}
+
 /** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
 function scoreCatalogCourse(course, userClean, searchTerms, intent) {
   const terms = collectRelevanceTerms(userClean, searchTerms, intent);
@@ -1976,8 +2043,23 @@ function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) 
   if (kept.length === 0) {
     kept = scored.slice(0, Math.min(3, scored.length));
   } else if (kept.length === 1 && scored.length >= 2) {
-    kept = scored.slice(0, Math.min(4, scored.length));
+    const rest = scored
+      .slice(1)
+      .filter((x) =>
+        catalogCoursePassesTopicGate(x.c, userClean, searchTerms, intent)
+      );
+    kept = [kept[0], ...rest].slice(0, MAX_COURSE_CATALOG_CARDS);
   }
+
+  const gated = kept.filter((x) =>
+    catalogCoursePassesTopicGate(x.c, userClean, searchTerms, intent)
+  );
+  if (gated.length > 0) {
+    kept = gated;
+  } else if (kept.length > 0) {
+    kept = [kept[0]];
+  }
+
   return kept.map((x) => x.c).slice(0, MAX_COURSE_CATALOG_CARDS);
 }
 
@@ -2069,7 +2151,9 @@ async function runCatalogSearch(userClean, intent) {
         searchLessonsLayer(searchTerms),
         searchChunksLayer(queryForChunks, userClean, searchTerms),
       ]);
-      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons);
+      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+        searchTerms,
+      });
     } else if (
       diplomasForCatalog.length === 0 &&
       courses.length > 0 &&
@@ -2081,6 +2165,7 @@ async function runCatalogSearch(userClean, intent) {
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
         supplementWhenFew: true,
+        searchTerms,
       });
     }
   }
