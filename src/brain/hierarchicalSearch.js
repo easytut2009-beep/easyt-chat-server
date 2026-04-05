@@ -7,6 +7,9 @@
  */
 
 const { supabase, openai } = require("../lib/clients");
+
+/** أقصى عدد كروت كورسات في الرد — تجنباً لإغراق المستخدم بعشرات النتائج الضعيفة الصلة */
+const MAX_COURSE_CATALOG_CARDS = 6;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -145,7 +148,11 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
   }
 
   const existingById = new Map(courses.map((c) => [c.id, c]));
-  const chunkOnlyIds = [...byCourse.keys()].filter((id) => !existingById.has(id));
+  const chunkOnlyIds = [...byCourse.entries()]
+    .filter(([id]) => !existingById.has(id))
+    .sort((a, b) => b[1].maxSim - a[1].maxSim)
+    .slice(0, 4)
+    .map(([id]) => id);
 
   if (chunkOnlyIds.length > 0) {
     const { data: fetched } = await supabase
@@ -199,6 +206,9 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
   );
   courses.length = 0;
   courses.push(...withChunk, ...withoutChunk);
+  if (courses.length > MAX_COURSE_CATALOG_CARDS) {
+    courses.splice(MAX_COURSE_CATALOG_CARDS);
+  }
 }
 
 function stripHtml(html) {
@@ -535,7 +545,7 @@ function rankAndFilterCourses(
   intent
 ) {
   const isChild = intent?.audience === "child";
-  const MAX_CARDS = isChild ? 4 : 8;
+  const MAX_CARDS = isChild ? 4 : MAX_COURSE_CATALOG_CARDS;
   const effectiveTerms = effectiveCourseFilterTerms(
     userClean,
     scoreTerms,
@@ -552,12 +562,22 @@ function rankAndFilterCourses(
     if (lexOk.length > 0) {
       pool = lexOk;
     } else {
-      /** عناوين الكورسات غالباً إنجليزي والمستخدم يكتب تحليقة عربية — نعتمد على التشابه الدلالي */
+      /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.8;
+        return typeof sim === "number" && sim >= 0.84;
       });
-      pool = semOk.length > 0 ? semOk : courses;
+      if (semOk.length > 0) {
+        pool = semOk;
+      } else {
+        const ranked = courses
+          .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
+          .filter((x) => x.sim > 0)
+          .sort((a, b) => b.sim - a.sim)
+          .slice(0, 8)
+          .map((x) => x.c);
+        pool = ranked.length > 0 ? ranked : courses.slice(0, 8);
+      }
     }
   }
   if (pool.length === 0) return [];
@@ -1069,8 +1089,8 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.82,
-              match_count: isChild ? 14 : 24,
+              match_threshold: isChild ? 0.88 : 0.85,
+              match_count: isChild ? 12 : 14,
             });
             return data || [];
           } catch (e) {
@@ -1207,9 +1227,19 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.8;
+        return typeof sim === "number" && sim >= 0.84;
       });
-      deduped = semOnly.length > 0 ? semOnly : deduped;
+      if (semOnly.length > 0) {
+        deduped = semOnly;
+      } else {
+        const ranked = deduped
+          .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
+          .filter((x) => x.sim > 0)
+          .sort((a, b) => b.sim - a.sim)
+          .slice(0, 10)
+          .map((x) => x.c);
+        deduped = ranked.length > 0 ? ranked : deduped.slice(0, 8);
+      }
     }
   }
 
@@ -1227,25 +1257,28 @@ async function searchCoursesLayer(
  * بدون ذلك لا تُبنى كروت HTML ويظهر GPT قائمة نصية من أسماء الدروس فقط.
  */
 async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
-  if (!supabase || !lessons?.length) return courses || [];
+  const MAX = MAX_COURSE_CATALOG_CARDS;
+  if (!supabase || !lessons?.length) return (courses || []).slice(0, MAX);
   const byId = new Map((courses || []).filter((c) => c?.id).map((c) => [c.id, c]));
-  const needIds = [
-    ...new Set(lessons.map((l) => l.course_id).filter(Boolean)),
-  ].filter((id) => !byId.has(id));
-  if (needIds.length === 0) return [...byId.values()];
+  const slots = Math.max(0, MAX - byId.size);
+  if (slots === 0) return [...byId.values()].slice(0, MAX);
+  const needIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))]
+    .filter((id) => !byId.has(id))
+    .slice(0, slots);
+  if (needIds.length === 0) return [...byId.values()].slice(0, MAX);
   try {
     const { data, error } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
       .in("id", needIds);
-    if (error || !data?.length) return [...byId.values()];
+    if (error || !data?.length) return [...byId.values()].slice(0, MAX);
     for (const row of data) {
       if (row?.id && !byId.has(row.id)) byId.set(row.id, row);
     }
-    return [...byId.values()];
+    return [...byId.values()].slice(0, MAX);
   } catch (e) {
     console.error("mergeCoursesFromLessonHits:", e.message);
-    return [...byId.values()];
+    return [...byId.values()].slice(0, MAX);
   }
 }
 
@@ -1263,7 +1296,7 @@ async function searchLessonsLayer(searchTerms) {
     .from("lessons")
     .select("id, title, course_id")
     .or(orFilters)
-    .limit(28);
+    .limit(14);
 
   if (error || !lessons?.length) return [];
 
@@ -1823,6 +1856,9 @@ async function runCatalogSearch(userClean, intent) {
   const coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
+    coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
+  }
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
   const instructors = await fetchInstructorsForCourses(
     supabase,
