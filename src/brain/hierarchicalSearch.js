@@ -13,7 +13,10 @@ const {
   COURSE_SELECT_COLS,
 } = require("../config/constants");
 const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
-const { buildCatalogCardsAppendHtml } = require("./catalogCards");
+const {
+  buildCatalogCardsAppendHtml,
+  buildChunkCardsAppendHtml,
+} = require("./catalogCards");
 
 /** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
 let _gptDiplomaMapCache = { data: null, ts: 0 };
@@ -1120,13 +1123,22 @@ async function searchChunksLayer(queryForEmb) {
     if (courseIds.length > 0) {
       const { data: crs } = await supabase
         .from("courses")
-        .select("id, title")
+        .select("id, title, link")
         .in("id", courseIds);
-      const cmap = new Map((crs || []).map((c) => [c.id, c.title || ""]));
-      rows = rows.map((r) => ({
-        ...r,
-        course_title: r.course_title || cmap.get(r.course_id) || "",
-      }));
+      const cmap = new Map(
+        (crs || []).map((c) => [
+          c.id,
+          { title: c.title || "", link: c.link || "" },
+        ])
+      );
+      rows = rows.map((r) => {
+        const meta = cmap.get(r.course_id);
+        return {
+          ...r,
+          course_title: r.course_title || meta?.title || "",
+          course_link: meta?.link || "",
+        };
+      });
     }
 
     return rows;
@@ -1147,6 +1159,7 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   }
 
   const omitListsForCards = !!options.omitListsForCards;
+  const chunkCardsAppended = !!options.chunkCardsAppended;
 
   const lines = [
     "═══ نتائج البحث في الكتالوج (للسياق فقط — لا تخترع كورسات) ═══",
@@ -1199,10 +1212,19 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   }
 
   if (chunks.length > 0) {
-    lines.push("", "## مقتطفات من محتوى الدروس (للسياق — ليست كروت)");
+    lines.push("", "## مقتطفات من محتوى الدروس (للسياق)");
     lines.push(
-      "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة واذكر اسم الكورس والدرس بوضوح."
+      "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة."
     );
+    if (chunkCardsAppended) {
+      lines.push(
+        "مهم جداً: نفس المقتطفات تُعرض للمستخدم ككروت HTML في آخر الرسالة (نفس أسلوب كروت الكورسات). لا تكتب قائمة مرقّمة أو تعداداً بأسماء كورسات/دروس؛ اكتب شرحاً موجزاً عن الموضوع ثم أحِل للكروت."
+      );
+    } else {
+      lines.push(
+        "اذكر اسم الكورس والدرس بوضوح في النص إن احتجت."
+      );
+    }
     for (const ch of chunks) {
       const head = [ch.course_title, ch.lesson_title].filter(Boolean).join(" — ");
       lines.push(`- ${head ? `«${head}» ` : ""}${ch.excerpt}`);
@@ -1225,11 +1247,17 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
 }
 
 /**
- * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
+ * @returns {{ text: string, cardsAppendHtml: string, chunksAppendHtml: string, intent: object, searchTerms: string[] }}
  */
 async function runCatalogSearch(userClean, intent) {
   if (!supabase) {
-    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
+    return {
+      text: "",
+      cardsAppendHtml: "",
+      chunksAppendHtml: "",
+      intent,
+      searchTerms: [],
+    };
   }
 
   const broadDiplomaListing = isBroadDiplomasListingMessage(userClean);
@@ -1245,12 +1273,24 @@ async function runCatalogSearch(userClean, intent) {
   }
 
   if (intentEff.skip_catalog && !broadDiplomaListing) {
-    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
+    return {
+      text: "",
+      cardsAppendHtml: "",
+      chunksAppendHtml: "",
+      intent,
+      searchTerms: [],
+    };
   }
 
   const searchTerms = buildSearchTerms(intentEff, userClean);
   if (searchTerms.length === 0 && !broadDiplomaListing) {
-    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
+    return {
+      text: "",
+      cardsAppendHtml: "",
+      chunksAppendHtml: "",
+      intent,
+      searchTerms: [],
+    };
   }
 
   const queryForEmb = embeddingQueryText(intentEff, userClean);
@@ -1298,6 +1338,8 @@ async function runCatalogSearch(userClean, intent) {
     instructors
   );
 
+  const chunksAppendHtml = buildChunkCardsAppendHtml(chunks);
+
   const text = formatCatalogBlock(
     diplomasForCatalog,
     courses,
@@ -1305,9 +1347,10 @@ async function runCatalogSearch(userClean, intent) {
     chunks,
     {
       omitListsForCards: Boolean(cardsAppendHtml),
+      chunkCardsAppended: Boolean(chunksAppendHtml),
     }
   );
-  return { text, cardsAppendHtml, intent, searchTerms };
+  return { text, cardsAppendHtml, chunksAppendHtml, intent, searchTerms };
 }
 
 module.exports = {

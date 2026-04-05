@@ -95,6 +95,40 @@ function formatCourseCard(course, instructors, index) {
   return card;
 }
 
+/**
+ * كارت لمطابقة مقتطف درس (نتيجة match_lesson_chunks) — نفس إطار الكروت العامة.
+ */
+function formatChunkCard(chunk, index) {
+  const courseTitle = chunk.course_title || "كورس";
+  const lessonTitle = chunk.lesson_title || "";
+  const excerpt = chunk.excerpt || "";
+  const url = chunk.course_link || ALL_COURSES_URL;
+  const num = index !== undefined ? `${index}. ` : "";
+
+  let card = `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">`;
+  card += `<div style="font-weight:700;font-size:14px;color:#e63946;margin-bottom:4px">📘 ${num}[${escapeHtml(courseTitle)}]</div>`;
+  if (lessonTitle) {
+    card += `<div style="font-size:13px;color:#1a1a2e;font-weight:600;margin-bottom:6px">📖 ${escapeHtml(lessonTitle)}</div>`;
+  }
+  if (excerpt) {
+    card += `<div style="font-size:12px;color:#555;margin-bottom:8px;line-height:1.5">${escapeHtml(excerpt)}</div>`;
+  }
+  card += `<a href="${escapeHtml(url)}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+  card += `</div>`;
+  return card;
+}
+
+function buildChunkCardsAppendHtml(chunks) {
+  if (!chunks || chunks.length === 0) return "";
+  const parts = [
+    '<br><div style="margin-top:10px"><strong style="color:#1a1a2e">💡 مقتطفات من الدروس (محتوى الحصص):</strong></div>',
+  ];
+  chunks.slice(0, 10).forEach((ch, i) => {
+    parts.push(formatChunkCard(ch, i + 1));
+  });
+  return parts.join("");
+}
+
 function formatDiplomaCard(diploma) {
   const url = diploma.link || "https://easyt.online/p/easyt-diplomas";
 
@@ -160,6 +194,8 @@ function buildCatalogCardsAppendHtml(diplomas, courses, instructors) {
 module.exports = {
   escapeHtml,
   formatCourseCard,
+  formatChunkCard,
   formatDiplomaCard,
   buildCatalogCardsAppendHtml,
+  buildChunkCardsAppendHtml,
 };

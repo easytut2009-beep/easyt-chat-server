@@ -268,9 +268,14 @@ async function smartChat(message, sessionId) {
       extractSearchIntent(clean),
     ]);
 
-  const { text: catalogBlock, cardsAppendHtml } = await runCatalogSearch(
-    clean,
-    searchIntent
+  const { text: catalogBlock, cardsAppendHtml, chunksAppendHtml } =
+    await runCatalogSearch(clean, searchIntent);
+
+  const skipGptForCatalogCards = Boolean(
+    cardsAppendHtml && String(cardsAppendHtml).trim()
+  );
+  const hasChunkCards = Boolean(
+    chunksAppendHtml && String(chunksAppendHtml).trim()
   );
 
   const linksBlock = [
@@ -290,8 +295,9 @@ async function smartChat(message, sessionId) {
 - اربط الرد بسياق المحادثة وبنصوص «السياسة الأساسية» و«تعليمات متغيرة من قاعدة البيانات» و«الكتالوج» و«العناوين المرجعية» أدناه.
 - لا تخترع أسماء كورسات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم.
 - ممنوع أن تقول إن «الكتالوج لا يحتوي تفاصيل» أو «لا أملك معلومات» عن موضوع إذا وُجدت **مقتطفات من محتوى الدروس** في نتائج البحث — هذه المقتطفات هي مصدر رسمي من الدروس؛ لخّصها واذكر الكورس والدرس.
-- إذا وُجد قسم «نتائج البحث في الكتالوج» **بدون** كروت ملحقة: رتّب الرد بعناوين فرعية عند الحاجة؛ وإن وُجدت «مقتطفات من محتوى الدروس» فاعتمدها للإجابة عن مصطلحات لا تظهر في عناوين الدبلومات/الكورسات واذكر اسم الكورس والدرس.
-- إذا وُجدت كروت كتالوج (يُعلمك السياق بعدم إدراج قوائم دبلومات/كورسات): **لا تكتب نصاً في الرد** — التفاصيل كلها في الكروت وحدها.
+- إذا وُجد قسم «نتائج البحث في الكتالوج» **بدون** كروت دبلومات/كورسات ملحقة: رتّب الرد عند الحاجة؛ وإن وُجدت «مقتطفات من محتوى الدروس» فاعتمدها للإجابة عن مصطلحات لا تظهر في عناوين الدبلومات/الكورسات.
+- إذا وُجدت كروت دبلومات/كورسات (يُعلمك السياق بعدم إدراج قوائم): **لا تكتب نصاً في الرد** — التفاصيل في الكروت.
+- إذا وُجدت تعليمات بأن **مقتطفات الدروس تُعرض ككروت HTML** في آخر الرسالة: **لا تكتب قائمة مرقّمة** بأسماء كورسات/دروس؛ اكتب شرحاً موجزاً عن الموضوع فقط والكروت تعرض المصادر.
 - استخدم <br> عند الحاجة؛ روابط HTML بسيطة (نص واضح + href).
 - لا تذكر أنك نموذج لغوي.
 
@@ -333,7 +339,7 @@ ${linksBlock}
 
   let replyText = "";
   try {
-    if (cardsAppendHtml) {
+    if (skipGptForCatalogCards) {
       replyText = "";
     } else {
       const completion = await openai.chat.completions.create({
@@ -348,14 +354,17 @@ ${linksBlock}
     }
   } catch (e) {
     console.error("gptPrimary smartChat:", e.message);
-    replyText = cardsAppendHtml
+    replyText = skipGptForCatalogCards
       ? ""
       : "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
   }
 
-  let reply = cardsAppendHtml
-    ? cardsAppendHtml
+  let reply = skipGptForCatalogCards
+    ? String(cardsAppendHtml || "")
     : markdownToHtml(replyText);
+  if (hasChunkCards) {
+    reply = (reply || "") + String(chunksAppendHtml);
+  }
   reply = finalizeReply(reply);
 
   await logChat(sessionId, "bot", reply, "GPT_PRIMARY", {
@@ -363,6 +372,7 @@ ${linksBlock}
     ms: Date.now() - start,
     catalog_search: !!catalogBlock,
     catalog_cards: !!cardsAppendHtml,
+    chunk_cards: hasChunkCards,
   });
 
   return {
