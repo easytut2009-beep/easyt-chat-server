@@ -289,7 +289,8 @@ async function smartChat(message, sessionId) {
 قواعد تقنية للرد:
 - اربط الرد بسياق المحادثة وبنصوص «السياسة الأساسية» و«تعليمات متغيرة من قاعدة البيانات» و«الكتالوج» و«العناوين المرجعية» أدناه.
 - لا تخترع أسماء كورسات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم.
-- إذا وُجد قسم «نتائج البحث في الكتالوج»، رتّب الرد بعناوين فرعية عند الحاجة؛ لا تكرر قوائم طويلة من الكورسات/الدبلومات لأن كروت HTML منسّقة تُلحق تلقائياً بنهاية الرسالة عند وجود نتائج.
+- إذا وُجد قسم «نتائج البحث في الكتالوج» **بدون** كروت ملحقة: رتّب الرد بعناوين فرعية عند الحاجة.
+- إذا وُجدت كروت كتالوج (يُعلمك السياق بعدم إدراج قوائم دبلومات/كورسات): **لا تكتب نصاً في الرد** — التفاصيل كلها في الكروت وحدها.
 - استخدم <br> عند الحاجة؛ روابط HTML بسيطة (نص واضح + href).
 - لا تذكر أنك نموذج لغوي.
 
@@ -331,24 +332,29 @@ ${linksBlock}
 
   let replyText = "";
   try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
-      messages: chatMessages,
-      temperature: 0.35,
-      max_tokens: 900,
-    });
-    replyText =
-      completion.choices[0]?.message?.content ||
-      "مقدرتش أكمّل الرد 😅 جرّب تاني.";
+    if (cardsAppendHtml) {
+      replyText = "";
+    } else {
+      const completion = await openai.chat.completions.create({
+        model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
+        messages: chatMessages,
+        temperature: 0.35,
+        max_tokens: 900,
+      });
+      replyText =
+        completion.choices[0]?.message?.content ||
+        "مقدرتش أكمّل الرد 😅 جرّب تاني.";
+    }
   } catch (e) {
     console.error("gptPrimary smartChat:", e.message);
-    replyText = "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
+    replyText = cardsAppendHtml
+      ? ""
+      : "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
   }
 
-  let reply = markdownToHtml(replyText);
-  if (cardsAppendHtml) {
-    reply += `<br><br>${cardsAppendHtml}`;
-  }
+  let reply = cardsAppendHtml
+    ? cardsAppendHtml
+    : markdownToHtml(replyText);
   reply = finalizeReply(reply);
 
   await logChat(sessionId, "bot", reply, "GPT_PRIMARY", {

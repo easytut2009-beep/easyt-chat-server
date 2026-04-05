@@ -101,6 +101,146 @@ function mergeLessonsIntoCourses(courses, lessons) {
   }
 }
 
+function stripHtml(html) {
+  return String(html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** كلمات شائعة في سؤال المستخدم تطابق تقريباً كل وصف كورس عبر ilike — تُستبعد من OR. */
+const _COURSE_LEXICAL_NOISE = new Set(
+  [
+    "كورس",
+    "كورسات",
+    "دوره",
+    "دورات",
+    "دورة",
+    "تعلم",
+    "اتعلم",
+    "عايز",
+    "عاوز",
+    "اريد",
+    "أريد",
+    "ابي",
+    "أبي",
+    "محتاج",
+    "عن",
+    "في",
+    "من",
+    "على",
+    "مع",
+    "هل",
+    "ممكن",
+    "لو",
+    "ساعدني",
+    "دلوني",
+    "وريني",
+    "ورينى",
+    "اعرف",
+    "أعرف",
+    "قلي",
+    "قولي",
+    "عندك",
+    "فيه",
+    "ايه",
+    "اى",
+    "اي",
+    "شو",
+    "كيف",
+    "مثلا",
+    "مثلاً",
+    "زي",
+    "زى",
+    "اسم",
+    "اسامي",
+    "دوراتي",
+    "course",
+    "courses",
+    "class",
+    "classes",
+    "tutorial",
+    "learn",
+    "learning",
+    "want",
+    "need",
+    "please",
+    "show",
+    "tell",
+    "help",
+    "search",
+    "find",
+    "looking",
+    "easyt",
+    "ايزي",
+    "منصه",
+    "منصة",
+    "اشتراك",
+    "مجاني",
+    "مجانى",
+  ].map((w) => normalizeArabic(w.toLowerCase()))
+);
+
+function isCourseLexicalNoiseTerm(t) {
+  const nt = normalizeArabic(String(t).toLowerCase().trim());
+  if (nt.length < 2) return true;
+  return _COURSE_LEXICAL_NOISE.has(nt);
+}
+
+function termsForCourseLexical(limitedTerms, userClean) {
+  const filtered = limitedTerms.filter((t) => !isCourseLexicalNoiseTerm(t));
+  if (filtered.length > 0) return filtered;
+  const fromUser = prepareSearchTerms([userClean || ""]).filter(
+    (t) => !isCourseLexicalNoiseTerm(t)
+  );
+  if (fromUser.length > 0) return fromUser.slice(0, 10);
+  return limitedTerms
+    .filter((t) => String(t).trim().length >= 3)
+    .slice(0, 6);
+}
+
+function lexicalScoreCourse(course, terms) {
+  const title = normalizeArabic((course.title || "").toLowerCase());
+  const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
+  const domain = normalizeArabic((course.domain || "").toLowerCase());
+  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
+  const desc = normalizeArabic(
+    stripHtml(course.description || "").slice(0, 900).toLowerCase()
+  );
+  let score = 0;
+  for (const term of terms) {
+    const nt = normalizeArabic(String(term).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) continue;
+    if (title.includes(nt)) score += 130;
+    else if (subtitle.includes(nt)) score += 82;
+    else if (keywords.includes(nt)) score += 55;
+    else if (domain.includes(nt)) score += 38;
+    else if (desc.includes(nt)) score += 15;
+  }
+  return score;
+}
+
+function rankAndFilterCourses(courses, scoreTerms, semanticMap) {
+  const MAX_CARDS = 8;
+  const rows = courses.map((c) => {
+    const sim = semanticMap.get(c.id);
+    const lex = lexicalScoreCourse(c, scoreTerms);
+    const simN = typeof sim === "number" ? sim : 0;
+    const total = lex + Math.floor(simN * 34);
+    return { c, lex, sim: simN, total };
+  });
+  const kept = rows.filter(
+    (x) =>
+      x.lex >= 48 ||
+      (x.lex >= 22 && x.sim >= 0.79) ||
+      (x.lex >= 14 && x.sim >= 0.84) ||
+      x.sim >= 0.88
+  );
+  const pool = kept.length > 0 ? kept : rows.slice(0, 4);
+  pool.sort((a, b) => b.total - a.total || b.lex - a.lex);
+  return pool.slice(0, MAX_CARDS).map((x) => x.c);
+}
+
 function expandArabicVariants(terms) {
   const variants = new Set();
   for (const term of terms) {
@@ -296,35 +436,112 @@ async function searchDiplomasLayer(searchTerms, queryForEmb) {
         return { ...d, _diplomaScore: score };
       });
       const titleMatched = scored.filter((d) => d._diplomaScore >= 50);
-      rawResults =
-        titleMatched.length > 0
-          ? titleMatched.sort((a, b) => b._diplomaScore - a._diplomaScore)
-          : [];
+      if (titleMatched.length > 0) {
+        rawResults = titleMatched.sort(
+          (a, b) => b._diplomaScore - a._diplomaScore
+        );
+      }
     }
   }
 
-  return rawResults.slice(0, 5);
+  return rawResults.slice(0, 12);
 }
 
-async function searchCoursesLayer(searchTerms, queryForEmb) {
+/** سؤال عام: عرض الدبلومات كقائمة — بدون تشغيل بحث كورسات عشوائي. */
+function isBroadDiplomasListingMessage(userClean) {
+  const raw = String(userClean || "").trim();
+  if (!raw || raw.length > 140) return false;
+  const m = normalizeArabic(raw.toLowerCase())
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    /(اكسل|excel|فوتوشوب|photoshop|بايثون|python|برمج|انجليز|محاسب)/i.test(
+      raw
+    ) &&
+    !/دبلومات?/.test(m)
+  ) {
+    return false;
+  }
+  if (
+    /(كورس|دوره|دورة)(\s|$)/.test(m) &&
+    !/(دبلومات|دبلومه|دبلومة)/.test(m)
+  ) {
+    return false;
+  }
+
+  if (
+    /^(ال)?دبلومات?$/.test(m) ||
+    /^عرض\s(ال)?دبلومات?$/.test(m) ||
+    /^قائمه\s(ال)?دبلومات?$/.test(m) ||
+    /^كل\s(ال)?دبلومات$/.test(m) ||
+    /^ايه\s(ال)?دبلومات/.test(m) ||
+    /^ايه\sهي\s(ال)?دبلومات/.test(m) ||
+    /^شو\s(ال)?دبلومات/.test(m) ||
+    /^اعرض\s(ال)?دبلومات$/.test(m) ||
+    /^وريني\s(ال)?دبلومات$/.test(m) ||
+    /^دلني\sعلى\s(ال)?دبلومات/.test(m) ||
+    /^عايز\sاعرف\s(ال)?دبلومات/.test(m) ||
+    /^عندكم\sايه\sدبلومات/.test(m) ||
+    /^الدبلومات\sالمتاحه/.test(m) ||
+    /^الدبلومات\sالموجوده/.test(m) ||
+    /^list\s+(of\s+)?diplomas/i.test(raw) ||
+    /^show\s+diplomas?/i.test(raw)
+  ) {
+    return true;
+  }
+
+  if (
+    m.length <= 32 &&
+    /دبلومات?/.test(m) &&
+    !/(كورس|دوره|دورة|اكسل|فوتوشوب|جرافيك|تسويق)/.test(m)
+  ) {
+    const letters = m.replace(/\s/g, "");
+    if (letters.length <= 18) return true;
+  }
+
+  return false;
+}
+
+async function fetchAllDiplomasBrowse() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("diplomas")
+      .select("id, title, link, description, price")
+      .order("title", { ascending: true })
+      .limit(80);
+    if (error) {
+      console.error("fetchAllDiplomasBrowse:", error.message);
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function searchCoursesLayer(searchTerms, queryForEmb, userClean = "") {
   if (!supabase) return [];
   const limitedTerms = searchTerms.slice(0, 8);
   if (limitedTerms.length === 0) return [];
 
-  const cappedIlike = expandArabicVariants(limitedTerms).slice(0, 16);
+  const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
+  let forIlike =
+    lexicalTerms.length > 0
+      ? lexicalTerms
+      : [String(userClean || "").trim().slice(0, 80)].filter(
+          (s) => s.length >= 2
+        );
+  if (forIlike.length === 0) return [];
+
+  const cappedIlike = expandArabicVariants(forIlike).slice(0, 18);
   const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
   const coreFilters = cappedIlike
     .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
     .join(",");
 
   let allCourses = [];
-  let ilikeErr = null;
-
-  const ilikePromise = supabase
-    .from("courses")
-    .select(COURSE_SELECT_COLS)
-    .or(coreFilters)
-    .limit(28);
 
   const semanticPromise =
     openai && queryForEmb
@@ -336,8 +553,8 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.72,
-              match_count: 12,
+              match_threshold: 0.78,
+              match_count: 14,
             });
             return data || [];
           } catch (e) {
@@ -346,19 +563,31 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
         })()
       : Promise.resolve([]);
 
+  const ilikePromise = supabase
+    .from("courses")
+    .select(COURSE_SELECT_COLS)
+    .or(coreFilters)
+    .limit(32);
+
   const [ilikeResult, semanticResults] = await Promise.all([
     ilikePromise,
     semanticPromise,
   ]);
 
+  const semanticMap = new Map();
+  (semanticResults || []).forEach((s) => {
+    if (s?.id != null && typeof s.similarity === "number") {
+      semanticMap.set(s.id, s.similarity);
+    }
+  });
+
   const { data: courses, error } = ilikeResult;
-  ilikeErr = error;
-  if (ilikeErr) {
-    console.error("courses ilike:", ilikeErr.message);
+  if (error) {
+    console.error("courses ilike:", error.message);
   }
   allCourses = error ? [] : courses || [];
 
-  if (allCourses.length < 4 && limitedTerms.length <= 6) {
+  if (allCourses.length < 5 && forIlike.length > 0) {
     const deepCols = [
       "title",
       "description",
@@ -370,7 +599,7 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
       "domain",
       "keywords",
     ];
-    const deepTerms = expandArabicVariants(limitedTerms).slice(0, 10);
+    const deepTerms = expandArabicVariants(forIlike).slice(0, 12);
     const deepFilters = deepTerms
       .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
       .join(",");
@@ -378,7 +607,7 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
       .from("courses")
       .select(COURSE_SELECT_COLS)
       .or(deepFilters)
-      .limit(24);
+      .limit(28);
     if (deepResults?.length) {
       const ids = new Set(allCourses.map((c) => c.id));
       for (const c of deepResults) {
@@ -390,13 +619,12 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
     }
   }
 
-  if (semanticResults.length > 0) {
-    const semanticMap = new Map();
-    semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
+  const MIN_SEM_ONLY = 0.8;
+  if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
-    const semanticOnlyIds = [...semanticMap.keys()].filter(
-      (id) => !ilikeIds.has(id)
-    );
+    const semanticOnlyIds = [...semanticMap.entries()]
+      .filter(([id, sim]) => !ilikeIds.has(id) && sim >= MIN_SEM_ONLY)
+      .map(([id]) => id);
     if (semanticOnlyIds.length > 0) {
       const { data: semCourses } = await supabase
         .from("courses")
@@ -412,9 +640,11 @@ async function searchCoursesLayer(searchTerms, queryForEmb) {
     if (!c?.id || seen.has(c.id)) continue;
     seen.add(c.id);
     deduped.push(c);
-    if (deduped.length >= 12) break;
+    if (deduped.length >= 32) break;
   }
-  return deduped;
+
+  const scoreTerms = termsForCourseLexical(limitedTerms, userClean);
+  return rankAndFilterCourses(deduped, scoreTerms, semanticMap);
 }
 
 async function searchLessonsLayer(searchTerms) {
@@ -508,7 +738,7 @@ async function searchChunksLayer(queryForEmb) {
   }
 }
 
-function formatCatalogBlock(diplomas, courses, lessons, chunks) {
+function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   if (
     !diplomas.length &&
     !courses.length &&
@@ -518,55 +748,78 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks) {
     return "";
   }
 
+  const omitListsForCards = !!options.omitListsForCards;
+
   const lines = [
     "═══ نتائج البحث في الكتالوج (للسياق فقط — لا تخترع كورسات) ═══",
     "أسعار الكورسات/الدبلومات من الجدول؛ لا تستبدلها بسعر الاشتراك العام.",
-    "مهم: كروت الدبلومات والكورسات بنفس تنسيق المنصة القديم تُلحق تلقائياً في آخر رسالة البوت — لا تنسخ قوائم طويلة من العناوين؛ اكتب مقدمة قصيرة أو نصيحة ثم اذكر أن التفاصيل في الكروت أسفل الرد.",
   ];
 
-  if (diplomas.length > 0) {
-    lines.push("", "## طبقة 1 — دبلومات (عناوين للمرجعية)");
-    for (const d of diplomas) {
-      const price = d.price != null ? ` | سعر: ${d.price}` : "";
-      lines.push(
-        `- ${d.title || "دبلوم"}${d.link ? ` | ${d.link}` : ""}${price}`
-      );
-    }
+  if (omitListsForCards) {
+    lines.push(
+      "مهم جداً: كروت HTML للدبلومات والكورسات (عنوان، سعر، وصف، دروس مرتبطة، روابط) تُلحق تلقائياً في آخر رسالة المستخدم — لا تكتب أي نص قبلها ولا بعدها يذكر عناوين كورسات/دبلومات أو أسعارها أو قوائم Markdown (# أو -) لها؛ ممنوع تكرار ما في الكروت.",
+      "إن كان سؤال المستخدم يخص اشتراكاً عاماً أو دفعاً أو سياسة غير الكتالوج فقط، أجب عن ذلك في جمل قصيرة دون تعداد كورسات.",
+      `عدد النتائج في الكروت: ${diplomas.length} دبلوم، ${courses.length} كورس (لا تسردها نصاً).`
+    );
+  } else {
+    lines.push(
+      "مهم: كروت الدبلومات والكورسات بنفس تنسيق المنصة القديم تُلحق تلقائياً في آخر رسالة البوت — لا تنسخ قوائم طويلة من العناوين؛ اكتب مقدمة قصيرة أو نصيحة ثم اذكر أن التفاصيل في الكروت أسفل الرد."
+    );
   }
 
-  if (courses.length > 0) {
-    lines.push("", "## طبقة 2 — كورسات (عناوين للمرجعية)");
-    for (const c of courses) {
-      const price =
-        c.price != null && String(c.price).trim() !== ""
-          ? ` | سعر: ${c.price}`
-          : "";
-      lines.push(
-        `- ${c.title || "كورس"}${c.link ? ` | ${c.link}` : ""}${price}`
-      );
+  if (!omitListsForCards) {
+    if (diplomas.length > 0) {
+      lines.push("", "## طبقة 1 — دبلومات (عناوين للمرجعية)");
+      for (const d of diplomas) {
+        const price = d.price != null ? ` | سعر: ${d.price}` : "";
+        lines.push(
+          `- ${d.title || "دبلوم"}${d.link ? ` | ${d.link}` : ""}${price}`
+        );
+      }
     }
-  }
 
-  if (lessons.length > 0) {
-    lines.push("", "## طبقة 3 — دروس (داخل كورسات)");
-    for (const l of lessons) {
-      const ct = l.course_title ? `[${l.course_title}] ` : "";
-      lines.push(`- ${ct}${l.title || "درس"}`);
+    if (courses.length > 0) {
+      lines.push("", "## طبقة 2 — كورسات (عناوين للمرجعية)");
+      for (const c of courses) {
+        const price =
+          c.price != null && String(c.price).trim() !== ""
+            ? ` | سعر: ${c.price}`
+            : "";
+        lines.push(
+          `- ${c.title || "كورس"}${c.link ? ` | ${c.link}` : ""}${price}`
+        );
+      }
+    }
+
+    if (lessons.length > 0) {
+      lines.push("", "## طبقة 3 — دروس (داخل كورسات)");
+      for (const l of lessons) {
+        const ct = l.course_title ? `[${l.course_title}] ` : "";
+        lines.push(`- ${ct}${l.title || "درس"}`);
+      }
     }
   }
 
   if (chunks.length > 0) {
-    lines.push("", "## طبقة 4 — مقتطفات من محتوى الدروس");
+    lines.push("", "## مقتطفات من محتوى الدروس (للسياق — ليست كروت)");
     for (const ch of chunks) {
       const head = [ch.course_title, ch.lesson_title].filter(Boolean).join(" — ");
       lines.push(`- ${head ? `«${head}» ` : ""}${ch.excerpt}`);
     }
   }
 
-  lines.push(
-    "",
-    "تعليمات العرض: رتّب الرد بعناوين فرعية عند الحاجة (دبلومات / كورسات / دروس / مقتطفات). لا تكرر محتوى الكروت؛ الكروت تظهر آلياً بعد نصك."
-  );
+  if (!omitListsForCards) {
+    lines.push(
+      "",
+      "تعليمات العرض: رتّب الرد بعناوين فرعية عند الحاجة (دبلومات / كورسات / دروس / مقتطفات). لا تكرر محتوى الكروت؛ الكروت تظهر آلياً بعد نصك."
+    );
+  } else if (chunks.length > 0) {
+    lines.push(
+      "",
+      "يمكنك الاستناد للمقتطفات أعلاه في جملة قصيرة فقط إن لزم؛ دون إعادة تعداد الكورسات الظاهرة في الكروت."
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -574,23 +827,40 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks) {
  * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
  */
 async function runCatalogSearch(userClean, intent) {
-  if (!supabase || intent.skip_catalog) {
+  if (!supabase) {
+    return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
+  }
+
+  const broadDiplomaListing = isBroadDiplomasListingMessage(userClean);
+  if (intent.skip_catalog && !broadDiplomaListing) {
     return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
   const searchTerms = buildSearchTerms(intent, userClean);
-  if (searchTerms.length === 0) {
+  if (searchTerms.length === 0 && !broadDiplomaListing) {
     return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
   const queryForEmb = embeddingQueryText(intent, userClean);
 
-  const [diplomas, courses, lessons, chunks] = await Promise.all([
-    searchDiplomasLayer(searchTerms, queryForEmb),
-    searchCoursesLayer(searchTerms, queryForEmb),
-    searchLessonsLayer(searchTerms),
-    searchChunksLayer(queryForEmb),
-  ]);
+  let diplomas;
+  let courses;
+  let lessons;
+  let chunks;
+
+  if (broadDiplomaListing) {
+    diplomas = await fetchAllDiplomasBrowse();
+    courses = [];
+    lessons = [];
+    chunks = [];
+  } else {
+    [diplomas, courses, lessons, chunks] = await Promise.all([
+      searchDiplomasLayer(searchTerms, queryForEmb),
+      searchCoursesLayer(searchTerms, queryForEmb, userClean),
+      searchLessonsLayer(searchTerms),
+      searchChunksLayer(queryForEmb),
+    ]);
+  }
 
   const coursesForCards = courses.map((c) => ({ ...c }));
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
@@ -605,7 +875,9 @@ async function runCatalogSearch(userClean, intent) {
     instructors
   );
 
-  const text = formatCatalogBlock(diplomas, courses, lessons, chunks);
+  const text = formatCatalogBlock(diplomas, courses, lessons, chunks, {
+    omitListsForCards: Boolean(cardsAppendHtml),
+  });
   return { text, cardsAppendHtml, intent, searchTerms };
 }
 
