@@ -532,7 +532,8 @@ function rankAndFilterCourses(
   userClean,
   intent
 ) {
-  const MAX_CARDS = 8;
+  const isChild = intent?.audience === "child";
+  const MAX_CARDS = isChild ? 4 : 5;
   const effectiveTerms = effectiveCourseFilterTerms(
     userClean,
     scoreTerms,
@@ -577,7 +578,31 @@ function rankAndFilterCourses(
     if (kept.length === 0) return [];
   }
 
-  kept.sort((a, b) => b.total - a.total || b.lexT - a.lexT);
+  const hasSem = [...semanticMap.values()].some(
+    (v) => typeof v === "number" && v > 0
+  );
+  if (hasSem) {
+    kept.sort((a, b) => {
+      const ds = (b.sim || 0) - (a.sim || 0);
+      if (Math.abs(ds) > 0.015) return ds;
+      return b.total - a.total || b.lexT - a.lexT;
+    });
+  } else {
+    kept.sort((a, b) => b.total - a.total || b.lexT - a.lexT);
+  }
+
+  if (isChild && hasSem) {
+    kept = kept.filter(
+      (x) => x.sim >= 0.78 || (x.lexT >= 130 && x.sim >= 0.7)
+    );
+    if (kept.length === 0) {
+      kept = rows
+        .filter((x) => courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms))
+        .sort((a, b) => (b.sim || 0) - (a.sim || 0) || b.lexT - a.lexT)
+        .slice(0, MAX_CARDS);
+    }
+  }
+
   return kept.slice(0, MAX_CARDS).map((x) => x.c);
 }
 
@@ -704,7 +729,7 @@ async function extractSearchIntent(userMessage) {
           content: `أنت تحلّل رسالة مستخدم لمنصة تعليمية وتستخرج حقولاً للبحث في الكتالوج ولتوجيه الرد.
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع (مثلاً "هلا"، "تمام شكراً"). أي مصطلح تقني أو اسم أداة أو كتابة عربية حرفية لمصطلح إنجليزي (مثل: وورك فلو، جيت هاب، اكسيل) → skip_catalog: false دائماً لأن المستخدم يبحث في المحتوى.
-- search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى (مثلاً طلب جداول → Excel و spreadsheets؛ طلب لطفل → أضف في الجملة العمر/مستوى البساطة المناسب دون الاعتماد على أسماء منتجات ثابتة إن لم تُذكر).
+- search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
 - skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
@@ -770,9 +795,10 @@ function enrichEmbeddingQueryForChunks(userClean, intent) {
   return embeddingQueryText(intent, userClean).slice(0, 2000);
 }
 
-async function searchDiplomasLayer(searchTerms, queryForEmb) {
+async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
   if (!supabase) return [];
   let rawResults = [];
+  const isChild = intent?.audience === "child";
 
   if (openai && queryForEmb) {
     try {
@@ -784,14 +810,19 @@ async function searchDiplomasLayer(searchTerms, queryForEmb) {
         "match_diplomas",
         {
           query_embedding: embResponse.data[0].embedding,
-          match_threshold: 0.8,
-          match_count: 8,
+          match_threshold: isChild ? 0.87 : 0.8,
+          match_count: isChild ? 6 : 8,
         }
       );
       if (!semErr && semanticResults?.length) rawResults = [...semanticResults];
     } catch (e) {
       console.error("match_diplomas:", e.message);
     }
+  }
+
+  /** لطفل/ناشئ: نعتمد على التطابق الدلالي أولاً ولا ندمج ilike عشوائي على «برمجة» في كل العناوين. */
+  if (isChild && rawResults.length > 0) {
+    return rawResults.slice(0, 5);
   }
 
   const allTerms = prepareSearchTerms(searchTerms);
@@ -942,6 +973,8 @@ async function searchCoursesLayer(
   const limitedTerms = searchTerms.slice(0, 8);
   if (limitedTerms.length === 0) return [];
 
+  const isChild = intent?.audience === "child";
+
   const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
   const userDerived = prepareSearchTerms([userClean || ""]).filter(
     (t) => !isCourseLexicalNoiseTerm(t)
@@ -960,8 +993,9 @@ async function searchCoursesLayer(
   if (forIlike.length === 0) return [];
 
   const cappedIlike = expandArabicVariants(forIlike).slice(0, 18);
-  const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
-  const narrowCols = ["title", "subtitle"];
+  /** بدون وصف طويل في أول طلب — كان يطابق كلمة «برمجة» في مئات الوصفات. */
+  const strictCols = ["title", "subtitle", "keywords"];
+  const mediumCols = ["title", "subtitle", "keywords", "domain"];
   const narrowTopic = hasNarrowTopicTerms(userClean, lexicalTerms, intent);
 
   const buildOr = (cols) =>
@@ -972,7 +1006,7 @@ async function searchCoursesLayer(
   let allCourses = [];
 
   const semanticPromise =
-    narrowTopic || !openai || !queryForEmb
+    !openai || !queryForEmb
       ? Promise.resolve([])
       : (async () => {
           try {
@@ -982,8 +1016,8 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.82,
-              match_count: 12,
+              match_threshold: isChild ? 0.88 : 0.84,
+              match_count: isChild ? 14 : 16,
             });
             return data || [];
           } catch (e) {
@@ -991,12 +1025,16 @@ async function searchCoursesLayer(
           }
         })();
 
-  const primaryFilters = narrowTopic ? buildOr(narrowCols) : buildOr(coreCols);
+  const primaryCols =
+    isChild || narrowTopic
+      ? strictCols
+      : mediumCols;
+  const primaryFilters = buildOr(primaryCols);
   const ilikePromise = supabase
     .from("courses")
     .select(COURSE_SELECT_COLS)
     .or(primaryFilters)
-    .limit(narrowTopic ? 40 : 32);
+    .limit(isChild ? 28 : narrowTopic ? 40 : 36);
 
   const [ilikeResult, semanticResults] = await Promise.all([
     ilikePromise,
@@ -1016,7 +1054,12 @@ async function searchCoursesLayer(
   }
   allCourses = error ? [] : courses || [];
 
-  if (narrowTopic && allCourses.length < 4 && forIlike.length > 0) {
+  if (
+    narrowTopic &&
+    allCourses.length < 4 &&
+    forIlike.length > 0 &&
+    !isChild
+  ) {
     const narrowWidenCols = ["title", "subtitle", "keywords"];
     const widenFilters = buildOr(narrowWidenCols);
     const { data: wideRows } = await supabase
@@ -1035,7 +1078,12 @@ async function searchCoursesLayer(
     }
   }
 
-  if (!narrowTopic && allCourses.length < 5 && forIlike.length > 0) {
+  if (
+    !narrowTopic &&
+    !isChild &&
+    allCourses.length < 5 &&
+    forIlike.length > 0
+  ) {
     const deepCols = [
       "title",
       "description",
@@ -1067,8 +1115,8 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = 0.88;
-  if (!narrowTopic && semanticMap.size > 0) {
+  const MIN_SEM_ONLY = isChild ? 0.9 : 0.88;
+  if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
       .filter(([id, sim]) => !ilikeIds.has(id) && sim >= MIN_SEM_ONLY)
@@ -1668,7 +1716,7 @@ async function runCatalogSearch(userClean, intent) {
     diplomasForCatalog = diplomas;
   } else {
     [diplomas, courses, lessons] = await Promise.all([
-      searchDiplomasLayer(searchTerms, queryForEmb),
+      searchDiplomasLayer(searchTerms, queryForEmb, intentEff),
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
       searchLessonsLayer(searchTerms),
     ]);
