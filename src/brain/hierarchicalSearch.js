@@ -276,8 +276,43 @@ function diplomaTitleHitsAnchoredTerms(diploma, terms) {
   return false;
 }
 
+/** كلمات تظهر في أغلب عناوين الدبلومات — لا تُستخدم لوحدها لتمرير نتائج دلالية عشوائية. */
+const _DIPLOMA_TOPIC_GENERIC = new Set(
+  [
+    "دبلومه",
+    "دبلوم",
+    "دبلومة",
+    "دبلومات",
+    "احتراف",
+    "احترف",
+    "تعليم",
+    "دوره",
+    "دورة",
+    "دورات",
+    "منصه",
+    "منصة",
+    "كورس",
+    "كورسات",
+    "easyt",
+    "ايزي",
+    "شامل",
+    "تفاصيل",
+    "الاحترافيه",
+    "الاحترافية",
+    "مؤسسي",
+    "مؤسسيه",
+    "مؤسسية",
+  ].map((w) => normalizeArabic(w.toLowerCase()))
+);
+
+function isDiplomaTopicGenericTerm(t) {
+  const nt = normalizeArabic(String(t).toLowerCase().trim());
+  return nt.length < 2 || _DIPLOMA_TOPIC_GENERIC.has(nt);
+}
+
 /**
  * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (مثل workflow في محتوى درس فقط).
+ * دائماً (ما عدا قائمة الدبلومات العامة): لا نعرض كروت دبلومات إلا إن وُجدت كلمات محددة من السؤال في العنوان.
  */
 function filterDiplomasForAnchoredTitles(
   diplomas,
@@ -287,23 +322,30 @@ function filterDiplomasForAnchoredTitles(
   broadDiplomaListing
 ) {
   if (!diplomas?.length || broadDiplomaListing) return diplomas || [];
+
   const limitedTerms = searchTerms.slice(0, 8);
   const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
-  if (!hasNarrowTopicTerms(userClean, lexicalTerms, intent)) {
-    return diplomas;
-  }
   const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
   const userDerived = prepareSearchTerms([userClean || ""]).filter(
     (t) => !isCourseLexicalNoiseTerm(t)
   );
-  const effectiveTerms =
-    anchored.length > 0
-      ? anchored
-      : userDerived.length > 0
-        ? userDerived
-        : lexicalTerms;
+
+  const merged = [];
+  const seenNt = new Set();
+  for (const t of [...anchored, ...userDerived, ...lexicalTerms]) {
+    const nt = normalizeArabic(String(t).toLowerCase().trim());
+    if (nt.length < 2 || isCourseLexicalNoiseTerm(t) || seenNt.has(nt)) continue;
+    seenNt.add(nt);
+    merged.push(t);
+  }
+
+  const specificTerms = merged.filter((t) => !isDiplomaTopicGenericTerm(t));
+  if (specificTerms.length === 0) {
+    return [];
+  }
+
   const filtered = diplomas.filter((d) =>
-    diplomaTitleHitsAnchoredTerms(d, effectiveTerms)
+    diplomaTitleHitsAnchoredTerms(d, specificTerms)
   );
   return filtered.length > 0 ? filtered : [];
 }
@@ -478,7 +520,7 @@ async function extractSearchIntent(userMessage) {
           role: "system",
           content: `أنت تستخرج معلومات بحث عن كتالوج تعليمي (دبلومات، كورسات، دروس).
 أعد JSON فقط بالمفاتيح:
-- skip_catalog: true إذا كانت الرسالة تحية/شكر/صغيرة جداً/لا تتعلق بالبحث عن تعلم أو منتجات (مثلاً "هلا"، "تمام شكراً").
+- skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع (مثلاً "هلا"، "تمام شكراً"). أي مصطلح تقني أو اسم أداة أو كتابة عربية حرفية لمصطلح إنجليزي (مثل: وورك فلو، جيت هاب، اكسيل) → skip_catalog: false دائماً لأن المستخدم يبحث في المحتوى.
 - search_text: جملة واحدة بالعربية وإن أمكن مصطلحات إنجليزية تقنية للبحث الدلالي (embedding) — صِغ ما يبحث عنه المستخدم فعلياً (مثلاً "عايز أعمل جدول" → "Excel جداول بيانات spreadsheets").
 - terms_ar: كلمات عربية ظهرت في رسالة المستخدم أو مرادف مباشر جداً للموضوع فقط؛ لا تضف مجالات مجاورة (مثلاً لسؤال عن Excel لا تضف "تحليل" أو "بيانات" أو "مالية" إلا إذا ذكرها المستخدم صراحة).
 - terms_en: أدوات/مصطلحات إنجليزية فعلية كما كتبها المستخدم أو شكلها المعتاد (workflow, Excel, Shortcuts, n8n, …) حتى لو كتبها بالعربي حرفياً (مثلاً وورك فلو → workflow في terms_en).
@@ -511,6 +553,63 @@ function buildSearchTerms(intent, userClean) {
 function embeddingQueryText(intent, userClean) {
   const q = [intent.search_text, userClean].filter(Boolean).join(" ").trim();
   return q.slice(0, 2000) || userClean.slice(0, 2000);
+}
+
+/** يمنع إسكات البحث عن دروس/chunks لرسائل تبدو سؤالاً عن أداة أو مصطلح. */
+function looksLikeTopicOrToolQuery(userClean) {
+  const t = String(userClean || "").trim();
+  if (t.length < 2 || t.length > 180) return false;
+  if (!/[a-zA-Z\u0600-\u06FF]/.test(t)) return false;
+  const m = normalizeArabic(t.toLowerCase()).replace(/\s+/g, " ").trim();
+  if (
+    /^(هلا|مرحبا|اهلا|السلام عليكم|صباح الخير|مساء الخير|شكرا|تمام|تمام شكرا|شكرا جزيلا|ok|yes|no|نعم|لا)\s*!*$/i.test(
+      m
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * يُحسّن تطابق الـ embedding مع محتوى الدروس (العربي الحرفي للإنجليزي ضعيف بدون مرادف).
+ */
+function enrichEmbeddingQueryForChunks(userClean, intent) {
+  let q = embeddingQueryText(intent, userClean);
+  const raw = String(userClean || "");
+  const compact = normalizeArabic(raw.toLowerCase()).replace(
+    /[\s\u200c\u200f\-_]+/g,
+    ""
+  );
+  const low = raw.toLowerCase();
+  const extras = [];
+
+  if (
+    /ووركفلو|وركفلو|وورك\s*فلو|ورك\s*فلو|workflow/i.test(compact + low)
+  ) {
+    extras.push("workflow", "automation", "automations");
+  }
+  if (/جيتهاب|جيت\s*هاب|github/i.test(compact + low)) {
+    extras.push("GitHub", "git");
+  }
+  if (/\bn8n\b|ن8ن|نان/i.test(low) || /ن٨ن/.test(raw)) {
+    extras.push("n8n");
+  }
+  if (/شورتكت|shortcuts|اختصارات\s*الايفون/i.test(compact + low)) {
+    extras.push("Apple Shortcuts");
+  }
+
+  if (extras.length) {
+    const seen = new Set();
+    const uniq = extras.filter((e) => {
+      const k = e.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    q = `${q} ${uniq.join(" ")}`.trim();
+  }
+  return q.slice(0, 2000);
 }
 
 async function searchDiplomasLayer(searchTerms, queryForEmb) {
@@ -893,8 +992,8 @@ async function searchChunksLayer(queryForEmb) {
     });
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: embResponse.data[0].embedding,
-      match_threshold: 0.48,
-      match_count: 8,
+      match_threshold: 0.4,
+      match_count: 14,
       filter_course_id: null,
     });
     if (error) {
@@ -1032,16 +1131,28 @@ async function runCatalogSearch(userClean, intent) {
   }
 
   const broadDiplomaListing = isBroadDiplomasListingMessage(userClean);
-  if (intent.skip_catalog && !broadDiplomaListing) {
+
+  let intentEff = intent;
+  if (intent.skip_catalog && !broadDiplomaListing && looksLikeTopicOrToolQuery(userClean)) {
+    intentEff = {
+      ...intent,
+      skip_catalog: false,
+      search_text:
+        String(intent.search_text || "").trim() || String(userClean || "").trim(),
+    };
+  }
+
+  if (intentEff.skip_catalog && !broadDiplomaListing) {
     return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
-  const searchTerms = buildSearchTerms(intent, userClean);
+  const searchTerms = buildSearchTerms(intentEff, userClean);
   if (searchTerms.length === 0 && !broadDiplomaListing) {
     return { text: "", cardsAppendHtml: "", intent, searchTerms: [] };
   }
 
-  const queryForEmb = embeddingQueryText(intent, userClean);
+  const queryForEmb = embeddingQueryText(intentEff, userClean);
+  const queryForChunks = enrichEmbeddingQueryForChunks(userClean, intentEff);
 
   let diplomas;
   let courses;
@@ -1056,9 +1167,9 @@ async function runCatalogSearch(userClean, intent) {
   } else {
     [diplomas, courses, lessons, chunks] = await Promise.all([
       searchDiplomasLayer(searchTerms, queryForEmb),
-      searchCoursesLayer(searchTerms, queryForEmb, userClean, intent),
+      searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
       searchLessonsLayer(searchTerms),
-      searchChunksLayer(queryForEmb),
+      searchChunksLayer(queryForChunks),
     ]);
   }
 
@@ -1067,7 +1178,7 @@ async function runCatalogSearch(userClean, intent) {
     : filterDiplomasForAnchoredTitles(
         diplomas,
         userClean,
-        intent,
+        intentEff,
         searchTerms,
         broadDiplomaListing
       );
