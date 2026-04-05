@@ -707,76 +707,6 @@ function rankAndFilterCourses(
   return kept.slice(0, MAX_CARDS).map((x) => x.c);
 }
 
-/**
- * يزيل كورسات لا يظهر فيها أي مصطلح بحث حقيقي (عنوان/فرعي/كلمات مفتاحية أو درس مرتبط) —
- * يمنع عرض «تسويق/مالية» لأن الـ embedding خمنها بدون وجود workflow أو غيره في النص الظاهر.
- */
-function filterCoursesForSearchCoherence(
-  courses,
-  userClean,
-  searchTerms,
-  intent
-) {
-  if (!courses?.length) return courses;
-  const limited = (searchTerms || []).slice(0, 10);
-  const lexicalTerms = termsForCourseLexical(limited, userClean);
-  const filterTerms = effectiveCourseFilterTerms(
-    userClean,
-    lexicalTerms,
-    intent
-  );
-  const needles = buildChunkSearchNeedles(userClean, searchTerms).filter(
-    (n) => String(n).trim().length >= 3 && !isCourseLexicalNoiseTerm(n)
-  );
-  if (needles.length === 0) return courses;
-
-  const kept = [];
-  for (const c of courses) {
-    if (courseTitleOrSubtitleHitsTerm(c, filterTerms)) {
-      kept.push(c);
-      continue;
-    }
-    const title = normalizeArabic((c.title || "").toLowerCase());
-    const titleRaw = String(c.title || "").toLowerCase();
-    const subtitle = normalizeArabic((c.subtitle || "").toLowerCase());
-    const subtitleRaw = String(c.subtitle || "").toLowerCase();
-    const keywords = normalizeArabic((c.keywords || "").toLowerCase());
-    const keywordsRaw = String(c.keywords || "").toLowerCase();
-    const descRaw = stripHtml(c.description || "").toLowerCase();
-    const descNorm = normalizeArabic(descRaw);
-    let hit = false;
-    for (const term of needles) {
-      if (textFieldMatchesTerm(title, titleRaw, term)) hit = true;
-      if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) hit = true;
-      if (textFieldMatchesTerm(keywords, keywordsRaw, term)) hit = true;
-      if (textFieldMatchesTerm(descNorm, descRaw, term)) hit = true;
-    }
-    if (hit) {
-      kept.push(c);
-      continue;
-    }
-    const mls = c.matchedLessons || [];
-    for (const l of mls) {
-      const blob = `${l.title || ""} ${l.excerpt || ""}`;
-      const bn = normalizeArabic(blob.toLowerCase());
-      const br = blob.toLowerCase();
-      for (const term of needles) {
-        if (textFieldMatchesTerm(bn, br, term)) {
-          hit = true;
-          break;
-        }
-      }
-      if (hit) break;
-      if (chunkContentHasSearchHit(blob, userClean, searchTerms)) {
-        hit = true;
-        break;
-      }
-    }
-    if (hit) kept.push(c);
-  }
-  return kept.length > 0 ? kept : [];
-}
-
 function expandArabicVariants(terms) {
   const variants = new Set();
   for (const term of terms) {
@@ -880,6 +810,22 @@ function fallbackIntentFromMessage(userMessage) {
   ) {
     return defaultIntent();
   }
+  const tn = normalizeArabic(t.toLowerCase());
+  /** تحليقة شائعة: بدون مصطلحات إنجليزية يفشل التضمين — نضيف مرادفات البحث الدلالي */
+  if (tn.includes("وورك") && tn.includes("فلو")) {
+    return {
+      skip_catalog: false,
+      search_text: "workflow automation n8n LangChain",
+      terms_ar: [],
+      terms_en: ["workflow", "automation", "n8n"],
+      tools: ["n8n"],
+      audience: null,
+      primary_goal: "",
+      constraints: [],
+      skill_level: null,
+      response_style: null,
+    };
+  }
   return {
     skip_catalog: false,
     search_text: t.slice(0, 500),
@@ -892,6 +838,23 @@ function fallbackIntentFromMessage(userMessage) {
     skill_level: null,
     response_style: null,
   };
+}
+
+/** يكمل نية البحث عندما يكتب المستخدم «وورك فلو» دون مصطلحات إنجليزية في JSON النموذج. */
+function augmentWorkflowTransliterationIntent(userClean, intent) {
+  const n = normalizeArabic(String(userClean || "").toLowerCase());
+  if (!n.includes("وورك") || !n.includes("فلو")) return intent;
+  const base = { ...intent };
+  base.skip_catalog = false;
+  const st = String(base.search_text || "").trim();
+  if (!st || st.length < 10) {
+    base.search_text = "workflow automation n8n";
+  }
+  base.terms_en = [
+    ...new Set([...(base.terms_en || []), "workflow", "automation", "n8n"]),
+  ].slice(0, 12);
+  base.tools = [...new Set([...(base.tools || []), "n8n"])].slice(0, 8);
+  return base;
 }
 
 /**
@@ -915,6 +878,7 @@ async function extractSearchIntent(userMessage) {
 أعد JSON فقط بالمفاتيح:
 - skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
 - للرسالة القصيرة (كلمة أو مصطلح واحد): skip_catalog يجب أن يكون false واملأ search_text وterms_en (والإنجليزي عند الحاجة) وإلا لن يُرجع البحث كورسات من المنصة.
+- إذا كتب المستخدم مصطلحاً تقنياً بالحروف العربية وهو في الأصل إنجليزي (مثل «وورك فلو» = workflow، «بايثون» = python): ضع الشكل الإنجليزي في terms_en واملأ search_text بجملة بحث دلالية واضحة (مثلاً workflow automation n8n) حتى يطابق عناوين الكورسات والدروس المخزّنة غالباً بالإنجليزية.
 - search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
 - primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
 - constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
@@ -932,7 +896,9 @@ async function extractSearchIntent(userMessage) {
     });
     const text = completion.choices[0]?.message?.content || "{}";
     const j = JSON.parse(text);
-    return normalizeIntent(j);
+    return normalizeIntent(
+      augmentWorkflowTransliterationIntent(trimmed, normalizeIntent(j))
+    );
   } catch (e) {
     console.error("extractSearchIntent:", e.message);
     return fallbackIntentFromMessage(userMessage);
@@ -2007,15 +1973,9 @@ async function runCatalogSearch(userClean, intent) {
     }
   }
 
-  let coursesForCards = courses.map((c) => ({ ...c }));
+  const coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
-  coursesForCards = filterCoursesForSearchCoherence(
-    coursesForCards,
-    userClean,
-    searchTerms,
-    intentEff
-  );
   courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
