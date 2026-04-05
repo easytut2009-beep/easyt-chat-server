@@ -20,12 +20,7 @@ const {
   finalizeReply,
   markdownToHtml,
 } = require("./textUtils");
-const {
-  extractSearchIntent,
-  runCatalogSearch,
-  detectYoungLearnerContext,
-  isProgrammingLearningQuery,
-} = require("./hierarchicalSearch");
+const { extractSearchIntent, runCatalogSearch } = require("./hierarchicalSearch");
 const {
   buildSalesCorePolicy,
   DB_PRICING_CATEGORIES,
@@ -295,9 +290,8 @@ async function smartChat(message, sessionId) {
       extractSearchIntent(clean),
     ]);
 
-  const youngLearnerProgramming =
-    (searchIntent.audience === "child" || detectYoungLearnerContext(clean).active) &&
-    isProgrammingLearningQuery(clean);
+  /** يُستنتج الجمهور من extractSearchIntent فقط — بدون مطابقة كلمات في التطبيق. */
+  const childAudience = searchIntent.audience === "child";
 
   const { text: catalogBlock, cardsAppendHtml } = await runCatalogSearch(
     clean,
@@ -341,9 +335,9 @@ ${buildSalesCorePolicy({ hasDbPricingText })}
 
 `;
 
-  if (youngLearnerProgramming) {
-    system += `═══ سياق متعلّم صغير (برمجة أو تقنية مناسبة للعمر) ═══
-اقرأ رسالة المستخدم (عمر، ابن/بنت، هدف التعلم). رشّح مسارات بصرية أو سكراتش أو مبتدئين ومناسبة للطفل؛ لا تقدّم مسارات احترافية للكبار (مثل VBA محاسبي، سلاسل كتل، Oracle ADF، تطوير مواقع احترافي Full Stack) كأنها الخيار الأول. إن وُجدت كروت في الكتالوج، النظام يفضّل المسارات المناسبة للعمر عند الإمكان — يمكنك توجيه الأهل بلطف دون تكرار كل العناوين.
+  if (childAudience) {
+    system += `═══ جمهور ناشئ/طفل (من ملخص النية) ═══
+راعِ العمر والبساطة وملاءمة المحتوى؛ رشّح من الكتالوج ما يناسب المستوى المذكور في الرسالة و«ملخص فهم الرسالة»؛ لا تقدّم مسارات متقدمة أو مهنية للكبار كخيار أول إذا كان السياق تعليماً للصغار. إن وُجدت كروت، وجّه بلطف دون تكرار كل العناوين.
 `;
   }
 
@@ -359,7 +353,7 @@ ${botInstructions}
 ${linksBlock}
 `;
 
-  if (courseHint && !youngLearnerProgramming) {
+  if (courseHint && !childAudience) {
     system += `\n═══ عناوين مرجعية لعيّنة من الكورسات (ليس بالضرورة كل المحتوى) ═══\n${courseHint}\n`;
   }
 
