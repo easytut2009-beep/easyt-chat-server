@@ -1955,21 +1955,37 @@ function collectRelevanceTerms(userClean, searchTerms, intent) {
 }
 
 /**
- * رفض نتائج «دلالة فقط» بلا كلمة من موضوع البحث في عنوان الكورس/الكلمات المفتاحية/عنوان درس.
- * يُستثنى إن كان تشابه الكورس الدلالي أو أقصى تشابه chunk عالياً بما يكفي.
+ * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords — غالباً وسوم SEO عامة تُدخل workflow/n8n بلا صلة).
+ */
+function catalogCourseHasLexicalTopicEvidence(
+  course,
+  userClean,
+  searchTerms,
+  intent
+) {
+  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  if (terms.length === 0) return false;
+  if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
+  for (const l of course.matchedLessons || []) {
+    const lt = normalizeArabic((l.title || "").toLowerCase());
+    const lr = String(l.title || "").toLowerCase();
+    for (const term of terms) {
+      if (isCourseLexicalNoiseTerm(term)) continue;
+      if (textFieldMatchesTerm(lt, lr, term)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * رفض نتائج ضعيفة: لا نمرّر كورساً لمجرد تطابق keywords في قاعدة البيانات.
+ * يُقبل تشابه دلالي/Chunk عالٍ فقط كاستثناء.
  */
 function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
   const terms = collectRelevanceTerms(userClean, searchTerms, intent);
   if (terms.length === 0) return true;
 
   if (courseTitleOrSubtitleHitsTerm(course, terms)) return true;
-
-  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
-  const keywordsRaw = String(course.keywords || "").toLowerCase();
-  for (const term of terms) {
-    if (isCourseLexicalNoiseTerm(term)) continue;
-    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) return true;
-  }
 
   for (const l of course.matchedLessons || []) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
@@ -1982,9 +1998,35 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
 
   const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
   const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
-  if (vs >= 0.36) return true;
-  if (ch >= 0.62) return true;
+  if (vs >= 0.4) return true;
+  if (ch >= 0.68) return true;
   return false;
+}
+
+/** يزيل من الكارت دروساً ظهرت من تشابه chunk ضعيف بلا كلمة بحث في العنوان أو المقتطف. */
+function pruneMatchedLessonsForSearchTerms(
+  course,
+  userClean,
+  searchTerms,
+  intent
+) {
+  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  if (!terms.length || !course.matchedLessons?.length) return;
+  const kept = course.matchedLessons.filter((l) => {
+    const lt = normalizeArabic((l.title || "").toLowerCase());
+    const lr = String(l.title || "").toLowerCase();
+    for (const term of terms) {
+      if (isCourseLexicalNoiseTerm(term)) continue;
+      if (textFieldMatchesTerm(lt, lr, term)) return true;
+    }
+    const rawEx = String(l.excerpt || "");
+    if (rawEx && chunkContentHasSearchHit(rawEx, userClean, searchTerms)) {
+      return true;
+    }
+    return false;
+  });
+  if (kept.length) course.matchedLessons = kept;
+  else delete course.matchedLessons;
 }
 
 /** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
@@ -2007,7 +2049,7 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
   for (const term of terms) {
     if (textFieldMatchesTerm(title, titleRaw, term)) score += 60;
     if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += 45;
-    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 38;
+    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 8;
   }
 
   const mls = course.matchedLessons || [];
@@ -2173,6 +2215,9 @@ async function runCatalogSearch(userClean, intent) {
   let coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  for (const c of coursesForCards) {
+    pruneMatchedLessonsForSearchTerms(c, userClean, searchTerms, intentEff);
+  }
   coursesForCards = rankCatalogCoursesByRelevance(
     coursesForCards,
     userClean,
@@ -2186,7 +2231,16 @@ async function runCatalogSearch(userClean, intent) {
   const catalogHint = buildCatalogQueryHintForCards(intentEff, searchTerms);
   if (catalogHint) {
     for (const c of coursesForCards) {
-      c._catalogQueryHint = catalogHint;
+      if (
+        catalogCourseHasLexicalTopicEvidence(
+          c,
+          userClean,
+          searchTerms,
+          intentEff
+        )
+      ) {
+        c._catalogQueryHint = catalogHint;
+      }
     }
   }
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
