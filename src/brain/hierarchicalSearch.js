@@ -25,7 +25,6 @@ const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
 const {
   buildCatalogCardsAppendHtml,
   buildChunkCardsAppendHtml,
-  buildCatalogQueryHintForCards,
 } = require("./catalogCards");
 
 /** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
@@ -1234,7 +1233,7 @@ async function searchCoursesLayer(
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
               match_threshold: isChild ? 0.88 : 0.86,
-              match_count: isChild ? 12 : 14,
+              match_count: isChild ? 12 : 22,
             });
             return data || [];
           } catch (e) {
@@ -2251,7 +2250,10 @@ async function runCatalogSearch(userClean, intent) {
 
     lessons = [];
     chunks = [];
-    /** طبقة 2 كاملة فقط عندما لا توجد كورسات من طبقة الكورسات؛ وإلا chunks فقط لإثراء الدروس دون كورسات جديدة من التكميل. */
+    /**
+     * طبقة 2: إن لم توجد كورسات من match_courses — دروس+chunks كاملة.
+     * إن وُجدت كورسات: دروس (حدّ أقصى كورسين إضافيين من عناوين دروس تطابق البحث) + chunks لإثراء الدروس فقط — بدون كورسات جديدة من chunks فقط.
+     */
     if (diplomasForCatalog.length === 0 && courses.length === 0) {
       [lessons, chunks] = await Promise.all([
         searchLessonsLayer(searchTerms),
@@ -2261,13 +2263,15 @@ async function runCatalogSearch(userClean, intent) {
         searchTerms,
       });
     } else if (diplomasForCatalog.length === 0 && courses.length > 0) {
-      lessons = [];
-      chunks = await searchChunksLayer(
-        queryForChunks,
-        userClean,
+      [lessons, chunks] = await Promise.all([
+        searchLessonsLayer(searchTerms),
+        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
+      ]);
+      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+        supplementWhenFew: true,
         searchTerms,
-        intentEff
-      );
+        maxSupplementCourses: 2,
+      });
     }
   }
 
@@ -2294,21 +2298,6 @@ async function runCatalogSearch(userClean, intent) {
   courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
-  }
-  const catalogHint = buildCatalogQueryHintForCards(intentEff, searchTerms);
-  if (catalogHint) {
-    for (const c of coursesForCards) {
-      if (
-        catalogCourseHasLexicalTopicEvidence(
-          c,
-          userClean,
-          searchTerms,
-          intentEff
-        )
-      ) {
-        c._catalogQueryHint = catalogHint;
-      }
-    }
   }
   await injectDiplomaInfoForGpt(supabase, coursesForCards);
   const instructors = await fetchInstructorsForCourses(

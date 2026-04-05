@@ -15,31 +15,6 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-/** سطر قصير يوضح ربط النتائج بنية البحث (من intent + مصطلحات)، بدون قوائم كلمات ثابتة في التطبيق. */
-function buildCatalogQueryHintForCards(intent, searchTerms) {
-  const te = [
-    ...(Array.isArray(intent?.terms_en) ? intent.terms_en : []),
-    ...(Array.isArray(intent?.tools) ? intent.tools : []),
-  ]
-    .map((t) => String(t || "").trim())
-    .filter(Boolean);
-  const uniq = [...new Set(te)].slice(0, 8);
-  let line = uniq.length ? uniq.join("، ") : "";
-  if (!line && searchTerms?.length) {
-    line = searchTerms.slice(0, 6).join("، ");
-  }
-  const st = String(intent?.search_text || "").trim();
-  if (st && st.length < 120) {
-    if (!line) line = st;
-    else if (!line.toLowerCase().includes(st.slice(0, 12).toLowerCase())) {
-      line = `${line} — ${st}`;
-    }
-  }
-  if (!line) return "";
-  if (line.length > 180) line = line.slice(0, 177) + "...";
-  return `ذات صلة ببحثك: ${line}`;
-}
-
 function formatCourseCard(course, instructors, index) {
   const instructor = course.instructor_id
     ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
@@ -81,9 +56,6 @@ function formatCourseCard(course, instructors, index) {
 
   let card = `<div style="border:1px solid #eee;border-radius:12px;margin:8px 0;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:12px">`;
   card += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${num}${escapeHtml(course.title)}</div>`;
-  if (course._catalogQueryHint) {
-    card += `<div style="font-size:11px;color:#1565c0;margin-bottom:8px;padding:6px 8px;background:#e3f2fd;border-radius:8px;border-right:3px solid #1565c0;line-height:1.45">🔎 ${escapeHtml(course._catalogQueryHint)}</div>`;
-  }
   card += `<div style="font-size:13px;color:#e63946;font-weight:700;margin-bottom:4px">💰 ${priceText}</div>`;
   if (instructorName) {
     card += `<div style="font-size:12px;color:#666;margin-bottom:4px">👨‍🏫 ${escapeHtml(instructorName)}</div>`;
@@ -229,5 +201,4 @@ module.exports = {
   formatDiplomaCard,
   buildCatalogCardsAppendHtml,
   buildChunkCardsAppendHtml,
-  buildCatalogQueryHintForCards,
 };
