@@ -1,0 +1,2054 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easyT Admin Dashboard v12.4</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f0f2f5;
+  margin: 0;
+}
+
+.sidebar {
+  width: 220px;
+  background: #1e293b;
+  color: #fff;
+  height: 100vh;
+  position: fixed;
+  right: 0;
+  top: 0;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.sidebar a {
+  display: block;
+  padding: 12px 20px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+  border-bottom: 1px solid #334155;
+  transition: 0.2s;
+}
+
+.sidebar a:hover,
+.sidebar a.active {
+  background: #334155;
+  color: #fff;
+}
+
+.main {
+  margin-right: 220px;
+  padding: 24px;
+  min-height: 100vh;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+}
+
+.stat-card { text-align: center; padding: 16px; }
+.stat-num { font-size: 28px; font-weight: bold; color: #1e293b; }
+.stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #f8fafc; padding: 10px 12px; text-align: right; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+tr:hover td { background: #f8fafc; }
+
+.btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.btn-success { background: #10b981; color: #fff; }
+.btn-success:hover { background: #059669; }
+.btn-warning { background: #f59e0b; color: #fff; }
+.btn-warning:hover { background: #d97706; }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+input, textarea, select {
+  border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; width: 100%; font-size: 13px; box-sizing: border-box;
+}
+input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+
+.chat-wrap { border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+.chat-topbar { background: #075e54; color: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chat-topbar h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.chat-topbar small { font-size: 12px; color: #a7f3d0; }
+
+.chat-body {
+  background: #e5ddd5;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4cfc6' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  padding: 20px 16px; min-height: 300px; max-height: 75vh; overflow-y: auto;
+}
+
+.view-toggle { display: flex; gap: 4px; background: rgba(255,255,255,0.2); border-radius: 8px; padding: 3px; }
+.view-toggle-btn { padding: 4px 12px; border-radius: 6px; border: none; background: transparent; color: #a7f3d0; font-size: 11px; cursor: pointer; font-weight: 600; }
+.view-toggle-btn.active { background: #fff; color: #075e54; }
+
+.flat-date { text-align: center; margin: 12px 0; }
+.flat-date span { background: #e1f3fb; padding: 4px 14px; border-radius: 8px; font-size: 12px; color: #54656f; box-shadow: 0 1px 1px rgba(0,0,0,0.08); }
+
+.flat-msg { display: flex; margin-bottom: 4px; }
+.flat-msg.user-msg { justify-content: flex-end; }
+.flat-msg.bot-msg { justify-content: flex-start; }
+
+.flat-bubble { max-width: 75%; padding: 8px 12px; border-radius: 8px; font-size: 13.5px; line-height: 1.7; position: relative; box-shadow: 0 1px 1px rgba(0,0,0,0.1); word-break: break-word; }
+.flat-msg.user-msg .flat-bubble { background: #dcf8c6; border-top-left-radius: 8px; border-top-right-radius: 0; }
+.flat-msg.bot-msg .flat-bubble { background: #fff; border-top-right-radius: 8px; border-top-left-radius: 0; }
+
+.flat-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; justify-content: flex-end; }
+.flat-time { font-size: 10px; color: #8696a0; }
+.flat-id { font-size: 9px; color: #b0bec5; font-family: monospace; }
+.flat-role { font-size: 10px; font-weight: 800; margin-bottom: 2px; }
+.flat-msg.user-msg .flat-role { color: #075e54; }
+.flat-msg.bot-msg .flat-role { color: #1a73e8; }
+.flat-intent { display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 99px; background: #e8eaf6; color: #3f51b5; font-weight: 600; }
+.flat-correct-btn { display: inline-block; padding: 3px 8px; background: #fff3e0; color: #e65100; border-radius: 4px; font-size: 10px; cursor: pointer; border: 1px solid #ffe0b2; margin-top: 4px; }
+.flat-correct-btn:hover { background: #ffe0b2; }
+.flat-seq { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 9px; font-weight: 800; flex-shrink: 0; }
+.flat-msg.user-msg .flat-seq { background: #075e54; color: #fff; }
+.flat-msg.bot-msg .flat-seq { background: #1a73e8; color: #fff; }
+
+.qa-card { background: #fff; border-radius: 14px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08); border: 2px solid #e2e8f0; }
+.qa-card-header { background: #f8fafc; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #64748b; }
+.qa-num { background: #334155; color: #fff; font-weight: 800; font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.qa-time { font-size: 11px; color: #94a3b8; margin-right: auto; }
+.qa-tag { font-size: 10px; padding: 2px 8px; border-radius: 99px; background: #e0e7ff; color: #4338ca; font-weight: 600; }
+.qa-question { padding: 14px 18px; background: #eff6ff; border-bottom: 2px dashed #bfdbfe; }
+.qa-question-label { font-size: 11px; font-weight: 800; color: #2563eb; margin-bottom: 6px; padding: 2px 10px; background: #dbeafe; border-radius: 99px; display: inline-block; }
+.qa-question-text { font-size: 14px; line-height: 1.8; color: #1e293b; padding: 8px 12px; background: #fff; border-radius: 8px; border: 1px solid #bfdbfe; margin-top: 6px; }
+.qa-answer { padding: 14px 18px; background: #f0fdf4; }
+.qa-answer + .qa-answer { border-top: 2px dashed #bbf7d0; }
+.qa-answer-label { font-size: 11px; font-weight: 800; color: #16a34a; margin-bottom: 6px; padding: 2px 10px; background: #dcfce7; border-radius: 99px; display: inline-block; }
+.qa-answer-text { font-size: 14px; line-height: 1.8; color: #1e293b; padding: 8px 12px; background: #fff; border-radius: 8px; border: 1px solid #bbf7d0; margin-top: 6px; }
+.qa-no-reply { padding: 10px 18px; background: #fef3c7; border-top: 2px dashed #fde68a; font-size: 12px; color: #92400e; text-align: center; font-weight: 600; }
+.qa-correct-btn { display: inline-block; padding: 4px 12px; background: #fef3c7; color: #92400e; border-radius: 6px; font-size: 11px; cursor: pointer; border: 1px solid #fde68a; margin-top: 8px; }
+.qa-correct-btn:hover { background: #fde68a; }
+.qa-date { text-align: center; margin: 16px 0; }
+.qa-date span { background: #e1f3fb; padding: 5px 16px; border-radius: 99px; font-size: 12px; color: #54656f; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.chat-foot { background: #f0f2f5; padding: 10px 16px; text-align: center; font-size: 11px; color: #8696a0; border-top: 1px solid #e5e7eb; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.badge-blue { background: #dbeafe; color: #1d4ed8; }
+.badge-green { background: #dcfce7; color: #166534; }
+.badge-yellow { background: #fef9c3; color: #854d0e; }
+.badge-red { background: #fee2e2; color: #991b1b; }
+.badge-purple { background: #f3e8ff; color: #7c3aed; }
+.badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-indigo { background: #e0e7ff; color: #4338ca; }
+
+.login-box { max-width: 360px; margin: 120px auto; text-align: center; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 100; display: none; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 600px; max-height: 85vh; overflow-y: auto; }
+
+.learning-badge { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #166534; margin-top: 8px; }
+.support-badge { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #c2410c; margin-top: 8px; }
+.prompt-badge { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #4338ca; margin-top: 8px; }
+
+.toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.toast-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.toast-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.toast-info { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+
+.toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; vertical-align: middle; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 24px; transition: 0.3s; }
+.toggle-slider:before { content: ""; position: absolute; height: 18px; width: 18px; right: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+.toggle-switch input:checked + .toggle-slider { background: #10b981; }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(-20px); }
+
+.keyword-tag { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 2px 8px; border-radius: 999px; font-size: 10px; margin: 2px; }
+
+.instruction-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; background: #fff; transition: 0.2s; }
+.instruction-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.instruction-card.inactive { background: #fef2f2; border-color: #fee2e2; }
+.instruction-text { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.8; color: #334155; white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+
+.category-tag { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.cat-GENERAL { background: #dbeafe; color: #1d4ed8; }
+.cat-COURSE_SEARCH { background: #dcfce7; color: #166534; }
+.cat-SUPPORT { background: #ffedd5; color: #c2410c; }
+.cat-PAYMENT { background: #fef9c3; color: #854d0e; }
+.cat-ACCESS { background: #fee2e2; color: #991b1b; }
+.cat-GREETING { background: #f3e8ff; color: #7c3aed; }
+.cat-STYLE { background: #e0e7ff; color: #4338ca; }
+.cat-RULES { background: #fce7f3; color: #be185d; }
+
+.priority-bar { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #64748b; }
+.priority-dots { display: inline-flex; gap: 2px; }
+.priority-dot { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; }
+.priority-dot.filled { background: #f59e0b; }
+
+.debug-row { font-family: monospace; font-size: 11px; }
+.debug-row:nth-child(odd) { background: #f9fafb; }
+
+.pagination-bar { display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
+.page-btn { padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; }
+.page-btn.active { background: #3b82f6; color: #fff; }
+.page-btn:not(.active) { background: #e2e8f0; color: #475569; }
+.page-btn:not(.active):hover { background: #cbd5e1; }
+
+.delete-progress { margin-top: 12px; padding: 16px; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
+.delete-progress-bar { width: 100%; height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; margin-top: 10px; }
+.delete-progress-bar .fill { height: 100%; border-radius: 5px; transition: width 0.3s; width: 0%; }
+.fill-success { background: linear-gradient(90deg, #10b981, #34d399); }
+.fill-error { background: linear-gradient(90deg, #ef4444, #f87171); }
+.fill-working { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+
+.server-error-box {
+  background: #fef2f2;
+  border: 2px solid #fca5a5;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 12px;
+}
+.server-error-box h3 { color: #991b1b; margin: 0 0 12px; font-size: 16px; }
+.server-error-box pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: left;
+  line-height: 1.6;
+}
+
+.selected-row { background: #eff6ff !important; }
+.selected-row td { background: #eff6ff !important; }
+
+@media (max-width: 768px) {
+  .sidebar { width: 100%; height: auto; position: relative; }
+  .main { margin-right: 0; }
+  .flat-bubble { max-width: 90%; }
+
+
+.target-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.target-sales { background: #dbeafe; color: #1d4ed8; }
+.target-guide { background: #f3e8ff; color: #7c3aed; }
+.target-both { background: #dcfce7; color: #166534; }
+.target-filter-btn { padding: 6px 14px; border-radius: 8px; border: 2px solid #e2e8f0; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+.target-filter-btn.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+.target-filter-btn:hover { border-color: #93c5fd; }
+
+}
+
+
+.dc-search-results { position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:0 0 8px 8px;max-height:200px;overflow-y:auto;display:none;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+.dc-search-item { padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;transition:0.2s; }
+.dc-search-item:hover { background:#eff6ff; }
+.dc-course-row { display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;transition:0.2s; }
+.dc-course-row:hover { border-color:#c4b5fd; }
+.dc-order-input { width:50px;text-align:center;font-weight:700; }
+
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<div id="loginScreen" class="login-box">
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:22px">🔐 easyT Admin</h2>
+    <p style="color:#64748b;font-size:13px;margin-bottom:20px">سجل دخول للوحة التحكم</p>
+    <input type="password" id="passInput" placeholder="كلمة السر" style="margin-bottom:12px" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">دخول</button>
+    <p id="loginErr" style="color:#ef4444;font-size:12px;margin-top:8px;display:none"></p>
+  </div>
+</div>
+
+<div id="dashboard" style="display:none">
+  <div class="sidebar">
+    <div style="padding:16px 20px;border-bottom:1px solid #334155">
+      <div style="font-size:18px;font-weight:bold">🤖 easyT Admin</div>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">v12.4 — Guide + Select Delete</div>
+    </div>
+    <a href="#" onclick="showTab('stats')" class="active" id="nav-stats">📊 الإحصائيات</a>
+    <a href="#" onclick="showTab('conversations')" id="nav-conversations">💬 محادثات المساعد</a>
+    <a href="#" onclick="showTab('guideconversations')" id="nav-guideconversations">🎓 محادثات المرشد</a>
+    <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات</a>
+    <a href="#" onclick="showTab('botinstructions')" id="nav-botinstructions">🧠 تعليمات البوت</a>
+    <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
+    <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
+    <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
+    <a href="#" onclick="showTab('instructors')" id="nav-instructors">👤 المحاضرين</a>
+    <a href="#" onclick="showTab('faq')" id="nav-faq">❓ الأسئلة الشائعة</a>
+    <a href="#" onclick="showTab('sitepages')" id="nav-sitepages">📄 صفحات الموقع</a>
+    <a href="#" onclick="doLogout()" style="color:#ef4444;border-top:2px solid #334155;margin-top:20px">🚪 خروج</a>
+  </div>
+
+  <div class="main">
+
+    <div id="tab-stats" class="tab-content active">
+      <h2 style="margin:0 0 16px;font-size:20px">📊 إحصائيات عامة</h2>
+      <div id="statsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px"></div>
+      <div class="card" style="margin-top:16px">
+        <h3 style="margin:0 0 12px;font-size:15px">📈 توزيع الأنواع</h3>
+        <div id="intentChart"></div>
+      </div>
+    </div>
+
+    <div id="tab-conversations" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">💬 محادثات المساعد البيعي</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="convSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadConversations(1)" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadConversations(1)">بحث</button>
+        <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadConversations(currentConvPage)">🔄</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteSelectedChat" onclick="deleteSelectedChatConversations()" style="display:none">🗑️ حذف المحدد</button>
+        <button class="btn btn-danger btn-sm" id="btnClearAll" onclick="clearAllConversations()">🗑️ مسح الكل</button>
+      </div>
+      <div id="deleteProgressArea" style="display:none"></div>
+      <div id="convList" class="card"></div>
+      <div id="convPagination" style="display:flex;gap:8px;justify-content:center;margin-top:8px"></div>
+      <div id="convDetail" style="display:none">
+        <button class="btn btn-primary btn-sm" onclick="closeConvDetail()" style="margin-bottom:12px">← رجوع</button>
+        <div id="convMessages"></div>
+      </div>
+    </div>
+
+    <div id="tab-guideconversations" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🎓 محادثات المرشد التعليمي</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="guideConvSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadGuideConversations(1)" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadGuideConversations(1)">بحث</button>
+        <button class="btn btn-sm" style="background:#e2e8f0" onclick="loadGuideConversations(currentGuideConvPage)">🔄</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteSelectedGuide" onclick="deleteSelectedGuideConversations()" style="display:none">🗑️ حذف المحدد</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllGuideConversations()">🗑️ مسح الكل</button>
+      </div>
+      <div id="guideDeleteProgressArea" style="display:none"></div>
+      <div id="guideConvList" class="card"></div>
+      <div id="guideConvPagination" style="display:flex;gap:8px;justify-content:center;margin-top:8px"></div>
+      <div id="guideConvDetail" style="display:none">
+        <button class="btn btn-primary btn-sm" onclick="closeGuideConvDetail()" style="margin-bottom:12px">← رجوع</button>
+        <div id="guideConvMessages"></div>
+      </div>
+    </div>
+
+    <div id="tab-corrections" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">✅ التصحيحات</h2>
+      <div class="learning-badge" style="margin-bottom:12px">🧠 البوت بيقرأ التصحيحات دي قبل ما يرد — أولوية قصوى!</div>
+      <button class="btn btn-success btn-sm" onclick="openAddCorrectionModal()" style="margin-bottom:12px">+ إضافة تصحيح</button>
+      <div class="card" id="corrList"></div>
+    </div>
+
+    <div id="tab-botinstructions" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🧠 تعليمات البوت</h2>
+      <div class="prompt-badge" style="margin-bottom:12px">
+        📝 اكتب هنا التعليمات بالعربي العادي — البوت هيتبعها بالحرف في كل ردوده.<br>
+        <b>مثال:</b> "لما حد يسأل عن سعر الاشتراك قوله 49$ عرض رمضان"
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="botInstructionsSearch" placeholder="🔍 بحث في التعليمات..." onkeydown="if(event.key==='Enter')loadBotInstructions()" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadBotInstructions()">بحث</button>
+        <button class="btn btn-success btn-sm" onclick="openAddBotInstructionModal()">+ تعليمة جديدة</button>
+      </div>
+      <div id="botInstructionsList"></div>
+    </div>
+
+    <div id="tab-customresponses" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة</h2>
+      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT — ردود ثابتة بكلمات مفتاحية</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="customresponsesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
+        <button class="btn btn-success btn-sm" onclick="openAddCustomResponseModal()">+ إضافة</button>
+      </div>
+      <div class="card" id="customResponsesList"></div>
+    </div>
+
+    <div id="tab-courses" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">📚 الكورسات</h2>
+      <div class="card">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="coursesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCrud('courses',1,true)" style="max-width:400px;margin:0">
+          <button class="btn btn-primary btn-sm" onclick="loadCrud('courses',1,true)">بحث</button>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('courses')">+ إضافة</button>
+        </div>
+        <div id="courses-table"></div>
+      </div>
+    </div>
+
+    <div id="tab-diplomas" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🎓 الدبلومات</h2>
+      <div class="card">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="diplomasSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCrud('diplomas',1,true)" style="max-width:400px;margin:0">
+          <button class="btn btn-primary btn-sm" onclick="loadCrud('diplomas',1,true)">بحث</button>
+          <button class="btn btn-success btn-sm" onclick="openAddModal('diplomas')">+ إضافة</button>
+        </div>
+        <div id="diplomas-table"></div>
+      </div>
+    </div>
+
+    <div id="tab-instructors" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">👤 المحاضرين</h2>
+      <div class="card">
+        <button class="btn btn-success btn-sm" onclick="openAddModal('instructors')" style="margin-bottom:12px">+ إضافة</button>
+        <div id="instructors-table"></div>
+      </div>
+    </div>
+
+    <div id="tab-faq" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">❓ الأسئلة الشائعة</h2>
+      <div class="card">
+        <button class="btn btn-success btn-sm" onclick="openAddModal('faq')" style="margin-bottom:12px">+ إضافة</button>
+        <div id="faq-table"></div>
+      </div>
+    </div>
+
+    <div id="tab-sitepages" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">📄 صفحات الموقع</h2>
+      <div class="card">
+        <button class="btn btn-success btn-sm" onclick="openAddModal('site-pages')" style="margin-bottom:12px">+ إضافة</button>
+        <div id="site-pages-table"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle" style="margin:0 0 16px;font-size:16px"></h3>
+    <div id="modalBody"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()" style="background:#e2e8f0">إلغاء</button>
+      <button class="btn btn-primary" id="modalSaveBtn" onclick="saveModal()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmDialog">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+    <h3 id="confirmMsg" style="margin:0 0 16px;font-size:15px"></h3>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn" onclick="resolveConfirm(false)" style="background:#e2e8f0">إلغاء</button>
+      <button class="btn btn-danger" onclick="resolveConfirm(true)">حذف</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var API = window.location.origin;
+var TOKEN = '';
+var currentTab = 'stats';
+var modalState = {};
+var currentConvPage = 1;
+var currentGuideConvPage = 1;
+var _confirmResolve = null;
+var _crudCache = {};
+var _customResponsesCache = [];
+var _botInstructionsCache = [];
+var _correctionsCache = [];
+var _convViewMode = 'flat';
+var _convSortedMessages = [];
+var _convSessionId = '';
+var _guideConvViewMode = 'flat';
+var _guideConvSortedMessages = [];
+var _guideConvSessionId = '';
+var _allCrudItems = {};
+var _crudPages = {};
+var ITEMS_PER_PAGE = 50;
+var _selectedChatSessions = new Set();
+var _selectedGuideSessions = new Set();
+
+function esc(t) {
+  if (t == null) return '';
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function closeTags(html) { if (!html) return ''; var tmp = document.createElement('div'); tmp.innerHTML = html; return tmp.innerHTML; }
+function stripHtml(t) { return t ? String(t).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim() : ''; }
+
+function toast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + (type || 'success') + ' show';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
+
+function showConfirm(msg) {
+  return new Promise(function(r) {
+    document.getElementById('confirmMsg').textContent = msg;
+    document.getElementById('confirmDialog').classList.add('show');
+    _confirmResolve = r;
+  });
+}
+
+function resolveConfirm(v) {
+  document.getElementById('confirmDialog').classList.remove('show');
+  if (_confirmResolve) { _confirmResolve(v); _confirmResolve = null; }
+}
+
+function fmtTime(d) { if (!d) return ''; try { return new Date(d).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit', second:'2-digit'}); } catch(e) { return ''; } }
+function fmtDate(d) { if (!d) return ''; try { return new Date(d).toLocaleDateString('ar-EG'); } catch(e) { return ''; } }
+function fmtFull(d) { if (!d) return ''; try { return new Date(d).toLocaleString('ar-EG'); } catch(e) { return ''; } }
+
+function renderPriorityDots(p) {
+  var max = 5, filled = Math.min(Math.round((p || 0) / 20), max);
+  var h = '<span class="priority-dots">';
+  for (var i = 0; i < max; i++) h += '<span class="priority-dot' + (i < filled ? ' filled' : '') + '"></span>';
+  return h + '</span>';
+}
+
+// ═══════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════
+async function doLogin() {
+  var p = document.getElementById('passInput').value;
+  try {
+    var r = await fetch(API+'/admin/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:p})});
+    var d = await r.json();
+    if (r.ok) {
+      TOKEN = d.token;
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('dashboard').style.display='block';
+      loadStats();
+    } else {
+      document.getElementById('loginErr').textContent = d.error||'كلمة سر غلط';
+      document.getElementById('loginErr').style.display='block';
+    }
+  } catch(e) {
+    document.getElementById('loginErr').textContent='خطأ في الاتصال';
+    document.getElementById('loginErr').style.display='block';
+  }
+}
+
+function doLogout() {
+  TOKEN='';
+  document.getElementById('loginScreen').style.display='block';
+  document.getElementById('dashboard').style.display='none';
+  document.getElementById('passInput').value='';
+}
+
+// ═══════════════════════════════════════════════════════════
+// API CALLS
+// ═══════════════════════════════════════════════════════════
+function apiCall(path, opts) {
+  opts = opts || {};
+  return fetch(API + path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: opts.body || undefined
+  }).then(function(r) {
+    if (r.status === 401) { doLogout(); throw new Error('غير مصرح'); }
+    var ct = r.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      return r.json().then(function(data) {
+        if (!r.ok) throw new Error((data && data.error) ? data.error : 'HTTP ' + r.status);
+        return data;
+      });
+    } else {
+      return r.text().then(function(text) {
+        if (!r.ok || text.includes('<!DOCTYPE') || text.includes('<html')) {
+          throw new Error('ENDPOINT_NOT_FOUND');
+        }
+        try { return JSON.parse(text); } catch(e) { return { success: true }; }
+      });
+    }
+  });
+}
+
+async function smartFetch(path, opts) {
+  opts = opts || {};
+  try {
+    var r = await fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+      body: opts.body || undefined
+    });
+    var ct = r.headers.get('content-type') || '';
+    var isJson = ct.includes('application/json');
+    var bodyText = await r.text();
+    var isHtml = bodyText.includes('<!DOCTYPE') || bodyText.includes('<html');
+    var data = null;
+    if (isJson) { try { data = JSON.parse(bodyText); } catch(e) {} }
+    return {
+      status: r.status, ok: r.ok, isJson: isJson, isHtml: isHtml, data: data, text: bodyText,
+      reallyWorked: r.ok && isJson && !isHtml
+    };
+  } catch(e) {
+    return { status: 0, ok: false, isJson: false, isHtml: false, data: null, text: e.message, reallyWorked: false, networkError: true };
+  }
+}
+
+// ═══════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════
+function showTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.sidebar a').forEach(function(a){a.classList.remove('active');});
+  document.getElementById('tab-'+tab).classList.add('active');
+  var n = document.getElementById('nav-'+tab);
+  if(n) n.classList.add('active');
+  currentTab = tab;
+  if(tab==='stats') loadStats();
+  else if(tab==='conversations') loadConversations(1);
+  else if(tab==='guideconversations') loadGuideConversations(1);
+  else if(tab==='corrections') loadCorrections();
+  else if(tab==='botinstructions') loadBotInstructions();
+  else if(tab==='customresponses') loadCustomResponses();
+  else if(tab==='courses') loadCrud('courses');
+  else if(tab==='diplomas') loadCrud('diplomas');
+  else if(tab==='instructors') loadCrud('instructors');
+  else if(tab==='faq') loadCrud('faq');
+  else if(tab==='sitepages') loadCrud('site-pages');
+}
+
+// ═══════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════
+async function loadStats() {
+  try {
+    var resp = await apiCall('/admin/stats');
+    var d = resp.stats || resp.data || resp;
+    var extra = {};
+    try { var biResp = await apiCall('/admin/bot-instructions'); extra.totalBotInstructions = (biResp.instructions || biResp.items || []).length; } catch(e) { extra.totalBotInstructions = 0; }
+    try { var crResp = await apiCall('/admin/corrections'); extra.totalCorrections = (crResp.corrections || crResp.items || []).length; } catch(e) {}
+    try { var custResp = await apiCall('/admin/custom-responses'); extra.totalCustomResponses = (custResp.responses || custResp.items || []).length; } catch(e) {}
+    try { var faqResp = await apiCall('/admin/faq'); extra.totalFaq = (faqResp.faqs || faqResp.entries || faqResp.items || []).length; } catch(e) { extra.totalFaq = 0; }
+    try { var instResp = await apiCall('/admin/instructors'); extra.totalInstructors = (instResp.instructors || instResp.items || []).length; } catch(e) { extra.totalInstructors = 0; }
+    try { var spResp = await apiCall('/admin/site-pages'); extra.totalSitePages = (spResp.pages || spResp.items || []).length; } catch(e) { extra.totalSitePages = 0; }
+    try { var gcResp = await apiCall('/admin/guide-conversations?limit=1'); extra.totalGuideConvs = (gcResp.pagination && gcResp.pagination.total) ? gcResp.pagination.total : (gcResp.conversations || gcResp.items || gcResp.data || []).length; } catch(e) { extra.totalGuideConvs = 0; }
+
+    var g = document.getElementById('statsGrid');
+    var items = [
+      ['💬', d.totalChats || 0, 'رسائل المساعد'], ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
+      ['📅', d.todayChats || 0, 'رسائل اليوم'], ['🟢', d.activeSessions || 0, 'جلسات نشطة'],
+      ['🎓', extra.totalGuideConvs || 0, 'محادثات المرشد'],
+      ['🧠', extra.totalCorrections != null ? extra.totalCorrections : (d.totalCorrections || 0), 'تصحيحات'],
+      ['📝', extra.totalBotInstructions != null ? extra.totalBotInstructions : (d.totalBotInstructions || 0), 'تعليمات البوت'],
+      ['🛠️', extra.totalCustomResponses != null ? extra.totalCustomResponses : (d.totalCustomResponses || 0), 'ردود مخصصة'],
+      ['📚', d.totalCourses || 0, 'كورسات'], ['🎓', d.totalDiplomas || 0, 'دبلومات'],
+      ['👤', extra.totalInstructors != null ? extra.totalInstructors : (d.totalInstructors || 0), 'محاضرين'],
+      ['❓', extra.totalFaq != null ? extra.totalFaq : (d.totalFaq || 0), 'أسئلة شائعة'],
+      ['📄', extra.totalSitePages != null ? extra.totalSitePages : (d.totalSitePages || 0), 'صفحات']
+    ];
+    g.innerHTML = items.map(function(a) {
+      return '<div class="card stat-card"><div style="font-size:24px">' + a[0] + '</div><div class="stat-num">' + (a[1]||0) + '</div><div class="stat-label">' + a[2] + '</div></div>';
+    }).join('');
+
+    var intentData = d.intentCounts || {};
+    var ic = document.getElementById('intentChart');
+    if (intentData && Object.keys(intentData).length) {
+      var entries = Object.entries(intentData).sort(function(a, b) { return b[1] - a[1]; });
+      var max = Math.max.apply(null, entries.map(function(e) { return e[1]; }));
+      ic.innerHTML = entries.map(function(e) {
+        var p = Math.round(e[1] / max * 100);
+        return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="min-width:130px;font-size:12px;color:#475569">' + esc(e[0]) + '</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:20px"><div style="width:' + p + '%;background:#3b82f6;border-radius:4px;height:100%;min-width:24px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#fff;font-weight:600">' + e[1] + '</span></div></div></div>';
+      }).join('');
+    } else { ic.innerHTML = '<p style="color:#94a3b8">لا توجد بيانات</p>'; }
+  } catch (e) { toast('خطأ في تحميل الإحصائيات', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 💬 SALES ASSISTANT CONVERSATIONS (with select/delete)
+// ═══════════════════════════════════════════════════════════
+async function loadConversations(page) {
+  page = page||1; currentConvPage = page;
+  _selectedChatSessions = new Set();
+  document.getElementById('btnDeleteSelectedChat').style.display = 'none';
+  var el = document.getElementById('convList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  document.getElementById('deleteProgressArea').style.display = 'none';
+  try {
+    var s = document.getElementById('convSearch').value;
+    var d = await apiCall('/admin/conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
+    var conversations = d.conversations || d.items || d.data || [];
+    if(!conversations.length) {
+      el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد محادثات</p>';
+      document.getElementById('convPagination').innerHTML='';
+      return;
+    }
+    var html = '<table><thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllChat(this)"></th><th>الجلسة</th><th>آخر رسالة</th><th>النوع</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>';
+    conversations.forEach(function(c) {
+      var msg = esc(stripHtml(c.last_message||'')).slice(0,60);
+      var sid = esc(c.session_id||'');
+      html += '<tr id="chat-row-'+sid+'"><td><input type="checkbox" class="chat-sel-cb" value="'+sid+'" onchange="onChatSelChange()"></td><td style="font-family:monospace;font-size:11px;cursor:pointer" onclick="loadConvDetail(\''+sid+'\')">'+sid.slice(0,12)+'...</td><td style="cursor:pointer" onclick="loadConvDetail(\''+sid+'\')">'+msg+'</td><td><span class="badge badge-blue">'+esc(c.last_intent||'-')+'</span></td><td style="font-size:11px">'+(c.last_time?fmtFull(c.last_time):'-')+'</td><td>'+(c.message_count||0)+'</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+    el.style.display='block';
+    document.getElementById('convDetail').style.display='none';
+    var pag = d.pagination||{};
+    var pagEl = document.getElementById('convPagination');
+    var ph = '';
+    if(page>1) ph += '<button class="btn btn-sm btn-primary" onclick="loadConversations('+(page-1)+')">→ السابق</button>';
+    ph += '<span style="padding:4px 12px;background:#e2e8f0;border-radius:6px;font-size:12px">صفحة '+page+'</span>';
+    if(pag.has_more||conversations.length>=50) ph += '<button class="btn btn-sm btn-primary" onclick="loadConversations('+(page+1)+')">التالي ←</button>';
+    pagEl.innerHTML = ph;
+  } catch(e) {
+    el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
+  }
+}
+
+function toggleAllChat(master) {
+  document.querySelectorAll('.chat-sel-cb').forEach(function(cb) { cb.checked = master.checked; });
+  onChatSelChange();
+}
+
+function onChatSelChange() {
+  _selectedChatSessions = new Set();
+  document.querySelectorAll('.chat-sel-cb:checked').forEach(function(cb) { _selectedChatSessions.add(cb.value); });
+  var btn = document.getElementById('btnDeleteSelectedChat');
+  btn.style.display = _selectedChatSessions.size > 0 ? '' : 'none';
+  btn.innerHTML = '🗑️ حذف المحدد (' + _selectedChatSessions.size + ')';
+  // highlight selected rows
+  document.querySelectorAll('.chat-sel-cb').forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row) { if (cb.checked) row.classList.add('selected-row'); else row.classList.remove('selected-row'); }
+  });
+}
+
+async function deleteSelectedChatConversations() {
+  if (_selectedChatSessions.size === 0) return;
+  var ok = await showConfirm('حذف ' + _selectedChatSessions.size + ' محادثة من المساعد البيعي؟');
+  if (!ok) return;
+  var ids = Array.from(_selectedChatSessions);
+  var deleted = 0, errors = 0;
+  var btn = document.getElementById('btnDeleteSelectedChat');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جاري الحذف...';
+  for (var i = 0; i < ids.length; i++) {
+    btn.innerHTML = '⏳ ' + (i+1) + '/' + ids.length;
+    try {
+      await apiCall('/admin/conversations/' + encodeURIComponent(ids[i]), { method: 'DELETE' });
+      deleted++;
+      var row = document.getElementById('chat-row-' + ids[i]);
+      if (row) row.style.opacity = '0.3';
+    } catch(e) { errors++; }
+  }
+  btn.disabled = false;
+  toast('تم حذف ' + deleted + ' محادثة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
+  setTimeout(function() { loadConversations(currentConvPage); }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🗑️ CLEAR ALL CONVERSATIONS
+// ═══════════════════════════════════════════════════════════
+async function clearAllConversations() {
+  var ok1 = await showConfirm('⚠️ هل أنت متأكد إنك عايز تمسح كل محادثات المساعد؟');
+  if (!ok1) return;
+  var ok2 = await showConfirm('🚨 تأكيد نهائي: كل المحادثات هتتمسح نهائياً!');
+  if (!ok2) return;
+
+  var btn = document.getElementById('btnClearAll');
+  var progressArea = document.getElementById('deleteProgressArea');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جاري المسح...';
+  progressArea.style.display = 'block';
+  progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#64748b">⏳ جاري البحث عن طريقة المسح المناسبة...</div></div>';
+
+  var bulkEndpoints = [
+    { path: '/admin/conversations/clear', method: 'POST' },
+    { path: '/admin/conversations/clear', method: 'DELETE' },
+    { path: '/admin/conversations', method: 'DELETE' },
+    { path: '/admin/clear-conversations', method: 'POST' },
+    { path: '/admin/clear-conversations', method: 'DELETE' },
+    { path: '/admin/conversations/delete-all', method: 'POST' },
+    { path: '/admin/conversations/delete-all', method: 'DELETE' }
+  ];
+
+  for (var i = 0; i < bulkEndpoints.length; i++) {
+    var ep = bulkEndpoints[i];
+    progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#3b82f6">🔄 جاري تجربة: ' + ep.method + ' ' + ep.path + '</div></div>';
+    var result = await smartFetch(ep.path, { method: ep.method });
+    if (result.reallyWorked) {
+      await new Promise(function(r) { setTimeout(r, 1000); });
+      var verify = await smartFetch('/admin/conversations?limit=1');
+      var remaining = 0;
+      if (verify.reallyWorked) {
+        var convs = (verify.data.conversations || verify.data.items || verify.data.data || []);
+        remaining = convs.length;
+      }
+      if (remaining === 0) {
+        progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">✅ تم مسح كل المحادثات بنجاح!</div></div>';
+        toast('تم مسح كل المحادثات ✅');
+        btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
+        setTimeout(function() { loadConversations(1); }, 2000);
+        return;
+      }
+    }
+  }
+
+  // one-by-one
+  progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#f59e0b">⏳ جاري تحميل الجلسات للمسح الفردي...</div></div>';
+  var testResult = await smartFetch('/admin/conversations?limit=5&page=1');
+  if (!testResult.reallyWorked) {
+    showServerError('مش قادر أحمل المحادثات');
+    btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
+    return;
+  }
+
+  var testConvs = testResult.data.conversations || testResult.data.items || testResult.data.data || [];
+  if (testConvs.length === 0) {
+    progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;color:#166534">✅ مفيش محادثات أصلاً!</div></div>';
+    btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
+    return;
+  }
+
+  var firstSid = testConvs[0].session_id;
+  var delTest = await smartFetch('/admin/conversations/' + encodeURIComponent(firstSid), { method: 'DELETE' });
+  await new Promise(function(r) { setTimeout(r, 500); });
+  var verifyAfter = await smartFetch('/admin/conversations?limit=5&page=1');
+  var stillHasFirst = false;
+  if (verifyAfter.reallyWorked) {
+    var afterConvs = verifyAfter.data.conversations || verifyAfter.data.items || verifyAfter.data.data || [];
+    stillHasFirst = afterConvs.some(function(c) { return c.session_id === firstSid; });
+  }
+
+  if (delTest.reallyWorked && !stillHasFirst) {
+    await deleteAllOneByOne(progressArea, btn);
+    return;
+  }
+
+  showServerError();
+  btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
+}
+
+async function deleteAllOneByOne(progressArea, btn) {
+  var allSessions = [];
+  var page = 1;
+  var hasMore = true;
+  while (hasMore) {
+    var d = await smartFetch('/admin/conversations?limit=50&page=' + page);
+    if (!d.reallyWorked) break;
+    var convs = d.data.conversations || d.data.items || d.data.data || [];
+    if (convs.length === 0) break;
+    convs.forEach(function(c) { if (c.session_id) allSessions.push(c.session_id); });
+    hasMore = convs.length >= 50;
+    page++;
+  }
+  allSessions = allSessions.filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var total = allSessions.length;
+  var deleted = 0, errors = 0;
+  for (var i = 0; i < allSessions.length; i++) {
+    var sid = allSessions[i];
+    var pct = Math.round(((i + 1) / total) * 100);
+    progressArea.innerHTML = '<div class="delete-progress">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+      '<span style="font-size:14px;font-weight:700;color:#1e293b">🗑️ جاري المسح: ' + (i + 1) + ' / ' + total + '</span>' +
+      '<span style="font-size:13px;font-weight:700;color:#3b82f6">' + pct + '%</span></div>' +
+      '<div style="font-size:11px;color:#64748b;margin-bottom:8px;font-family:monospace;direction:ltr">' + esc(sid.slice(0, 30)) + '...</div>' +
+      '<div class="delete-progress-bar"><div class="fill fill-working" style="width:' + pct + '%"></div></div>' +
+      '<div style="display:flex;justify-content:center;gap:16px;margin-top:8px">' +
+      '<span style="font-size:12px;color:#16a34a;font-weight:600">✅ ' + deleted + ' نجح</span>' +
+      '<span style="font-size:12px;color:#ef4444;font-weight:600">❌ ' + errors + ' فشل</span></div></div>';
+    var del = await smartFetch('/admin/conversations/' + encodeURIComponent(sid), { method: 'DELETE' });
+    if (del.reallyWorked || del.status === 200 || del.status === 204) { deleted++; } else { errors++; }
+    if (i % 3 === 2) await new Promise(function(r) { setTimeout(r, 50); });
+  }
+  var allGood = errors === 0;
+  progressArea.innerHTML = '<div class="delete-progress" style="border-color:' + (allGood ? '#86efac' : '#fde68a') + ';background:' + (allGood ? '#f0fdf4' : '#fffbeb') + '">' +
+    '<div style="text-align:center;font-size:16px;font-weight:700;color:' + (allGood ? '#166534' : '#92400e') + '">🏁 انتهى المسح!</div>' +
+    '<div style="text-align:center;font-size:13px;margin-top:6px">' +
+    '✅ ' + deleted + ' جلسة اتمسحت' + (errors > 0 ? ' | ❌ ' + errors + ' فشل' : '') + '</div></div>';
+  toast('تم مسح ' + deleted + ' جلسة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
+  btn.disabled = false; btn.innerHTML = '🗑️ مسح الكل';
+  setTimeout(function() { loadConversations(1); }, 2000);
+}
+
+function showServerError(extra) {
+  var progressArea = document.getElementById('deleteProgressArea');
+  progressArea.innerHTML = '<div class="server-error-box">' +
+    '<h3>🔴 السيرفر مفيهوش endpoint لمسح المحادثات!</h3>' +
+    '<p style="font-size:13px;color:#64748b;margin-bottom:12px">لازم تضيف الكود ده في ملف السيرفر:</p>' +
+    '<pre>' +
+    'app.delete(\'/admin/conversations\', authenticateAdmin, async (req, res) => {\n' +
+    '  try {\n' +
+    '    const result = await pool.query(\'DELETE FROM chat_logs\');\n' +
+    '    res.json({ success: true, deleted: result.rowCount });\n' +
+    '  } catch (error) {\n' +
+    '    res.status(500).json({ error: error.message });\n' +
+    '  }\n' +
+    '});\n\n' +
+    'app.delete(\'/admin/conversations/:sessionId\', authenticateAdmin, async (req, res) => {\n' +
+    '  try {\n' +
+    '    const result = await pool.query(\n' +
+    '      \'DELETE FROM chat_logs WHERE session_id = $1\',\n' +
+    '      [req.params.sessionId]\n' +
+    '    );\n' +
+    '    res.json({ success: true, deleted: result.rowCount });\n' +
+    '  } catch (error) {\n' +
+    '    res.status(500).json({ error: error.message });\n' +
+    '  }\n' +
+    '});\n' +
+    '</pre>' +
+    '<div style="margin-top:12px;padding:10px;background:#fef9c3;border-radius:8px;border:1px solid #fde68a">' +
+    '<p style="font-size:12px;color:#854d0e;margin:0">⚠️ غيّر اسم الجدول و middleware حسب السيرفر بتاعك</p></div></div>';
+}
+
+function closeConvDetail() {
+  document.getElementById('convDetail').style.display='none';
+  document.getElementById('convList').style.display='block';
+  document.getElementById('convPagination').style.display='flex';
+}
+
+// ═══════════════════════════════════════
+// CHAT VIEWS
+// ═══════════════════════════════════════
+function sortMessages(messages) {
+  return messages.slice().sort(function(a, b) {
+    var tA = 0, tB = 0;
+    try { tA = new Date(a.created_at).getTime(); } catch(e) {}
+    try { tB = new Date(b.created_at).getTime(); } catch(e) {}
+    if (isNaN(tA)) tA = 0; if (isNaN(tB)) tB = 0;
+    if (tA !== tB) return tA - tB;
+    var idA = parseInt(a.id), idB = parseInt(b.id);
+    if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idA - idB;
+    var ro = {'user': 0, 'assistant': 1, 'bot': 1, 'system': 2};
+    return (ro[a.role]||1) - (ro[b.role]||1);
+  });
+}
+
+async function loadConvDetail(sid) {
+  var wrap = document.getElementById('convMessages');
+  document.getElementById('convList').style.display = 'none';
+  document.getElementById('convPagination').style.display = 'none';
+  document.getElementById('convDetail').style.display = 'block';
+  wrap.innerHTML = '<p style="text-align:center;padding:40px;color:#94a3b8">⏳</p>';
+  _convSessionId = sid;
+  try {
+    var d = await apiCall('/admin/conversations/' + encodeURIComponent(sid));
+    var messages = d.messages || d.data || (d.conversation && d.conversation.messages) || d.conversation || d.items || [];
+    if (!Array.isArray(messages)) messages = [];
+    if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+    _convSortedMessages = sortMessages(messages);
+    renderConversation();
+  } catch(e) { wrap.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p></div>'; }
+}
+
+function renderConversation() {
+  var wrap = document.getElementById('convMessages');
+  var messages = _convSortedMessages, sid = _convSessionId;
+  if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+  var h = '<div class="chat-wrap"><div class="chat-topbar"><div><h3 style="margin:0">💬 ' + esc(sid.slice(0,30)) + '...</h3><small>' + messages.length + ' رسالة</small></div>';
+  h += '<div class="view-toggle">';
+  h += '<button class="view-toggle-btn' + (_convViewMode === 'flat' ? ' active' : '') + '" onclick="_convViewMode=\'flat\';renderConversation()">📋 مسطح</button>';
+  h += '<button class="view-toggle-btn' + (_convViewMode === 'grouped' ? ' active' : '') + '" onclick="_convViewMode=\'grouped\';renderConversation()">📦 مجمّع</button>';
+  h += '<button class="view-toggle-btn' + (_convViewMode === 'debug' ? ' active' : '') + '" onclick="_convViewMode=\'debug\';renderConversation()">🔧 Debug</button>';
+  h += '</div></div><div class="chat-body" id="chatBodyScroll">';
+  if (_convViewMode === 'flat') h += renderFlat(messages, sid);
+  else if (_convViewMode === 'grouped') h += renderGrouped(messages, sid);
+  else h += renderDebug(messages);
+  h += '</div><div class="chat-foot">';
+  if (_convViewMode === 'flat') h += '🟢 أخضر = المستخدم | ⬜ أبيض = البوت';
+  else if (_convViewMode === 'grouped') h += '📦 كل كارت = سؤال + رد';
+  else h += '🔧 البيانات الخام';
+  h += '</div></div>';
+  wrap.innerHTML = h;
+  var sb = document.getElementById('chatBodyScroll');
+  if(sb) sb.scrollTop = sb.scrollHeight;
+}
+
+function renderFlat(messages, sid) {
+  var h = '', lastDate = '', seq = 0;
+  messages.forEach(function(m) {
+    seq++;
+    var isUser = (m.role === 'user');
+    var ds = fmtDate(m.created_at);
+    if (ds && ds !== lastDate) { h += '<div class="flat-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="flat-msg ' + (isUser ? 'user-msg' : 'bot-msg') + '"><div class="flat-bubble">';
+    h += '<div class="flat-role"><span class="flat-seq">' + seq + '</span> ' + (isUser ? '👤 المستخدم' : '🤖 البوت');
+    if (m.intent) h += ' <span class="flat-intent">' + esc(m.intent) + '</span>';
+    h += '</div>';
+    var msgText = (m.content || m.message || '').slice(0, 3000);
+    h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
+    h += '<div class="flat-meta"><span class="flat-id">ID: ' + (m.id || '?') + '</span><span class="flat-time">' + fmtTime(m.created_at) + '</span></div>';
+    if (!isUser) {
+      var prevUser = null;
+      for (var i = seq - 2; i >= 0; i--) { if (messages[i].role === 'user') { prevUser = messages[i]; break; } }
+      var safeQ = '';
+      try { if (prevUser) safeQ = btoa(unescape(encodeURIComponent((prevUser.content || prevUser.message || '').slice(0, 500)))); } catch(e) {}
+      h += '<span class="flat-correct-btn" onclick="openCorrection(' + (m.id||0) + ',\'' + esc(sid) + '\',\'' + safeQ + '\',this)">✏️ تصحيح</span>';
+    }
+    h += '</div></div>';
+  });
+  return h;
+}
+
+function renderGrouped(messages, sid) {
+  var h = '', groups = [], cg = null, gn = 0;
+  messages.forEach(function(m) {
+    if (m.role === 'user') {
+      if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+      gn++; cg = { question: m, answers: [], num: gn, unanswered: false, botOnly: false };
+    } else {
+      if (cg && cg.question) { cg.answers.push(m); }
+      else { if (cg) groups.push(cg); gn++; cg = { question: null, answers: [m], num: gn, botOnly: true }; }
+    }
+  });
+  if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+  var lastDate = '';
+  groups.forEach(function(g) {
+    var fm = g.question || (g.answers[0] || null);
+    var ds = fmtDate(fm ? fm.created_at : '');
+    if (ds && ds !== lastDate) { h += '<div class="qa-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="qa-card"><div class="qa-card-header"><span class="qa-num">' + g.num + '</span>';
+    if (g.botOnly) h += '<span style="font-weight:700;color:#16a34a">🤖 تلقائية</span>';
+    else if (g.question && g.question.intent) h += '<span class="qa-tag">' + esc(g.question.intent) + '</span>';
+    h += '<span class="qa-time">🕐 ' + fmtTime(fm ? fm.created_at : '') + '</span></div>';
+    if (g.question) {
+      h += '<div class="qa-question"><span class="qa-question-label">👤 سؤال</span>';
+      h += '<div class="qa-question-text">' + esc((g.question.content || g.question.message || '').slice(0, 1500)) + '</div></div>';
+    }
+    g.answers.forEach(function(ans, ai) {
+      h += '<div class="qa-answer"><span class="qa-answer-label">🤖 ' + (g.botOnly ? 'تلقائية' : 'رد') + '</span>';
+      h += '<div class="qa-answer-text">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div>';
+      if (!g.botOnly) {
+        var safeQ = '';
+        try { safeQ = btoa(unescape(encodeURIComponent((g.question ? (g.question.content || g.question.message || '') : '').slice(0,500)))); } catch(e){}
+        h += '<span class="qa-correct-btn" onclick="openCorrection('+(ans.id||0)+',\''+esc(sid)+'\',\''+safeQ+'\',this)">✏️ تصحيح</span>';
+      }
+      h += '</div>';
+    });
+    if (g.unanswered) h += '<div class="qa-no-reply">⚠️ مفيش رد!</div>';
+    h += '</div>';
+  });
+  return h;
+}
+
+function renderDebug(messages) {
+  var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto"><table style="font-size:11px"><thead><tr><th>#</th><th>ID</th><th>Role</th><th>Intent</th><th>Time</th><th>Content</th></tr></thead><tbody>';
+  messages.forEach(function(m, i) {
+    h += '<tr class="debug-row" style="background:' + (m.role === 'user' ? '#dcf8c6' : '#fff') + '">';
+    h += '<td><b>' + (i+1) + '</b></td><td>' + (m.id||'?') + '</td><td>' + (m.role === 'user' ? '👤' : '🤖') + '</td>';
+    h += '<td>' + esc(m.intent||'-') + '</td><td style="font-family:monospace;font-size:10px">' + esc(m.created_at||'-') + '</td>';
+    h += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content||m.message||'').slice(0,80)) + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  return h;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🎓 GUIDE CONVERSATIONS (with select/delete)
+// ═══════════════════════════════════════════════════════════
+async function loadGuideConversations(page) {
+  page = page||1; currentGuideConvPage = page;
+  _selectedGuideSessions = new Set();
+  document.getElementById('btnDeleteSelectedGuide').style.display = 'none';
+  var el = document.getElementById('guideConvList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var s = document.getElementById('guideConvSearch').value;
+    var d = await apiCall('/admin/guide-conversations?limit=50&page='+page+(s?'&search='+encodeURIComponent(s):''));
+    var conversations = d.conversations || d.items || d.data || [];
+    if(!conversations.length) {
+      el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد محادثات</p>';
+      document.getElementById('guideConvPagination').innerHTML='';
+      return;
+    }
+    var html = '<table><thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllGuide(this)"></th><th>الجلسة</th><th>الكورس</th><th>الدرس</th><th>آخر رسالة</th><th>الوقت</th><th>عدد</th></tr></thead><tbody>';
+    conversations.forEach(function(c) {
+      var msg = esc(stripHtml(c.last_message||'')).slice(0,40);
+      var sid = esc(c.session_id||'');
+      var course = esc((c.course_name||'').slice(0,25));
+      var lecture = esc((c.lecture_title||'').slice(0,25));
+      html += '<tr id="guide-row-'+sid+'">';
+      html += '<td><input type="checkbox" class="guide-sel-cb" value="'+sid+'" onchange="onGuideSelChange()"></td>';
+      html += '<td style="font-family:monospace;font-size:11px;cursor:pointer" onclick="loadGuideConvDetail(\''+sid+'\')">'+sid.slice(0,10)+'...</td>';
+      html += '<td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+course+'"><span class="badge badge-purple">'+course+'</span></td>';
+      html += '<td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+lecture+'">'+lecture+'</td>';
+      html += '<td style="cursor:pointer" onclick="loadGuideConvDetail(\''+sid+'\')">'+msg+'</td>';
+      html += '<td style="font-size:11px">'+(c.last_time?fmtFull(c.last_time):'-')+'</td>';
+      html += '<td>'+(c.message_count||0)+'</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+    el.style.display='block';
+    document.getElementById('guideConvDetail').style.display='none';
+    var pag = d.pagination||{};
+    var pagEl = document.getElementById('guideConvPagination');
+    var ph = '';
+    if(page>1) ph += '<button class="btn btn-sm btn-primary" onclick="loadGuideConversations('+(page-1)+')">→ السابق</button>';
+    ph += '<span style="padding:4px 12px;background:#e2e8f0;border-radius:6px;font-size:12px">صفحة '+page+'</span>';
+    if(pag.has_more||conversations.length>=50) ph += '<button class="btn btn-sm btn-primary" onclick="loadGuideConversations('+(page+1)+')">التالي ←</button>';
+    pagEl.innerHTML = ph;
+  } catch(e) {
+    el.innerHTML='<p style="color:#ef4444;text-align:center;padding:20px">❌ خطأ: ' + esc(e.message) + '</p>';
+  }
+}
+
+function toggleAllGuide(master) {
+  document.querySelectorAll('.guide-sel-cb').forEach(function(cb) { cb.checked = master.checked; });
+  onGuideSelChange();
+}
+
+function onGuideSelChange() {
+  _selectedGuideSessions = new Set();
+  document.querySelectorAll('.guide-sel-cb:checked').forEach(function(cb) { _selectedGuideSessions.add(cb.value); });
+  var btn = document.getElementById('btnDeleteSelectedGuide');
+  btn.style.display = _selectedGuideSessions.size > 0 ? '' : 'none';
+  btn.innerHTML = '🗑️ حذف المحدد (' + _selectedGuideSessions.size + ')';
+  document.querySelectorAll('.guide-sel-cb').forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (row) { if (cb.checked) row.classList.add('selected-row'); else row.classList.remove('selected-row'); }
+  });
+}
+
+async function deleteSelectedGuideConversations() {
+  if (_selectedGuideSessions.size === 0) return;
+  var ok = await showConfirm('حذف ' + _selectedGuideSessions.size + ' محادثة من المرشد التعليمي؟');
+  if (!ok) return;
+  var ids = Array.from(_selectedGuideSessions);
+  var deleted = 0, errors = 0;
+  var btn = document.getElementById('btnDeleteSelectedGuide');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جاري الحذف...';
+  for (var i = 0; i < ids.length; i++) {
+    btn.innerHTML = '⏳ ' + (i+1) + '/' + ids.length;
+    try {
+      await apiCall('/admin/guide-conversations/' + encodeURIComponent(ids[i]), { method: 'DELETE' });
+      deleted++;
+      var row = document.getElementById('guide-row-' + ids[i]);
+      if (row) row.style.opacity = '0.3';
+    } catch(e) { errors++; }
+  }
+  btn.disabled = false;
+  toast('تم حذف ' + deleted + ' محادثة' + (errors > 0 ? ' (' + errors + ' فشل)' : ' ✅'));
+  setTimeout(function() { loadGuideConversations(currentGuideConvPage); }, 1000);
+}
+
+async function clearAllGuideConversations() {
+  var ok1 = await showConfirm('⚠️ مسح كل محادثات المرشد التعليمي؟');
+  if (!ok1) return;
+  var ok2 = await showConfirm('🚨 تأكيد نهائي: كل محادثات المرشد هتتمسح!');
+  if (!ok2) return;
+
+  var progressArea = document.getElementById('guideDeleteProgressArea');
+  progressArea.style.display = 'block';
+  progressArea.innerHTML = '<div class="delete-progress"><div style="text-align:center;color:#64748b">⏳ جاري المسح...</div></div>';
+
+  var bulkEndpoints = [
+    { path: '/admin/guide-conversations/clear', method: 'POST' },
+    { path: '/admin/guide-conversations/clear', method: 'DELETE' },
+    { path: '/admin/guide-conversations', method: 'DELETE' },
+    { path: '/admin/clear-guide-conversations', method: 'POST' },
+    { path: '/admin/clear-guide-conversations', method: 'DELETE' }
+  ];
+
+  for (var i = 0; i < bulkEndpoints.length; i++) {
+    var ep = bulkEndpoints[i];
+    var result = await smartFetch(ep.path, { method: ep.method });
+    if (result.reallyWorked) {
+      await new Promise(function(r) { setTimeout(r, 1000); });
+      var verify = await smartFetch('/admin/guide-conversations?limit=1');
+      var remaining = 0;
+      if (verify.reallyWorked) {
+        var convs = (verify.data.conversations || verify.data.items || verify.data.data || []);
+        remaining = convs.length;
+      }
+      if (remaining === 0) {
+        progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">✅ تم مسح كل محادثات المرشد!</div></div>';
+        toast('تم مسح كل محادثات المرشد ✅');
+        setTimeout(function() { loadGuideConversations(1); progressArea.style.display='none'; }, 2000);
+        return;
+      }
+    }
+  }
+
+  // one-by-one fallback
+  var allSessions = [];
+  var pg = 1;
+  while (true) {
+    var dd = await smartFetch('/admin/guide-conversations?limit=50&page=' + pg);
+    if (!dd.reallyWorked) break;
+    var convs2 = dd.data.conversations || dd.data.items || dd.data.data || [];
+    if (convs2.length === 0) break;
+    convs2.forEach(function(c) { if (c.session_id) allSessions.push(c.session_id); });
+    if (convs2.length < 50) break;
+    pg++;
+  }
+  allSessions = allSessions.filter(function(v, i, a) { return a.indexOf(v) === i; });
+
+  if (allSessions.length === 0) {
+    progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;color:#166534">✅ مفيش محادثات!</div></div>';
+    setTimeout(function() { progressArea.style.display='none'; }, 2000);
+    return;
+  }
+
+  var total = allSessions.length, deleted = 0, errors = 0;
+  for (var j = 0; j < allSessions.length; j++) {
+    var pct = Math.round(((j + 1) / total) * 100);
+    progressArea.innerHTML = '<div class="delete-progress">' +
+      '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:700">🗑️ ' + (j+1) + '/' + total + '</span><span style="color:#3b82f6;font-weight:700">' + pct + '%</span></div>' +
+      '<div class="delete-progress-bar"><div class="fill fill-working" style="width:' + pct + '%"></div></div>' +
+      '<div style="display:flex;justify-content:center;gap:16px;margin-top:8px"><span style="font-size:12px;color:#16a34a">✅ ' + deleted + '</span><span style="font-size:12px;color:#ef4444">❌ ' + errors + '</span></div></div>';
+    var del = await smartFetch('/admin/guide-conversations/' + encodeURIComponent(allSessions[j]), { method: 'DELETE' });
+    if (del.reallyWorked || del.status === 200 || del.status === 204) { deleted++; } else { errors++; }
+  }
+
+  progressArea.innerHTML = '<div class="delete-progress" style="border-color:#86efac;background:#f0fdf4"><div style="text-align:center;font-size:16px;font-weight:700;color:#166534">🏁 تم مسح ' + deleted + ' محادثة!</div></div>';
+  toast('تم مسح ' + deleted + ' محادثة ✅');
+  setTimeout(function() { loadGuideConversations(1); progressArea.style.display='none'; }, 2000);
+}
+
+async function loadGuideConvDetail(sid) {
+  var wrap = document.getElementById('guideConvMessages');
+  document.getElementById('guideConvList').style.display = 'none';
+  document.getElementById('guideConvPagination').style.display = 'none';
+  document.getElementById('guideConvDetail').style.display = 'block';
+  wrap.innerHTML = '<p style="text-align:center;padding:40px;color:#94a3b8">⏳</p>';
+  _guideConvSessionId = sid;
+  try {
+    var d = await apiCall('/admin/guide-conversations/' + encodeURIComponent(sid));
+    var messages = d.messages || d.data || d.items || [];
+    if (!Array.isArray(messages)) messages = [];
+    if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+    _guideConvSortedMessages = sortMessages(messages);
+    renderGuideConversation();
+  } catch(e) { wrap.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p></div>'; }
+}
+
+function renderGuideConversation() {
+  var wrap = document.getElementById('guideConvMessages');
+  var messages = _guideConvSortedMessages, sid = _guideConvSessionId;
+  if (!messages.length) { wrap.innerHTML = '<div class="card" style="text-align:center;padding:30px;color:#94a3b8">لا توجد رسائل</div>'; return; }
+
+  var courseName = '', lectureTitle = '';
+  for (var i = 0; i < messages.length; i++) {
+    if (messages[i].course_name && !courseName) courseName = messages[i].course_name;
+    if (messages[i].lecture_title && !lectureTitle) lectureTitle = messages[i].lecture_title;
+  }
+
+  var h = '<div class="chat-wrap">';
+  h += '<div class="chat-topbar" style="background:#7c3aed"><div>';
+  h += '<h3 style="margin:0">🎓 ' + esc(sid.slice(0,20)) + '...</h3>';
+  h += '<small style="color:#e9d5ff">' + messages.length + ' رسالة';
+  if (courseName) h += ' | 📚 ' + esc(courseName.slice(0,30));
+  if (lectureTitle) h += ' | 📖 ' + esc(lectureTitle.slice(0,30));
+  h += '</small></div>';
+  h += '<div class="view-toggle">';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'flat' ? ' active' : '') + '" onclick="_guideConvViewMode=\'flat\';renderGuideConversation()" style="' + (_guideConvViewMode === 'flat' ? 'color:#7c3aed' : '') + '">📋 مسطح</button>';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'grouped' ? ' active' : '') + '" onclick="_guideConvViewMode=\'grouped\';renderGuideConversation()" style="' + (_guideConvViewMode === 'grouped' ? 'color:#7c3aed' : '') + '">📦 مجمّع</button>';
+  h += '<button class="view-toggle-btn' + (_guideConvViewMode === 'debug' ? ' active' : '') + '" onclick="_guideConvViewMode=\'debug\';renderGuideConversation()" style="' + (_guideConvViewMode === 'debug' ? 'color:#7c3aed' : '') + '">🔧 Debug</button>';
+  h += '</div></div>';
+  h += '<div class="chat-body" id="guideChatBodyScroll">';
+
+  if (_guideConvViewMode === 'flat') h += renderGuideFlat(messages);
+  else if (_guideConvViewMode === 'grouped') h += renderGuideGrouped(messages);
+  else h += renderGuideDebug(messages);
+
+  h += '</div>';
+  h += '<div class="chat-foot">🟢 أخضر = الطالب | 🟣 بنفسجي = المرشد التعليمي</div>';
+  h += '</div>';
+  wrap.innerHTML = h;
+  var sb = document.getElementById('guideChatBodyScroll');
+  if(sb) sb.scrollTop = sb.scrollHeight;
+}
+
+function renderGuideFlat(messages) {
+  var h = '', lastDate = '', seq = 0;
+  messages.forEach(function(m) {
+    seq++;
+    var isUser = (m.role === 'user');
+    var ds = fmtDate(m.created_at);
+    if (ds && ds !== lastDate) { h += '<div class="flat-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="flat-msg ' + (isUser ? 'user-msg' : 'bot-msg') + '"><div class="flat-bubble"' + (!isUser ? ' style="border-left:3px solid #7c3aed"' : '') + '>';
+    h += '<div class="flat-role"><span class="flat-seq" ' + (!isUser ? 'style="background:#7c3aed"' : '') + '>' + seq + '</span> ' + (isUser ? '👤 الطالب' : '🎓 المرشد');
+    h += '</div>';
+    if (m.course_name) h += '<div style="font-size:10px;color:#7c3aed;margin-bottom:4px">📚 ' + esc(m.course_name) + (m.lecture_title ? ' | 📖 ' + esc(m.lecture_title) : '') + '</div>';
+    var msgText = (m.content || m.message || '').slice(0, 3000);
+    h += '<div>' + (isUser ? esc(msgText) : closeTags(msgText)) + '</div>';
+    h += '<div class="flat-meta"><span class="flat-id">ID: ' + (m.id || '?') + '</span><span class="flat-time">' + fmtTime(m.created_at) + '</span></div>';
+    h += '</div></div>';
+  });
+  return h;
+}
+
+function renderGuideGrouped(messages) {
+  var h = '', groups = [], cg = null, gn = 0;
+  messages.forEach(function(m) {
+    if (m.role === 'user') {
+      if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+      gn++; cg = { question: m, answers: [], num: gn, unanswered: false, botOnly: false };
+    } else {
+      if (cg && cg.question) { cg.answers.push(m); }
+      else { if (cg) groups.push(cg); gn++; cg = { question: null, answers: [m], num: gn, botOnly: true }; }
+    }
+  });
+  if (cg) { if (cg.question && !cg.answers.length) cg.unanswered = true; groups.push(cg); }
+  var lastDate = '';
+  groups.forEach(function(g) {
+    var fm = g.question || (g.answers[0] || null);
+    var ds = fmtDate(fm ? fm.created_at : '');
+    if (ds && ds !== lastDate) { h += '<div class="qa-date"><span>📅 ' + ds + '</span></div>'; lastDate = ds; }
+    h += '<div class="qa-card" style="border-color:#c4b5fd"><div class="qa-card-header" style="background:#faf5ff"><span class="qa-num" style="background:#7c3aed">' + g.num + '</span>';
+    if (g.botOnly) h += '<span style="font-weight:700;color:#7c3aed">🎓 تلقائية</span>';
+    else if (g.question && g.question.course_name) h += '<span class="badge badge-purple">📚 ' + esc((g.question.course_name||'').slice(0,20)) + '</span>';
+    h += '<span class="qa-time">🕐 ' + fmtTime(fm ? fm.created_at : '') + '</span></div>';
+    if (g.question) {
+      h += '<div class="qa-question"><span class="qa-question-label">👤 سؤال الطالب</span>';
+      h += '<div class="qa-question-text">' + esc((g.question.content || g.question.message || '').slice(0, 1500)) + '</div></div>';
+    }
+    g.answers.forEach(function(ans) {
+      h += '<div class="qa-answer" style="background:#faf5ff"><span class="qa-answer-label" style="background:#f3e8ff;color:#7c3aed">🎓 ' + (g.botOnly ? 'تلقائية' : 'رد المرشد') + '</span>';
+      h += '<div class="qa-answer-text" style="border-color:#c4b5fd">' + closeTags((ans.content || ans.message || '').slice(0, 5000)) + '</div></div>';
+    });
+    if (g.unanswered) h += '<div class="qa-no-reply">⚠️ مفيش رد!</div>';
+    h += '</div>';
+  });
+  return h;
+}
+
+function renderGuideDebug(messages) {
+  var h = '<div style="background:#fff;border-radius:8px;padding:12px;overflow-x:auto"><table style="font-size:11px"><thead><tr><th>#</th><th>ID</th><th>Role</th><th>الكورس</th><th>الدرس</th><th>Time</th><th>Content</th></tr></thead><tbody>';
+  messages.forEach(function(m, i) {
+    h += '<tr class="debug-row" style="background:' + (m.role === 'user' ? '#dcf8c6' : '#f3e8ff') + '">';
+    h += '<td><b>' + (i+1) + '</b></td><td>' + (m.id||'?') + '</td><td>' + (m.role === 'user' ? '👤' : '🎓') + '</td>';
+    h += '<td style="font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.course_name||'-').slice(0,20)) + '</td>';
+    h += '<td style="font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.lecture_title||'-').slice(0,20)) + '</td>';
+    h += '<td style="font-family:monospace;font-size:10px">' + esc(m.created_at||'-') + '</td>';
+    h += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((m.content||m.message||'').slice(0,80)) + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  return h;
+}
+
+function closeGuideConvDetail() {
+  document.getElementById('guideConvDetail').style.display='none';
+  document.getElementById('guideConvList').style.display='block';
+  document.getElementById('guideConvPagination').style.display='flex';
+}
+
+// ═══════════════════════════════════════
+// CORRECTIONS
+// ═══════════════════════════════════════
+function openCorrection(logId, sid, safeQ, btn) {
+  var original = '';
+  var bubble = btn.closest('.flat-bubble') || btn.closest('.qa-answer');
+  if (bubble) { var c = bubble.querySelector('.qa-answer-text') || bubble; original = c.textContent || ''; }
+  var uq = ''; try { uq = decodeURIComponent(escape(atob(safeQ))); } catch(e) {}
+  modalState = { type:'correction', logId:logId, sid:sid, original:original, userQuestion:uq };
+  document.getElementById('modalTitle').textContent = '✏️ تصحيح الإجابة';
+  document.getElementById('modalBody').innerHTML =
+    '<div class="learning-badge" style="margin-bottom:12px">🧠 البوت هيتعلم من التصحيح ده</div>' +
+    '<label style="font-size:12px;font-weight:600">سؤال المستخدم:</label>' +
+    '<input type="text" id="corrQuestion" value="'+esc(uq)+'" style="margin-top:4px;margin-bottom:8px;background:#e0f2fe">' +
+    '<label style="font-size:12px;font-weight:600;color:#64748b">الحالية:</label>' +
+    '<div style="background:#fee2e2;padding:8px;border-radius:6px;font-size:12px;margin-bottom:12px;max-height:100px;overflow-y:auto">'+esc(original.slice(0,300))+'</div>' +
+    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الصحيحة:</label>' +
+    '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac"></textarea>' +
+    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة:</label>' +
+    '<input type="text" id="corrNote" style="margin-top:4px">';
+  document.getElementById('modal').classList.add('show');
+}
+
+function openAddCorrectionModal() {
+  modalState = {type:'correction_manual'};
+  document.getElementById('modalTitle').textContent = '➕ تصحيح يدوي';
+  document.getElementById('modalBody').innerHTML =
+    '<label style="font-size:12px;font-weight:600">السؤال:</label><input type="text" id="corrQuestion" style="margin-top:4px;margin-bottom:8px">' +
+    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة:</label><textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac"></textarea>' +
+    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة:</label><input type="text" id="corrNote" style="margin-top:4px">';
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditCorrectionModal(idx) {
+  var item = _correctionsCache[idx]; if (!item) return;
+  modalState = { type: 'correction_edit', id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل التصحيح #' + item.id;
+  document.getElementById('modalBody').innerHTML =
+    '<div class="learning-badge" style="margin-bottom:12px">🧠 البوت هيتعلم من التصحيح المعدّل</div>' +
+    '<label style="font-size:12px;font-weight:600">السؤال:</label>' +
+    '<input type="text" id="corrQuestion" value="' + esc(item.original_question || item.user_message || '') + '" style="margin-top:4px;margin-bottom:8px">' +
+    '<label style="font-size:12px;font-weight:600;color:#166534">✅ الإجابة الصحيحة:</label>' +
+    '<textarea id="corrAnswer" rows="4" style="margin-top:4px;border-color:#86efac">' + esc(item.corrected_reply || '') + '</textarea>' +
+    '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">ملاحظة:</label>' +
+    '<input type="text" id="corrNote" value="' + esc(item.note || '') + '" style="margin-top:4px">';
+  document.getElementById('modal').classList.add('show');
+}
+
+async function loadCorrections() {
+  try {
+    var d = await apiCall('/admin/corrections');
+    var el = document.getElementById('corrList');
+    var corrections = d.corrections || d.items || d.data || [];
+    _correctionsCache = corrections.slice();
+    if(!corrections.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد تصحيحات</p>'; return; }
+    var html = '<table><thead><tr><th>ID</th><th>السؤال</th><th>الرد الصحيح</th><th>الوقت</th><th>إجراء</th></tr></thead><tbody>';
+    corrections.forEach(function(c, idx) {
+      html += '<tr><td>'+c.id+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.original_question||c.user_message||'—').slice(0,60))+'</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(String(c.corrected_reply||'').slice(0,80))+'</td><td style="font-size:11px">'+fmtFull(c.created_at)+'</td><td><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCorrectionModal('+idx+')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteCrud(\'corrections\',\''+c.id+'\')">🗑️</button></td></tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
+  } catch(e) { document.getElementById('corrList').innerHTML='<p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p>'; }
+}
+
+// ═══════════════════════════════════════
+// BOT INSTRUCTIONS
+// ═══════════════════════════════════════
+var BOT_INSTRUCTION_CATEGORIES = [
+  { value: 'GENERAL', label: '🌐 عام', desc: 'عام' }, { value: 'STYLE', label: '🎨 أسلوب', desc: 'اللهجة' },
+  { value: 'RULES', label: '⛔ قواعد', desc: 'ممنوعات' }, { value: 'COURSE_SEARCH', label: '📚 كورسات', desc: 'بحث' },
+  { value: 'SUPPORT', label: '🛠️ دعم', desc: 'تقني' }, { value: 'PAYMENT', label: '💳 دفع', desc: 'اشتراك' },
+  { value: 'ACCESS', label: '🔐 وصول', desc: 'دخول' }, { value: 'GREETING', label: '👋 ترحيب', desc: 'أول رسالة' }
+];
+
+var _biFilterTarget = 'all';
+
+async function loadBotInstructions() {
+  var el = document.getElementById('botInstructionsList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var se = document.getElementById('botInstructionsSearch'); var s = se ? se.value : '';
+    var d = await apiCall('/admin/bot-instructions?limit=100' + (s ? '&search=' + encodeURIComponent(s) : ''));
+    var items = d.instructions || d.items || d.data || [];
+
+// ✅ فلترة البحث على الفرونت
+if (s && s.trim()) {
+    var searchLower = s.trim().toLowerCase();
+    items = items.filter(function(item) {
+        var instruction = (item.instruction || '').toLowerCase();
+        var category = (item.category || '').toLowerCase();
+        var id = String(item.id || '');
+        return instruction.indexOf(searchLower) !== -1 
+            || category.indexOf(searchLower) !== -1 
+            || id.indexOf(searchLower) !== -1;
+    });
+}
+
+_botInstructionsCache = items.slice();
+
+    if (!items.length) { el.innerHTML = '<div class="card" style="text-align:center;padding:30px"><p style="color:#94a3b8">مفيش تعليمات</p><button class="btn btn-success" onclick="openAddBotInstructionModal()">+ أضف</button></div>'; return; }
+
+    // Filter by target
+    var filtered = items;
+    if (_biFilterTarget !== 'all') {
+      filtered = items.filter(function(i) { return (i.target || 'both') === _biFilterTarget || (i.target || 'both') === 'both'; });
+    }
+
+    var grouped = {};
+    filtered.forEach(function(item) { var cat = item.category || 'GENERAL'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(item); });
+    var html = '';
+
+    // Target filter buttons
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">';
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'all' ? ' active' : '') + '" onclick="_biFilterTarget=\'all\';loadBotInstructions()">📋 الكل (' + items.length + ')</button>';
+    var salesCount = items.filter(function(i) { var t = i.target || 'both'; return t === 'sales' || t === 'both'; }).length;
+    var guideCount = items.filter(function(i) { var t = i.target || 'both'; return t === 'guide' || t === 'both'; }).length;
+    var bothCount = items.filter(function(i) { return (i.target || 'both') === 'both'; }).length;
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'sales' ? ' active' : '') + '" onclick="_biFilterTarget=\'sales\';loadBotInstructions()">🛒 المساعد البيعي (' + salesCount + ')</button>';
+    html += '<button class="target-filter-btn' + (_biFilterTarget === 'guide' ? ' active' : '') + '" onclick="_biFilterTarget=\'guide\';loadBotInstructions()">🎓 المرشد التعليمي (' + guideCount + ')</button>';
+    html += '</div>';
+
+    var activeCount = filtered.filter(function(i) { return i.is_active !== false; }).length;
+    html += '<div class="card" style="display:flex;gap:16px;padding:12px 16px;margin-bottom:12px"><span><b>' + filtered.length + '</b> تعليمة</span><span style="color:#16a34a"><b>' + activeCount + '</b> مفعّلة</span><span style="color:#dc2626"><b>' + (filtered.length - activeCount) + '</b> موقفة</span></div>';
+    for (var catKey in grouped) {
+      var catItems = grouped[catKey];
+      var catInfo = BOT_INSTRUCTION_CATEGORIES.find(function(c) { return c.value === catKey; });
+      html += '<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0"><span class="category-tag cat-' + catKey + '">' + (catInfo ? catInfo.label : catKey) + '</span><span style="font-size:12px;color:#64748b;margin-right:auto">' + catItems.length + '</span></div><div style="display:grid;gap:10px">';
+      catItems.forEach(function(item) {
+        var ia = item.is_active !== false;
+        var gi = _botInstructionsCache.indexOf(item);
+        var tgt = item.target || 'both';
+        var tgtLabel = tgt === 'sales' ? '🛒 بيعي' : tgt === 'guide' ? '🎓 مرشد' : '🔄 الاتنين';
+        var tgtClass = tgt === 'sales' ? 'target-sales' : tgt === 'guide' ? 'target-guide' : 'target-both';
+        html += '<div class="instruction-card' + (ia ? '' : ' inactive') + '"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:#94a3b8">#' + item.id + '</span><span class="target-badge ' + tgtClass + '">' + tgtLabel + '</span><div class="priority-bar"><span>' + (item.priority||0) + '</span>' + renderPriorityDots(item.priority) + '</div></div><span style="font-size:11px;color:' + (ia ? '#16a34a' : '#dc2626') + '">' + (ia ? '✅' : '❌') + '</span></div>';
+        html += '<div class="instruction-text">' + esc(item.instruction || '') + '</div>';
+        html += '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditBotInstruction(' + gi + ')">✏️</button><button class="btn btn-sm ' + (ia ? 'btn-warning' : 'btn-success') + '" onclick="toggleBotInstruction(\'' + item.id + '\',' + !ia + ')">' + (ia ? '⏸️' : '▶️') + '</button><button class="btn btn-danger btn-sm" onclick="deleteBotInstruction(\'' + item.id + '\')">🗑️</button></div></div>';
+      });
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<div class="card"><p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p></div>'; }
+}
+
+function openAddBotInstructionModal() {
+  modalState = { type: 'bot_instruction_add' };
+  document.getElementById('modalTitle').textContent = '➕ تعليمة جديدة';
+  document.getElementById('modalBody').innerHTML = buildBIForm(null);
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditBotInstruction(idx) {
+  var item = _botInstructionsCache[idx]; if (!item) return;
+  modalState = { type: 'bot_instruction_edit', id: item.id };
+  document.getElementById('modalTitle').textContent = '✏️ تعديل #' + item.id;
+  document.getElementById('modalBody').innerHTML = buildBIForm(item);
+  document.getElementById('modal').classList.add('show');
+}
+
+function buildBIForm(item) {
+  var inst = item ? esc(item.instruction || '') : '', cat = item ? (item.category || 'GENERAL') : 'GENERAL';
+  var p = item ? (item.priority != null ? item.priority : 10) : 10, a = item ? (item.is_active !== false) : true;
+  var tgt = item ? (item.target || 'both') : 'both';
+  var h = '<textarea id="bi_instruction" rows="6" style="margin-bottom:12px;font-size:14px;line-height:1.8" placeholder="اكتب التعليمة...">' + inst + '</textarea>';
+  h += '<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+  h += '<div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">التصنيف:</label><select id="bi_category" style="margin-top:4px">';
+  BOT_INSTRUCTION_CATEGORIES.forEach(function(c) { h += '<option value="' + c.value + '"' + (cat === c.value ? ' selected' : '') + '>' + c.label + '</option>'; });
+  h += '</select></div>';
+  h += '<div style="flex:1;min-width:180px"><label style="font-size:12px;font-weight:600">🎯 الهدف:</label><select id="bi_target" style="margin-top:4px"><option value="both"' + (tgt === 'both' ? ' selected' : '') + '>🔄 الاتنين (بيعي + مرشد)</option><option value="sales"' + (tgt === 'sales' ? ' selected' : '') + '>🛒 المساعد البيعي فقط</option><option value="guide"' + (tgt === 'guide' ? ' selected' : '') + '>🎓 المرشد التعليمي فقط</option></select></div>';
+  h += '<div style="flex:0 0 120px"><label style="font-size:12px;font-weight:600">الأولوية:</label><input type="number" id="bi_priority" value="' + p + '" min="0" max="100" style="margin-top:4px"></div></div>';
+  h += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#f8fafc;border-radius:8px"><label class="toggle-switch"><input type="checkbox" id="bi_active"' + (a ? ' checked' : '') + '><span class="toggle-slider"></span></label><span style="font-size:13px">مفعّل</span></div>';
+  return h;
+}
+
+async function toggleBotInstruction(id, val) {
+  try { await apiCall('/admin/bot-instructions/' + id, { method: 'PUT', body: JSON.stringify({ is_active: val }) }); toast(val ? '✅ تفعيل' : '⏸️ إيقاف'); loadBotInstructions(); } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+}
+
+async function deleteBotInstruction(id) {
+  if (!(await showConfirm('حذف؟'))) return;
+  try { await apiCall('/admin/bot-instructions/' + id, { method: 'DELETE' }); toast('تم ✅'); loadBotInstructions(); } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════
+// CUSTOM RESPONSES
+// ═══════════════════════════════════════
+async function loadCustomResponses() {
+  var el = document.getElementById('customResponsesList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var se = document.getElementById('customresponsesSearch'); var s = se?se.value:'';
+    var d = await apiCall('/admin/custom-responses?limit=100'+(s?'&search='+encodeURIComponent(s):''));
+    var items = d.responses || d.items || d.data || [];
+    _customResponsesCache = items.slice();
+    if (!items.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد</p>'; return; }
+    var html = '<div style="display:grid;gap:12px">';
+    items.forEach(function(item, idx) {
+      var ia = item.is_active !== false;
+      var kw = (item.keywords||'').split(',').map(function(k){return k.trim();}).filter(function(k){return k;});
+      html += '<div style="border:1px solid '+(ia?'#e2e8f0':'#fee2e2')+';border-radius:10px;padding:14px;background:'+(ia?'#fff':'#fef2f2')+'">';
+      html += '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;gap:8px"><b>'+esc(item.title||'')+'</b><span class="badge badge-blue">'+esc(item.category||'')+'</span></div><span style="color:'+(ia?'#16a34a':'#dc2626')+'">'+(ia?'✅':'❌')+'</span></div>';
+      if(kw.length) { html += '<div style="margin-bottom:8px">'; kw.slice(0,8).forEach(function(k){html += '<span class="keyword-tag">'+esc(k)+'</span>';}); html += '</div>'; }
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;color:#475569;margin-bottom:8px;max-height:50px;overflow:hidden">'+esc(stripHtml(item.response||'').slice(0,150))+'</div>';
+      html += '<div style="display:flex;gap:6px"><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCustomResponse('+idx+')">✏️</button><button class="btn btn-sm '+(ia?'btn-warning':'btn-success')+'" onclick="toggleCustomResponse(\''+item.id+'\','+ !ia +')">'+(ia?'⏸️':'▶️')+'</button><button class="btn btn-danger btn-sm" onclick="deleteCustomResponse(\''+item.id+'\')">🗑️</button></div></div>';
+    });
+    el.innerHTML = html + '</div>';
+  } catch(e) { el.innerHTML='<p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p>'; }
+}
+
+function openAddCustomResponseModal() {
+  modalState = {type:'custom_response_add'};
+  document.getElementById('modalTitle').textContent = '➕ رد مخصص';
+  document.getElementById('modalBody').innerHTML = buildCRForm(null);
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditCustomResponse(idx) {
+  var item = _customResponsesCache[idx]; if(!item) return;
+  modalState = {type:'custom_response_edit', id:item.id};
+  document.getElementById('modalTitle').textContent = '✏️ تعديل';
+  document.getElementById('modalBody').innerHTML = buildCRForm(item);
+  document.getElementById('modal').classList.add('show');
+}
+
+function buildCRForm(item) {
+  var t=item?esc(item.title||''):'', k=item?esc(item.keywords||''):'', cat=item?(item.category||'SUPPORT'):'SUPPORT', r=item?esc(item.response||''):'', p=item?(item.priority||0):10, a=item?(item.is_active!==false):true;
+  return '<label style="font-size:12px;font-weight:600">العنوان:</label><input type="text" id="cr_title" value="'+t+'" style="margin-bottom:8px">'+
+    '<label style="font-size:12px;font-weight:600">كلمات مفتاحية:</label><textarea id="cr_keywords" rows="2" style="margin-bottom:8px">'+k+'</textarea>'+
+    '<div style="display:flex;gap:12px;margin-bottom:8px"><div style="flex:1"><label style="font-size:12px;font-weight:600">تصنيف:</label><select id="cr_category"><option value="SUPPORT"'+(cat==='SUPPORT'?' selected':'')+'>SUPPORT</option><option value="GENERAL"'+(cat==='GENERAL'?' selected':'')+'>GENERAL</option><option value="PAYMENT"'+(cat==='PAYMENT'?' selected':'')+'>PAYMENT</option><option value="ACCESS"'+(cat==='ACCESS'?' selected':'')+'>ACCESS</option></select></div><div style="flex:1"><label style="font-size:12px;font-weight:600">أولوية:</label><input type="number" id="cr_priority" value="'+p+'" min="0" max="100"></div></div>'+
+    '<label style="font-size:12px;font-weight:600">الرد:</label><textarea id="cr_response" rows="6" style="margin-bottom:8px">'+r+'</textarea>'+
+    '<div style="display:flex;align-items:center;gap:8px"><label class="toggle-switch"><input type="checkbox" id="cr_active"'+(a?' checked':'')+'><span class="toggle-slider"></span></label><span>مفعّل</span></div>';
+}
+
+async function toggleCustomResponse(id, val) { try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅':'⏸️'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); } }
+async function deleteCustomResponse(id) { if(!(await showConfirm('حذف؟'))) return; try { await apiCall('/admin/custom-responses/'+id,{method:'DELETE'}); toast('تم ✅'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); } }
+
+// ═══════════════════════════════════════
+// GENERIC CRUD
+// ═══════════════════════════════════════
+async function loadCrud(entity, page, forceReload) {
+  page = page || 1; _crudPages[entity] = page;
+  var el = document.getElementById(entity + '-table');
+  if (!el) return;
+  if (!forceReload && _allCrudItems[entity] && _allCrudItems[entity].length > 0) { renderCrudPage(entity, page); return; }
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var se = document.getElementById(entity + 'Search'); var s = se ? se.value : '';
+    var url = '/admin/' + entity + '?limit=2000' + (s ? '&search=' + encodeURIComponent(s) : '');
+    var d = await apiCall(url);
+    var items = d.items || d.courses || d.diplomas || d.instructors || d.faqs || d.pages || d.corrections || d.data || d.entries || [];
+    _allCrudItems[entity] = items;
+    if (!_crudCache[entity]) _crudCache[entity] = {};
+    items.forEach(function(i) { _crudCache[entity][i.id] = i; });
+    renderCrudPage(entity, page);
+  } catch(e) { el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p>'; }
+}
+
+function renderCrudPage(entity, page) {
+  var el = document.getElementById(entity + '-table'); if (!el) return;
+  var allItems = _allCrudItems[entity] || [];
+  var totalItems = allItems.length;
+  var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+  if (page < 1) page = 1; if (page > totalPages) page = totalPages;
+  _crudPages[entity] = page;
+  if (!totalItems) { el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد بيانات</p>'; return; }
+  var start = (page - 1) * ITEMS_PER_PAGE, end = Math.min(start + ITEMS_PER_PAGE, totalItems);
+  var items = allItems.slice(start, end);
+  var cols = Object.keys(items[0]).filter(function(k) { return k !== 'full_content' && k !== 'content' && k !== 'embedding' && k !== 'search_vector' && k !== 'raw_html' && k !== 'metadata'; }).slice(0, 7);
+  var html = '<div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f0f9ff;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:10px"><span style="font-weight:700;color:#1e40af">📊 ' + totalItems + ' عنصر</span><span style="color:#64748b;font-size:12px">' + (start+1) + '-' + end + '</span></div>';
+  if (totalPages > 1) html += buildPaginationBar(entity, page, totalPages);
+  html += '<div style="overflow-x:auto;margin-top:8px"><table><thead><tr><th>#</th>';
+  cols.forEach(function(c) { html += '<th>' + esc(c) + '</th>'; });
+  html += '<th>إجراء</th></tr></thead><tbody>';
+  items.forEach(function(item, idx) {
+    html += '<tr><td style="font-size:11px;color:#94a3b8">' + (start + idx + 1) + '</td>';
+    cols.forEach(function(c) { var val = item[c] != null ? String(item[c]) : ''; html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(val.slice(0,60)) + '</td>'; });
+html += '<td>';
+    if (entity === 'diplomas') {
+      html += '<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;margin-left:4px" onclick="openDiplomaCoursesModal(' + item.id + ',\'' + esc(String(item.title||'').replace(/\'/g,'')) + '\')">📚</button> ';
+    }
+    html += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditFromCache(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteCrud(\'' + esc(entity) + '\',\'' + esc(item.id) + '\')">🗑️</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  if (totalPages > 1) html += buildPaginationBar(entity, page, totalPages);
+  el.innerHTML = html;
+}
+
+function buildPaginationBar(entity, page, totalPages) {
+  var h = '<div class="pagination-bar">';
+  if (page > 1) h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page-1) + ')">→</button>';
+  var sp = Math.max(1, page - 3), ep = Math.min(totalPages, page + 3);
+  if (sp > 1) { h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',1)">1</button>'; if (sp > 2) h += '<span style="color:#94a3b8">...</span>'; }
+  for (var p = sp; p <= ep; p++) h += '<button class="page-btn' + (p === page ? ' active' : '') + '" onclick="goToPage(\'' + entity + '\',' + p + ')">' + p + '</button>';
+  if (ep < totalPages) { if (ep < totalPages - 1) h += '<span style="color:#94a3b8">...</span>'; h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + totalPages + ')">' + totalPages + '</button>'; }
+  if (page < totalPages) h += '<button class="page-btn" onclick="goToPage(\'' + entity + '\',' + (page+1) + ')">←</button>';
+  return h + '</div>';
+}
+
+function goToPage(entity, page) { _crudPages[entity] = page; renderCrudPage(entity, page); var el = document.getElementById(entity + '-table'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+async function openEditFromCache(e, id) {
+  if (_crudCache[e] && _crudCache[e][id]) {
+    openEditModal(e, _crudCache[e][id]);
+    return;
+  }
+  try {
+    var d = await apiCall('/admin/' + e + '/' + id);
+    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
+    if (item && item.id) {
+      openEditModal(e, item);
+    } else {
+      toast('مش لاقي البيانات', 'error');
+    }
+  } catch(err) {
+    toast('حدّث الصفحة', 'error');
+  }
+}
+
+async function deleteCrud(entity, id) {
+  if (!(await showConfirm('حذف؟'))) return;
+  try {
+    await apiCall('/admin/' + entity + '/' + id, { method: 'DELETE' });
+    toast('تم ✅');
+    if (entity === 'corrections') { loadCorrections(); return; }
+    if (_allCrudItems[entity]) _allCrudItems[entity] = _allCrudItems[entity].filter(function(item) { return String(item.id) !== String(id); });
+    if (_crudCache[entity]) delete _crudCache[entity][id];
+    var cp = _crudPages[entity] || 1;
+    var tp = Math.ceil((_allCrudItems[entity] || []).length / ITEMS_PER_PAGE) || 1;
+    renderCrudPage(entity, Math.min(cp, tp));
+  } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════
+function closeModal() { document.getElementById('modal').classList.remove('show'); modalState = {}; }
+
+function getFields(e) {
+  var m = {
+'courses':[{key:'title',label:'العنوان'},{key:'subtitle',label:'الوصف المختصر',type:'textarea'},{key:'full_content',label:'الوصف التفصيلي',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة'},{key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}],
+    'diplomas':[{key:'title',label:'العنوان'},{key:'slug',label:'Slug'},{key:'link',label:'الرابط'},{key:'description',label:'الوصف',type:'textarea'},{key:'price',label:'السعر',inputType:'number'},{key:'courses_count',label:'عدد الدورات',inputType:'number'},{key:'books_count',label:'عدد الكتب',inputType:'number'},{key:'hours',label:'الساعات',inputType:'number'}],
+
+    'instructors':[{key:'name',label:'الاسم'}],
+    'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}],
+    'site-pages':[{key:'page_url',label:'الرابط'},{key:'content',label:'المحتوى',type:'textarea'}]
+  };
+  return m[e]||[{key:'title',label:'العنوان'}];
+}
+
+function openAddModal(entity) {
+  modalState = {type:'add',entity:entity};
+  document.getElementById('modalTitle').textContent = '➕ إضافة';
+  var fields = getFields(entity);
+  var html = '';
+  fields.forEach(function(f) {
+    html += '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">' + f.label + ':</label>';
+    if (f.type === 'keywords') {
+      html += '<div id="keywords-container"><div style="display:flex;gap:4px;margin-top:4px" class="kw-row"><input type="text" class="kw-input" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button></div></div>';
+      html += '<button type="button" class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-top:6px" onclick="addKeywordInput()">+ كلمة مفتاحية</button>';
+    } else if (f.type === 'textarea') {
+      html += '<textarea id="modal_' + f.key + '" rows="3" style="margin-top:4px"></textarea>';
+    } else {
+html += '<input type="' + (f.inputType || 'text') + '" id="modal_' + f.key + '" style="margin-top:4px">';
+    }
+  });
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditModal(entity, item) {
+  modalState = {type:'edit',entity:entity,id:item.id};
+  document.getElementById('modalTitle').textContent = '✏️ تعديل';
+  var fields = getFields(entity);
+  var html = '';
+  fields.forEach(function(f) {
+    var v = item[f.key] != null ? String(item[f.key]) : '';
+    html += '<label style="font-size:12px;font-weight:600;margin-top:8px;display:block">' + f.label + ':</label>';
+    if (f.type === 'keywords') {
+      var kws = v ? v.split(',').map(function(k) { return k.trim(); }).filter(function(k) { return k; }) : [];
+      if (kws.length === 0) kws = [''];
+      html += '<div id="keywords-container">';
+      kws.forEach(function(kw) {
+        html += '<div style="display:flex;gap:4px;margin-top:4px" class="kw-row"><input type="text" class="kw-input" value="' + esc(kw) + '" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button></div>';
+      });
+      html += '</div>';
+      html += '<button type="button" class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;margin-top:6px" onclick="addKeywordInput()">+ كلمة مفتاحية</button>';
+    } else if (f.type === 'textarea') {
+      html += '<textarea id="modal_' + f.key + '" rows="3" style="margin-top:4px">' + esc(v) + '</textarea>';
+    } else {
+      html += '<input type="' + (f.inputType || 'text') + '" id="modal_' + f.key + '" value="' + esc(v) + '" style="margin-top:4px">';
+    }
+  });
+
+  // لو دبلومة — أضف قسم الكورسات
+  if (entity === 'diplomas') {
+    html += '<hr style="margin:20px 0;border-color:#e2e8f0">';
+    html += '<h4 style="margin:0 0 12px;color:#7c3aed;font-size:15px">📚 كورسات الدبلومة</h4>';
+    html += '<div id="diplomaCoursesSection"><p style="text-align:center;color:#94a3b8;padding:10px">⏳ جاري تحميل الكورسات...</p></div>';
+  }
+
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+
+  // لو دبلومة — حمّل الكورسات
+  if (entity === 'diplomas') {
+    loadDiplomaCoursesInModal(item.id);
+  }
+}
+
+async function saveModal() {
+  try {
+if(modalState.type==='diploma_courses') { await saveDiplomaCourses(); return; }
+    if(modalState.type==='correction'||modalState.type==='correction_manual') {
+      var b = { chat_log_id: modalState.logId||null, session_id: modalState.sid||null, original_reply: modalState.original||null, original_question: document.getElementById('corrQuestion').value||null, corrected_reply: document.getElementById('corrAnswer').value, note: document.getElementById('corrNote').value||null };
+      if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
+      await apiCall('/admin/corrections',{method:'POST',body:JSON.stringify(b)});
+      closeModal(); toast('تم ✅'); if(currentTab==='corrections') loadCorrections(); return;
+    }
+    if(modalState.type==='correction_edit') {
+      var b = { original_question: document.getElementById('corrQuestion').value||null, corrected_reply: document.getElementById('corrAnswer').value, note: document.getElementById('corrNote').value||null };
+      if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
+      await apiCall('/admin/corrections/'+modalState.id,{method:'PUT',body:JSON.stringify(b)});
+      closeModal(); toast('تم التعديل ✅'); loadCorrections(); return;
+    }
+    if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
+      var cr = { title: document.getElementById('cr_title').value, keywords: document.getElementById('cr_keywords').value, category: document.getElementById('cr_category').value, response: document.getElementById('cr_response').value, priority: parseInt(document.getElementById('cr_priority').value)||0, is_active: document.getElementById('cr_active').checked };
+      if(!cr.title||!cr.keywords||!cr.response) { toast('املأ الحقول!','error'); return; }
+      if(modalState.type==='custom_response_add') await apiCall('/admin/custom-responses',{method:'POST',body:JSON.stringify(cr)});
+      else await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
+      closeModal(); toast('تم ✅'); loadCustomResponses(); return;
+    }
+if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
+      var bi = { instruction: document.getElementById('bi_instruction').value, category: document.getElementById('bi_category').value, priority: parseInt(document.getElementById('bi_priority').value)||0, is_active: document.getElementById('bi_active').checked, target: document.getElementById('bi_target').value };
+      if(!bi.instruction || bi.instruction.trim().length < 5) { toast('اكتب تعليمة!','error'); return; }
+      if(modalState.type==='bot_instruction_add') await apiCall('/admin/bot-instructions',{method:'POST',body:JSON.stringify(bi)});
+      else await apiCall('/admin/bot-instructions/'+modalState.id,{method:'PUT',body:JSON.stringify(bi)});
+      closeModal(); toast('تم ✅'); loadBotInstructions(); return;
+    }
+var fields = getFields(modalState.entity); var body = {};
+fields.forEach(function(f) {
+  if (f.type === 'keywords') {
+    var inputs = document.querySelectorAll('#keywords-container .kw-input');
+    var kws = [];
+    inputs.forEach(function(inp) { if (inp.value.trim()) kws.push(inp.value.trim()); });
+    body[f.key] = kws.join(',');
+} else {
+    var v = document.getElementById('modal_' + f.key);
+    if (v) body[f.key] = f.inputType === 'number' ? (parseFloat(v.value) || 0) : v.value;
+  }
+});
+if(modalState.type==='add') await apiCall('/admin/'+modalState.entity,{method:'POST',body:JSON.stringify(body)});
+    else await apiCall('/admin/'+modalState.entity+'/'+modalState.id,{method:'PUT',body:JSON.stringify(body)});
+
+    // لو دبلومة — احفظ الكورسات كمان
+    if(modalState.entity==='diplomas' && modalState.type==='edit' && _currentDiplomaId) {
+      await saveDiplomaCourses();
+    }
+    closeModal(); toast('تم ✅');
+    delete _allCrudItems[modalState.entity];
+    loadCrud(modalState.entity, _crudPages[modalState.entity] || 1, true);
+  } catch(e) { toast('خطأ: '+e.message,'error'); }
+}
+
+
+function addKeywordInput() {
+  var container = document.getElementById('keywords-container');
+  if (!container) return;
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+  div.className = 'kw-row';
+  div.innerHTML = '<input type="text" class="kw-input" placeholder="كلمة مفتاحية"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>';
+  container.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+// ═══════════════════════════════════════
+// DIPLOMA COURSES MANAGEMENT
+// ═══════════════════════════════════════
+var _diplomaCoursesList = [];
+var _allCoursesSearch = [];
+var _currentDiplomaId = null;
+
+async function openDiplomaCoursesModal(diplomaId, diplomaTitle) {
+  _currentDiplomaId = diplomaId;
+  modalState = { type: 'diploma_courses' };
+  document.getElementById('modalTitle').textContent = '📚 كورسات دبلومة: ' + diplomaTitle;
+  document.getElementById('modalBody').innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px">⏳ جاري التحميل...</p>';
+  document.getElementById('modal').classList.add('show');
+  try {
+    var dcResp = await apiCall('/admin/diplomas/' + diplomaId + '/courses');
+    _diplomaCoursesList = (dcResp.courses || dcResp.items || dcResp.data || []).map(function(dc) {
+      return { course_id: dc.course_id || dc.id, course_title: dc.course_title || dc.title || '', course_price: dc.course_price || dc.price || '', course_order: dc.course_order || 1 };
+    });
+    if (!_allCoursesSearch.length) {
+      var cResp = await apiCall('/admin/courses?limit=2000');
+      _allCoursesSearch = cResp.courses || cResp.items || cResp.data || [];
+    }
+    renderDCModal();
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = '<p style="color:#ef4444;text-align:center;padding:20px">❌ ' + esc(e.message) + '</p>';
+  }
+}
+
+function renderDCModal() {
+  var h = '';
+  h += '<div style="position:relative;margin-bottom:16px">';
+  h += '<input type="text" id="dcSearchInput" placeholder="🔍 ابحث عن كورس لإضافته..." oninput="filterDCSearch()" onfocus="filterDCSearch()">';
+  h += '<div id="dcSearchResults" class="dc-search-results"></div>';
+  h += '</div>';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:8px 12px;background:#f8fafc;border-radius:8px">';
+  h += '<span style="font-weight:700;color:#1e293b">📋 الكورسات المضافة: <span style="color:#7c3aed">' + _diplomaCoursesList.length + '</span></span>';
+  if (_diplomaCoursesList.length > 0) h += '<button class="btn btn-sm" style="background:#fee2e2;color:#991b1b" onclick="_diplomaCoursesList=[];renderDCModal()">🗑️ إزالة الكل</button>';
+  h += '</div>';
+  if (_diplomaCoursesList.length === 0) {
+    h += '<div style="text-align:center;padding:40px;background:#f8fafc;border-radius:8px;border:2px dashed #e2e8f0"><div style="font-size:32px;margin-bottom:8px">📭</div><p style="color:#94a3b8;margin:0">مفيش كورسات — ابحث وأضف من فوق</p></div>';
+  } else {
+    _diplomaCoursesList.sort(function(a,b) { return (a.course_order||1) - (b.course_order||1); });
+    _diplomaCoursesList.forEach(function(dc, idx) {
+      h += '<div class="dc-course-row" style="background:' + (idx%2===0?'#faf5ff':'#fff') + '">';
+      h += '<input type="number" class="dc-order-input" value="' + (dc.course_order||idx+1) + '" min="1" onchange="updateDCOrder('+idx+',this.value)">';
+      h += '<div style="flex:1"><div style="font-weight:600;font-size:13px">' + esc(dc.course_title) + '</div>';
+      if (dc.course_price) h += '<span style="font-size:11px;color:#64748b">💰 ' + esc(dc.course_price) + '</span>';
+      h += '</div>';
+      h += '<button class="btn btn-danger btn-sm" onclick="removeDC('+idx+')">✕</button></div>';
+    });
+  }
+  document.getElementById('modalBody').innerHTML = h;
+}
+
+function filterDCSearch() {
+  var q = (document.getElementById('dcSearchInput').value || '').trim().toLowerCase();
+  var div = document.getElementById('dcSearchResults');
+  if (q.length < 1) { div.style.display = 'none'; return; }
+  var addedIds = _diplomaCoursesList.map(function(dc) { return dc.course_id; });
+  var matches = _allCoursesSearch.filter(function(c) {
+    if (addedIds.indexOf(c.id) !== -1) return false;
+    return (c.title||'').toLowerCase().indexOf(q) !== -1 || (c.subtitle||'').toLowerCase().indexOf(q) !== -1 || (c.domain||'').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 10);
+  if (!matches.length) {
+    div.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:12px;text-align:center">لا توجد نتائج</div>';
+  } else {
+    div.innerHTML = matches.map(function(c) {
+      return '<div class="dc-search-item" onclick="addDC(\'' + c.id + '\')"><div style="font-weight:600">' + esc(c.title||'') + '</div><div style="font-size:11px;color:#64748b">' + esc(c.domain||'') + (c.price ? ' — 💰 ' + esc(c.price) : '') + '</div></div>';
+    }).join('');
+  }
+  div.style.display = 'block';
+}
+
+function addDC(courseId) {
+  var c = _allCoursesSearch.find(function(x) { return x.id === courseId; });
+  if (!c) return;
+  _diplomaCoursesList.push({ course_id: courseId, course_title: c.title || '', course_price: c.price || '', course_order: _diplomaCoursesList.length + 1 });
+  renderDCModal();
+  toast('✅ تم إضافة: ' + (c.title||'').slice(0,30), 'info');
+}
+
+function removeDC(idx) {
+  var name = _diplomaCoursesList[idx] ? _diplomaCoursesList[idx].course_title : '';
+  _diplomaCoursesList.splice(idx, 1);
+  _diplomaCoursesList.forEach(function(dc, i) { dc.course_order = i + 1; });
+  renderDCModal();
+  toast('تم إزالة: ' + name.slice(0,30), 'info');
+}
+
+function updateDCOrder(idx, val) { _diplomaCoursesList[idx].course_order = parseInt(val) || 1; }
+
+async function saveDiplomaCourses() {
+  if (!_currentDiplomaId) return;
+  try {
+    var courses = _diplomaCoursesList.map(function(dc) { return { course_id: dc.course_id, course_order: dc.course_order || 1 }; });
+    await apiCall('/admin/diplomas/' + _currentDiplomaId + '/courses', { method: 'PUT', body: JSON.stringify({ courses: courses }) });
+    toast('تم حفظ ' + courses.length + ' كورس في الدبلومة ✅');
+    closeModal();
+  } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+}
+
+document.addEventListener('click', function(e) {
+  var sr = document.getElementById('dcSearchResults');
+  var si = document.getElementById('dcSearchInput');
+  if (sr && si && !sr.contains(e.target) && e.target !== si) sr.style.display = 'none';
+});
+
+// ═══════════════════════════════════════
+// DIPLOMA COURSES INSIDE EDIT MODAL
+// ═══════════════════════════════════════
+var _diplomaCoursesList = [];
+var _allCoursesSearch = [];
+var _currentDiplomaId = null;
+
+async function loadDiplomaCoursesInModal(diplomaId) {
+  _currentDiplomaId = diplomaId;
+  _diplomaCoursesList = [];
+  var section = document.getElementById('diplomaCoursesSection');
+  if (!section) return;
+
+  try {
+    // حمّل كورسات الدبلومة
+    var dcResp = await apiCall('/admin/diplomas/' + diplomaId + '/courses');
+    _diplomaCoursesList = (dcResp.courses || dcResp.items || dcResp.data || []).map(function(dc) {
+      return {
+        course_id: dc.course_id || dc.id,
+        course_title: dc.course_title || dc.title || '',
+        course_price: dc.course_price || dc.price || '',
+        course_order: dc.course_order || 1
+      };
+    });
+
+    // حمّل كل الكورسات للبحث
+    if (!_allCoursesSearch.length) {
+      var cResp = await apiCall('/admin/courses?limit=2000');
+      _allCoursesSearch = cResp.courses || cResp.items || cResp.data || [];
+    }
+
+    renderDCSection();
+  } catch(e) {
+    section.innerHTML = '<p style="color:#ef4444;text-align:center;padding:10px">❌ ' + esc(e.message) + '</p>';
+  }
+}
+
+function renderDCSection() {
+  var section = document.getElementById('diplomaCoursesSection');
+  if (!section) return;
+
+  var h = '';
+
+  // حقل البحث
+  h += '<div style="position:relative;margin-bottom:12px">';
+  h += '<input type="text" id="dcSearchInput" placeholder="🔍 ابحث عن كورس لإضافته..." oninput="filterDCSearch()" onfocus="filterDCSearch()">';
+  h += '<div id="dcSearchResults" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:0 0 8px 8px;max-height:200px;overflow-y:auto;display:none;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>';
+  h += '</div>';
+
+  // عداد
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff">';
+  h += '<span style="font-weight:700;color:#7c3aed;font-size:13px">📋 ' + _diplomaCoursesList.length + ' كورس</span>';
+  if (_diplomaCoursesList.length > 0) {
+    h += '<button type="button" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;font-size:10px" onclick="_diplomaCoursesList=[];renderDCSection()">🗑️ إزالة الكل</button>';
+  }
+  h += '</div>';
+
+  // قايمة الكورسات
+  if (_diplomaCoursesList.length === 0) {
+    h += '<div style="text-align:center;padding:20px;background:#f8fafc;border-radius:8px;border:2px dashed #e2e8f0">';
+    h += '<div style="font-size:24px;margin-bottom:4px">📭</div>';
+    h += '<p style="color:#94a3b8;margin:0;font-size:12px">مفيش كورسات — ابحث وأضف من فوق</p></div>';
+  } else {
+    _diplomaCoursesList.sort(function(a,b) { return (a.course_order||1) - (b.course_order||1); });
+    _diplomaCoursesList.forEach(function(dc, idx) {
+      h += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:4px;background:' + (idx%2===0?'#faf5ff':'#fff') + '">';
+      h += '<input type="number" value="' + (dc.course_order||idx+1) + '" min="1" style="width:45px;text-align:center;font-weight:700;padding:4px" onchange="updateDCOrder('+idx+',this.value)">';
+      h += '<div style="flex:1;overflow:hidden"><div style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(dc.course_title) + '</div>';
+      if (dc.course_price) h += '<span style="font-size:10px;color:#64748b">💰 ' + esc(String(dc.course_price)) + '</span>';
+      h += '</div>';
+      h += '<button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;font-size:10px" onclick="removeDC('+idx+')">✕</button></div>';
+    });
+  }
+
+  section.innerHTML = h;
+}
+
+function filterDCSearch() {
+  var q = (document.getElementById('dcSearchInput').value || '').trim().toLowerCase();
+  var div = document.getElementById('dcSearchResults');
+  if (!div) return;
+  if (q.length < 1) { div.style.display = 'none'; return; }
+
+  var addedIds = _diplomaCoursesList.map(function(dc) { return String(dc.course_id); });
+  var matches = _allCoursesSearch.filter(function(c) {
+    if (addedIds.indexOf(String(c.id)) !== -1) return false;
+    return (c.title||'').toLowerCase().indexOf(q) !== -1 || (c.subtitle||'').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 8);
+
+  if (!matches.length) {
+    div.innerHTML = '<div style="padding:10px;color:#94a3b8;font-size:12px;text-align:center">لا توجد نتائج</div>';
+  } else {
+    div.innerHTML = matches.map(function(c) {
+      return '<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px" onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'#fff\'" onclick="addDC(\'' + c.id + '\')"><div style="font-weight:600">' + esc(c.title||'') + '</div><div style="font-size:10px;color:#64748b">' + (c.price ? '💰 ' + esc(String(c.price)) : '') + '</div></div>';
+    }).join('');
+  }
+  div.style.display = 'block';
+}
+
+function addDC(courseId) {
+  var c = _allCoursesSearch.find(function(x) { return String(x.id) === String(courseId); });
+  if (!c) return;
+  _diplomaCoursesList.push({
+    course_id: courseId,
+    course_title: c.title || '',
+    course_price: c.price || '',
+    course_order: _diplomaCoursesList.length + 1
+  });
+  document.getElementById('dcSearchInput').value = '';
+  var div = document.getElementById('dcSearchResults');
+  if (div) div.style.display = 'none';
+  renderDCSection();
+  toast('✅ تم إضافة: ' + (c.title||'').slice(0,30), 'info');
+}
+
+function removeDC(idx) {
+  _diplomaCoursesList.splice(idx, 1);
+  _diplomaCoursesList.forEach(function(dc, i) { dc.course_order = i + 1; });
+  renderDCSection();
+}
+
+function updateDCOrder(idx, val) {
+  _diplomaCoursesList[idx].course_order = parseInt(val) || 1;
+}
+
+async function saveDiplomaCourses() {
+  if (!_currentDiplomaId) return;
+  var courses = _diplomaCoursesList.map(function(dc) {
+    return { course_id: dc.course_id, course_order: dc.course_order || 1 };
+  });
+  await apiCall('/admin/diplomas/' + _currentDiplomaId + '/courses', {
+    method: 'PUT',
+    body: JSON.stringify({ courses: courses })
+  });
+}
+
+// أخفي نتائج البحث لما أدوس برا
+document.addEventListener('click', function(e) {
+  var sr = document.getElementById('dcSearchResults');
+  var si = document.getElementById('dcSearchInput');
+  if (sr && si && !sr.contains(e.target) && e.target !== si) sr.style.display = 'none';
+});
+
+</script>
+</body>
+</html>

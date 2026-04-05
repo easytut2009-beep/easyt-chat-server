@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Secrets — لا ترفعها أبداً
+.env
+.env.*
+!.env.example
+
+# Logs & runtime
+*.log
+npm-debug.log*
+.pnpm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.sublime-*
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Optional local tools
+*.local
