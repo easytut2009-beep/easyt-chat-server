@@ -621,14 +621,14 @@ function rankAndFilterCourses(
       /** عناوين إنجليزية + سؤال عربي — نأخذ أفضل النتائج دلالياً فقط (لا نمرّر كل ilike) */
       const semOk = courses.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.9;
+        return typeof sim === "number" && sim >= 0.84;
       });
       if (semOk.length > 0) {
         pool = semOk;
       } else {
         const ranked = courses
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.88)
+          .filter((x) => x.sim >= 0.78)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 6)
           .map((x) => x.c);
@@ -652,7 +652,7 @@ function rankAndFilterCourses(
     kept = rows.filter((x) => {
       const titleHit = courseTitleOrSubtitleHitsTerm(x.c, effectiveTerms);
       if (titleHit) return x.lexT >= 12 || x.sim >= 0.72;
-      return x.sim >= 0.93;
+      return x.sim >= 0.86;
     });
     if (kept.length === 0) return [];
   } else {
@@ -1150,8 +1150,8 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.9,
-              match_count: isChild ? 12 : 12,
+              match_threshold: isChild ? 0.88 : 0.86,
+              match_count: isChild ? 12 : 14,
             });
             return data || [];
           } catch (e) {
@@ -1249,7 +1249,7 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = 0.9;
+  const MIN_SEM_ONLY = isChild ? 0.88 : 0.84;
   if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
@@ -1288,14 +1288,14 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.9;
+        return typeof sim === "number" && sim >= 0.84;
       });
       if (semOnly.length > 0) {
         deduped = semOnly;
       } else {
         const ranked = deduped
           .map((c) => ({ c, sim: semanticMap.get(c.id) || 0 }))
-          .filter((x) => x.sim >= 0.88)
+          .filter((x) => x.sim >= 0.78)
           .sort((a, b) => b.sim - a.sim)
           .slice(0, 8)
           .map((x) => x.c);
@@ -1314,21 +1314,19 @@ async function searchCoursesLayer(
 }
 
 /**
- * يضيف صفوف كورسات من عناوين الدروس **فقط** عندما طبقة الكورسات لم ترجع شيئاً —
- * إن وُجد أي كورس من البحث/الدلالة لا نضيف كورسات إضافية من الدروس (تسبب MOHO/Key frame/عيادات إلخ).
+ * يضيف كورسات من عناوين الدروس **فقط** عندما طبقة الكورسات فارغة (الموضوع في الدروس وليس في عنوان الكورس).
+ * حد أقصى 4 كورسات؛ إن وُجدت كورسات من البحث/الدلالة لا نضيف من الدروس (تجنباً لضجيج «مبادئ/ISO»).
  */
 async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
-  if (!supabase || !lessons?.length) return (courses || []).slice(0, MAX);
-  const byId = new Map((courses || []).filter((c) => c?.id).map((c) => [c.id, c]));
-  if (byId.size > 0) {
-    return [...byId.values()].slice(0, MAX);
-  }
-  const slots = Math.max(0, MAX - byId.size);
-  if (slots === 0) return [...byId.values()].slice(0, MAX);
+  const MAX_FROM_LESSONS = 4;
+  const base = (courses || []).filter((c) => c?.id);
+  if (base.length > 0) return base.slice(0, MAX);
+  if (!supabase || !lessons?.length) return base.slice(0, MAX);
+  const byId = new Map(base.map((c) => [c.id, c]));
   const needIds = [...new Set(lessons.map((l) => l.course_id).filter(Boolean))]
     .filter((id) => !byId.has(id))
-    .slice(0, slots);
+    .slice(0, MAX_FROM_LESSONS);
   if (needIds.length === 0) return [...byId.values()].slice(0, MAX);
   try {
     const { data, error } = await supabase
@@ -1898,13 +1896,10 @@ async function runCatalogSearch(userClean, intent) {
     chunks = [];
     diplomasForCatalog = diplomas;
   } else {
-    [diplomas, courses, lessons] = await Promise.all([
+    [diplomas, courses] = await Promise.all([
       searchDiplomasLayer(searchTerms, queryForEmb, intentEff),
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
-      searchLessonsLayer(searchTerms),
     ]);
-
-    courses = await mergeCoursesFromLessonHits(supabase, courses, lessons);
 
     diplomasForCatalog = filterDiplomasForAnchoredTitles(
       diplomas,
@@ -1914,14 +1909,16 @@ async function runCatalogSearch(userClean, intent) {
       broadDiplomaListing
     );
 
-    const hasDiplomaCourseOrLessonHits =
-      diplomasForCatalog.length > 0 ||
-      courses.length > 0 ||
-      lessons.length > 0;
-
-    chunks = hasDiplomaCourseOrLessonHits
-      ? []
-      : await searchChunksLayer(queryForChunks, userClean, searchTerms);
+    lessons = [];
+    chunks = [];
+    /** طبقة 1: دبلومات + كورسات؛ طبقة 2: دروس + chunks فقط إذا لم يُعثر على شيء في الطبقة 1 */
+    if (diplomasForCatalog.length === 0 && courses.length === 0) {
+      [lessons, chunks] = await Promise.all([
+        searchLessonsLayer(searchTerms),
+        searchChunksLayer(queryForChunks, userClean, searchTerms),
+      ]);
+      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons);
+    }
   }
 
   const coursesForCards = courses.map((c) => ({ ...c }));
