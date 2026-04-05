@@ -126,8 +126,15 @@ function matchLessonKey(l) {
 
 /**
  * يحوّل صفوف الـ chunks إلى كروسات كاملة + دروس مرتبطة + مقتطف يبيّن سبب المطابقة (مثل المحرك القديم).
+ * allowChunkOnlyNewCourses: إذا false لا نضيف كورسات جديدة من الـ chunks فقط — نثرّي الكورسات القادمة من طبقة الكورسات فقط.
  */
-async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
+async function mergeChunkMatchesIntoCourses(
+  supabase,
+  courses,
+  chunks,
+  options = {}
+) {
+  const allowChunkOnlyNewCourses = options.allowChunkOnlyNewCourses !== false;
   if (!supabase || !chunks?.length) return;
 
   const byCourse = new Map();
@@ -155,16 +162,18 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
   }
 
   const existingById = new Map(courses.map((c) => [c.id, c]));
-  const chunkOnlyIds = [...byCourse.entries()]
-    .filter(
-      ([id, g]) =>
-        !existingById.has(id) && g.maxSim >= CHUNK_ONLY_NEW_COURSE_MIN_SIM
-    )
-    .sort((a, b) => b[1].maxSim - a[1].maxSim)
-    .slice(0, 3)
-    .map(([id]) => id);
+  const chunkOnlyIds = allowChunkOnlyNewCourses
+    ? [...byCourse.entries()]
+        .filter(
+          ([id, g]) =>
+            !existingById.has(id) && g.maxSim >= CHUNK_ONLY_NEW_COURSE_MIN_SIM
+        )
+        .sort((a, b) => b[1].maxSim - a[1].maxSim)
+        .slice(0, 3)
+        .map(([id]) => id)
+    : [];
 
-  if (chunkOnlyIds.length > 0) {
+  if (allowChunkOnlyNewCourses && chunkOnlyIds.length > 0) {
     const { data: fetched } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
@@ -2041,6 +2050,20 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
   return false;
 }
 
+/**
+ * إن وُجدت على الأقل كورس واحد فيه دليل معجمي (عنوان/درس)، نعرض فقط هذه الكورسات —
+ * يمنع إغراق القائمة بكورسات «دلالة فقط» من الـ embeddings.
+ */
+function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
+  if (!courses?.length) return courses;
+  const terms = collectRelevanceTerms(userClean, searchTerms, intent);
+  if (terms.length === 0) return courses;
+  const hasLex = (c) =>
+    catalogCourseHasLexicalTopicEvidence(c, userClean, searchTerms, intent);
+  if (!courses.some(hasLex)) return courses;
+  return courses.filter(hasLex).slice(0, MAX_COURSE_CATALOG_CARDS);
+}
+
 /** يزيل من الكارت دروساً ظهرت من تشابه chunk ضعيف بلا كلمة بحث في العنوان أو المقتطف. */
 function pruneMatchedLessonsForSearchTerms(
   course,
@@ -2202,6 +2225,8 @@ async function runCatalogSearch(userClean, intent) {
   let chunks;
   /** دبلومات بعد تصفية العناوين — يُستخدم أيضاً لقرار جلب الـ chunks */
   let diplomasForCatalog;
+  /** عدد كورسات `match_courses` قبل طبقة الدروس/الـ chunks — يحدد إن كان مسموحاً بإضافة كورسات جديدة من chunks فقط. */
+  let nCoursesFromSearchLayer = 0;
 
   if (broadDiplomaListing) {
     diplomas = await fetchAllDiplomasBrowse();
@@ -2214,6 +2239,7 @@ async function runCatalogSearch(userClean, intent) {
       searchDiplomasLayer(searchTerms, queryForEmb, intentEff),
       searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
     ]);
+    nCoursesFromSearchLayer = courses.length;
 
     diplomasForCatalog = filterDiplomasForAnchoredTitles(
       diplomas,
@@ -2225,7 +2251,7 @@ async function runCatalogSearch(userClean, intent) {
 
     lessons = [];
     chunks = [];
-    /** طبقة 1: دبلومات + كورسات؛ طبقة 2: دروس + chunks إذا لم يُعثر على شيء، أو إذا وُجد كورس أو اثنان فقط (تكميل من الدروس/المحتوى). */
+    /** طبقة 2 كاملة فقط عندما لا توجد كورسات من طبقة الكورسات؛ وإلا chunks فقط لإثراء الدروس دون كورسات جديدة من التكميل. */
     if (diplomasForCatalog.length === 0 && courses.length === 0) {
       [lessons, chunks] = await Promise.all([
         searchLessonsLayer(searchTerms),
@@ -2234,30 +2260,32 @@ async function runCatalogSearch(userClean, intent) {
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
         searchTerms,
       });
-    } else if (
-      diplomasForCatalog.length === 0 &&
-      courses.length > 0 &&
-      courses.length < 3
-    ) {
-      [lessons, chunks] = await Promise.all([
-        searchLessonsLayer(searchTerms),
-        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
-      ]);
-      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
-        supplementWhenFew: true,
+    } else if (diplomasForCatalog.length === 0 && courses.length > 0) {
+      lessons = [];
+      chunks = await searchChunksLayer(
+        queryForChunks,
+        userClean,
         searchTerms,
-        maxSupplementCourses: 2,
-      });
+        intentEff
+      );
     }
   }
 
   let coursesForCards = courses.map((c) => ({ ...c }));
   mergeLessonsIntoCourses(coursesForCards, lessons);
-  await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks, {
+    allowChunkOnlyNewCourses: nCoursesFromSearchLayer === 0,
+  });
   for (const c of coursesForCards) {
     pruneMatchedLessonsForSearchTerms(c, userClean, searchTerms, intentEff);
   }
   coursesForCards = rankCatalogCoursesByRelevance(
+    coursesForCards,
+    userClean,
+    searchTerms,
+    intentEff
+  );
+  coursesForCards = preferLexicalCatalogCourses(
     coursesForCards,
     userClean,
     searchTerms,
