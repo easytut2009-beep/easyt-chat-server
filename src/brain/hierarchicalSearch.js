@@ -12,10 +12,10 @@ const { supabase, openai } = require("../lib/clients");
 const MAX_COURSE_CATALOG_CARDS = 6;
 /** أدنى تشابه لقبول chunk من match_lesson_chunks (كان 0.36 في الـ RPC فيدخل أي محتوى). */
 const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
-/** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً (يمرّر كورسات مثل التسويق لسؤال workflow). */
-const SEMANTIC_CHUNK_ONLY_MIN_SIM = 0.62;
+/** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً (يمرّر LangChain/عام ذكاء اصطناعي لسؤال workflow). */
+const SEMANTIC_CHUNK_ONLY_MIN_SIM = 0.7;
 /** كورس جديد يُضاف من الـ chunks فقط (غير ظاهر في طبقة الكورسات) — عتبة أعلى. */
-const CHUNK_ONLY_NEW_COURSE_MIN_SIM = 0.62;
+const CHUNK_ONLY_NEW_COURSE_MIN_SIM = 0.7;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -1414,8 +1414,16 @@ async function mergeCoursesFromLessonHits(
   if (supplement && base.length >= 4) return base.slice(0, MAX);
 
   const byId = new Map(base.map((c) => [c.id, c]));
+  let capSup = 5;
+  if (
+    supplement &&
+    typeof options.maxSupplementCourses === "number" &&
+    options.maxSupplementCourses >= 0
+  ) {
+    capSup = Math.min(5, options.maxSupplementCourses);
+  }
   const maxNew = supplement
-    ? Math.min(5, Math.max(0, MAX - byId.size))
+    ? Math.min(capSup, Math.max(0, MAX - byId.size))
     : Math.min(2, Math.max(0, MAX - byId.size));
   if (maxNew <= 0) return [...byId.values()].slice(0, MAX);
   const needIds = [...new Set(lessonRows.map((l) => l.course_id).filter(Boolean))]
@@ -1490,13 +1498,43 @@ function stripChunkPlainText(html) {
     .trim();
 }
 
-function buildChunkSearchNeedles(userClean, searchTerms) {
+/**
+ * يحذف إبراً قصيرة مغطاة بالكامل داخل إبر أطول من نفس توسعة `prepareSearchTerms`
+ * (نفس الرسالة/النية). يقلّل مطابقات عشوائية لجزء من عبارة مقسومة — بدون قائمة كلمات موضوعية.
+ */
+function pruneNeedlesSubsumedByLongerNeedles(needles) {
+  const arr = [...needles]
+    .map((n) => String(n).trim())
+    .filter((n) => n.length >= 2);
+  if (arr.length <= 1) return arr;
+
+  const compact = (s) =>
+    normalizeArabic(String(s).toLowerCase()).replace(/\s/g, "");
+  const items = arr.map((n) => ({ n, c: compact(n) })).filter((x) => x.c.length >= 2);
+
+  const out = [];
+  for (const cur of items) {
+    const subsumed = items.some(
+      (other) =>
+        other.c.length > cur.c.length && other.c.includes(cur.c)
+    );
+    if (!subsumed) out.push(cur.n);
+  }
+  return [...new Set(out)].sort((a, b) => String(b).length - String(a).length);
+}
+
+function buildChunkSearchNeedles(userClean, searchTerms, intent) {
   const u = String(userClean || "").trim();
   const seeds = [];
   if (u) seeds.push(u);
   for (const t of searchTerms || []) {
     const s = String(t || "").trim();
     if (s) seeds.push(s);
+  }
+  if (intent && typeof intent === "object") {
+    if (intent.search_text) seeds.push(String(intent.search_text));
+    for (const t of intent.terms_en || []) seeds.push(t);
+    for (const t of intent.tools || []) seeds.push(t);
   }
   const needles = new Set();
   for (const t of prepareSearchTerms(seeds.length ? seeds : [u].filter(Boolean))) {
@@ -1505,9 +1543,8 @@ function buildChunkSearchNeedles(userClean, searchTerms) {
   for (const s of seeds) {
     if (String(s).length >= 2) needles.add(s);
   }
-  return [...needles]
-    .filter((n) => String(n).length >= 2)
-    .sort((a, b) => String(b).length - String(a).length);
+  const list = [...needles].filter((n) => String(n).length >= 2);
+  return pruneNeedlesSubsumedByLongerNeedles(list);
 }
 
 function compactIndexToPlainRange(plain, cStart, cLen) {
@@ -1570,10 +1607,10 @@ function findMatchBoundsInPlain(plain, needles) {
   return null;
 }
 
-function excerptAroundSearchTerms(rawContent, userClean, searchTerms) {
+function excerptAroundSearchTerms(rawContent, userClean, searchTerms, intent) {
   const plain = stripChunkPlainText(rawContent);
   if (!plain) return "";
-  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+  const needles = buildChunkSearchNeedles(userClean, searchTerms, intent);
   const maxLen = 300;
   const bounds = findMatchBoundsInPlain(plain, needles);
   if (!bounds) {
@@ -1613,8 +1650,8 @@ function diversifyChunksByCourseCap(rows, maxPerCourse = 4, maxTotal = 80) {
 }
 
 /** عبارات آمنة لـ ilike على chunks (بدون مطابقة جزء من «ووركس» لوحده). */
-function buildLexicalIlikeTerms(userClean, searchTerms) {
-  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+function buildLexicalIlikeTerms(userClean, searchTerms, intent) {
+  const needles = buildChunkSearchNeedles(userClean, searchTerms, intent);
   const out = new Set();
   for (const n of needles) {
     const s = String(n).trim();
@@ -1631,9 +1668,9 @@ function sanitizeForOrIlike(t) {
 /**
  * بحث نصي في جدول chunks — يكمل الـ embedding لما يكون الموضوع موجوداً حرفياً في نص الدرس.
  */
-async function fetchChunksLexicalHits(supabase, userClean, searchTerms) {
+async function fetchChunksLexicalHits(supabase, userClean, searchTerms, intent) {
   if (!supabase) return [];
-  const terms = buildLexicalIlikeTerms(userClean, searchTerms)
+  const terms = buildLexicalIlikeTerms(userClean, searchTerms, intent)
     .map(sanitizeForOrIlike)
     .filter((t) => t.length >= 3);
   if (terms.length === 0) return [];
@@ -1717,14 +1754,14 @@ function dedupeChunkRows(a, b) {
   return out;
 }
 
-function chunkContentHasSearchHit(content, userClean, searchTerms) {
+function chunkContentHasSearchHit(content, userClean, searchTerms, intent) {
   const plain = stripChunkPlainText(content);
   if (!plain) return false;
-  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+  const needles = buildChunkSearchNeedles(userClean, searchTerms, intent);
   return Boolean(findMatchBoundsInPlain(plain, needles));
 }
 
-async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
+async function searchChunksLayer(queryForEmb, userClean, searchTerms, intent) {
   if (!supabase || !openai) return [];
   const embInput =
     String(queryForEmb || "").trim() || String(userClean || "").trim();
@@ -1735,7 +1772,7 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
         model: CHUNK_EMBEDDING_MODEL,
         input: embInput.substring(0, 2000),
       }),
-      fetchChunksLexicalHits(supabase, userClean, searchTerms),
+      fetchChunksLexicalHits(supabase, userClean, searchTerms, intent),
     ]);
 
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
@@ -1773,7 +1810,7 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
     merged = merged.filter((r) => {
       if (r._lexicalHit) return true;
       const sim = Number(r.similarity) || 0;
-      if (chunkContentHasSearchHit(r.content, userClean, searchTerms))
+      if (chunkContentHasSearchHit(r.content, userClean, searchTerms, intent))
         return true;
       if (lessonTitleMatchesSearchTerms(r.lesson_title || "", lessonTerms)) {
         return sim >= MIN_LESSON_CHUNK_SIMILARITY;
@@ -1782,10 +1819,10 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
     });
 
     merged.sort((a, b) => {
-      const ka = chunkContentHasSearchHit(a.content, userClean, searchTerms)
+      const ka = chunkContentHasSearchHit(a.content, userClean, searchTerms, intent)
         ? 1
         : 0;
-      const kb = chunkContentHasSearchHit(b.content, userClean, searchTerms)
+      const kb = chunkContentHasSearchHit(b.content, userClean, searchTerms, intent)
         ? 1
         : 0;
       if (kb !== ka) return kb - ka;
@@ -1803,7 +1840,8 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
       excerpt: excerptAroundSearchTerms(
         row.content,
         userClean,
-        searchTerms
+        searchTerms,
+        intent
       ),
     }));
 
@@ -1955,7 +1993,7 @@ function collectRelevanceTerms(userClean, searchTerms, intent) {
 }
 
 /**
- * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords — غالباً وسوم SEO عامة تُدخل workflow/n8n بلا صلة).
+ * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords وحدها — غالباً وسوم SEO عامة).
  */
 function catalogCourseHasLexicalTopicEvidence(
   course,
@@ -1998,8 +2036,8 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
 
   const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
   const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
-  if (vs >= 0.4) return true;
-  if (ch >= 0.68) return true;
+  if (vs >= 0.41) return true;
+  if (ch >= 0.7) return true;
   return false;
 }
 
@@ -2020,7 +2058,7 @@ function pruneMatchedLessonsForSearchTerms(
       if (textFieldMatchesTerm(lt, lr, term)) return true;
     }
     const rawEx = String(l.excerpt || "");
-    if (rawEx && chunkContentHasSearchHit(rawEx, userClean, searchTerms)) {
+    if (rawEx && chunkContentHasSearchHit(rawEx, userClean, searchTerms, intent)) {
       return true;
     }
     return false;
@@ -2191,7 +2229,7 @@ async function runCatalogSearch(userClean, intent) {
     if (diplomasForCatalog.length === 0 && courses.length === 0) {
       [lessons, chunks] = await Promise.all([
         searchLessonsLayer(searchTerms),
-        searchChunksLayer(queryForChunks, userClean, searchTerms),
+        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
         searchTerms,
@@ -2203,11 +2241,12 @@ async function runCatalogSearch(userClean, intent) {
     ) {
       [lessons, chunks] = await Promise.all([
         searchLessonsLayer(searchTerms),
-        searchChunksLayer(queryForChunks, userClean, searchTerms),
+        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
         supplementWhenFew: true,
         searchTerms,
+        maxSupplementCourses: 2,
       });
     }
   }
