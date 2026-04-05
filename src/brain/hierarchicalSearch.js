@@ -2256,20 +2256,29 @@ const _TITLE_VERTICAL_SPECIALIZATIONS = [
   "interior",
 ];
 
-function catalogTitleVerticalMismatchPenalty(course, userClean, intent) {
-  const anchorBlob = [
-    buildCatalogEvidenceAnchor(userClean, intent),
+/** هل طلب المستخدم صراحة هذا المجال الضيق؟ نعتمد الرسالة + constraints فقط — لا حقول GPT الأخرى (قد «ترافق» معماري بلا قصد). */
+function userFacingTextMentionsVerticalSpec(spec, userClean, intent) {
+  const parts = [
     String(userClean || ""),
+    ...((intent && intent.constraints) || []),
   ]
     .filter(Boolean)
-    .join("\n");
+    .join(" ");
+  const s = String(spec).trim();
+  const sn = normalizeArabic(s.toLowerCase());
+  const u = normalizeArabic(parts.toLowerCase());
+  const raw = parts.toLowerCase();
+  if (sn.length >= 3 && u.includes(sn)) return true;
+  if (/[a-z]{4,}/i.test(s) && englishWholeWord(raw, s)) return true;
+  return false;
+}
+
+function catalogTitleVerticalMismatchPenalty(course, userClean, intent) {
   const titleBlob = [course?.title, course?.subtitle].filter(Boolean).join(" ");
   if (!String(titleBlob).trim()) return 0;
 
   const titleNorm = normalizeArabic(titleBlob.toLowerCase());
   const titleRaw = titleBlob.toLowerCase();
-  const anchorNorm = normalizeArabic(anchorBlob.toLowerCase());
-  const anchorRaw = anchorBlob.toLowerCase();
 
   let penalty = 0;
   for (const spec of _TITLE_VERTICAL_SPECIALIZATIONS) {
@@ -2281,13 +2290,11 @@ function catalogTitleVerticalMismatchPenalty(course, userClean, intent) {
       (/[a-z]{4,}/i.test(s) && englishWholeWord(titleRaw, s));
     if (!inTitle) continue;
 
-    if (termAppearsInUserMessage(s, anchorBlob)) continue;
-    if (anchorNorm.includes(sn)) continue;
-    if (/[a-z]{4,}/i.test(s) && englishWholeWord(anchorRaw, s)) continue;
+    if (userFacingTextMentionsVerticalSpec(spec, userClean, intent)) continue;
 
-    penalty += 88;
+    penalty += 200;
   }
-  return Math.min(penalty, 220);
+  return Math.min(penalty, 650);
 }
 
 /**
@@ -2460,21 +2467,25 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
  */
 function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) {
   if (!courses?.length) return courses;
-  const scored = courses.map((c) => ({
-    c,
-    s: scoreCatalogCourse(c, userClean, searchTerms, intent),
-  }));
-  scored.sort((a, b) => b.s - a.s);
-  const best = scored[0].s;
+  const scored = courses.map((c) => {
+    const pen = catalogTitleVerticalMismatchPenalty(c, userClean, intent);
+    const s = scoreCatalogCourse(c, userClean, searchTerms, intent);
+    return { c, s, pen };
+  });
+  /** كورس عنوانه «أداة عامة + مجال ضيق» (مثل معماري) يُستبعد إن وُجد مرشّح بدون هذا التضارب — فوتوشوب نفسه ليس خطأ؛ الخطأ عرض تخصّص لم يُذكر في السؤال. */
+  const hasUnpenalized = scored.some((x) => x.pen === 0);
+  let pool = hasUnpenalized ? scored.filter((x) => x.pen === 0) : scored;
+  pool.sort((a, b) => b.s - a.s);
+  const best = pool[0].s;
   if (best < 8) {
-    return scored.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
+    return pool.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
   }
   const cutoff = Math.max(5, best * 0.22);
-  let kept = scored.filter((x) => x.s >= cutoff);
+  let kept = pool.filter((x) => x.s >= cutoff);
   if (kept.length === 0) {
-    kept = scored.slice(0, Math.min(3, scored.length));
-  } else if (kept.length === 1 && scored.length >= 2) {
-    const rest = scored
+    kept = pool.slice(0, Math.min(3, pool.length));
+  } else if (kept.length === 1 && pool.length >= 2) {
+    const rest = pool
       .slice(1)
       .filter((x) =>
         catalogCoursePassesTopicGate(x.c, userClean, searchTerms, intent)
