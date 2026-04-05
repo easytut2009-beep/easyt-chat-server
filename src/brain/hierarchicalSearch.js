@@ -10,6 +10,8 @@ const { supabase, openai } = require("../lib/clients");
 
 /** أقصى عدد كروت كورسات في الرد — تجنباً لإغراق المستخدم بعشرات النتائج الضعيفة الصلة */
 const MAX_COURSE_CATALOG_CARDS = 6;
+/** أدنى تشابه لقبول chunk من match_lesson_chunks (كان 0.36 في الـ RPC فيدخل أي محتوى). */
+const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
 const {
   COURSE_EMBEDDING_MODEL,
   CHUNK_EMBEDDING_MODEL,
@@ -149,9 +151,12 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
 
   const existingById = new Map(courses.map((c) => [c.id, c]));
   const chunkOnlyIds = [...byCourse.entries()]
-    .filter(([id]) => !existingById.has(id))
+    .filter(
+      ([id, g]) =>
+        !existingById.has(id) && g.maxSim >= MIN_LESSON_CHUNK_SIMILARITY
+    )
     .sort((a, b) => b[1].maxSim - a[1].maxSim)
-    .slice(0, 4)
+    .slice(0, 3)
     .map(([id]) => id);
 
   if (chunkOnlyIds.length > 0) {
@@ -172,6 +177,9 @@ async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
     if (!c) continue;
 
     const fromChunks = [...g.lessons.values()]
+      .filter(
+        (l) => (Number(l.similarity) || 0) >= MIN_LESSON_CHUNK_SIMILARITY
+      )
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
       .map(({ lesson_id, title, timestamp_start, excerpt }) => ({
         lesson_id,
@@ -1315,11 +1323,11 @@ async function searchCoursesLayer(
 
 /**
  * يضيف كورسات من عناوين الدروس **فقط** عندما طبقة الكورسات فارغة (الموضوع في الدروس وليس في عنوان الكورس).
- * حد أقصى 4 كورسات؛ إن وُجدت كورسات من البحث/الدلالة لا نضيف من الدروس (تجنباً لضجيج «مبادئ/ISO»).
+ * حد أقصى 2 كورسات؛ إن وُجدت كورسات من البحث/الدلالة لا نضيف من الدروس.
  */
 async function mergeCoursesFromLessonHits(supabase, courses, lessons) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
-  const MAX_FROM_LESSONS = 4;
+  const MAX_FROM_LESSONS = 2;
   const base = (courses || []).filter((c) => c?.id);
   if (base.length > 0) return base.slice(0, MAX);
   if (!supabase || !lessons?.length) return base.slice(0, MAX);
@@ -1553,7 +1561,7 @@ async function fetchChunksLexicalHits(supabase, userClean, searchTerms) {
       .from("chunks")
       .select("id, content, lesson_id, timestamp_start")
       .or(orFilters)
-      .limit(50);
+      .limit(24);
     if (error) {
       console.error("chunks lexical:", error.message);
       return [];
@@ -1648,8 +1656,8 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
 
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: embResponse.data[0].embedding,
-      match_threshold: 0.36,
-      match_count: 100,
+      match_threshold: MIN_LESSON_CHUNK_SIMILARITY,
+      match_count: 28,
       filter_course_id: null,
     });
     if (error) {
@@ -1669,12 +1677,20 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
       _lexicalHit: false,
     }));
 
-    const merged = dedupeChunkRows(lexicalRows, semanticMapped);
+    let merged = dedupeChunkRows(lexicalRows, semanticMapped);
     for (const r of merged) {
       if (r._lexicalHit) {
         r.similarity = (r.similarity || 0.72) + 0.15;
       }
     }
+
+    merged = merged.filter((r) => {
+      if (r._lexicalHit) return true;
+      const sim = Number(r.similarity) || 0;
+      if (chunkContentHasSearchHit(r.content, userClean, searchTerms))
+        return true;
+      return sim >= MIN_LESSON_CHUNK_SIMILARITY;
+    });
 
     merged.sort((a, b) => {
       const ka = chunkContentHasSearchHit(a.content, userClean, searchTerms)
@@ -1702,7 +1718,7 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
       ),
     }));
 
-    rows = diversifyChunksByCourseCap(rows, 4, 80);
+    rows = diversifyChunksByCourseCap(rows, 2, 16);
 
     const courseIds = [
       ...new Set(rows.map((r) => r.course_id).filter(Boolean)),
