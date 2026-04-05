@@ -448,23 +448,17 @@ function isDiplomaTopicGenericTerm(t) {
 }
 
 /**
- * لعناوين الدبلومات فقط: من نص المستخدم + terms_en/tools من النية.
- * لا يُستخرج من search_text حتى لا تطابق كلمات من عبارة طويلة أعادها النموذج عناوين غير ذات صلة (مثل «تعليم» مع دبلومة كمبيوتر عامة).
+ * لعناوين كروت الدبلومات فقط: مصطلحات مستخرجة من **نص المستخدم** (prepareSearchTerms).
+ * لا نستخدم search_text ولا terms_en من النية هنا: أيّهما قد يضيف كلمات لا تظهر حرفياً في رسالة المستخدم فيطابق دبلومات خاطئة.
+ * الكورسات/chunks تبقى تستخدم embeddingQueryText الكامل.
  */
-function buildStrictDiplomaAnchorTerms(userClean, intent) {
+function buildStrictDiplomaAnchorTerms(userClean) {
   const userDerived = prepareSearchTerms([userClean || ""]).filter(
     (t) => !isCourseLexicalNoiseTerm(t)
   );
-  const fromIntent = [
-    ...(intent?.terms_en || []),
-    ...(intent?.tools || []),
-  ]
-    .map((x) => String(x).trim())
-    .filter(Boolean);
-
   const out = [];
   const seen = new Set();
-  for (const t of [...userDerived, ...fromIntent]) {
+  for (const t of userDerived) {
     const nt = normalizeArabic(String(t).toLowerCase().trim());
     if (nt.length < 2 || isDiplomaTopicGenericTerm(t) || seen.has(nt)) continue;
     seen.add(nt);
@@ -474,8 +468,8 @@ function buildStrictDiplomaAnchorTerms(userClean, intent) {
 }
 
 /**
- * يزيل دبلومات جاءت من دلالة فضفاضة ولا يظهر اسم الموضوع في عنوانها (ظهور الموضوع في محتوى درس فقط دون العنوان).
- * دائماً (ما عدا قائمة الدبلومات العامة): لا نعرض كروت دبلومات إلا إن وُجدت كلمات من السؤال/النية في العنوان.
+ * يزيل دبلومات لا يظهر في عنوانها أي مصطلّح من كلمات المستخدم الفعلية.
+ * لا يوجد fallback إلى searchTerms الكامل — كان يعيد دبلومات «عامة» (كمبيوتر/سيبراني) لطلبات غير ذات صلة.
  */
 function filterDiplomasForAnchoredTitles(
   diplomas,
@@ -486,37 +480,11 @@ function filterDiplomasForAnchoredTitles(
 ) {
   if (!diplomas?.length || broadDiplomaListing) return diplomas || [];
 
-  const strict = buildStrictDiplomaAnchorTerms(userClean, intent);
-  if (strict.length > 0) {
-    const filtered = diplomas.filter((d) =>
-      diplomaTitleHitsAnchoredTerms(d, strict)
-    );
-    return filtered.length > 0 ? filtered : [];
-  }
-
-  const limitedTerms = searchTerms.slice(0, 8);
-  const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
-  const anchored = termsAnchoredInQuery(userClean, lexicalTerms, intent);
-  const userDerived = prepareSearchTerms([userClean || ""]).filter(
-    (t) => !isCourseLexicalNoiseTerm(t)
-  );
-
-  const merged = [];
-  const seenNt = new Set();
-  for (const t of [...anchored, ...userDerived, ...lexicalTerms]) {
-    const nt = normalizeArabic(String(t).toLowerCase().trim());
-    if (nt.length < 2 || isCourseLexicalNoiseTerm(t) || seenNt.has(nt)) continue;
-    seenNt.add(nt);
-    merged.push(t);
-  }
-
-  const specificTerms = merged.filter((t) => !isDiplomaTopicGenericTerm(t));
-  if (specificTerms.length === 0) {
-    return [];
-  }
+  const strict = buildStrictDiplomaAnchorTerms(userClean);
+  if (strict.length === 0) return [];
 
   const filtered = diplomas.filter((d) =>
-    diplomaTitleHitsAnchoredTerms(d, specificTerms)
+    diplomaTitleHitsAnchoredTerms(d, strict)
   );
   return filtered.length > 0 ? filtered : [];
 }
