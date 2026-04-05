@@ -535,7 +535,7 @@ function rankAndFilterCourses(
   intent
 ) {
   const isChild = intent?.audience === "child";
-  const MAX_CARDS = isChild ? 4 : 5;
+  const MAX_CARDS = isChild ? 4 : 8;
   const effectiveTerms = effectiveCourseFilterTerms(
     userClean,
     scoreTerms,
@@ -546,9 +546,19 @@ function rankAndFilterCourses(
 
   let pool = courses;
   if (narrow) {
-    pool = courses.filter((c) =>
+    const lexOk = courses.filter((c) =>
       courseTitleOrSubtitleHitsTerm(c, effectiveTerms)
     );
+    if (lexOk.length > 0) {
+      pool = lexOk;
+    } else {
+      /** عناوين الكورسات غالباً إنجليزي والمستخدم يكتب تحليقة عربية — نعتمد على التشابه الدلالي */
+      const semOk = courses.filter((c) => {
+        const sim = semanticMap.get(c.id);
+        return typeof sim === "number" && sim >= 0.8;
+      });
+      pool = semOk.length > 0 ? semOk : courses;
+    }
   }
   if (pool.length === 0) return [];
 
@@ -1059,8 +1069,8 @@ async function searchCoursesLayer(
             });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.84,
-              match_count: isChild ? 14 : 16,
+              match_threshold: isChild ? 0.88 : 0.82,
+              match_count: isChild ? 14 : 24,
             });
             return data || [];
           } catch (e) {
