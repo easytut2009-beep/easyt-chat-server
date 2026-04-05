@@ -1307,7 +1307,7 @@ function excerptAroundSearchTerms(rawContent, userClean, searchTerms) {
 /**
  * يحدّ من هيمنة كورس واحد على القائمة: يمرّ على النتائج حسب التشابه ويأخذ حتى N صف لكل course_id.
  */
-function diversifyChunksByCourseCap(rows, maxPerCourse = 5, maxTotal = 80) {
+function diversifyChunksByCourseCap(rows, maxPerCourse = 4, maxTotal = 80) {
   if (!rows?.length) return [];
   const sorted = [...rows].sort(
     (a, b) => (b.similarity || 0) - (a.similarity || 0)
@@ -1326,25 +1326,179 @@ function diversifyChunksByCourseCap(rows, maxPerCourse = 5, maxTotal = 80) {
   return out;
 }
 
+/** عبارات آمنة لـ ilike على chunks (بدون مطابقة جزء من «ووركس» لوحده). */
+function buildLexicalIlikeTerms(userClean, searchTerms) {
+  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+  const out = new Set();
+  for (const n of needles) {
+    const s = String(n).trim();
+    if (s.length >= 3 && s.length <= 90) out.add(s);
+  }
+  const u = String(userClean || "");
+  const compact = normalizeArabic(u.toLowerCase()).replace(/[\s\u200c]+/g, "");
+  if (/workflow|ووركفلو|وركفلو|وورك\s*فلو|ورك\s*فلو/i.test(compact + u)) {
+    ["workflow", "Workflow", "workflows", "وورك فلو", "ورك فلو", "ووركفلو", "وركفلو"].forEach(
+      (x) => out.add(x)
+    );
+  }
+  return [...out].slice(0, 18);
+}
+
+/** يزيل ما يكسر فلتر .or() في PostgREST */
+function sanitizeForOrIlike(t) {
+  return String(t).replace(/[,()]/g, " ").trim();
+}
+
+/**
+ * بحث نصي في جدول chunks — يكمل الـ embedding لما يكون الموضوع موجوداً حرفياً في نص الدرس.
+ */
+async function fetchChunksLexicalHits(supabase, userClean, searchTerms) {
+  if (!supabase) return [];
+  const terms = buildLexicalIlikeTerms(userClean, searchTerms)
+    .map(sanitizeForOrIlike)
+    .filter((t) => t.length >= 3);
+  if (terms.length === 0) return [];
+  const orFilters = terms
+    .map((t) => `content.ilike.%${t}%`)
+    .join(",");
+  try {
+    const { data, error } = await supabase
+      .from("chunks")
+      .select("id, content, lesson_id, timestamp_start")
+      .or(orFilters)
+      .limit(50);
+    if (error) {
+      console.error("chunks lexical:", error.message);
+      return [];
+    }
+    if (!data?.length) return [];
+
+    const lessonIds = [...new Set(data.map((c) => c.lesson_id).filter(Boolean))];
+    if (lessonIds.length === 0) return [];
+
+    const { data: lessons } = await supabase
+      .from("lessons")
+      .select("id, title, course_id")
+      .in("id", lessonIds);
+    const lessonMap = new Map((lessons || []).map((l) => [l.id, l]));
+
+    const courseIds = [
+      ...new Set((lessons || []).map((l) => l.course_id).filter(Boolean)),
+    ];
+    let courseMap = new Map();
+    if (courseIds.length > 0) {
+      const { data: crs } = await supabase
+        .from("courses")
+        .select("id, title, link")
+        .in("id", courseIds);
+      courseMap = new Map((crs || []).map((c) => [c.id, c]));
+    }
+
+    return data.map((chunk) => {
+      const les = lessonMap.get(chunk.lesson_id);
+      const crs = les ? courseMap.get(les.course_id) : null;
+      return {
+        chunk_id: chunk.id,
+        _lexicalHit: true,
+        similarity: 0.72,
+        lesson_id: chunk.lesson_id,
+        lesson_title: les?.title || "",
+        course_id: les?.course_id,
+        course_title: crs?.title || "",
+        course_link: crs?.link || "",
+        timestamp_start: chunk.timestamp_start ?? null,
+        content: chunk.content,
+      };
+    });
+  } catch (e) {
+    console.error("fetchChunksLexicalHits:", e.message);
+    return [];
+  }
+}
+
+function dedupeChunkRows(a, b) {
+  const seen = new Set();
+  const out = [];
+  const keyOf = (r) => {
+    if (r.chunk_id) return `c:${r.chunk_id}`;
+    return `l:${r.lesson_id}:${stripChunkPlainText(r.content || "").slice(0, 48)}`;
+  };
+  for (const r of a) {
+    const k = keyOf(r);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  for (const r of b) {
+    const k = keyOf(r);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
+function chunkContentHasSearchHit(content, userClean, searchTerms) {
+  const plain = stripChunkPlainText(content);
+  if (!plain) return false;
+  const needles = buildChunkSearchNeedles(userClean, searchTerms);
+  return Boolean(findMatchBoundsInPlain(plain, needles));
+}
+
 async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
   if (!supabase || !openai || !queryForEmb) return [];
   try {
-    const embResponse = await openai.embeddings.create({
-      model: CHUNK_EMBEDDING_MODEL,
-      input: queryForEmb.substring(0, 2000),
-    });
+    const [embResponse, lexicalRows] = await Promise.all([
+      openai.embeddings.create({
+        model: CHUNK_EMBEDDING_MODEL,
+        input: queryForEmb.substring(0, 2000),
+      }),
+      fetchChunksLexicalHits(supabase, userClean, searchTerms),
+    ]);
+
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: embResponse.data[0].embedding,
-      match_threshold: 0.38,
-      match_count: 120,
+      match_threshold: 0.36,
+      match_count: 100,
       filter_course_id: null,
     });
     if (error) {
       console.error("match_lesson_chunks:", error.message);
-      return [];
     }
-    const rawRows = data || [];
-    let rows = rawRows.map((row) => ({
+
+    const rawRows = error ? [] : data || [];
+    const semanticMapped = rawRows.map((row) => ({
+      chunk_id: row.id ?? row.chunk_id ?? null,
+      similarity: row.similarity,
+      lesson_id: row.lesson_id ?? null,
+      lesson_title: row.lesson_title || "",
+      course_title: row.course_title || "",
+      course_id: row.course_id,
+      timestamp_start: row.timestamp_start ?? null,
+      content: row.content,
+      _lexicalHit: false,
+    }));
+
+    const merged = dedupeChunkRows(lexicalRows, semanticMapped);
+    for (const r of merged) {
+      if (r._lexicalHit) {
+        r.similarity = (r.similarity || 0.72) + 0.15;
+      }
+    }
+
+    merged.sort((a, b) => {
+      const ka = chunkContentHasSearchHit(a.content, userClean, searchTerms)
+        ? 1
+        : 0;
+      const kb = chunkContentHasSearchHit(b.content, userClean, searchTerms)
+        ? 1
+        : 0;
+      if (kb !== ka) return kb - ka;
+      return (b.similarity || 0) - (a.similarity || 0);
+    });
+
+    let rows = merged.map((row) => ({
+      chunk_id: row.chunk_id,
       similarity: row.similarity,
       lesson_id: row.lesson_id ?? null,
       lesson_title: row.lesson_title || "",
@@ -1358,7 +1512,7 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms) {
       ),
     }));
 
-    rows = diversifyChunksByCourseCap(rows, 5, 80);
+    rows = diversifyChunksByCourseCap(rows, 4, 80);
 
     const courseIds = [
       ...new Set(rows.map((r) => r.course_id).filter(Boolean)),
