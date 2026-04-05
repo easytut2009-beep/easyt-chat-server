@@ -66,13 +66,16 @@ function formatCourseCard(course, instructors, index) {
 
   if (course.matchedLessons && course.matchedLessons.length > 0) {
     card += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
-    card += `<strong>📖 الدروس المرتبطة:</strong><br>`;
+    card += `<strong>📖 الدروس المرتبطة (حسب البحث في المحتوى):</strong><br>`;
     course.matchedLessons.forEach((l) => {
       card += `• ${escapeHtml(l.title || "")}`;
       if (l.timestamp_start) {
         card += ` <span style="color:#e63946;font-weight:600">⏱️ ${escapeHtml(String(l.timestamp_start))}</span>`;
       }
       card += `<br>`;
+      if (l.excerpt) {
+        card += `<span style="display:block;color:#666;font-size:11px;line-height:1.45;margin:2px 0 6px 8px;border-right:2px solid #e63946;padding-right:6px">↳ ${escapeHtml(l.excerpt)}</span>`;
+      }
     });
     card += `</div>`;
   }

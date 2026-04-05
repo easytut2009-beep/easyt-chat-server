@@ -104,6 +104,103 @@ function mergeLessonsIntoCourses(courses, lessons) {
   }
 }
 
+function chunkLessonKey(ch) {
+  if (ch.lesson_id) return `id:${ch.lesson_id}`;
+  return `t:${normalizeArabic(String(ch.lesson_title || "").trim()).slice(0, 120)}`;
+}
+
+function matchLessonKey(l) {
+  if (l.lesson_id) return `id:${l.lesson_id}`;
+  return `t:${normalizeArabic(String(l.title || "").trim()).slice(0, 120)}`;
+}
+
+/**
+ * يحوّل صفوف الـ chunks إلى كروسات كاملة + دروس مرتبطة + مقتطف يبيّن سبب المطابقة (مثل المحرك القديم).
+ */
+async function mergeChunkMatchesIntoCourses(supabase, courses, chunks) {
+  if (!supabase || !chunks?.length) return;
+
+  const byCourse = new Map();
+
+  for (const ch of chunks) {
+    const cid = ch.course_id;
+    if (!cid) continue;
+    if (!byCourse.has(cid)) {
+      byCourse.set(cid, { maxSim: 0, lessons: new Map() });
+    }
+    const g = byCourse.get(cid);
+    const sim = Number(ch.similarity) || 0;
+    g.maxSim = Math.max(g.maxSim, sim);
+    const lk = chunkLessonKey(ch);
+    const prev = g.lessons.get(lk);
+    if (!prev || sim > (prev.similarity || 0)) {
+      g.lessons.set(lk, {
+        lesson_id: ch.lesson_id || null,
+        title: ch.lesson_title || "درس",
+        timestamp_start: ch.timestamp_start || null,
+        excerpt: String(ch.excerpt || "").trim().slice(0, 200),
+        similarity: sim,
+      });
+    }
+  }
+
+  const existingById = new Map(courses.map((c) => [c.id, c]));
+  const chunkOnlyIds = [...byCourse.keys()].filter((id) => !existingById.has(id));
+
+  if (chunkOnlyIds.length > 0) {
+    const { data: fetched } = await supabase
+      .from("courses")
+      .select(COURSE_SELECT_COLS)
+      .in("id", chunkOnlyIds);
+    for (const row of fetched || []) {
+      if (row?.id && !existingById.has(row.id)) {
+        courses.push(row);
+        existingById.set(row.id, row);
+      }
+    }
+  }
+
+  for (const [cid, g] of byCourse) {
+    const c = existingById.get(cid);
+    if (!c) continue;
+
+    const fromChunks = [...g.lessons.values()]
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .map(({ lesson_id, title, timestamp_start, excerpt }) => ({
+        lesson_id,
+        title,
+        timestamp_start,
+        excerpt: excerpt || undefined,
+      }));
+
+    const mergedMap = new Map();
+    for (const l of c.matchedLessons || []) {
+      mergedMap.set(matchLessonKey(l), { ...l });
+    }
+    for (const ml of fromChunks) {
+      const k = matchLessonKey(ml);
+      const cur = mergedMap.get(k);
+      if (!cur) {
+        mergedMap.set(k, ml);
+      } else if (ml.excerpt && !cur.excerpt) {
+        mergedMap.set(k, { ...cur, excerpt: ml.excerpt });
+      }
+    }
+
+    c.matchedLessons = [...mergedMap.values()].slice(0, 14);
+  }
+
+  const chunkIds = new Set(byCourse.keys());
+  const maxSim = new Map([...byCourse].map(([id, g]) => [id, g.maxSim]));
+  const withChunk = courses.filter((c) => chunkIds.has(c.id));
+  const withoutChunk = courses.filter((c) => !chunkIds.has(c.id));
+  withChunk.sort(
+    (a, b) => (maxSim.get(b.id) || 0) - (maxSim.get(a.id) || 0)
+  );
+  courses.length = 0;
+  courses.push(...withChunk, ...withoutChunk);
+}
+
 function stripHtml(html) {
   return String(html || "")
     .replace(/<[^>]*>/g, " ")
@@ -1098,7 +1195,7 @@ async function searchChunksLayer(queryForEmb) {
     const { data, error } = await supabase.rpc("match_lesson_chunks", {
       query_embedding: embResponse.data[0].embedding,
       match_threshold: 0.4,
-      match_count: 14,
+      match_count: 22,
       filter_course_id: null,
     });
     if (error) {
@@ -1107,9 +1204,11 @@ async function searchChunksLayer(queryForEmb) {
     }
     let rows = (data || []).map((row) => ({
       similarity: row.similarity,
+      lesson_id: row.lesson_id ?? null,
       lesson_title: row.lesson_title || "",
       course_title: row.course_title || "",
       course_id: row.course_id,
+      timestamp_start: row.timestamp_start ?? null,
       excerpt: String(row.content || "")
         .replace(/<[^>]*>/g, " ")
         .replace(/\s+/g, " ")
@@ -1159,7 +1258,7 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   }
 
   const omitListsForCards = !!options.omitListsForCards;
-  const chunkCardsAppended = !!options.chunkCardsAppended;
+  const omitChunkExcerptList = !!options.omitChunkExcerptList;
 
   const lines = [
     "═══ نتائج البحث في الكتالوج (للسياق فقط — لا تخترع كورسات) ═══",
@@ -1212,22 +1311,23 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   }
 
   if (chunks.length > 0) {
-    lines.push("", "## مقتطفات من محتوى الدروس (للسياق)");
-    lines.push(
-      "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة."
-    );
-    if (chunkCardsAppended) {
+    if (omitChunkExcerptList) {
       lines.push(
-        "مهم جداً: نفس المقتطفات تُعرض للمستخدم ككروت HTML في آخر الرسالة (نفس أسلوب كروت الكورسات). لا تكتب قائمة مرقّمة أو تعداداً بأسماء كورسات/دروس؛ اكتب شرحاً موجزاً عن الموضوع ثم أحِل للكروت."
+        "",
+        "## محتوى الدروس",
+        "وُجد تطابق في نصوص الحصص؛ الكورسات والدروس ذات الصلة تُعرض في الكروت مع مقتطف من الدرس يوضح المطابقة. لا تكتب قائمة بأسماء كورسات أو دروس في النص."
       );
     } else {
+      lines.push("", "## مقتطفات من محتوى الدروس (للسياق)");
       lines.push(
-        "اذكر اسم الكورس والدرس بوضوح في النص إن احتجت."
+        "لو كان سؤال المستخدم عن مصطلح أو أداة تظهر في نص الدرس فقط (مثل workflow) وليس في عنوان دبلومة/كورس، اعتمد هذه المقتطفات للإجابة واذكر اسم الكورس والدرس إن احتجت."
       );
-    }
-    for (const ch of chunks) {
-      const head = [ch.course_title, ch.lesson_title].filter(Boolean).join(" — ");
-      lines.push(`- ${head ? `«${head}» ` : ""}${ch.excerpt}`);
+      for (const ch of chunks) {
+        const head = [ch.course_title, ch.lesson_title]
+          .filter(Boolean)
+          .join(" — ");
+        lines.push(`- ${head ? `«${head}» ` : ""}${ch.excerpt}`);
+      }
     }
   }
 
@@ -1236,25 +1336,19 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
       "",
       "تعليمات العرض: رتّب الرد بعناوين فرعية عند الحاجة (دبلومات / كورسات / دروس / مقتطفات). لا تكرر محتوى الكروت؛ الكروت تظهر آلياً بعد نصك."
     );
-  } else if (chunks.length > 0) {
-    lines.push(
-      "",
-      "إن لم تُعرض كروت دبلومات/كورسات أو كان الموضوع داخل المقتطفات فقط: اجب من المقتطفات واذكر الكورس والدرس؛ جملة ترحيب قصيرة مسموحة ثم الإجابة."
-    );
   }
 
   return lines.join("\n");
 }
 
 /**
- * @returns {{ text: string, cardsAppendHtml: string, chunksAppendHtml: string, intent: object, searchTerms: string[] }}
+ * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
  */
 async function runCatalogSearch(userClean, intent) {
   if (!supabase) {
     return {
       text: "",
       cardsAppendHtml: "",
-      chunksAppendHtml: "",
       intent,
       searchTerms: [],
     };
@@ -1276,7 +1370,6 @@ async function runCatalogSearch(userClean, intent) {
     return {
       text: "",
       cardsAppendHtml: "",
-      chunksAppendHtml: "",
       intent,
       searchTerms: [],
     };
@@ -1287,7 +1380,6 @@ async function runCatalogSearch(userClean, intent) {
     return {
       text: "",
       cardsAppendHtml: "",
-      chunksAppendHtml: "",
       intent,
       searchTerms: [],
     };
@@ -1326,19 +1418,21 @@ async function runCatalogSearch(userClean, intent) {
       );
 
   const coursesForCards = courses.map((c) => ({ ...c }));
-  await injectDiplomaInfoForGpt(supabase, coursesForCards);
   mergeLessonsIntoCourses(coursesForCards, lessons);
+  await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks);
+  await injectDiplomaInfoForGpt(supabase, coursesForCards);
   const instructors = await fetchInstructorsForCourses(
     supabase,
     coursesForCards
   );
-  const cardsAppendHtml = buildCatalogCardsAppendHtml(
+  let cardsAppendHtml = buildCatalogCardsAppendHtml(
     diplomasForCatalog,
     coursesForCards,
     instructors
   );
-
-  const chunksAppendHtml = buildChunkCardsAppendHtml(chunks);
+  if (!cardsAppendHtml && chunks.length > 0) {
+    cardsAppendHtml = buildChunkCardsAppendHtml(chunks);
+  }
 
   const text = formatCatalogBlock(
     diplomasForCatalog,
@@ -1347,10 +1441,10 @@ async function runCatalogSearch(userClean, intent) {
     chunks,
     {
       omitListsForCards: Boolean(cardsAppendHtml),
-      chunkCardsAppended: Boolean(chunksAppendHtml),
+      omitChunkExcerptList: Boolean(cardsAppendHtml && chunks.length > 0),
     }
   );
-  return { text, cardsAppendHtml, chunksAppendHtml, intent, searchTerms };
+  return { text, cardsAppendHtml, intent, searchTerms };
 }
 
 module.exports = {
