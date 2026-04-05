@@ -832,7 +832,8 @@ function rankAndFilterCourses(
     const simN = typeof sim === "number" ? sim : 0;
     const lexT = lexicalTitleKeywordsDomainScore(c, effectiveTerms);
     const lexFull = lexicalScoreCourse(c, effectiveTerms);
-    const total = lexFull + Math.floor(simN * 28);
+    const vertPen = catalogTitleVerticalMismatchPenalty(c, userClean, intent);
+    const total = lexFull + Math.floor(simN * 28) - vertPen;
     return { c, lexT, lexFull, sim: simN, total };
   });
 
@@ -2225,6 +2226,71 @@ function catalogEvidenceMatchBundle(userClean, searchTerms, intent) {
 }
 
 /**
+ * تخصّصات شائعة في عناوين الكورسات (أداة/مهارة عامة + مجال ضيق).
+ * إن وُجدت في عنوان الكورس ولم تُذكر في سؤال المستخدم/النية نخفّض الصلة —
+ * يمنع «فوتوشوب معماري» أن يتفوّق على سؤال عام عن سير عمل تصميم صور.
+ */
+const _TITLE_VERTICAL_SPECIALIZATIONS = [
+  "معماري",
+  "معمارى",
+  "عقاري",
+  "طبي",
+  "قانوني",
+  "محاسبي",
+  "ضريبي",
+  "هندسي",
+  "مدني",
+  "انشائي",
+  "إنشائي",
+  "ديكور",
+  "داخلي",
+  "تنفيذي",
+  "اشرافي",
+  "إشرافي",
+  "architectural",
+  "structural",
+  "medical",
+  "legal",
+  "accounting",
+  "civil",
+  "interior",
+];
+
+function catalogTitleVerticalMismatchPenalty(course, userClean, intent) {
+  const anchorBlob = [
+    buildCatalogEvidenceAnchor(userClean, intent),
+    String(userClean || ""),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const titleBlob = [course?.title, course?.subtitle].filter(Boolean).join(" ");
+  if (!String(titleBlob).trim()) return 0;
+
+  const titleNorm = normalizeArabic(titleBlob.toLowerCase());
+  const titleRaw = titleBlob.toLowerCase();
+  const anchorNorm = normalizeArabic(anchorBlob.toLowerCase());
+  const anchorRaw = anchorBlob.toLowerCase();
+
+  let penalty = 0;
+  for (const spec of _TITLE_VERTICAL_SPECIALIZATIONS) {
+    const s = String(spec).trim();
+    if (s.length < 4) continue;
+    const sn = normalizeArabic(s.toLowerCase());
+    const inTitle =
+      titleNorm.includes(sn) ||
+      (/[a-z]{4,}/i.test(s) && englishWholeWord(titleRaw, s));
+    if (!inTitle) continue;
+
+    if (termAppearsInUserMessage(s, anchorBlob)) continue;
+    if (anchorNorm.includes(sn)) continue;
+    if (/[a-z]{4,}/i.test(s) && englishWholeWord(anchorRaw, s)) continue;
+
+    penalty += 88;
+  }
+  return Math.min(penalty, 220);
+}
+
+/**
  * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords وحدها — غالباً وسوم SEO عامة).
  */
 function catalogCourseHasLexicalTopicEvidence(
@@ -2385,6 +2451,7 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
     if (!Number.isNaN(ls) && ls > 0) score += ls * 55;
   }
 
+  score -= catalogTitleVerticalMismatchPenalty(course, userClean, intent);
   return score;
 }
 
