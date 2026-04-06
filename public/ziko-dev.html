@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>زيكو — تجربة محلية</title>
+  <style>
+    body { margin: 0; font-family: Tahoma, Geneva, sans-serif; direction: rtl; background: #fafafa; }
+    #ziko-dev-banner {
+      background: #fff8e6; border-bottom: 1px solid #f0d78c; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: #5c4a00;
+    }
+    #ziko-dev-banner code { background: #fff; padding: 2px 6px; border-radius: 4px; }
+    #ziko-dev-err { display: none; color: #a30000; padding: 12px; }
+  </style>
+  <script>
+    window.ZIKO_API_BASE = window.location.origin;
+  </script>
+</head>
+<body>
+  <div id="ziko-dev-banner">
+    <strong>تجربة محلية:</strong> الويدجت يتصل بـ <code id="ziko-origin"></code> (نفس السيرفر).
+    للإنتاج على Teachable ضع قبل الويدجت:
+    <code>&lt;script&gt;window.ZIKO_API_BASE="https://easyt-chat-server.onrender.com";&lt;/script&gt;</code>
+  </div>
+  <div id="ziko-dev-err"></div>
+  <div id="ziko-widget-root"></div>
+  <script>
+    document.getElementById("ziko-origin").textContent = window.location.origin;
+    (function () {
+      var root = document.getElementById("ziko-widget-root");
+      var err = document.getElementById("ziko-dev-err");
+      fetch("/ziko-embed.html", { cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        })
+        .then(function (html) {
+          if (!html || html.indexOf("ziko-toggle") === -1) throw new Error("invalid");
+          root.innerHTML = html;
+          Array.prototype.slice.call(root.querySelectorAll("script")).forEach(function (old) {
+            var s = document.createElement("script");
+            if (old.src) s.src = old.src;
+            else s.textContent = old.textContent;
+            old.replaceWith(s);
+          });
+        })
+        .catch(function () {
+          err.style.display = "block";
+          err.innerHTML =
+            "لم يُوجد <code>public/ziko-embed.html</code> أو فاضي. من مجلد المشروع شغّل:<br>" +
+            "<code>Get-Content .\\widget-raw.html -Raw -Encoding UTF8 | node scripts\\ziko-dev-inject.js</code><br>" +
+            "(widget-raw.html = نسخة HTML الكاملة للويدجت v4.5)";
+        });
+    })();
+  </script>
+</body>
+</html>

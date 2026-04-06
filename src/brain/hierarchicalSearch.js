@@ -10,6 +10,8 @@ const { supabase, openai } = require("../lib/clients");
 
 /** أقصى عدد كروت كورسات في الرد — تجنباً لإغراق المستخدم بعشرات النتائج الضعيفة الصلة */
 const MAX_COURSE_CATALOG_CARDS = 6;
+/** أقصى عناصر تُرسل لمراجعة عناوين بالنموذج (كورسات + دبلومات) */
+const MAX_LLM_TITLE_FILTER_ITEMS = 14;
 /** أدنى تشابه لقبول chunk من match_lesson_chunks (كان 0.36 في الـ RPC فيدخل أي محتوى). */
 const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
 /** إن لم يوجد تطابق معجمي في نص الـ chunk أو عنوان الدرس، لا نقبل تشابهاً دلالياً ضعيفاً فقط. */
@@ -22,10 +24,7 @@ const {
   COURSE_SELECT_COLS,
 } = require("../config/constants");
 const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
-const {
-  buildCatalogCardsAppendHtml,
-  buildChunkCardsAppendHtml,
-} = require("./catalogCards");
+const { buildCatalogCardsAppendHtml } = require("./catalogCards");
 
 /** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
 let _gptDiplomaMapCache = { data: null, ts: 0 };
@@ -697,6 +696,10 @@ function buildStrictDiplomaAnchorTerms(userClean) {
  * يزيل دبلومات لا يظهر في عنوانها أي مصطلّح من كلمات المستخدم الفعلية.
  * لا يوجد fallback إلى searchTerms الكامل — كان يعيد دبلومات «عامة» (كمبيوتر/سيبراني) لطلبات غير ذات صلة.
  */
+function filterDiplomasHomonymClash(diplomas) {
+  return diplomas?.length ? diplomas : diplomas || [];
+}
+
 function filterDiplomasForAnchoredTitles(
   diplomas,
   userClean,
@@ -709,9 +712,10 @@ function filterDiplomasForAnchoredTitles(
   const strict = buildStrictDiplomaAnchorTerms(userClean);
   if (strict.length === 0) return [];
 
-  const filtered = diplomas.filter((d) =>
+  let filtered = diplomas.filter((d) =>
     diplomaTitleHitsAnchoredTerms(d, strict)
   );
+  filtered = filterDiplomasHomonymClash(filtered);
   return filtered.length > 0 ? filtered : [];
 }
 
@@ -765,6 +769,18 @@ function mergeCoursesByIdPreferOrder(primary, secondary) {
   return out;
 }
 
+function mergeDiplomasByIdPreferOrder(primary, secondary) {
+  const seen = new Set();
+  const out = [];
+  for (const d of [...(primary || []), ...(secondary || [])]) {
+    const id = d?.id;
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    out.push(d);
+  }
+  return out;
+}
+
 /**
  * أفضل كورسات حسب تشابه الـ embedding مع الاستعلام — بدون أسماء ثابتة.
  * يُستخدم لعدم حذف كورس عنوانه بلغة/صيغة مختلفة عن السؤال لمجرد أن كورساً آخر طابق جزءاً معجمياً (مثل مقطع داخل كلمة أطول).
@@ -785,10 +801,12 @@ function rankAndFilterCourses(
   scoreTerms,
   semanticMap,
   userClean,
-  intent
+  intent,
+  conversationSnippet = ""
 ) {
-  const isChild = intent?.audience === "child";
-  const MAX_CARDS = isChild ? 4 : MAX_COURSE_CATALOG_CARDS;
+  const childStrict = intent?.audience === "child";
+  const childOrMixed = intentUsesChildSensitiveRetrieval(intent);
+  const MAX_CARDS = childStrict ? 4 : MAX_COURSE_CATALOG_CARDS;
   const effectiveTerms = effectiveCourseFilterTerms(
     userClean,
     scoreTerms,
@@ -832,7 +850,7 @@ function rankAndFilterCourses(
     const simN = typeof sim === "number" ? sim : 0;
     const lexT = lexicalTitleKeywordsDomainScore(c, effectiveTerms);
     const lexFull = lexicalScoreCourse(c, effectiveTerms);
-    const vertPen = catalogTitleVerticalMismatchPenalty(c, userClean, intent);
+    const vertPen = catalogTitleVerticalMismatchPenalty();
     const total = lexFull + Math.floor(simN * 28) - vertPen;
     return { c, lexT, lexFull, sim: simN, total };
   });
@@ -875,7 +893,7 @@ function rankAndFilterCourses(
     kept.sort((a, b) => b.total - a.total || b.lexT - a.lexT);
   }
 
-  if (isChild && hasSem) {
+  if (childOrMixed && hasSem) {
     kept = kept.filter(
       (x) => x.sim >= 0.78 || (x.lexT >= 130 && x.sim >= 0.7)
     );
@@ -918,6 +936,7 @@ function expandArabicVariants(terms) {
 function defaultIntent() {
   return {
     skip_catalog: true,
+    browse_all_diplomas: false,
     search_text: "",
     terms_ar: [],
     terms_en: [],
@@ -927,12 +946,29 @@ function defaultIntent() {
     constraints: [],
     skill_level: null,
     response_style: null,
+    /** يحددها النموذج دلالياً — الكود لا يفحص نص المستخدم لهذا الغرض */
+    design_interpretation: null,
+    code_learning_segment: null,
+    search_text_secondary: "",
+    focus_audience: null,
   };
 }
 
-/** يمنع اعتبار skip_catalog = true عندما يعيد النموذج نصاً مثل "false" بدل boolean */
+/**
+ * الافتراضي: لا بحث في الكتالوج إلا إذا حدد النموذج skip_catalog: false صراحةً.
+ * (المحادثة العادية لا تُشغّل match_courses تلقائياً.)
+ */
 function parseIntentSkipCatalog(raw) {
-  const v = raw && raw.skip_catalog;
+  if (!raw || typeof raw !== "object") return true;
+  const v = raw.skip_catalog;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  return true;
+}
+
+function parseIntentBrowseAllDiplomas(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  const v = raw.browse_all_diplomas;
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   return false;
 }
@@ -943,6 +979,7 @@ function normalizeIntent(raw) {
   let audience = null;
   if (aud === "child" || aud === "kid" || aud === "kids") audience = "child";
   else if (aud === "adult" || aud === "professional") audience = "adult";
+  else if (aud === "mixed" || aud === "both" || aud === "dual") audience = "mixed";
 
   const sk = String(raw.skill_level || "").toLowerCase();
   let skill_level = null;
@@ -963,8 +1000,50 @@ function normalizeIntent(raw) {
         .slice(0, 8)
     : [];
 
+  const di = String(raw.design_interpretation || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_");
+  let design_interpretation = null;
+  if (
+    di === "graphic_spatial" ||
+    di === "visual" ||
+    di === "graphic_or_visual" ||
+    di === "spatial_product"
+  ) {
+    design_interpretation = "graphic_spatial";
+  } else if (
+    di === "organizational_admin" ||
+    di === "organizational" ||
+    di === "hr_structures"
+  ) {
+    design_interpretation = "organizational_admin";
+  }
+
+  const cs = String(raw.code_learning_segment || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_");
+  let code_learning_segment = null;
+  if (
+    cs === "youth_beginner" ||
+    cs === "child_beginner" ||
+    cs === "kids_beginner"
+  ) {
+    code_learning_segment = "youth_beginner";
+  } else if (
+    cs === "split_adult_and_youth" ||
+    cs === "both_tracks" ||
+    cs === "dual"
+  ) {
+    code_learning_segment = "split_adult_and_youth";
+  } else if (cs === "adult_general" || cs === "adult") {
+    code_learning_segment = "adult_general";
+  }
+
   return {
     skip_catalog: parseIntentSkipCatalog(raw),
+    browse_all_diplomas: parseIntentBrowseAllDiplomas(raw),
     search_text: String(raw.search_text || raw.query || "").trim(),
     terms_ar: Array.isArray(raw.terms_ar)
       ? raw.terms_ar.map((x) => String(x).trim()).filter(Boolean)
@@ -980,73 +1059,117 @@ function normalizeIntent(raw) {
     constraints,
     skill_level,
     response_style,
+    design_interpretation,
+    code_learning_segment,
+    search_text_secondary: String(raw.search_text_secondary || "")
+      .trim()
+      .slice(0, 700),
+    focus_audience: (() => {
+      const fo = String(raw.focus_audience || "")
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, "_");
+      if (fo === "child_only" || fo === "child" || fo === "minor_only")
+        return "child_only";
+      if (fo === "adult_only" || fo === "adult") return "adult_only";
+      if (fo === "both" || fo === "mixed_focus") return "both";
+      return null;
+    })(),
   };
+}
+
+/** مسارا استرجاع دلاليين: يفعّل فقط بحقول النية من النموذج، لا بفحص كلمات في الكود. */
+function intentWantsDualTrackRetrieval(intent) {
+  const sec = String(intent?.search_text_secondary || "").trim();
+  if (sec.length < 8) return false;
+  return (
+    intent?.audience === "mixed" ||
+    intent?.code_learning_segment === "split_adult_and_youth"
+  );
+}
+
+function intentUsesChildSensitiveRetrieval(intent) {
+  if (intent?.audience === "child" || intent?.audience === "mixed") return true;
+  if (intent?.focus_audience === "child_only") return true;
+  const seg = intent?.code_learning_segment;
+  return (
+    seg === "youth_beginner" ||
+    seg === "split_adult_and_youth"
+  );
 }
 
 function fallbackIntentFromMessage(userMessage) {
   const t = (userMessage || "").trim();
   if (t.length < 2) return defaultIntent();
-  if (
-    t.length < 6 &&
-    typeof looksLikeTopicOrToolQuery === "function" &&
-    !looksLikeTopicOrToolQuery(userMessage)
-  ) {
-    return defaultIntent();
-  }
-  return {
-    skip_catalog: false,
-    search_text: t.slice(0, 500),
-    terms_ar: [],
-    terms_en: [],
-    tools: [],
-    audience: null,
-    primary_goal: "",
-    constraints: [],
-    skill_level: null,
-    response_style: null,
-  };
+  return defaultIntent();
 }
 
 /**
- * يستخرج نصاً للتضمين + كلمات للـ ilike؛ يفهم المعنى (مثلاً جدول → Excel).
+ * يستخرج نصاً للتضمين + كلمات للـ ilike؛ المعنى من نموذج النية لا من مطابقة كلمات في الكود.
  */
-async function extractSearchIntent(userMessage) {
+async function extractSearchIntent(userMessage, options = {}) {
   if (!openai || !userMessage) return defaultIntent();
   const trimmed = userMessage.trim().slice(0, 2000);
   if (trimmed.length < 4) return defaultIntent();
+
+  const conv = String(options.conversationSnippet || "")
+    .trim()
+    .slice(0, 1600);
 
   try {
     const completion = await openai.chat.completions.create({
       model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
       response_format: { type: "json_object" },
       temperature: 0.12,
-      max_tokens: 520,
+      max_tokens: 640,
       messages: [
         {
           role: "system",
-          content: `أنت تحلّل رسالة مستخدم لمنصة تعليمية وتستخرج حقولاً للبحث في الكتالوج ولتوجيه الرد.
+          content: `أنت تحلّل نية المستخدم لشات منصة تعليمية. اعتمد **الفهم الدلالي للمعنى** في أي صياغة (عربي عامي/فصيح، إنجليزي، جمل قصيرة أو طويلة) — لا تفترض نية البحث في الكتالوج من كلمات بعينها؛ قرّر من **المقصد**.
+
+**الافتراضي skip_catalog: true** (لا بحث في كتالوج الكورسات/الدبلومات).
+
 أعد JSON فقط بالمفاتيح:
-- skip_catalog: true فقط للتحية/الشكر/رسالة لا تسأل عن موضوع. أي سؤال عن أداة أو موضوع تقني أو اسم برنامج أو مصطلح يخص المحتوى → skip_catalog: false.
-- للرسالة القصيرة (كلمة أو مصطلح واحد): skip_catalog يجب أن يكون false واملأ search_text وterms_en (والإنجليزي عند الحاجة) وإلا لن يُرجع البحث كورسات من المنصة.
-- إذا كتب المستخدم مصطلحاً تقنياً بالعربي وهو في الأصل لاتيني/إنجليزي: ضع الشكل المعتمد في terms_en واملأ search_text بجملة بحث دلالية تعكس سؤاله فقط دون إضافة مواضيع أو أدوات لم يذكرها.
-- search_text: جملة واحدة للبحث الدلالي (embedding) — صُغْ الموضوع الحقيقي بعبارات واضحة للمعنى، **بما في ذلك الجمل المركّبة** (مثال: شرح سير عمل تصميم الصور أو workflow لصناعة الصور) وليس مجرد أقرب كلمة عامة. إذا ذكر طفلاً أو عمراً أو تعليماً للصغار، اجعل الجملة تصف **تعليماً مبسّطاً/مناسباً للعمر** و**لا** تقتصر على كلمة «برمجة» وحدها حتى لا يُستخلط مع مسارات احترافية للكبار؛ اربط الهدف بالعمر أو المستوى المذكور في primary_goal وconstraints.
-- primary_goal: جملة واحدة بالعربية: المطلوب النهائي من المستخدم (مثلاً: "تعليم ابن 10 سنوات أساسيات برمجة مناسبة للعمر" أو "معرفة طرق الدفع").
-- constraints: مصفوفة نصوص قصيرة للقيود الصريحة أو المستنتجة (مثلاً: "عمر 10", "ميزانية محدودة", "بدون خبرة سابقة", "للأطفال"). فارغة [] إن لا شيء.
-- skill_level: "beginner" أو "intermediate" أو "advanced" أو null إن لم يُذكر.
-- response_style: "brief" إذا طلب مختصر/سريع؛ "detailed" إذا طلب شرحاً مفصلاً؛ وإلا "normal" أو null.
-- terms_ar: كلمات أو **عبارات قصيرة دالة** من الرسالة أو مرادف مباشر؛ لا توسّع المجال بدون ذكر من المستخدم. إذا كانت الجملة **مركّبة** (تربط موضوعين مثل: سير عمل / ورك فلو + مجال مثل تصميم الصور أو جرافيك)، أدرِج عبارات تحافظ على هذا الربط (مثل: «سير عمل تصميم الصور»، «ورك فلو تصميم») ولا تكتفِ بكلمات منفردة شديدة العمومية مثل «تصميم» أو «برمجة» وحدها إذا حذفت معنى السؤال.
-- terms_en: مصطلحات إنجليزية تقنية بالشكل المعتمد؛ إذا كتب المستخدم تحليقة بالعربي ضع الشكل الإنجليزي الصحيح. لا تضف مقطعاً قصيراً من كلمة أطول كمدخل منفصل عنها.
-- tools: أسماء أدوات/برامج إن وُجدت.
-- audience: "child" إذا طفل/ابن/بنت أو عمر ≤14 أو للأطفال؛ "adult" إذا هدف وظيفي/احتراف واضح للكبار؛ وإلا null.
+- skip_catalog: **true** عندما المقصد دردشة، تعريف عن النفس، سياق شخصي أو مهني **من دون** طلب استكشاف برامج مسجّرة للبيع — بما فيه ذكر **مهنة أو سنوات خبرة وحدها** كتمهيد من دون طلب دورات أو تطوير؛ أو استفسار عن **سياسة أو إجراءات استخدام المنصة** (دفع، اشتراك، تفعيل، وصول، دعم، حساب، فيديو لا يعمل…) **بمعنى أنه يتعامل مع المنصة كمشترٍ/مستخدم** — وليس أنه يطلب **محتوى تعليمي** يحمل نفس الاسم (مثلاً فرق المعنى بين «إزاي أدفع على الموقع» و«عايز أتعلم عن أنظمة الدفع»).
+- **تمييز دلالي مهم:** إذا كان المقصد — من الرسالة أو السياق — **اكتساب مهارة عبر منصة تبيع دورات**، أو **إرشاد قاصر لتعلّم تقني**، أو **سؤال عن ماذا يتوفر للبيع تحت موضوع معيّن**، أو **ربط تطوير مهني بالمهنة المذكورة**، فذلك **ليس** مجرد «تعريف عن النفس»؛ اضبط **skip_catalog: false** واملأ حقول البحث المناسبة حتى لو وردت مهنة أو عائلة في نفس الجملة.
+- skip_catalog: **false** عندما المقصد واضح أنه يريد **استكشاف أو مقارنة أو رابط لمحتوى تعليمي مسجّل** (كورس، دورة، دبلومة، مسار تعلّم، ترشيح حسب مجال)، بأي صياغة.
+- إن وُجد **أكثر من هدف تعلّم** في نفس الرسالة أو الجلسة (مثل مهارات لشغل بالغ **و** تعليم صغير): اضبط **audience** على "mixed" و**code_learning_segment** على "split_adult_and_youth"، واملأ **search_text** و**search_text_secondary** كما في النقطتين التاليتين — لا تعتمد جملة واحدة فقط لأن التضمين الدلالي يميل حينها لمسار واحد (مثل «برمجة» عامة فيرجع مسارات غير ملائمة).
+- **search_text:** يصف **مسار الكبار/الشغل/المهنة فقط** — من السياق (حرفة، ورشة، إنتاج، رسم تنفيذي، نمذجة لقطع أو مشاريع عمل، إلخ). **لا** تستبدل ذلك بعبارات عامة عن «تكنولوجيا» أو «ذكاء اصطناعي» أو «برمجة متقدمة» إلا إذا كان المستخدم طلب ذلك صراحة.
+- **search_text_secondary:** يصف **مسار الصغار/المبتدئين الصغار فقط** — مستوى وعمر مناسبين، بداية لطيفة، برمجة مبسطة للفئة العمرية؛ **مختلف جوهرياً** عن مسار الكبار. اتركه "" إذا لا يوجد إلا مسار واحد.
+- **سياق المحادثة:** إن وُجد، استنتج منه المهنة والغرض و«الشغل» الضمني حتى لو لم تُكرر الرسالة الحالية التفاصيل؛ ادمج ذلك في **primary_goal** و**constraints** و**search_text** و**terms_en** عند الحاجة.
+- **تعدد معاني «تصميم»:** قرّر دلالياً إن كان المقصد **بصرياً/فيزيائياً/منتجات** أم **إدارياً/هياكل مؤسسات**؛ عبّر عن ذلك في **search_text** بدقة حتى لا تختلط المسارات في الاسترجاع.
+- **تعلّم البرمجة:** إن وُجد طلب للصغار **والكبار معاً**، استخدم **search_text_secondary** لمسار الصغار و**search_text** لمسار الكبار؛ لا تضع تركيز «برمجة احترافية أو ذكاء اصطناعي للكبار» في نفس سطر بحث الصغار.
+- **design_interpretation** (اختياري، إن وُجد لبس «تصميم»): null | "graphic_spatial" (تصميم بصري/منتجات/مساحات/جرافيك) | "organizational_admin" (هياكل وتنظيم إداري) — يُستنتج من المعنى لا من كلمات بعينها.
+- **code_learning_segment** (اختياري، إن وُجد تعلّم برمجة): null | "youth_beginner" | "adult_general" | "split_adult_and_youth" — يصف **لمن** المسار وهل هناك أكثر من مسار.
+- browse_all_diplomas: **true** فقط إذا المقصد طلب **قائمة شاملة أو استكشاف عام** لكل الدبلومات المتاحة **دون** تحديد مجال تقني للبحث (وليس «دبلومة في X» كموضوع محدد). عندها اضبط **skip_catalog: false** دائماً. وإلا false.
+- إذا وُجد «سياق محادثة» مع الرسالة: وكانت الرسالة الحالية إشارة أو إكمال (مثل طلب رابط، تتمة، «نفس اللي قلناه») فاستنتج الموضوع من السياق واملأ search_text وprimary_goal؛ وقرّر skip_catalog من **مقصد الجلسة** لا من طول الرسالة.
+- audience: "child" عندما المقصد **محتوى للصغار فقط**؛ "adult" عندما هدف كبار فقط؛ **"mixed"** عندما يجمع **في نفس الرسالة أو في السياق مع الرسالة** هدفاً للصغار **وهدفاً منفصلاً للكبار** — لا تخلطهم في child وحده.
+- search_text: نص للبحث الدلالي الرئيسي (مسار الكبار أو المسار الوحيد).
+- search_text_secondary: نص ثانٍ للبحث الدلالي **فقط** عندما audience="mixed" أو code_learning_segment="split_adult_and_youth"؛ وإلا "".
+- **focus_audience** (اختياري): null | "child_only" | "adult_only" | "both" — استخدم **child_only** عندما **الرسالة الحالية وحدها** تسأل عن تعلّم أو كورسات **للصغير/الابن/الابنة** (مثل «إيه الكورسات لبنتي») حتى لو السياق السابق ذكر الكبار؛ عندها املأ **search_text** بمسار الصغير فقط و**skip_catalog: false** إن طلب توصيات من المنصة.
+- primary_goal: جملة واحدة بالعربية تصف المطلوب من جهة المستخدم.
+- constraints: مصفوفة قيود مستنتجة؛ [] إن لا شيء.
+- skill_level: "beginner" | "intermediate" | "advanced" | null.
+- response_style: "brief" | "detailed" | "normal" | null.
+- terms_ar، terms_en، tools: كما يلزم للبحث؛ terms_en للمصطلحات اللاتينية/الإنجليزية الصحيحة عند الحاجة (من المقصد، دون حشو).
 
 لا تضف شرحاً خارج JSON.`,
         },
-        { role: "user", content: trimmed },
+        {
+          role: "user",
+          content: conv
+            ? `سياق محادثة سابق (للاستنتاج فقط):\n${conv}\n\n---\nالرسالة الحالية:\n${trimmed}`
+            : trimmed,
+        },
       ],
     });
     const text = completion.choices[0]?.message?.content || "{}";
     const j = JSON.parse(text);
-    return normalizeIntent(j);
+    let intent = normalizeIntent(j);
+    if (intent.browse_all_diplomas && intent.skip_catalog) {
+      intent = { ...intent, skip_catalog: false };
+    }
+    return intent;
   } catch (e) {
     console.error("extractSearchIntent:", e.message);
     return fallbackIntentFromMessage(userMessage);
@@ -1056,6 +1179,7 @@ async function extractSearchIntent(userMessage) {
 function buildSearchTerms(intent, userClean) {
   const parts = [];
   if (intent.search_text) parts.push(intent.search_text);
+  if (intent.search_text_secondary) parts.push(intent.search_text_secondary);
   if (intent.primary_goal) parts.push(intent.primary_goal);
   for (const t of intent.constraints || []) parts.push(t);
   for (const t of intent.terms_ar || []) parts.push(t);
@@ -1074,7 +1198,7 @@ function buildSearchTerms(intent, userClean) {
   return pruneEnglishSubstringsFromTerms(merged.slice(0, 16));
 }
 
-function embeddingQueryText(intent, userClean) {
+function embeddingQueryText(intent, userClean, conversationSnippet = "") {
   const extra = [intent.primary_goal, ...(intent.constraints || [])]
     .filter(Boolean)
     .join(" ")
@@ -1083,39 +1207,57 @@ function embeddingQueryText(intent, userClean) {
     .filter(Boolean)
     .join(" ")
     .trim();
-  /** رسالة المستخدم أولاً — تبقى محور الـ embedding حتى لا يطغى نص من النموذج على صياغة السؤال الفعلية. */
-  const q = [userClean, intent.search_text, extra, tech]
+  const snip = String(conversationSnippet || "").trim().slice(0, 1200);
+  /**
+   * سياق المحادثة أولاً عند وجوده — يثبت موضوع «اديني لينك / كمل» بعد حديث عن مجال معيّن.
+   * ثم الرسالة الحالية ثم ما استخرجه النموذج.
+   */
+  const q = [snip, userClean, intent.search_text, extra, tech]
     .filter(Boolean)
     .join(" ")
     .trim();
   return q.slice(0, 2000) || String(userClean || "").slice(0, 2000);
 }
 
-/** يمنع إسكات البحث عن دروس/chunks لرسائل تبدو سؤالاً عن أداة أو مصطلح. */
-function looksLikeTopicOrToolQuery(userClean) {
-  const t = String(userClean || "").trim();
-  if (t.length < 2 || t.length > 180) return false;
-  if (!/[a-zA-Z\u0600-\u06FF]/.test(t)) return false;
-  const m = normalizeArabic(t.toLowerCase()).replace(/\s+/g, " ").trim();
-  if (
-    /^(هلا|مرحبا|اهلا|السلام عليكم|صباح الخير|مساء الخير|شكرا|تمام|تمام شكرا|شكرا جزيلا|ok|yes|no|نعم|لا)\s*!*$/i.test(
-      m
-    )
-  ) {
-    return false;
-  }
-  return true;
+/** استعلام تضمين للمسار الثاني — من حقل النية فقط. */
+function embeddingQueryTextSecondary(
+  intent,
+  userClean,
+  conversationSnippet = ""
+) {
+  const sec = String(intent.search_text_secondary || "").trim();
+  if (!sec) return "";
+  const snip = String(conversationSnippet || "").trim().slice(0, 900);
+  const extra = [...(intent.constraints || [])].filter(Boolean).join(" ").trim();
+  return [snip, userClean, sec, extra]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .slice(0, 2000);
 }
 
 /** نص البحث الدلالي للـ chunks — يعتمد على نية المستخدم المستخرجة وليس قوائم كلمات ثابتة. */
-function enrichEmbeddingQueryForChunks(userClean, intent) {
-  return embeddingQueryText(intent, userClean).slice(0, 2000);
+function enrichEmbeddingQueryForChunks(
+  userClean,
+  intent,
+  conversationSnippet = ""
+) {
+  let q = embeddingQueryText(intent, userClean, conversationSnippet);
+  if (intentWantsDualTrackRetrieval(intent)) {
+    const q2 = embeddingQueryTextSecondary(
+      intent,
+      userClean,
+      conversationSnippet
+    );
+    if (q2) q = `${q}\n${q2}`.trim().slice(0, 2000);
+  }
+  return q.slice(0, 2000);
 }
 
 async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
   if (!supabase) return [];
   let rawResults = [];
-  const isChild = intent?.audience === "child";
+  const isChild = intentUsesChildSensitiveRetrieval(intent);
 
   if (openai && queryForEmb) {
     try {
@@ -1216,62 +1358,6 @@ async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
   return rawResults.slice(0, 12);
 }
 
-/** سؤال عام: عرض الدبلومات كقائمة — بدون تشغيل بحث كورسات عشوائي. */
-function isBroadDiplomasListingMessage(userClean) {
-  const raw = String(userClean || "").trim();
-  if (!raw || raw.length > 140) return false;
-  const m = normalizeArabic(raw.toLowerCase())
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (
-    /(اكسل|excel|فوتوشوب|photoshop|بايثون|python|برمج|انجليز|محاسب)/i.test(
-      raw
-    ) &&
-    !/دبلومات?/.test(m)
-  ) {
-    return false;
-  }
-  if (
-    /(كورس|دوره|دورة)(\s|$)/.test(m) &&
-    !/(دبلومات|دبلومه|دبلومة)/.test(m)
-  ) {
-    return false;
-  }
-
-  if (
-    /^(ال)?دبلومات?$/.test(m) ||
-    /^عرض\s(ال)?دبلومات?$/.test(m) ||
-    /^قائمه\s(ال)?دبلومات?$/.test(m) ||
-    /^كل\s(ال)?دبلومات$/.test(m) ||
-    /^ايه\s(ال)?دبلومات/.test(m) ||
-    /^ايه\sهي\s(ال)?دبلومات/.test(m) ||
-    /^شو\s(ال)?دبلومات/.test(m) ||
-    /^اعرض\s(ال)?دبلومات$/.test(m) ||
-    /^وريني\s(ال)?دبلومات$/.test(m) ||
-    /^دلني\sعلى\s(ال)?دبلومات/.test(m) ||
-    /^عايز\sاعرف\s(ال)?دبلومات/.test(m) ||
-    /^عندكم\sايه\sدبلومات/.test(m) ||
-    /^الدبلومات\sالمتاحه/.test(m) ||
-    /^الدبلومات\sالموجوده/.test(m) ||
-    /^list\s+(of\s+)?diplomas/i.test(raw) ||
-    /^show\s+diplomas?/i.test(raw)
-  ) {
-    return true;
-  }
-
-  if (
-    m.length <= 32 &&
-    /دبلومات?/.test(m) &&
-    !/(كورس|دوره|دورة|اكسل|فوتوشوب|جرافيك|تسويق)/.test(m)
-  ) {
-    const letters = m.replace(/\s/g, "");
-    if (letters.length <= 18) return true;
-  }
-
-  return false;
-}
-
 async function fetchAllDiplomasBrowse() {
   if (!supabase) return [];
   try {
@@ -1294,13 +1380,14 @@ async function searchCoursesLayer(
   searchTerms,
   queryForEmb,
   userClean = "",
-  intent = {}
+  intent = {},
+  conversationSnippet = ""
 ) {
   if (!supabase) return [];
   const limitedTerms = searchTerms.slice(0, 8);
   if (limitedTerms.length === 0) return [];
 
-  const isChild = intent?.audience === "child";
+  const isChild = intentUsesChildSensitiveRetrieval(intent);
 
   const lexicalTerms = termsForCourseLexical(limitedTerms, userClean);
   const userDerived = prepareSearchTerms([userClean || ""]).filter(
@@ -1503,7 +1590,8 @@ async function searchCoursesLayer(
     scoreTerms,
     semanticMap,
     userClean,
-    intent
+    intent,
+    conversationSnippet
   );
   for (const c of out) {
     const sim = semanticMap.get(c.id);
@@ -2014,6 +2102,22 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms, intent) {
   }
 }
 
+/** عناوين حقيقية من DB — تُمرَّر للنموذج مع الكروت حتى لا يخترع أسماء دبلومات/كورسات. */
+function collectCatalogProductTitles(diplomas, courses, max = 32) {
+  const out = [];
+  const seen = new Set();
+  for (const row of [...(diplomas || []), ...(courses || [])]) {
+    const t = String(row?.title || "").trim();
+    if (t.length < 2) continue;
+    const k = normalizeArabic(t.toLowerCase()).replace(/\s+/g, " ");
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
   if (
     !diplomas.length &&
@@ -2034,9 +2138,10 @@ function formatCatalogBlock(diplomas, courses, lessons, chunks, options = {}) {
 
   if (omitListsForCards) {
     lines.push(
-      "مهم جداً: كروت HTML للدبلومات والكورسات (عنوان، سعر، وصف، دروس مرتبطة، روابط) تُلحق تلقائياً في آخر رسالة المستخدم — لا تكتب أي نص قبلها ولا بعدها يذكر عناوين كورسات/دبلومات أو أسعارها أو قوائم Markdown (# أو -) لها؛ ممنوع تكرار ما في الكروت.",
+      "مهم جداً: كروت HTML للدبلومات والكورسات (عنوان، سعر، وصف، دروس مرتبطة، روابط) تُلحق تلقائياً في آخر رسالة المستخدم.",
+      "سيتم تمرير **قائمة العناوين الحقيقية** من قاعدة البيانات في رسالة النظام تحت عنوان منفصل — **ممنوع** اختراع عنوان دبلومة أو كورس؛ أي اسم تذكره يجب أن يطابق حرفياً سطراً من تلك القائمة، أو اكتفِ بجملة عامة بلا أسماء.",
       "إن كان سؤال المستخدم يخص اشتراكاً عاماً أو دفعاً أو سياسة غير الكتالوج فقط، أجب عن ذلك في جمل قصيرة دون تعداد كورسات.",
-      `عدد النتائج في الكروت: ${diplomas.length} دبلوم، ${courses.length} كورس (لا تسردها نصاً).`
+      `عدد النتائج في الكروت: ${diplomas.length} دبلوم، ${courses.length} كورس.`
     );
   } else {
     lines.push(
@@ -2138,14 +2243,12 @@ function termAppearsInUserMessage(t, userClean) {
   return false;
 }
 
-/**
- * نص إرساء للكروت فقط: حقول منظّمة + رسالة المستخدم — بدون search_text.
- * السبب: buildSearchTerms يضمّن search_text فيُشتّت tokens كثيرة (مثلاً حشو من GPT)؛
- * وإذا كان anchor يحتوي search_text فكلمة من الفقرة تُعتبر «مرساة» وتدخل كورسات تسويق/عامة بمطابقة درس ضعيفة.
- */
+/** يبنى نص الإرساء لمصطلحات صلة الكروت من رسالة المستخدم وحقول النية بما فيها نص البحث الدلالي. */
 function buildCatalogEvidenceAnchor(userClean, intent) {
   const parts = [
     userClean,
+    intent?.search_text,
+    intent?.search_text_secondary,
     intent?.primary_goal,
     ...((intent && intent.constraints) || []),
     ...(intent?.terms_ar || []),
@@ -2177,6 +2280,9 @@ function collectRelevanceTermsBroadForCatalog(userClean, intent) {
   for (const t of intent?.tools || []) push(t);
   for (const t of intent?.terms_ar || []) push(t);
   for (const t of prepareSearchTerms([userClean || ""])) push(t);
+  for (const t of prepareSearchTerms([String(intent?.search_text || "")])) push(t);
+  for (const t of prepareSearchTerms([String(intent?.search_text_secondary || "")]))
+    push(t);
   const goalBlock = [
     intent?.primary_goal,
     ...((intent && intent.constraints) || []),
@@ -2190,7 +2296,7 @@ function collectRelevanceTermsBroadForCatalog(userClean, intent) {
 }
 
 /**
- * مصطلحات المطابقة المعجمية للكروت: ما يظهر في buildCatalogEvidenceAnchor (بدون نثر search_text).
+ * مصطلحات المطابقة المعجمية للكروت: ما يظهر في نص الإرساء (بما فيه search_text عندما يملؤه النموذج).
  */
 function collectRelevanceTermsForCatalogEvidence(
   userClean,
@@ -2225,76 +2331,41 @@ function catalogEvidenceMatchBundle(userClean, searchTerms, intent) {
   };
 }
 
-/**
- * تخصّصات شائعة في عناوين الكورسات (أداة/مهارة عامة + مجال ضيق).
- * إن وُجدت في عنوان الكورس ولم تُذكر في سؤال المستخدم/النية نخفّض الصلة —
- * يمنع «فوتوشوب معماري» أن يتفوّق على سؤال عام عن سير عمل تصميم صور.
- */
-const _TITLE_VERTICAL_SPECIALIZATIONS = [
-  "معماري",
-  "معمارى",
-  "عقاري",
-  "طبي",
-  "قانوني",
-  "محاسبي",
-  "ضريبي",
-  "هندسي",
-  "مدني",
-  "انشائي",
-  "إنشائي",
-  "ديكور",
-  "داخلي",
-  "تنفيذي",
-  "اشرافي",
-  "إشرافي",
-  "architectural",
-  "structural",
-  "medical",
-  "legal",
-  "accounting",
-  "civil",
-  "interior",
-];
-
-/** هل طلب المستخدم صراحة هذا المجال الضيق؟ نعتمد الرسالة + constraints فقط — لا حقول GPT الأخرى (قد «ترافق» معماري بلا قصد). */
-function userFacingTextMentionsVerticalSpec(spec, userClean, intent) {
-  const parts = [
-    String(userClean || ""),
-    ...((intent && intent.constraints) || []),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const s = String(spec).trim();
-  const sn = normalizeArabic(s.toLowerCase());
-  const u = normalizeArabic(parts.toLowerCase());
-  const raw = parts.toLowerCase();
-  if (sn.length >= 3 && u.includes(sn)) return true;
-  if (/[a-z]{4,}/i.test(s) && englishWholeWord(raw, s)) return true;
-  return false;
+/** عتبات قبول التشابه الدلالي/الـ chunks فقط — بدون مطابقة عنوان؛ أعلى للصغار وللحالات الضيقة. */
+function catalogSemanticThresholdsForGate(intent, strictSemantic) {
+  const childish =
+    intent?.audience === "child" ||
+    intent?.code_learning_segment === "youth_beginner" ||
+    intent?.focus_audience === "child_only";
+  const mixedOrSplit =
+    intent?.audience === "mixed" ||
+    intent?.code_learning_segment === "split_adult_and_youth";
+  if (childish) {
+    return strictSemantic
+      ? { minVs: 0.64, minCh: 0.8 }
+      : { minVs: 0.76, minCh: 0.86 };
+  }
+  if (mixedOrSplit) {
+    return strictSemantic
+      ? { minVs: 0.55, minCh: 0.76 }
+      : { minVs: 0.68, minCh: 0.82 };
+  }
+  return strictSemantic
+    ? { minVs: 0.5, minCh: 0.74 }
+    : { minVs: 0.62, minCh: 0.78 };
 }
 
-function catalogTitleVerticalMismatchPenalty(course, userClean, intent) {
-  const titleBlob = [course?.title, course?.subtitle].filter(Boolean).join(" ");
-  if (!String(titleBlob).trim()) return 0;
+function catalogMustRejectSemanticOnlyWithoutStrongSignal(intent) {
+  return (
+    intent?.audience === "child" ||
+    intent?.code_learning_segment === "youth_beginner" ||
+    intent?.focus_audience === "child_only"
+  );
+}
 
-  const titleNorm = normalizeArabic(titleBlob.toLowerCase());
-  const titleRaw = titleBlob.toLowerCase();
-
-  let penalty = 0;
-  for (const spec of _TITLE_VERTICAL_SPECIALIZATIONS) {
-    const s = String(spec).trim();
-    if (s.length < 4) continue;
-    const sn = normalizeArabic(s.toLowerCase());
-    const inTitle =
-      titleNorm.includes(sn) ||
-      (/[a-z]{4,}/i.test(s) && englishWholeWord(titleRaw, s));
-    if (!inTitle) continue;
-
-    if (userFacingTextMentionsVerticalSpec(spec, userClean, intent)) continue;
-
-    penalty += 200;
-  }
-  return Math.min(penalty, 650);
+/** عقوبة رأسية كانت قائمة كلمات — أُلغيت؛ الصلة من التضمين والنية. */
+function catalogTitleVerticalMismatchPenalty() {
+  return 0;
 }
 
 /**
@@ -2328,15 +2399,31 @@ function catalogCourseHasLexicalTopicEvidence(
  * رفض نتائج ضعيفة: لا نمرّر كورساً لمجرد تطابق keywords في قاعدة البيانات.
  * يُقبل تشابه دلالي/Chunk عالٍ فقط كاستثناء.
  */
-function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
+function catalogCoursePassesTopicGate(
+  course,
+  userClean,
+  searchTerms,
+  intent,
+  conversationSnippet = ""
+) {
   const { terms, matchTerms, strictSemantic } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
   );
-  if (terms.length === 0) return true;
+  const { minVs, minCh } = catalogSemanticThresholdsForGate(
+    intent,
+    strictSemantic
+  );
+  const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
+  const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
 
-  if (courseTitleOrSubtitleHitsTerm(course, matchTerms)) return true;
+  if (terms.length === 0) {
+    return vs >= 0.88 || ch >= 0.88;
+  }
+
+  const titleHit = courseTitleOrSubtitleHitsTerm(course, matchTerms);
+  if (titleHit) return true;
 
   for (const l of course.matchedLessons || []) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
@@ -2347,10 +2434,9 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
     }
   }
 
-  const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
-  const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
-  const minVs = strictSemantic ? 0.47 : 0.41;
-  const minCh = strictSemantic ? 0.72 : 0.7;
+  if (catalogMustRejectSemanticOnlyWithoutStrongSignal(intent)) {
+    return false;
+  }
   if (vs >= minVs) return true;
   if (ch >= minCh) return true;
   return false;
@@ -2360,7 +2446,13 @@ function catalogCoursePassesTopicGate(course, userClean, searchTerms, intent) {
  * إن وُجدت على الأقل كورس واحد فيه دليل معجمي (عنوان/درس)، نعرض فقط هذه الكورسات —
  * ثم نقطع النتائج الضعيفة نسبةً لأفضل درجة (نفس السؤال قد يمرّر كورسين بمطابقة مصطلح عام من terms_en).
  */
-function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
+function preferLexicalCatalogCourses(
+  courses,
+  userClean,
+  searchTerms,
+  intent,
+  conversationSnippet = ""
+) {
   if (!courses?.length) return courses;
   const terms = collectRelevanceTermsForCatalogEvidence(
     userClean,
@@ -2370,11 +2462,21 @@ function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
   if (terms.length === 0) return courses;
   const hasLex = (c) =>
     catalogCourseHasLexicalTopicEvidence(c, userClean, searchTerms, intent);
-  if (!courses.some(hasLex)) return courses;
+  const anyLex = courses.some(hasLex);
+  if (catalogMustRejectSemanticOnlyWithoutStrongSignal(intent) && !anyLex) {
+    return [];
+  }
+  if (!anyLex) return courses;
   let kept = courses.filter(hasLex);
   const scored = kept.map((c) => ({
     c,
-    s: scoreCatalogCourse(c, userClean, searchTerms, intent),
+    s: scoreCatalogCourse(
+      c,
+      userClean,
+      searchTerms,
+      intent,
+      conversationSnippet
+    ),
   }));
   scored.sort((a, b) => b.s - a.s);
   const best = scored[0]?.s ?? 0;
@@ -2388,6 +2490,165 @@ function preferLexicalCatalogCourses(courses, userClean, searchTerms, intent) {
     kept = scored.map((x) => x.c);
   }
   return kept.slice(0, MAX_COURSE_CATALOG_CARDS);
+}
+
+/**
+ * مراجعة صلة **عناوين** منتجات الكتالوج بالنموذج: قراءة المعنى من العنوان/الفرعي وليس مطابقة كلمات في الكود.
+ * يعطّل بـ SKIP_LLM_CATALOG_TITLE_FILTER=1
+ */
+async function llmPruneCatalogRowsByTitleFit(
+  diplomas,
+  courses,
+  intent,
+  userClean,
+  conversationSnippet,
+  broadDiplomaListing = false
+) {
+  const skip = /^(1|true|yes)$/i.test(
+    String(process.env.SKIP_LLM_CATALOG_TITLE_FILTER || "").trim()
+  );
+  if (skip || !openai) {
+    return { diplomas: diplomas || [], courses: courses || [] };
+  }
+  const dIn = diplomas || [];
+  const cIn = courses || [];
+  if (dIn.length === 0 && cIn.length === 0) {
+    return { diplomas: dIn, courses: cIn };
+  }
+
+  const skipDiplomaReview =
+    broadDiplomaListing || dIn.length > 12;
+  const maxD = skipDiplomaReview ? 0 : Math.min(dIn.length, 6);
+  const maxC = Math.min(
+    cIn.length,
+    Math.max(0, MAX_LLM_TITLE_FILTER_ITEMS - maxD)
+  );
+  const dipSlice = dIn.slice(0, maxD).map((d) => ({
+    id: d.id,
+    title: String(d.title || "").slice(0, 220),
+    blurb: stripHtml(String(d.description || "")).slice(0, 180),
+  }));
+  const crsSlice = cIn.slice(0, maxC).map((c) => ({
+    id: c.id,
+    title: String(c.title || "").slice(0, 220),
+    subtitle: String(c.subtitle || "").slice(0, 180),
+  }));
+
+  if (dipSlice.length === 0 && crsSlice.length === 0) {
+    return { diplomas: dIn, courses: cIn };
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      temperature: 0.06,
+      max_tokens: 500,
+      messages: [
+        {
+          role: "system",
+          content: `أنت مراجع صلة لعناوين منتجات تعليمية (دبلومات وكورسات).
+
+المطلوب: قراءة **كل عنوان** (والنص المساعد المختصر إن وُجد) وفهم **ما يعلنه المنتج فعلياً**، ثم مقارنته **برسالة المستخدم الحالية أولاً**، ثم ملخص النية والسياق — قرارك دلالي بالكامل.
+
+قواعد:
+- **أولوية رسالة المستخدم الحالية (user_message):** إذا حدّد موضوعاً تقنياً أو أداة أو مجالاً تعليمياً **باسم أو وصف واضح في نفس الرسالة** فاقبل العناوين التي تتطابق **دلالياً** مع ذلك الموضوع حتى لو سياق المحادثة السابق يتحدث عن مهنة أو فئة عمرية في موضوع مختلف.
+- إن كان المستخدم يطلب مساراً **لصغير أو مبتدئ صغير** فاقبل فقط ما يوحي العنوان بأنه **مناسب للعمر أو المستوى المبتدئ للصغار**؛ ارفض العناوين التي توحي بمسارات **احترافية للكبار** أو **مجالات غير طلبها** (مثل أعمال أو تسويق عام عندما المقصد تعليم تقني للصغار).
+- إن كان المستخدم يطلب مهارات **لشغل أو حرفة** فاقبل ما يوحي العنوان بذلك المجال؛ ارفض ما يبدو عاماً أو بعيداً عن المقصد.
+- **لا تُرجع مصفوفة course_ids فارغة** إذا بقي في القائمة كورس يتطابق **بوضوح** مع **user_message**؛ الفراغ يُستخدم فقط عندما **كل** العناوين بعيدة جداً عن الطلب الحالي.
+
+أعد JSON فقط بهذا الشكل:
+{"diploma_ids":[أرقام],"course_ids":[أرقام]}
+- استخدم فقط id الواردة في الطلب.
+- **course_ids** و **diploma_ids** بالترتيب الذي تراه أنسب للعرض (الأنسب أولاً).`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(
+            {
+              user_message: userClean,
+              conversation_snippet: String(conversationSnippet || "").slice(
+                0,
+                1000
+              ),
+              intent_summary: {
+                primary_goal: intent?.primary_goal || "",
+                search_text: intent?.search_text || "",
+                search_text_secondary: intent?.search_text_secondary || "",
+                audience: intent?.audience,
+                code_learning_segment: intent?.code_learning_segment,
+                focus_audience: intent?.focus_audience,
+                constraints: intent?.constraints || [],
+              },
+              diplomas: dipSlice,
+              courses: crsSlice,
+            },
+            null,
+            0
+          ),
+        },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content || "{}";
+    const j = JSON.parse(text);
+    const rawD = Array.isArray(j.diploma_ids) ? j.diploma_ids : [];
+    const rawC = Array.isArray(j.course_ids) ? j.course_ids : [];
+    const diplomaIds = rawD
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n));
+    const courseIds = rawC
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n));
+
+    const dMap = new Map(dIn.map((d) => [Number(d.id), d]));
+    const cMap = new Map(cIn.map((c) => [Number(c.id), c]));
+    const diplomasOut = [];
+    const seenD = new Set();
+    if (!skipDiplomaReview) {
+      for (const id of diplomaIds) {
+        const row = dMap.get(id);
+        if (row && !seenD.has(id)) {
+          seenD.add(id);
+          diplomasOut.push(row);
+        }
+      }
+    }
+    const coursesOut = [];
+    const seenC = new Set();
+    for (const id of courseIds) {
+      const row = cMap.get(id);
+      if (row && !seenC.has(id)) {
+        seenC.add(id);
+        coursesOut.push(row);
+      }
+    }
+    /**
+     * إن رجع النموذج course_ids فارغة رغم وجود مرشّحات من البحث الدلالي/المعجمي،
+     * نفقد كل الكروت عند تحوّل سؤال لاحق لموضوع مختلف عن سياق الجلسة السابق.
+     * الاحتياط: الإبقاء على ترتيب الاسترجاع السابق.
+     */
+    let coursesFinal = coursesOut;
+    if (coursesFinal.length === 0 && cIn.length > 0) {
+      console.warn(
+        "llmPruneCatalogRowsByTitleFit: empty course_ids; keeping pre-prune courses"
+      );
+      coursesFinal = cIn.slice(0, MAX_COURSE_CATALOG_CARDS);
+    }
+    let diplomasFinal = skipDiplomaReview ? dIn : diplomasOut;
+    if (!skipDiplomaReview && diplomasFinal.length === 0 && dIn.length > 0) {
+      console.warn(
+        "llmPruneCatalogRowsByTitleFit: empty diploma_ids; keeping pre-prune diplomas"
+      );
+      diplomasFinal = dIn.slice(0, maxD);
+    }
+    return {
+      diplomas: diplomasFinal,
+      courses: coursesFinal,
+    };
+  } catch (e) {
+    console.error("llmPruneCatalogRowsByTitleFit:", e.message);
+    return { diplomas: dIn, courses: cIn };
+  }
 }
 
 /** يزيل من الكارت دروساً ظهرت من تشابه chunk ضعيف بلا كلمة بحث في العنوان أو المقتطف. */
@@ -2421,7 +2682,13 @@ function pruneMatchedLessonsForSearchTerms(
 }
 
 /** درجة صلة رقمية: تشابه دلالي للكورس + chunks + تطابق عناوين/دروس مع مصطلحات البحث. */
-function scoreCatalogCourse(course, userClean, searchTerms, intent) {
+function scoreCatalogCourse(
+  course,
+  userClean,
+  searchTerms,
+  intent,
+  conversationSnippet = ""
+) {
   const { terms, matchTerms } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
@@ -2458,21 +2725,32 @@ function scoreCatalogCourse(course, userClean, searchTerms, intent) {
     if (!Number.isNaN(ls) && ls > 0) score += ls * 55;
   }
 
-  score -= catalogTitleVerticalMismatchPenalty(course, userClean, intent);
+  score -= catalogTitleVerticalMismatchPenalty();
   return score;
 }
 
 /**
  * ترتيب حسب الصلة ثم إسقاط النتائج الضعيفة جداً مقارنة بأفضل درجة (لا حذف بنصوص طويلة عشوائية).
  */
-function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) {
+function rankCatalogCoursesByRelevance(
+  courses,
+  userClean,
+  searchTerms,
+  intent,
+  conversationSnippet = ""
+) {
   if (!courses?.length) return courses;
   const scored = courses.map((c) => {
-    const pen = catalogTitleVerticalMismatchPenalty(c, userClean, intent);
-    const s = scoreCatalogCourse(c, userClean, searchTerms, intent);
+    const pen = catalogTitleVerticalMismatchPenalty();
+    const s = scoreCatalogCourse(
+      c,
+      userClean,
+      searchTerms,
+      intent,
+      conversationSnippet
+    );
     return { c, s, pen };
   });
-  /** كورس عنوانه «أداة عامة + مجال ضيق» (مثل معماري) يُستبعد إن وُجد مرشّح بدون هذا التضارب — فوتوشوب نفسه ليس خطأ؛ الخطأ عرض تخصّص لم يُذكر في السؤال. */
   const hasUnpenalized = scored.some((x) => x.pen === 0);
   let pool = hasUnpenalized ? scored.filter((x) => x.pen === 0) : scored;
   pool.sort((a, b) => b.s - a.s);
@@ -2488,13 +2766,25 @@ function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) 
     const rest = pool
       .slice(1)
       .filter((x) =>
-        catalogCoursePassesTopicGate(x.c, userClean, searchTerms, intent)
+        catalogCoursePassesTopicGate(
+          x.c,
+          userClean,
+          searchTerms,
+          intent,
+          conversationSnippet
+        )
       );
     kept = [kept[0], ...rest].slice(0, MAX_COURSE_CATALOG_CARDS);
   }
 
   const gated = kept.filter((x) =>
-    catalogCoursePassesTopicGate(x.c, userClean, searchTerms, intent)
+    catalogCoursePassesTopicGate(
+      x.c,
+      userClean,
+      searchTerms,
+      intent,
+      conversationSnippet
+    )
   );
   if (gated.length > 0) {
     kept = gated;
@@ -2506,29 +2796,26 @@ function rankCatalogCoursesByRelevance(courses, userClean, searchTerms, intent) 
 }
 
 /**
- * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[] }}
+ * @returns {{ text: string, cardsAppendHtml: string, intent: object, searchTerms: string[], catalogProductTitles: string[] }}
  */
-async function runCatalogSearch(userClean, intent) {
+async function runCatalogSearch(userClean, intent, options = {}) {
   if (!supabase) {
     return {
       text: "",
       cardsAppendHtml: "",
       intent,
       searchTerms: [],
+      catalogProductTitles: [],
     };
   }
 
-  const broadDiplomaListing = isBroadDiplomasListingMessage(userClean);
+  const conversationSnippet = String(options.conversationSnippet || "")
+    .trim()
+    .slice(0, 1600);
 
-  let intentEff = intent;
-  if (intent.skip_catalog && !broadDiplomaListing && looksLikeTopicOrToolQuery(userClean)) {
-    intentEff = {
-      ...intent,
-      skip_catalog: false,
-      search_text:
-        String(intent.search_text || "").trim() || String(userClean || "").trim(),
-    };
-  }
+  const broadDiplomaListing = intent.browse_all_diplomas === true;
+
+  const intentEff = intent;
 
   if (intentEff.skip_catalog && !broadDiplomaListing) {
     return {
@@ -2536,27 +2823,31 @@ async function runCatalogSearch(userClean, intent) {
       cardsAppendHtml: "",
       intent,
       searchTerms: [],
+      catalogProductTitles: [],
     };
   }
 
   let searchTerms = buildSearchTerms(intentEff, userClean);
-  if (searchTerms.length === 0 && !broadDiplomaListing) {
-    const uc = String(userClean || "").trim();
-    if (uc.length >= 2 && looksLikeTopicOrToolQuery(userClean)) {
-      searchTerms = pruneEnglishSubstringsFromTerms(prepareSearchTerms([uc]));
-    }
-  }
   if (searchTerms.length === 0 && !broadDiplomaListing) {
     return {
       text: "",
       cardsAppendHtml: "",
       intent,
       searchTerms: [],
+      catalogProductTitles: [],
     };
   }
 
-  const queryForEmb = embeddingQueryText(intentEff, userClean);
-  const queryForChunks = enrichEmbeddingQueryForChunks(userClean, intentEff);
+  const queryForEmb = embeddingQueryText(
+    intentEff,
+    userClean,
+    conversationSnippet
+  );
+  const queryForChunks = enrichEmbeddingQueryForChunks(
+    userClean,
+    intentEff,
+    conversationSnippet
+  );
 
   let diplomas;
   let courses;
@@ -2576,9 +2867,38 @@ async function runCatalogSearch(userClean, intent) {
   } else {
     [diplomas, courses] = await Promise.all([
       searchDiplomasLayer(searchTerms, queryForEmb, intentEff),
-      searchCoursesLayer(searchTerms, queryForEmb, userClean, intentEff),
+      searchCoursesLayer(
+        searchTerms,
+        queryForEmb,
+        userClean,
+        intentEff,
+        conversationSnippet
+      ),
     ]);
     nCoursesFromSearchLayer = courses.length;
+
+    if (intentWantsDualTrackRetrieval(intentEff)) {
+      const qSec = embeddingQueryTextSecondary(
+        intentEff,
+        userClean,
+        conversationSnippet
+      );
+      if (qSec.length >= 12) {
+        const [dip2, crs2] = await Promise.all([
+          searchDiplomasLayer(searchTerms, qSec, intentEff),
+          searchCoursesLayer(
+            searchTerms,
+            qSec,
+            userClean,
+            intentEff,
+            conversationSnippet
+          ),
+        ]);
+        diplomas = mergeDiplomasByIdPreferOrder(diplomas, dip2);
+        courses = mergeCoursesByIdPreferOrder(courses, crs2);
+        nCoursesFromSearchLayer = courses.length;
+      }
+    }
 
     diplomasForCatalog = filterDiplomasForAnchoredTitles(
       diplomas,
@@ -2627,14 +2947,26 @@ async function runCatalogSearch(userClean, intent) {
     coursesForCards,
     userClean,
     searchTerms,
-    intentEff
+    intentEff,
+    conversationSnippet
   );
   coursesForCards = preferLexicalCatalogCourses(
     coursesForCards,
     userClean,
     searchTerms,
-    intentEff
+    intentEff,
+    conversationSnippet
   );
+  const titleFit = await llmPruneCatalogRowsByTitleFit(
+    diplomasForCatalog,
+    coursesForCards,
+    intentEff,
+    userClean,
+    conversationSnippet,
+    broadDiplomaListing
+  );
+  diplomasForCatalog = titleFit.diplomas;
+  coursesForCards = titleFit.courses;
   courses = coursesForCards;
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
@@ -2649,25 +2981,44 @@ async function runCatalogSearch(userClean, intent) {
     coursesForCards,
     instructors
   );
-  if (!cardsAppendHtml && chunks.length > 0) {
-    cardsAppendHtml = buildChunkCardsAppendHtml(chunks);
-  }
+  /**
+   * لا نلحق كروت «مقتطفات دروس» بدل منتجات الكتالوج. بعد `skip_catalog`/`browse_all` كل دخول هنا
+   * استكشاف كتالوج؛ الـ chunk fallback كان يملأ الواجهة بدرسات وصلتها بكلمات عرضية (مثل «أطفال»).
+   */
+  const catalogListingIntent =
+    !intentEff.skip_catalog || broadDiplomaListing === true;
+  const chunksForCatalogText =
+    catalogListingIntent && !cardsAppendHtml && chunks.length > 0
+      ? []
+      : chunks;
 
   const text = formatCatalogBlock(
     diplomasForCatalog,
     courses,
     lessons,
-    chunks,
+    chunksForCatalogText,
     {
       omitListsForCards: Boolean(cardsAppendHtml),
-      omitChunkExcerptList: Boolean(cardsAppendHtml && chunks.length > 0),
+      omitChunkExcerptList: Boolean(
+        cardsAppendHtml && chunksForCatalogText.length > 0
+      ),
     }
   );
-  return { text, cardsAppendHtml, intent, searchTerms };
+  const catalogProductTitles = collectCatalogProductTitles(
+    diplomasForCatalog,
+    coursesForCards,
+    36
+  );
+  return {
+    text,
+    cardsAppendHtml,
+    intent,
+    searchTerms,
+    catalogProductTitles,
+  };
 }
 
 module.exports = {
   extractSearchIntent,
   runCatalogSearch,
-  looksLikeTopicOrToolQuery,
 };

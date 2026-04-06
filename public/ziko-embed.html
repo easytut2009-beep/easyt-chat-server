@@ -1,0 +1,123 @@
+<!-- نسخة مبسّطة للتجربة المحلية — استبدلها بالويدجت v4.5 الكامل عبر: Get-Content .\widget-raw.html -Raw -Encoding UTF8 | node scripts\ziko-dev-inject.js -->
+<style>
+#ziko-chat-box,#ziko-chat-box *,#ziko-toggle{font-family:Tahoma,Geneva,sans-serif!important;box-sizing:border-box}
+#ziko-toggle{position:fixed;bottom:20px;left:20px;width:64px;height:64px;cursor:pointer;z-index:2147483646;background:transparent;border:0;padding:0}
+#ziko-toggle img{width:100%;height:100%;object-fit:contain;display:block}
+#ziko-chat-box{position:fixed;bottom:20px;left:20px;width:95vw;max-width:400px;height:min(560px,calc(100vh - 48px));background:#f5f5f5;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden;direction:rtl;z-index:2147483647}
+#ziko-chat-box.ziko-visible{display:flex}
+#ziko-header{background:linear-gradient(135deg,#d91c1c,#a30000);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+#ziko-close{cursor:pointer;font-size:18px;color:#fff;background:none;border:none}
+#ziko-messages{flex:1;padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.ziko-msg{padding:8px 12px;border-radius:12px;max-width:90%;font-size:13px;line-height:1.55;word-wrap:break-word}
+.ziko-user{background:linear-gradient(135deg,#d91c1c,#b50000);color:#fff;align-self:flex-end}
+.ziko-bot{background:#fff;border:1px solid #e8e8e8;align-self:flex-start}
+#ziko-input-area{padding:8px 10px;display:flex;gap:8px}
+#ziko-input{flex:1;padding:8px 12px;border-radius:18px;border:2px solid #e0e0e0;font-size:14px;direction:rtl}
+#ziko-send{width:38px;height:38px;border-radius:50%;border:none;background:linear-gradient(135deg,#d91c1c,#a30000);color:#fff;cursor:pointer}
+#ziko-footer{background:linear-gradient(135deg,#d91c1c,#a30000);color:#fff;text-align:center;padding:6px;font-size:10px;font-weight:700}
+</style>
+<div id="ziko-toggle" title="فتح زيكو">
+  <img src="https://uploads.teachablecdn.com/attachments/f749851fd9974a6f907426219430bcc3.png" alt="زيكو" />
+</div>
+<div id="ziko-chat-box">
+  <div id="ziko-header">
+    <span>زيكو — تجربة محلية</span>
+    <button type="button" id="ziko-close">✕</button>
+  </div>
+  <div id="ziko-messages"></div>
+  <div id="ziko-input-area">
+    <input type="text" id="ziko-input" placeholder="اكتب رسالتك..." autocomplete="off" />
+    <button type="button" id="ziko-send">➤</button>
+  </div>
+  <div id="ziko-footer">واجهة مبسّطة — للويدجت الكامل استخدم ziko-dev-inject.js</div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var ZIKO_BASE =
+    typeof window !== "undefined" && window.ZIKO_API_BASE
+      ? String(window.ZIKO_API_BASE).replace(/\/$/, "")
+      : "https://easyt-chat-server.onrender.com";
+  var ZIKO_SERVER = ZIKO_BASE + "/chat";
+  var toggle = document.getElementById("ziko-toggle");
+  var box = document.getElementById("ziko-chat-box");
+  var closeBtn = document.getElementById("ziko-close");
+  var messages = document.getElementById("ziko-messages");
+  var input = document.getElementById("ziko-input");
+  var sendBtn = document.getElementById("ziko-send");
+  var sessionId = null;
+  try {
+    sessionId = localStorage.getItem("ziko_session_dev") || null;
+  } catch (e) {}
+  function getSessionId() {
+    if (!sessionId) {
+      sessionId = "dev_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      try {
+        localStorage.setItem("ziko_session_dev", sessionId);
+      } catch (e) {}
+    }
+    return sessionId;
+  }
+  function addMsg(text, who) {
+    var d = document.createElement("div");
+    d.className = "ziko-msg ziko-" + who;
+    d.innerHTML = who === "bot" ? text.replace(/\n/g, "<br>") : escapeHtml(text);
+    messages.appendChild(d);
+    messages.scrollTop = messages.scrollHeight;
+  }
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  toggle.addEventListener("click", function () {
+    box.classList.add("ziko-visible");
+    toggle.style.display = "none";
+    if (!messages.dataset.inited) {
+      messages.dataset.inited = "1";
+      addMsg("أهلاً! جرّب السيرفر المحلي 👋", "bot");
+    }
+    input.focus();
+  });
+  closeBtn.addEventListener("click", function () {
+    box.classList.remove("ziko-visible");
+    toggle.style.display = "block";
+  });
+  function send() {
+    var t = (input.value || "").trim();
+    if (!t) return;
+    addMsg(t, "user");
+    input.value = "";
+    sendBtn.disabled = true;
+    fetch(ZIKO_SERVER, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: t,
+        session_id: getSessionId(),
+        page_url: typeof location !== "undefined" ? location.href : "",
+      }),
+    })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        addMsg(data.reply || "—", "bot");
+      })
+      .catch(function () {
+        addMsg("مشكلة في الاتصال بالسيرفر 🙏", "bot");
+      })
+      .finally(function () {
+        sendBtn.disabled = false;
+        input.focus();
+      });
+  }
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keypress", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      send();
+    }
+  });
+})();
+</script>

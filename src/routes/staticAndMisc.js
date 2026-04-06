@@ -1,6 +1,8 @@
 "use strict";
 
+const fs = require("fs");
 const path = require("path");
+const express = require("express");
 const { supabase, openai, isSupabaseConnected } = require("../lib/clients");
 const { adminAuth, getAdminTokenCount } = require("../auth/admin");
 const { getBrainDebugStats } = require("../brain");
@@ -26,6 +28,29 @@ function registerStaticAndMiscRoutes(app) {
     }
     res.sendFile(path.join(ROOT, "test.html"));
   });
+
+  /** تجربة محلية فقط — لا يُعرّض واجهة التجربة على الإنتاج */
+  if (process.env.NODE_ENV !== "production") {
+    app.get("/ziko-dev", (req, res) => {
+      const p = path.join(ROOT, "public", "ziko-dev.html");
+      if (!fs.existsSync(p)) {
+        return res.status(404).type("text/plain").send("ziko-dev.html missing");
+      }
+      res.sendFile(p);
+    });
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    app.use((req, res, next) => {
+      const p = req.path || "";
+      if (p === "/ziko-dev.html" || p === "/ziko-embed.html") {
+        return res.status(404).type("text/plain").send("Not found");
+      }
+      next();
+    });
+  }
+
+  app.use(express.static(path.join(ROOT, "public"), { index: false }));
 
   app.get("/admin/debug", adminAuth, async (req, res) => {
     const brainStats = getBrainDebugStats();
@@ -104,17 +129,21 @@ app.get("/health", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
+  const endpoints = {
+    chat: "POST /chat",
+    guide: "POST /api/guide",
+    admin: "GET /admin",
+    health: "GET /health",
+  };
+  if (process.env.NODE_ENV !== "production") {
+    endpoints.zikoDev = "GET /ziko-dev (ويدجت تجربة محلية)";
+  }
   res.json({
     name: "زيكو — easyT Chatbot",
     version: "10.9",
     status: "running ✅",
     engine: "Guide RAG Overhaul",
-    endpoints: {
-      chat: "POST /chat",
-      guide: "POST /api/guide",
-      admin: "GET /admin",
-      health: "GET /health",
-    },
+    endpoints,
   });
 });
 

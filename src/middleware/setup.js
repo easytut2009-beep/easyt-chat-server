@@ -30,13 +30,29 @@ async function setupMiddleware(app) {
     })
   );
 
+  const staticOrigins = new Set(
+    [
+      "https://easyt.online",
+      "https://www.easyt.online",
+      process.env.ALLOWED_ORIGIN,
+    ].filter(Boolean)
+  );
+  const localhostOriginRe =
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+
   app.use(
     cors({
-      origin: [
-        "https://easyt.online",
-        "https://www.easyt.online",
-        process.env.ALLOWED_ORIGIN,
-      ].filter(Boolean),
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (staticOrigins.has(origin)) return callback(null, true);
+        if (
+          process.env.NODE_ENV !== "production" &&
+          (localhostOriginRe.test(origin) || origin === "null")
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, false);
+      },
       methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
       credentials: true,
     })

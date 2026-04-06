@@ -131,6 +131,16 @@ ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botIns
 /* ══════════════════════════════════════════════════════════
    SECTION 12: /chat Endpoint
    ══════════════════════════════════════════════════════════ */
+app.get("/chat", (_req, res) => {
+  res.status(200).json({
+    hint:
+      "المسار يقبل POST فقط، مش فتح من المتصفح. أرسل JSON: { \"message\": \"سؤالك\", \"session_id\": \"اختياري\" }",
+    method: "POST",
+    example: { message: "عايز أعرف عن الدفع", session_id: "test-1" },
+    curl: `curl -X POST http://localhost:${process.env.PORT || 3000}/chat -H "Content-Type: application/json" -d "{\\"message\\":\\"مرحبا\\"}"`,
+  });
+});
+
 app.post("/chat", limiter, async (req, res) => {
   try {
     const { message, session_id } = req.body;

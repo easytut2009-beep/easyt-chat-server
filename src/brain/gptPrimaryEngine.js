@@ -3,7 +3,7 @@
 /**
  * محرك دردشة يعتمد على GPT بشكل أساسي:
  * - بدون مسارات regex / كلمات مفتاحية للردود الجاهزة
- * - السياق: تعليمات الأدمن، تاريخ المحادثة، عيّنة عناوين كورسات، أسئلة شائعة (كلها تُمرَّر للنموذج ليقرر)
+ * - السياق: تعليمات الأدمن، تاريخ المحادثة، نتائج كتالوج عند الطلب، أسئلة شائعة
  */
 
 const { supabase, openai } = require("../lib/clients");
@@ -20,11 +20,7 @@ const {
   finalizeReply,
   markdownToHtml,
 } = require("./textUtils");
-const {
-  extractSearchIntent,
-  runCatalogSearch,
-  looksLikeTopicOrToolQuery,
-} = require("./hierarchicalSearch");
+const { extractSearchIntent, runCatalogSearch } = require("./hierarchicalSearch");
 const {
   buildSalesCorePolicy,
   DB_PRICING_CATEGORIES,
@@ -32,10 +28,8 @@ const {
 
 const BOT_CACHE_TTL = 5 * 60 * 1000;
 const FAQ_LIMIT = 22;
-const COURSE_TITLE_SAMPLE = 45;
 
 let botInstructionsCache = { sales: "", ts: 0 };
-let courseTitlesCache = { text: "", ts: 0 };
 let faqCache = { text: "", ts: 0 };
 
 const activeChatSessions = new Set();
@@ -118,28 +112,6 @@ async function loadRecentHistory(sessionId, limit = 10) {
   }
 }
 
-async function loadCourseTitlesHint() {
-  const now = Date.now();
-  if (courseTitlesCache.text && now - courseTitlesCache.ts < BOT_CACHE_TTL) {
-    return courseTitlesCache.text;
-  }
-  if (!supabase) return "";
-  try {
-    const { data } = await supabase
-      .from("courses")
-      .select("title")
-      .order("title", { ascending: true })
-      .limit(COURSE_TITLE_SAMPLE);
-
-    if (!data || data.length === 0) return "";
-    const text = data.map((c) => c.title).filter(Boolean).join(" | ");
-    courseTitlesCache = { text, ts: now };
-    return text;
-  } catch (e) {
-    return "";
-  }
-}
-
 async function loadFaqHint() {
   const now = Date.now();
   if (faqCache.text && now - faqCache.ts < BOT_CACHE_TTL) {
@@ -209,6 +181,32 @@ async function logGuide(
   }
 }
 
+function stripHtmlForSnippet(s) {
+  return String(s || "")
+    .replace(/<div style="border[^>]*>[\s\S]*?<\/div>/gi, "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** آخر أدوار للاستدلال على موضوع البحث عند «اديني لينك / كمل». */
+function buildCatalogConversationSnippet(history, maxMessages = 8, maxChars = 1400) {
+  const slice = (history || []).slice(-maxMessages);
+  const lines = [];
+  let total = 0;
+  for (const h of slice) {
+    let c = stripHtmlForSnippet(h.content);
+    if (!c || c.length < 2) continue;
+    if (c.length > 420) c = `${c.slice(0, 420)}…`;
+    const label = h.role === "user" ? "المستخدم" : "زيكو";
+    const line = `${label}: ${c}`;
+    if (total + line.length > maxChars) break;
+    lines.push(line);
+    total += line.length + 1;
+  }
+  return lines.join("\n").slice(0, maxChars);
+}
+
 function preprocessUserMessage(message) {
   let m = message;
   const num = m.match(/^\d{1,3}\s*[\.\-\)]\s+([\s\S]+)/);
@@ -232,7 +230,6 @@ function getBrainDebugStats() {
 function clearFaqCache() {
   faqCache = { text: "", ts: 0 };
   botInstructionsCache = { sales: "", ts: 0 };
-  courseTitlesCache = { text: "", ts: 0 };
 }
 
 /** يمرّر للنموذج ملخصاً منظمّاً من extractSearchIntent — بدون إظهار «سلسلة تفكير» للمستخدم */
@@ -240,11 +237,37 @@ function formatIntentBriefForSystem(intent) {
   if (!intent || intent.skip_catalog) return "";
   const lines = [];
   if (intent.primary_goal) lines.push(`• الهدف: ${intent.primary_goal}`);
+  if (String(intent.search_text_secondary || "").trim()) {
+    lines.push(
+      "• مسار ثانٍ للبحث (صغار/مسار منفصل): يجب أن يظهر في الكروت أو النص — لا تكتفِ بمسار الكبار فقط."
+    );
+  }
+  if (intent.focus_audience === "child_only") {
+    lines.push(
+      "• تركيز الرسالة: **الصغير فقط** — التزم بمسار العمر والمستوى؛ لا تخلط بتوصيات كبار إلا إذا سأل صراحة."
+    );
+  }
   if (intent.constraints?.length) {
     lines.push(`• قيود: ${intent.constraints.join("؛ ")}`);
   }
+  if (intent.design_interpretation === "graphic_spatial") {
+    lines.push("• قصد «تصميم» هنا: بصري/فيزيائي/منتجات — لا تخلطه بتصميم هياكل إدارية.");
+  } else if (intent.design_interpretation === "organizational_admin") {
+    lines.push("• قصد «تصميم» هنا: تنظيمي/إداري/هياكل.");
+  }
+  if (intent.code_learning_segment === "youth_beginner") {
+    lines.push("• مسار برمجة: مبتدئ صغير — راعِ البساطة والعمر.");
+  } else if (intent.code_learning_segment === "split_adult_and_youth") {
+    lines.push("• مسار برمجة: أكثر من فئة (كبار وصغار) — افصل الإرشاد بينهما.");
+  } else if (intent.code_learning_segment === "adult_general") {
+    lines.push("• مسار برمجة: كبار/عام — لا تفرض مسار صغار.");
+  }
   if (intent.audience === "child") {
     lines.push("• الجمهور: طفل/ناشئ — راعِ العمر والبساطة وعدم إسقاط مسارات كبار كخيار أول.");
+  } else if (intent.audience === "mixed") {
+    lines.push(
+      "• الجمهور: **مزدوج** (بالغ + طفل/ناشئ) — اذكر مسارين واضحين يطابقان **primary_goal** و**search_text**؛ لا تخلط مقصد الصغار بمسارات الكبار."
+    );
   } else if (intent.audience === "adult") {
     lines.push("• الجمهور: كبار/احتراف — يمكن ترشيح مسارات أعمق إن وافقت الكتالوج.");
   }
@@ -285,26 +308,40 @@ async function smartChat(message, sessionId) {
 
   await logChat(sessionId, "user", clean, null);
 
-  const [botInstructions, history, courseHint, faqHint, searchIntent] =
-    await Promise.all([
-      loadBotInstructions("sales"),
-      loadRecentHistory(sessionId, 12),
-      loadCourseTitlesHint(),
-      loadFaqHint(),
-      extractSearchIntent(clean),
-    ]);
+  const history = await loadRecentHistory(sessionId, 12);
+  const catalogSnippet = buildCatalogConversationSnippet(history);
 
-  /** يُستنتج الجمهور من extractSearchIntent فقط — بدون مطابقة كلمات في التطبيق. */
-  const childAudience = searchIntent.audience === "child";
+  const [botInstructions, faqHint, searchIntent] = await Promise.all([
+    loadBotInstructions("sales"),
+    loadFaqHint(),
+    extractSearchIntent(clean, { conversationSnippet: catalogSnippet }),
+  ]);
 
-  const { text: catalogBlock, cardsAppendHtml } = await runCatalogSearch(
-    clean,
-    searchIntent
-  );
+  /**
+   * تعليمات «طفل/ناشئ» تُفعَّل فقط مع بحث كتالوج — لا نفرضها على دردشة عادية فيها ذكر أعمار.
+   */
+  const childAudience =
+    !searchIntent.skip_catalog &&
+    (searchIntent.audience === "child" ||
+      searchIntent.audience === "mixed");
 
-  const skipGptForCatalogCards = Boolean(
+  const {
+    text: catalogBlock,
+    cardsAppendHtml,
+    catalogProductTitles = [],
+  } = await runCatalogSearch(clean, searchIntent, {
+    conversationSnippet: catalogSnippet,
+  });
+
+  const hasCatalogCards = Boolean(
     cardsAppendHtml && String(cardsAppendHtml).trim()
   );
+
+  /** بحث كتالوج مفعّل لكن لا عناوين ولا كروت من DB — منع اختراع أسماء منتجات في الرد */
+  const strictNoInventedCourseExamples =
+    !searchIntent.skip_catalog &&
+    catalogProductTitles.length === 0 &&
+    !hasCatalogCards;
 
   const linksBlock = [
     `صفحة كل الدورات: ${ALL_COURSES_URL}`,
@@ -327,13 +364,17 @@ async function smartChat(message, sessionId) {
 - المصادر: نتائج الكتالوج والأسئلة الشائعة والروابط الرسمية والتعليمات المتغيرة فقط — لا تخترع أسماء كورسات أو أسعاراً أو روابط.
 - إن وُجدت كروت HTML في السياق: لا تكررها نصاً؛ إن لم توجد كروت: أجب بجمل متماسكة دون حشو.
 - لخص ثم نفّذ: رد واحد واضح بلهجة مصرية ودودة.
+- المحادثة العادية أولاً: لا تُكره اقتراح كورسات إلا إذا كان السياق أو رسالة المستخدم تفيد أنه يبحث عن تعلّم أو برامج على المنصة.
+- **بحث كتالوج مفعّل لهذه الجولة:** ممنوع ذكر أسماء كورسات/دبلومات/برامج كنقاط أو كعناوين وهمية — حتى لو بدا الاسم «منطقياً» أو مناسباً لمهنة المستخدم. لا تكتب «زي… أو…» أو «مثل كورس…» أو «دورة في…» بصيغة تشبه عناوين موجودة على المنصة.
+- **إرشاد عام بلا أمثلة عناوين:** يُسمح بوصف **فكرة** تعلّم بكلمات عامة جداً **فقط** عندما يكون \`skip_catalog: true\` في ملخص النية أدناه. ومع **بحث كتالوج مفعّل** و**بدون** قائمة عناوين رسمية في السياق: **ممنوع** أي مثال يُفهم كاسم كورس (للبالغ أو الطفل) — حتى «برمجة ألعاب» أو «صيانة سيارات» أو غيرها؛ اكتفِ بالرابط والتصفح.
+- إن وُجد في ملخص النية **مسار ثانٍ للبحث**: لا تقدّم لصاحب مهنة يدوية أو حرفة مسار «برمجة متقدمة أو ذكاء اصطناعي» كبديل عن **شغله** ما لم يكن هذا هو طلبه؛ ولا تخلط إجابة تعليم الصغار بمسارات الكبار في جملة واحدة تعمّي المقصد.
 
 قواعد تقنية للرد:
 - اربط الرد بسياق المحادثة وبنصوص «السياسة الأساسية» و«تعليمات متغيرة من قاعدة البيانات» و«الكتالوج» و«العناوين المرجعية» أدناه.
-- لا تخترع أسماء كورسات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم.
+- لا تخترع أسماء كورسات أو دبلومات أو روابط غير مذكورة في نتائج الكتالوج أو العناوين المرجعية أو الروابط الرسمية أو رسالة المستخدم. **ممنوع** اختراع عنوان يبدو منطقياً لكنه **غير ظاهر** في قائمة نتائج البحث الرسمية لهذه الجولة.
 - ممنوع أن تقول إن «الكتالوج لا يحتوي تفاصيل» أو «لا أملك معلومات» عن موضوع إذا وُجدت **مقتطفات من محتوى الدروس** في نتائج البحث — هذه المقتطفات هي مصدر رسمي من الدروس؛ لخّصها واذكر الكورس والدرس.
 - إذا وُجد قسم «نتائج البحث في الكتالوج» **بدون** كروت دبلومات/كورسات ملحقة: رتّب الرد عند الحاجة؛ وإن وُجدت «مقتطفات من محتوى الدروس» فاعتمدها للإجابة عن مصطلحات لا تظهر في عناوين الدبلومات/الكورسات.
-- إذا وُجدت كروت دبلومات/كورسات (ومنها كروت تعتمد على تطابق داخل نصوص الدروس) يُعلمك السياق بعدم إدراج قوائم: **لا تكتب نصاً في الرد** — التفاصيل والمقتطفات في الكروت وحدها.
+- إذا وُجدت كروت دبلومات/كورسات أسفل ردك: **لا تكرر** العناوين أو الأسعار كنص؛ يمكنك جملة أو جملتين توجيه/ترحيب فقط تربط سؤال المستخدم بالنتائج.
 - استخدم <br> عند الحاجة؛ روابط HTML بسيطة (نص واضح + href).
 - لا تذكر أنك نموذج لغوي.
 
@@ -341,9 +382,13 @@ ${buildSalesCorePolicy({ hasDbPricingText })}
 
 `;
 
-  if (childAudience) {
+  if (!searchIntent.skip_catalog && searchIntent.audience === "child") {
     system += `═══ جمهور ناشئ/طفل (من ملخص النية) ═══
-راعِ العمر والبساطة وملاءمة المحتوى؛ رشّح من الكتالوج ما يناسب المستوى المذكور في الرسالة و«ملخص فهم الرسالة»؛ لا تقدّم مسارات متقدمة أو مهنية للكبار كخيار أول إذا كان السياق تعليماً للصغار. إن وُجدت كروت، وجّه بلطف دون تكرار كل العناوين.
+راعِ العمر والبساطة وملاءمة المحتوى؛ رشّح من الكتالوج ما يناسب المستوى فقط إن وُجدت عناوين حقيقية أو كروت؛ لا تقدّم مسارات متقدمة للكبار كخيار أول. إن وُجدت كروت، وجّه بلطف دون تكرار كل العناوين. **من دون** قائمة عناوين ولا كروت: لا تذكر أسماء كورسات ولا أمثلة «زي/مثل» للطفل.
+`;
+  } else if (!searchIntent.skip_catalog && searchIntent.audience === "mixed") {
+    system += `═══ جمهور مزدوج (بالغ + طفل/ناشئ) ═══
+إن وُجدت عناوين حقيقية أو كروت: اقسم الرد إلى مسارين يطابقان **ملخص فهم الرسالة** دون خلط المقصدين. **من دون** عناوين ولا كروت: لا «مسارين» بأسماء أو أمثلة وهمية لكل طرف — جملة موحّدة + رابط التصفح فقط.
 `;
   }
 
@@ -359,25 +404,47 @@ ${botInstructions}
 ${linksBlock}
 `;
 
-  if (courseHint && !childAudience) {
-    system += `\n═══ عناوين مرجعية لعيّنة من الكورسات (ليس بالضرورة كل المحتوى) ═══\n${courseHint}\n`;
-  }
-
   if (faqHint) {
     system += `\n═══ أسئلة شائعة مرجعية (استخدمها إن وافقت سؤال المستخدم) ═══\n${faqHint}\n`;
   }
 
   system += formatIntentBriefForSystem(searchIntent);
 
+  if (catalogProductTitles.length > 0) {
+    system += `
+═══ عناوين منتجات **حقيقية** رجعت من قاعدة البيانات لهذا الطلب ═══
+${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+قواعد صارمة:
+- **ممنوع** ذكر عنوان دبلومة أو كورس في ردك إلا إذا كان **نفس النص حرفياً** أحد الأسطر أعلاه (يمكنك حذف رقم السطر عند النسخ).
+- **ممنوع** ابتكار أوصاف لمنتجات غير موجودة في القائمة؛ لا تسمّي «دبلومة…» أو «كورس…» باسم جديد.
+- الأفضل غالباً: جملة أو جملتان عامتان (بدون أسماء) + الإشارة إلى أن التفاصيل والعناوين الدقيقة في **الكروت** أسفل الرسالة.
+`;
+  } else if (hasCatalogCards) {
+    system += `
+═══ كروت من الكتالوج بدون قائمة عناوين منفصلة ═══
+**ممنوع** ذكر أي عنوان دبلومة أو كورس أو وصف منتج في نصك؛ العناوين الحقيقية تظهر **فقط** داخل الكروت HTML. اكتب جملة عامة قصيرة ثم أوقف.
+`;
+  }
+
   if (catalogBlock) {
     system += `\n${catalogBlock}\n`;
-  } else if (
-    looksLikeTopicOrToolQuery(clean) &&
-    !String(cardsAppendHtml || "").trim()
-  ) {
+  }
+
+  if (hasCatalogCards) {
     system += `
-═══ تنبيه (لا يوجد قسم «نتائج البحث في الكتالوج» لهذه الرسالة) ═══
-لم يُرجع البحث في قاعدة البيانات كورسات/دبلومات/مقتطفات لهذا الطلب. لا تقدّم تعريفاً موسوعياً عن المصطلح ولا تقل إن المنصة «لا تحتوي» محتوى إن لم يُذكر ذلك صراحة في السياق أعلاه. اكتب جملة قصيرة بلهجة مصرية: جرّب صياغة أخرى أو تصفح روابط الدورات/الدعم أدناه؛ لا تخترع أسماء كورسات.
+═══ كروت HTML جاهزة ═══
+سيتم عرض كروت دبلومات/كورسات أسفل رسالتك. التزم بقسم «عناوين منتجات حقيقية» إن وُجد؛ وإلا **لا تسمّ** أي منتجاً نصاً — العناوين فقط داخل الكروت.
+`;
+  }
+
+  if (strictNoInventedCourseExamples) {
+    system += `
+═══ تنبيه حرج — لا عناوين منتجات ولا كروت لهذا الطلب ═══
+قاعدة البيانات **لم تُرجع** لهذه الصياغة قائمة عناوين كورسات/دبلومات ولا كروت HTML.
+- **ممنوع** الجمع بين «ما عنديش أسماء دقيقة» أو «ما فيش قائمة» وبين **أي** أمثلة لاحقة تبدو أسماء برامج على easyT (مثل صياغات «زي… أو…»، «مثل كورس…»، «فيه كورسات في…» مع تسمية مجال).
+- **ممنوع** تسمية كورسات للبالغ **وللطفل** في نفس الرد إلا من قائمة «عناوين منتجات حقيقية» أعلاه — وهنا القائمة **فارغة**.
+- **المطلوب:** جملة أو جملتان كحد أقصى بلهجة مصرية ودودة: العناوين الدقيقة من **صفحة الدورات** والتصنيفات أو البحث في الموقع؛ ثم رابط HTML واحد واضح: <a href="${ALL_COURSES_URL}">صفحة كل الدورات</a>. يمكنك دعوته يكتب المجال أو عمر الطفل في رسالة تالية للبحث. **لا نقاط ولا قوائم بأسماء كورسات وهمية.**
 `;
   }
 
@@ -391,37 +458,44 @@ ${linksBlock}
 
   let replyText = "";
   try {
-    if (skipGptForCatalogCards) {
-      replyText = "";
-    } else {
-      const baseTemp = parseFloat(process.env.GPT_CHAT_TEMPERATURE || "0.28", 10);
-      const temperature = Number.isFinite(baseTemp)
-        ? Math.min(0.85, Math.max(0.12, baseTemp))
-        : 0.28;
-      let maxTokens = parseInt(process.env.GPT_CHAT_MAX_TOKENS || "1100", 10);
-      if (!Number.isFinite(maxTokens) || maxTokens < 200) maxTokens = 1100;
-      if (searchIntent.response_style === "brief") maxTokens = Math.min(maxTokens, 480);
-      else if (searchIntent.response_style === "detailed") maxTokens = Math.min(1600, maxTokens + 180);
-      const completion = await openai.chat.completions.create({
-        model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
-        messages: chatMessages,
-        temperature,
-        max_tokens: maxTokens,
-      });
-      replyText =
-        completion.choices[0]?.message?.content ||
-        "مقدرتش أكمّل الرد 😅 جرّب تاني.";
+    const baseTemp = parseFloat(process.env.GPT_CHAT_TEMPERATURE || "0.28", 10);
+    const temperature = Number.isFinite(baseTemp)
+      ? Math.min(0.85, Math.max(0.12, baseTemp))
+      : 0.28;
+    let maxTokens = parseInt(process.env.GPT_CHAT_MAX_TOKENS || "1100", 10);
+    if (!Number.isFinite(maxTokens) || maxTokens < 200) maxTokens = 1100;
+    if (searchIntent.response_style === "brief") maxTokens = Math.min(maxTokens, 480);
+    else if (searchIntent.response_style === "detailed") maxTokens = Math.min(1600, maxTokens + 180);
+    if (hasCatalogCards) {
+      maxTokens = Math.min(220, Math.max(80, maxTokens));
+    } else if (strictNoInventedCourseExamples) {
+      maxTokens = Math.min(320, Math.max(120, maxTokens));
     }
+    let temperatureEff = hasCatalogCards
+      ? Math.min(temperature, 0.18)
+      : temperature;
+    if (strictNoInventedCourseExamples) {
+      temperatureEff = Math.min(temperatureEff, 0.14);
+    }
+    const completion = await openai.chat.completions.create({
+      model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
+      messages: chatMessages,
+      temperature: temperatureEff,
+      max_tokens: maxTokens,
+    });
+    replyText =
+      completion.choices[0]?.message?.content ||
+      "مقدرتش أكمّل الرد 😅 جرّب تاني.";
   } catch (e) {
     console.error("gptPrimary smartChat:", e.message);
-    replyText = skipGptForCatalogCards
-      ? ""
-      : "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
+    replyText = "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
   }
 
-  let reply = skipGptForCatalogCards
-    ? String(cardsAppendHtml || "")
-    : markdownToHtml(replyText);
+  let reply = markdownToHtml(replyText || "");
+  if (hasCatalogCards) {
+    const cards = String(cardsAppendHtml || "").trim();
+    reply = reply.trim() ? `${reply}<br><br>${cards}` : cards;
+  }
   reply = finalizeReply(reply);
 
   await logChat(sessionId, "bot", reply, "GPT_PRIMARY", {
