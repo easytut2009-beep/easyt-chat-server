@@ -614,6 +614,7 @@ async function loadDiplomaCourseMap() {
     }
     _diplomaCourseMapCache.data = { courseToD: courseToD, dToCourses: dToCourses, diplomaMap: diplomaMap };
     _diplomaCourseMapCache.ts = Date.now();
+    console.log("📋 Diploma-Course map loaded: " + dcRows.length + " relations, " + diplomas.length + " diplomas");
     return _diplomaCourseMapCache.data;
   } catch (e) {
     console.error("loadDiplomaCourseMap error:", e.message);
@@ -862,6 +863,7 @@ async function loadAllFAQs() {
     }
     faqCache.data = data || [];
     faqCache.ts = Date.now();
+    console.log(`📋 FAQ loaded: ${faqCache.data.length} entries`);
     return faqCache.data;
   } catch (e) {
     console.error("❌ loadAllFAQs exception:", e.message);
@@ -1195,6 +1197,7 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
+    console.log("🔍 Search terms:", allTerms);
 
 const limitedTerms = allTerms.slice(0, 8);
 
@@ -1259,6 +1262,7 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
 // 🔧 Phase 2: If few core results, expand to deep content (syllabus, full_content, etc.)
     if (allCourses.length < 3 && limitedTerms.length <= 4) {
+      console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
       
       const deepCols = [
         "title", "description", "subtitle",
@@ -1281,6 +1285,7 @@ const deepFilters = deepIlikeTerms
         const existingIds = new Set(allCourses.map(c => c.id));
         const newResults = deepResults.filter(c => !existingIds.has(c.id));
         allCourses = [...allCourses, ...newResults];
+        console.log(`🔍 Phase 2 added ${newResults.length} deep results`);
       }
     }
 
@@ -2313,6 +2318,7 @@ function enrichMessageWithContext(message, sessionMem) {
   );
   
   if (hasClarification && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+    console.log(`🔄 FIX105: Clarification detected ("${clarificationWords.find(w => norm.includes(normalizeArabic(w)))}") → treating as follow-up`);
     return {
       enriched: message,
       isFollowUp: true,
@@ -3537,6 +3543,7 @@ if (_topicWords.length === words.length) {
     // 0 topic words = كل الكلمات كانت intent words (تعلم/كورس/دورة/شرح...)
     // ده فعلاً ضعيف → WEAK
     c._titleMatchStrength = 'weak';
+    console.log(`📋 Title-match (WEAK — 0 topic words): "${c.title}"`);
 }
         return true;
       }
@@ -3635,6 +3642,7 @@ const sim = similarityRatio(nt, tw);
         c._titleMatch = false;
         c._weakTitleMatch = true;
         c.relevanceScore = (c.relevanceScore || 0) + 100;
+        console.log(`📋 Title-match (WEAK): "${c.title}" → +100 (not protected)`);
       }
     }
 
@@ -3726,11 +3734,13 @@ c.relevanceScore = (c.relevanceScore || 0) + 400;
       // ═══ Generic beginner boost ═══
       if (/اساسيات|مبادئ|مقدم|من الصفر|للمبتدئين|beginner|basics|fundamentals|introduction/.test(combined)) {
         c.relevanceScore = (c.relevanceScore || 0) + 300;
+        console.log(`   🟢 Beginner boost: "${c.title}" +300`);
       }
       
       // ═══ Generic advanced penalty ═══
       if (/احتراف|متقدم|advanced|professional|متخصص/.test(combined)) {
         c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
+        console.log(`   🔴 Advanced penalty: "${c.title}" -400`);
       }
       
       // ═══ Programming domain — beginner-specific ═══
@@ -3738,25 +3748,30 @@ c.relevanceScore = (c.relevanceScore || 0) + 400;
         // Python = THE beginner language
         if (/بايثون|python/.test(combined)) {
           c.relevanceScore = (c.relevanceScore || 0) + 500;
+          console.log(`   🟢 Python beginner boost: "${c.title}" +500`);
         }
         // JavaScript = acceptable for beginners
         if (/جافا\s*سكريبت|javascript/.test(combined) && !/جافا(?!\s*سكريبت)/.test(combined)) {
           c.relevanceScore = (c.relevanceScore || 0) + 200;
+          console.log(`   🟢 JS beginner boost: "${c.title}" +200`);
         }
         // Ruby = NOT for beginners (even if title says "أساسيات")
         if (/روبي|ruby/.test(combined)) {
           c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 1000);
           c._titleMatch = false;
+          console.log(`   🔴 Ruby beginner penalty: "${c.title}" -1000, titleMatch removed`);
         }
         // C++ = NOT for beginners
         if (/سي\s*بلس\s*بلس|c\s*\+\s*\+/.test(combined)) {
           c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 1000);
           c._titleMatch = false;
+          console.log(`   🔴 C++ beginner penalty: "${c.title}" -1000, titleMatch removed`);
         }
         // Swift/Kotlin/Assembly/Rust/Go = NOT for beginners
         if (/سويفت|swift|كوتلن|kotlin|assembly|اسمبلي|rust|go\s*lang/.test(combined)) {
           c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 800);
           c._titleMatch = false;
+          console.log(`   🔴 Advanced lang penalty: "${c.title}" -800, titleMatch removed`);
         }
       }
       
@@ -3765,15 +3780,18 @@ c.relevanceScore = (c.relevanceScore || 0) + 400;
         // "أساسيات التصميم" or "فوتوشوب" = great for beginners
         if (/فوتوشوب|photoshop/.test(combined)) {
           c.relevanceScore = (c.relevanceScore || 0) + 400;
+          console.log(`   🟢 Photoshop beginner boost: "${c.title}" +400`);
         }
         // Infographic = specialized, not for beginners
         if (/انفوجرافيك|infographic/.test(combined)) {
           c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 500);
           c._titleMatch = false;
+          console.log(`   🔴 Infographic beginner penalty: "${c.title}" -500`);
         }
         // Motion/3D = advanced for beginners
         if (/موشن\s*جرافيك|motion\s*graphic|ثري\s*دي|3d|ثلاثي\s*الابعاد/.test(combined)) {
           c.relevanceScore = Math.max(0, (c.relevanceScore || 0) - 400);
+          console.log(`   🔴 Motion/3D beginner penalty: "${c.title}" -400`);
         }
       }
     }
@@ -3800,6 +3818,7 @@ if ((courses[i].relevanceScore || 0) < minRelevantScore && !courses[i]._titleMat
 console.log(`🎯 Relevance filter: top=${topScore}, min=${Math.round(minRelevantScore)}, ${beforeCount} → ${courses.length} courses`);
 }
 
+  console.log(`📊 Scored ${courses.length} courses:`,
     courses.slice(0, 5).map(c => `"${c.title}" score=${c.relevanceScore}`));
 }   // ← ده القوس اللي بيقفل scoreAndRankCourses
 
@@ -3824,6 +3843,7 @@ const hasStrongMatch = filtered.some(c =>
   if (!hasStrongMatch) {
     const qf = filtered.filter(c => (c.relevanceScore || 0) >= 100);
     if (qf.length === 0) {
+      console.log(`🔍 Quality gate: ALL courses below 100 → clearing`);
       return [];
     }
     filtered = qf;
@@ -4565,6 +4585,7 @@ const _earlyFaqThreshold = hasActiveConversationContext(sessionId) ? 0.85 : FAQ_
 // 🆕 FIX: Log when correction skipped due to active conversation
   if (_earlyCorrectionMatch && _earlyCorrectionMatch.score >= CORRECTION_DIRECT_THRESHOLD 
       && _earlyCorrectionMatch.score < _earlyCorrThreshold) {
+    console.log(`🔄 [Early Correction] Skipped — active conversation (score=${_earlyCorrectionMatch.score.toFixed(3)}, needs >=${_earlyCorrThreshold})`);
   }
 
   }
@@ -5559,6 +5580,7 @@ _correctionsForContext = await getCorrectionsForContext(message, 3, _allCorrecti
   if (!_faqMatch || _faqMatch.score < FAQ_DIRECT_THRESHOLD) {
 _faqsForContext = await getFAQsForContext(message, 3, _allFAQs);
     if (_faqsForContext.length > 0) {
+      console.log(`📋 [FAQ L2] ${_faqsForContext.length} FAQs for GPT context`);
     }
   }
 
@@ -5613,6 +5635,9 @@ loadRecentHistory(sessionId, 6),
       const _topicStr = _origTopics.join(' ');
       enrichedMessage = _topicStr + ' ' + enrichedMessage;
       console.log(`🔗 CLARIFY context merge:`);
+      console.log(`   Original topics: [${_origTopics.join(', ')}]`);
+      console.log(`   Current message: "${message}"`);
+      console.log(`   Merged message: "${enrichedMessage}"`);
     } else if (_hasNewTopic) {
       console.log(`🔗 CLARIFY: New topic detected ("${_hasNewTopic}") — skipping merge`);
     } else {
@@ -5736,7 +5761,9 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
 
   if (isGeneralDiplomaRequest(enrichedMessage)) {
     if (_gptMadeContextualDecision) {
+      console.log(`📋 FIX #79 SKIPPED: GPT made contextual decision (action=${analysis.action}, response=${analysis.response_message.substring(0, 60)}...) — trusting GPT over regex`);
     } else {
+      console.log(`📋 FIX #79: Overriding action ${analysis.action} → DIPLOMAS`);
       analysis.action = "DIPLOMAS";
       analysis.search_terms = [];
     }
@@ -5751,6 +5778,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
         || nt.length <= 2;
     });
     if (paymentOnlyTerms && analysis.search_terms.length > 0) {
+      console.log(`🔄 FIX #120: SEARCH → SUBSCRIPTION (search terms are all payment-related: [${analysis.search_terms.join(', ')}])`);
       analysis.action = "SUBSCRIPTION";
       analysis.search_terms = [];
     }
@@ -5760,12 +5788,14 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
   if (analysis.action === "SUBSCRIPTION") {
     const educationalOverride = hasNewExplicitTopic(enrichedMessage);
     if (educationalOverride) {
+      console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (found topic: "${educationalOverride}")`);
       analysis.action = "SEARCH";
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
         analysis.search_terms = [educationalOverride];
       }
 } else if (analysis.detected_category) {
       // GPT detected an educational category → override to SEARCH
+      console.log(`🔄 FIX #69: SUBSCRIPTION → SEARCH (detected_category: "${analysis.detected_category}")`);
       analysis.action = "SEARCH";
     }
   }
@@ -5785,6 +5815,7 @@ if (quickCheck && quickCheck.confidence >= 0.9) {
       .trim();
 
     if (diplomaStripped.length > 3) {
+      console.log(`🔄 FIX #77: DIPLOMAS → SEARCH (specific topic: "${diplomaStripped}")`);
       analysis.action = "SEARCH";
       if (!analysis.search_terms || analysis.search_terms.length === 0) {
         // 🆕 FIX #81: Keep full phrase + individual words
@@ -5820,7 +5851,9 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
     if (/كل|جميع|كلهم|الكل/.test(_msgNorm)) {
       // 🆕 لو GPT فاهم السياق (عنده response جاهز) → متغيّرش قراره
       if (_gptMadeContextualDecision) {
+        console.log(`🔄 "all courses" → CATEGORIES SKIPPED: GPT has contextual response (action=${analysis.action}) — trusting GPT`);
       } else {
+        console.log(`🔄 FIX: "all courses" pattern → CATEGORIES (was SEARCH with terms: [${analysis.search_terms.join(', ')}])`);
         analysis.action = "CATEGORIES";
         analysis.search_terms = [];
       }
@@ -5918,6 +5951,7 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
 
 // 🆕 FIX: المساعد البيعي مبيشرحش — بيعرض كورسات بس
   if (analysis.user_intent === "QUESTION") {
+    console.log(`🔄 Sales bot: QUESTION → FIND_COURSE (sales bot doesn't explain, guide bot does)`);
     analysis._wasQuestion = true;
     analysis.user_intent = "FIND_COURSE";
     // لو كان CHAT وعنده search_terms → حوّله SEARCH عشان يعرض كورسات
@@ -5946,6 +5980,7 @@ if (analysis.action === "SEARCH" && analysis.search_terms && analysis.search_ter
                           || analysis.search_terms.length > 1;
     
     if (hasSpecificTopic) {
+      console.log(`🔄 CHAT → SEARCH (specific terms: [${analysis.search_terms.join(', ')}])`);
       analysis.action = "SEARCH";
       analysis.user_intent = "QUESTION";
     } else {
@@ -5969,6 +6004,7 @@ const _isForceAlt = _forceAltWords.some(w => _ffNorm.includes(normalizeArabic(w)
 
 if (_isForceAlt && !analysis.is_follow_up 
     && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0) {
+  console.log(`🔄 FIX #112: Force follow-up for alternative pattern "${message}"`);
   analysis.is_follow_up = true;
   analysis.follow_up_type = "ALTERNATIVE";
   if (!analysis.search_terms || analysis.search_terms.length === 0) {
@@ -5996,9 +6032,11 @@ if ((analysis.is_follow_up || (isContextFollowUp && !gptSaysNewSearch)) && sessi
     }
   }
 
+  console.log(`🔄 Follow-up: [${newTerms.join(", ")}] → merged with prev → [${merged.join(", ")}]`);
   analysis.search_terms = merged;
 
 if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
+    console.log(`🔄 Follow-up override: ${analysis.action} → SEARCH`);
     analysis.action = "SEARCH";
 }
 }
@@ -6007,9 +6045,11 @@ if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
 if (!analysis.is_follow_up && isContextFollowUp 
     && sessionMem.lastSearchTerms && sessionMem.lastSearchTerms.length > 0
     && (!analysis.search_terms || analysis.search_terms.length === 0)) {
+  console.log(`🔄 Local follow-up fallback → restoring context (GPT had no search terms)`);
   analysis.is_follow_up = true;
   analysis.search_terms = [...sessionMem.lastSearchTerms];
   if (["CHAT", "CATEGORIES", "DIPLOMAS", "SUPPORT"].includes(analysis.action)) {
+    console.log(`🔄 Local fallback override: ${analysis.action} → SEARCH`);
     analysis.action = "SEARCH";
   }
 }
@@ -6026,6 +6066,7 @@ let reply = "";
   // ═══════════════════════════════════════════════════════════
 if (analysis.action !== "CLARIFY") {
     if (sessionMem.clarifyCount > 0) {
+      console.log(`🔄 CLARIFY counter reset (was ${sessionMem.clarifyCount})`);
       // 🆕 FIX: Don't override QUESTION → FIND_COURSE
       // Let the natural flow handle it (QUESTION = answer + courses, FIND_COURSE = brief intro + courses)
       sessionMem.clarifyCount = 0;
@@ -6054,6 +6095,7 @@ if (analysis.action !== "CLARIFY") {
   if (analysis.action === "CLARIFY") {
     const currentCount = sessionMem.clarifyCount || 0;
     if (currentCount >= 1) {
+      console.log(`🔄 Anti-CLARIFY-loop: clarifyCount=${currentCount} → forcing SEARCH`);
       analysis.action = "SEARCH";
       analysis.user_intent = "FIND_COURSE";
 
@@ -6065,6 +6107,7 @@ if (analysis.action !== "CLARIFY") {
           w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase())
         );
         analysis.search_terms = [...new Set([...prevTerms, ...currentWords])];
+        console.log(`🔄 Anti-CLARIFY: merged terms → [${analysis.search_terms.join(', ')}]`);
       }
 
       // Reset counter so future NEW topics can still get 1 CLARIFY
@@ -6268,12 +6311,14 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
     if (/مبتدئ|مبتدأ|اساسيات|أساسيات|من الصفر|beginner|basics|fundamentals|مقدم/.test(combined)) {
       const oldScore = d._diplomaScore || 0;
       d._diplomaScore = oldScore + 1500;
+      console.log(`   🟢 Diploma beginner boost: "${d.title}" +1500 (${oldScore} → ${d._diplomaScore})`);
     }
     
     // Penalize advanced diplomas for beginners
     if (/احتراف|احترافي|متقدم|advanced|professional|متخصص/.test(titleNorm)) {
       const oldScore = d._diplomaScore || 0;
       d._diplomaScore = Math.max(0, oldScore - 500);
+      console.log(`   🔴 Diploma advanced penalty: "${d.title}" -500 (${oldScore} → ${d._diplomaScore})`);
     }
   }
   
@@ -6334,6 +6379,7 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
 // 🆕 FIX: Chunk content fallback — when normal search finds 0 courses
     // Searches inside lesson transcripts (chunks) for the topic
     if (courses.length === 0 && diplomas.length === 0 && supabase) {
+      console.log(`🔍 Chunk content fallback: searching chunks for [${termsToSearch.join(', ')}]`);
       try {
         // Text search in ALL chunks
         const _cfTextChunks = await searchChunksByText(termsToSearch, null, null, 15);
@@ -6369,6 +6415,7 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
           }
         }
 
+        console.log(`🔍 Chunk fallback: ${_cfTextChunks.length} text + ${_cfSemanticChunks.length} semantic = ${_cfAllChunks.length} total`);
 
         if (_cfAllChunks.length > 0) {
           const _cfLessonIds = [...new Set(_cfAllChunks.map(c => c.lesson_id).filter(Boolean))];
@@ -6405,7 +6452,9 @@ if (analysis.user_level === 'مبتدئ' && diplomas.length > 0) {
                   }
                   
                   courses = _cfCourses;
+                  console.log(`🔍 ✅ Chunk fallback: found ${courses.length} courses from lesson content!`);
                   courses.forEach((c, i) => {
+                    console.log(`   ${i+1}. "${c.title}" — lessons: ${(c.matchedLessons||[]).map(l => l.title).join(', ')}`);
                   });
                 }
               }
@@ -6434,6 +6483,7 @@ scoreAndRankCourses(courses, termsToSearch, analysis.search_terms, analysis.user
             // ✅ كورس جه من بحث الكورسات (وصف/كلمات/domain) → خلّيه
             if (_courseSearchIds.has(c.id)) return true;
             // ❌ كورس جه من الشانكس/الدروس بس → شيله
+            console.log(`   🚫 Course-priority removed (lesson/chunk only): "${c.title}"`);
             return false;
         });
         if (courses.length < _beforePriorityFilter) {
@@ -6505,6 +6555,9 @@ const _gateIntentWords = new Set([
 
   var _gateAllSearchWords = [...new Set([..._gateSearchWords, ..._gateSearchEngWords])];
 
+  console.log(`🔍 Relevance Gate v2:`);
+  console.log(`   Message topic words: [${_gateMsgTopicWords.join(', ')}]`);
+  console.log(`   Search term words: [${_gateAllSearchWords.join(', ')}]`);
 
   // === Only activate for 2+ topic words in original message ===
   if (_gateMsgTopicWords.length >= 2 && courses.length > 0) {
@@ -6603,6 +6656,7 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       if (_negationPatterns.some(p => p.test(_altNorm))) {
         _isClearAlt = true;
         _isNegationFollowUp = true;
+        console.log(`🔄 FIX: Negation at start of follow-up "${message}" → ALTERNATIVE + negation flag`);
       }
     }
 
@@ -6611,7 +6665,9 @@ const _altNorm = normalizeArabic((message || "").toLowerCase());
       console.log(`🧠 FIX #103: Follow-up is CLARIFICATION → showing ALL results (no exclusion)`);
     }
     if (_isClearAlt && analysis.follow_up_type === "CLARIFY") {
+      console.log(`🔄 Override: "${message}" → forced ALTERNATIVE (was CLARIFY)`);
     }
+console.log(`🔍 DEBUG FILTER: is_follow_up=${analysis.is_follow_up}, isClarification=${followUpIsClarification}, lastShownIds=${JSON.stringify(sessionMem.lastShownCourseIds)}, lastShownCount=${(sessionMem.lastShownCourseIds||[]).length}`);  
 
     if (analysis.is_follow_up && !followUpIsClarification && sessionMem.lastShownCourseIds && sessionMem.lastShownCourseIds.length > 0) {
       const prevIds = new Set(sessionMem.lastShownCourseIds.map(String));
@@ -6640,7 +6696,9 @@ const relevantFiltered = filtered.filter(c => {
         
         if (relevantFiltered.length > 0) {
           courses = relevantFiltered;
+          console.log(`🔄 Follow-up: ${relevantFiltered.length} relevant unseen courses (filtered from ${filtered.length})`);
         } else {
+          console.log(`🔄 Follow-up: 0 relevant unseen courses → allPreviouslyShown`);
           allPreviouslyShown = true;
           courses = courses.filter(c => prevIds.has(String(c.id)));
         }
@@ -6769,6 +6827,7 @@ if (_corrWithReply) {
 
 const _topDomainBeforeFilter = courses.length > 0 ? (courses[0].domain || null) : null;
     courses = applyQualityFilters(courses);
+    console.log(`📊 After filters: ${courses.length} courses`);
 
 // ═══════════════════════════════════════════════════════════
     // 🆕 FIX #93: Follow-up "في حاجة تانية" — no new alternatives
@@ -6806,15 +6865,19 @@ const _topicRelevantNew = genuinelyNew.filter(c => {
     });
     
     if (_topicRelevantNew.length > 0) {
+      console.log(`🔄 FIX #102+115d: Found ${_topicRelevantNew.length} topic-relevant new courses`);
       courses = _topicRelevantNew;
       allPreviouslyShown = false;
     } else {
+      console.log(`🔄 FIX #102+115d: ${genuinelyNew.length} new but 0 topic-relevant → allPreviouslyShown confirmed`);
     }
   } else {
+    console.log(`🔄 FIX #102: No new courses in original results — allPreviouslyShown confirmed`);
   }
 }
 
 if (allPreviouslyShown && analysis.is_follow_up && courses.length > 0) {
+      console.log(`🔄 FIX #93: All ${courses.length} courses were previously shown — no new results`);
       const topic93 = sessionMem.lastSearchTopic || extractMainTopic(termsToSearch);
 const cat93 = detectCategoryFromContext(analysis, courses, termsToSearch);
 
@@ -9482,10 +9545,140 @@ app.get("/admin/export-logs", adminAuth, async (req, res) => {
 // ============================================================
 
 // --- Get all courses for upload page ---
+app.get("/api/upload/courses", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try {
+    const { data, error } = await supabase
+      .from("courses")
+      .select("id, title")
+      .order("title", { ascending: true });
+    if (error) throw error;
+    res.json({ 
+      success: true, 
+      courses: (data || []).map(c => ({ id: c.id, name: c.title }))
+    });
+  } catch (err) {
+    console.error("❌ GET /api/upload/courses error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // --- Get lessons for a course ---
+app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try {
+    const { courseId } = req.params;
+    console.log("📖 Fetching lessons for course:", courseId);
+    
+    // Check if lessons table exists and get lessons
+    let lessons = [];
+    try {
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("id, title")
+        .eq("course_id", courseId)
+        .order("created_at", { ascending: true });
+      
+      if (error) {
+        console.error("❌ Lessons query error:", error.message, error.code);
+        // If table doesn't exist, return empty
+        if (error.code === "42P01" || error.message.includes("does not exist")) {
+          return res.json({ success: true, lessons: [] });
+        }
+        throw error;
+      }
+      lessons = data || [];
+    } catch (lessonErr) {
+      console.error("❌ Lessons table error:", lessonErr.message);
+      return res.json({ success: true, lessons: [] });
+    }
+
+    console.log("📖 Found", lessons.length, "lessons");
+
+    // Get chunk counts for each lesson
+    const result = [];
+    for (const lesson of lessons) {
+      let chunkCount = 0;
+      try {
+        const { count, error: chunkErr } = await supabase
+          .from("chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("lesson_id", lesson.id);
+        if (!chunkErr) {
+          chunkCount = count || 0;
+        } else {
+          console.error("⚠️ Chunks count error for lesson", lesson.id, ":", chunkErr.message);
+        }
+      } catch (chunkEx) {
+        // chunks table might not exist — OK, just 0
+        console.error("⚠️ Chunks table error:", chunkEx.message);
+      }
+      result.push({
+        id: lesson.id,
+        title: lesson.title,
+        chunk_count: chunkCount
+      });
+    }
+    
+    res.json({ success: true, lessons: result });
+  } catch (err) {
+    console.error("❌ GET lessons FINAL error:", err.message);
+    res.json({ success: true, lessons: [] });
+  }
+});
 
 // --- Get total chunk count for a course ---
+app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
+  try {
+    const { courseId } = req.params;
+    console.log("📊 Fetching chunks count for course:", courseId);
+    
+    // Get lesson IDs for this course
+    let lessonIds = [];
+    try {
+      const { data: lessons, error: lessonErr } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("course_id", courseId);
+
+      if (lessonErr) {
+        console.error("❌ Lessons query error:", lessonErr.message);
+        return res.json({ success: true, count: 0 });
+      }
+      lessonIds = (lessons || []).map(l => l.id);
+    } catch (e) {
+      console.error("⚠️ Lessons table error:", e.message);
+      return res.json({ success: true, count: 0 });
+    }
+
+    if (lessonIds.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    // Count chunks
+    try {
+      const { count, error: chunkErr } = await supabase
+        .from("chunks")
+        .select("*", { count: "exact", head: true })
+        .in("lesson_id", lessonIds);
+      
+      if (chunkErr) {
+        console.error("⚠️ Chunks count error:", chunkErr.message);
+        return res.json({ success: true, count: 0 });
+      }
+      
+      console.log("📊 Total chunks:", count || 0);
+      res.json({ success: true, count: count || 0 });
+    } catch (chunkEx) {
+      console.error("⚠️ Chunks table error:", chunkEx.message);
+      res.json({ success: true, count: 0 });
+    }
+  } catch (err) {
+    console.error("❌ GET chunks-count FINAL error:", err.message);
+    res.json({ success: true, count: 0 });
+  }
+});
 
 // --- Debug: Check upload tables ---
 app.get("/api/upload/debug", adminAuth, async (req, res) => {
@@ -9531,6 +9724,26 @@ app.get("/api/upload/debug", adminAuth, async (req, res) => {
 
 
 // --- Delete chunks for a specific lesson ---
+app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { lessonId } = req.params;
+    const { count } = await supabase
+      .from("chunks")
+      .select("*", { count: "exact", head: true })
+      .eq("lesson_id", lessonId);
+
+    const { error } = await supabase
+      .from("chunks")
+      .delete()
+      .eq("lesson_id", lessonId);
+    if (error) throw error;
+    console.log(`🗑️ Deleted ${count || 0} chunks for lesson ${lessonId}`);
+    res.json({ success: true, deleted: count || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // --- Rename a lesson (update title in lessons table) ---
 app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
@@ -9556,6 +9769,80 @@ app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
 });
 
 // --- Process lesson (create/reupload → chunk → embed → store) ---
+app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
+  if (!supabase || !openai) return res.status(500).json({ error: "Not initialized" });
+  try {
+    const { courseId, lessonId, lessonName, transcript } = req.body;
+    if (!courseId || !lessonName || !transcript) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    let targetLessonId = lessonId;
+
+    if (targetLessonId) {
+      // Re-upload: update title + delete old chunks
+      await supabase
+        .from("lessons")
+        .update({ title: lessonName.trim() })
+        .eq("id", targetLessonId);
+
+      const { error: delErr } = await supabase
+        .from("chunks")
+        .delete()
+        .eq("lesson_id", targetLessonId);
+      if (delErr) console.error("Error deleting old chunks:", delErr);
+      console.log(`📖 Re-uploading lesson: "${lessonName}" (id: ${targetLessonId})`);
+    } else {
+      // New lesson: create entry in lessons table
+      const { data: newLesson, error: lessonErr } = await supabase
+        .from("lessons")
+        .insert({ title: lessonName.trim(), course_id: courseId })
+        .select()
+        .single();
+      if (lessonErr) throw lessonErr;
+      targetLessonId = newLesson.id;
+      console.log(`📖 Created new lesson: "${lessonName}" (id: ${targetLessonId})`);
+    }
+
+    // 1️⃣ Parse & chunk
+    const chunks = parseAndChunkTranscript(transcript, 500);
+    if (chunks.length === 0) {
+      return res.json({ success: true, chunksCreated: 0, lessonId: targetLessonId, message: "No valid lines found" });
+    }
+    console.log(`📖 Processing "${lessonName}": ${chunks.length} chunks`);
+
+    // 2️⃣ Generate embeddings & insert
+    let chunksCreated = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+const embeddingRes = await openai.embeddings.create({
+        model: CHUNK_EMBEDDING_MODEL,
+        input: chunk.content,
+      });
+      const embedding = embeddingRes.data[0].embedding;
+
+      const { error } = await supabase.from("chunks").insert({
+        lesson_id: targetLessonId,
+        content: chunk.content,
+        chunk_order: i + 1,
+        timestamp_start: chunk.startTime || null,
+        embedding: embedding,
+      });
+      if (error) {
+        console.error("❌ Chunk insert error:", error);
+        throw error;
+      }
+      chunksCreated++;
+      await sleep(100);
+    }
+
+    console.log(`✅ Lesson "${lessonName}": ${chunksCreated} chunks created`);
+    res.json({ success: true, chunksCreated, lessonId: targetLessonId, lessonName });
+  } catch (err) {
+    console.error("❌ Error processing lesson:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 // --- Serve upload page ---
@@ -10069,6 +10356,7 @@ if (error) {
       return [];
     }
 
+    console.log(`🔍 Semantic search: ${(data || []).length} results (model: text-embedding-3-small)`);
 
     return (data || []).map((chunk) => ({
       ...chunk,
@@ -10139,6 +10427,8 @@ ${contextBlock}
 
     const topic = response.choices[0].message.content.trim();
     console.log(`🧠 Smart Topic Extraction:`);
+    console.log(`   📝 User said: "${userMessage}"`);
+    console.log(`   🎯 Extracted topic: "${topic}"`);
     return topic;
   } catch (err) {
     console.error(`❌ extractSearchTopic error: ${err.message}`);
@@ -10157,11 +10447,14 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
     let result = null;
 
     console.log(`\n🔍 FIX #59: searchOtherCoursesForGuide START`);
+    console.log(`   searchText: "${searchText.substring(0, 100)}"`);
+    console.log(`   currentCourseId: ${currentCourseId}`);
 
     // ═══════════════════════════════════════════════════════════
     // Strategy 1 (FIRST): Search courses TABLE by title/keywords
     // Most accurate for finding courses by name!
     // ═══════════════════════════════════════════════════════════
+    console.log(`   🔄 Strategy 1: Courses table (TITLE FIRST)...`);
     try {
       const allWords = searchText.split(/\s+/).filter(w => w.length >= 2);
       const meaningful = allWords.filter(w => 
@@ -10169,9 +10462,11 @@ async function searchOtherCoursesForGuide(searchText, currentCourseId = null) {
       );
       const englishTerms = allWords.filter(w => /^[a-zA-Z]{2,}$/.test(w));
       const rawTerms = [...new Set([...meaningful, ...englishTerms])];
+      console.log(`   📝 Strategy 1 raw terms: [${rawTerms.join(', ')}]`);
 
       if (rawTerms.length > 0) {
 const searchTerms = prepareSearchTerms(rawTerms);
+        console.log(`   📝 Strategy 1 expanded terms: [${searchTerms.join(', ')}]`);
 
         if (searchTerms.length > 0) {
           let allFoundCourses = [];
@@ -10190,6 +10485,7 @@ const searchTerms = prepareSearchTerms(rawTerms);
           
           const { data: titleCourses, error: titleErr } = await titleQuery;
           if (!titleErr && titleCourses && titleCourses.length > 0) {
+            console.log(`   📊 Strategy 1 Pass 1 (title): ${titleCourses.length} courses`);
             titleCourses.forEach((c, i) => console.log(`      ${i+1}. "${c.title}"`));
             allFoundCourses = [...titleCourses];
           }
@@ -10221,9 +10517,11 @@ const searchTerms = prepareSearchTerms(rawTerms);
                   existingIds.add(bc.id);
                 }
               }
+              console.log(`   📊 Strategy 1 Pass 2 (broad): ${broadCourses.length} extra courses`);
             }
           }
 
+          console.log(`   📊 Strategy 1 TOTAL: ${allFoundCourses.length} courses`);
           
           if (allFoundCourses.length > 0) {
             let bestCourse = allFoundCourses[0];
@@ -10258,6 +10556,7 @@ const searchTerms = prepareSearchTerms(rawTerms);
                 if (subtitleNorm.includes(normTerm)) score += 5;
               }
               
+              console.log(`      📊 Score: "${course.title}" = ${score}`);
               if (score > bestScore) { bestScore = score; bestCourse = course; }
             }
 
@@ -10289,12 +10588,16 @@ const searchTerms = prepareSearchTerms(rawTerms);
                 source: "courses_table",
                 score: 0.7,
               };
+              console.log(`   ✅ Strategy 1 SUCCESS: "${bestCourse.title}" (score=${bestScore})`);
             } else {
+              console.log(`   ❌ Strategy 1: Best score too low (${bestScore}) — falling through`);
             }
           } else {
+            console.log(`   ❌ Strategy 1: No courses matched`);
           }
         }
       } else {
+        console.log(`   ❌ Strategy 1: No search terms extracted`);
       }
     } catch (tblErr) {
       console.error(`   ❌ Strategy 1 EXCEPTION: ${tblErr.message}`);
@@ -10305,6 +10608,7 @@ const searchTerms = prepareSearchTerms(rawTerms);
     // For topics buried in lesson content, not in course titles
     // ═══════════════════════════════════════════════════════════
     if (!result) {
+      console.log(`   🔄 Strategy 2: Semantic chunks (FALLBACK)...`);
       try {
 const embResponse = await openai.embeddings.create({
           model: CHUNK_EMBEDDING_MODEL,
@@ -10320,7 +10624,9 @@ const embResponse = await openai.embeddings.create({
         });
 
         if (error) {
+          console.log(`   ⚠️ Strategy 2 RPC error: ${error.message}`);
         } else {
+          console.log(`   📊 Strategy 2: ${(allChunks || []).length} chunks found`);
         }
 
         if (!error && allChunks && allChunks.length > 0) {
@@ -10335,6 +10641,7 @@ const embResponse = await openai.embeddings.create({
             courseGroups[cid].totalSim += (chunk.similarity || 0);
           }
 
+          console.log(`   📊 Strategy 2: ${Object.keys(courseGroups).length} other courses found`);
 
           let bestGroup = null;
           let bestScore = 0;
@@ -10382,8 +10689,10 @@ const embResponse = await openai.embeddings.create({
                 source: "chunks",
                 score: bestScore,
               };
+              console.log(`   ✅ Strategy 2 SUCCESS: "${courseData.title}" (score=${bestScore.toFixed(2)})`);
             }
           } else {
+            console.log(`   ❌ Strategy 2: No course scored high enough (best=${bestScore.toFixed(2)})`);
           }
         }
       } catch (semErr) {
@@ -10658,6 +10967,492 @@ ${summaryInstruction}
   /* ═══════════════════════════════════════════════════════════════
      🆕 FIX #46+#48: /api/guide — Full lesson context + cross-lesson
      ═══════════════════════════════════════════════════════════════ */
+app.post("/api/guide", limiter, async (req, res) => {
+    try {
+      const {
+        message,
+        session_id,
+        course_name,
+        lecture_title,
+        system_prompt,
+      } = req.body;
+
+      if (!message || !session_id) {
+        return res
+          .status(400)
+          .json({ error: "Missing message or session_id" });
+      }
+
+      const remaining = getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        return res.json({
+          reply:
+            "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪",
+          remaining_messages: 0,
+        });
+      }
+
+      consumeGuideMsg(session_id);
+
+  // 🆕 تحميل تعليمات المرشد التعليمي
+      const guideInstructions = await loadBotInstructions("guide");
+
+
+// ═══ تسجيل رسالة المستخدم في guide_logs ═══
+      await logGuide(session_id, "user", message, course_name, lecture_title, remaining - 1, {
+        version: "10.9",
+      });
+
+
+// Memory protection: limit concurrent guide sessions
+      if (Object.keys(guideConversations).length > MAX_GUIDE_SESSIONS) {
+        const sorted = Object.entries(guideConversations)
+          .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
+        sorted.slice(0, 100).forEach(([sid]) => delete guideConversations[sid]);
+        console.log(`🧹 Guide cleanup: removed 100 oldest sessions`);
+      }
+
+let currentLessonContext = "";
+      let otherLessonsContext = "";
+      let allCourseLessons = [];
+      let lessonMatch = null;
+      let otherCourseRecommendation = null;  // 🆕 FIX #55
+      let ragStats = { currentLesson: 0, semantic: 0, text: 0, otherLessons: 0, total: 0 };
+
+      if (course_name || lecture_title) {
+        try {
+          console.log("═══════════════════════════════════════");
+          console.log("🔍 GUIDE DEBUG INPUT:");
+          console.log("   course_name:", course_name);
+          console.log("   lecture_title:", lecture_title);
+          console.log("   message:", message.substring(0, 80));
+          console.log("═══════════════════════════════════════");
+
+          // Step 1: Find Course
+          const courseMatch = await findCourseByName(course_name || lecture_title);
+let courseId = courseMatch ? courseMatch.id : null;
+          console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
+
+          // Step 1.5: Get ALL lessons (sorted by lesson_order)
+          if (courseId) {
+            const { data: courseLessons } = await supabase
+              .from("lessons")
+              .select("id, title, lesson_order")
+              .eq("course_id", courseId)
+              .order("lesson_order", { ascending: true });
+            allCourseLessons = courseLessons || [];
+            console.log(`📋 Found ${allCourseLessons.length} lessons in course`);
+            allCourseLessons.forEach((l, i) => {
+              console.log(`   ${i + 1}. [order=${l.lesson_order}] "${l.title}"`);
+            });
+          }
+
+          // Step 2: Find Current Lesson
+          if (lecture_title) {
+            lessonMatch = await findLessonByTitle(lecture_title, courseId);
+            console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : "❌ NOT FOUND"}`);
+
+            // Extra fallback using all course lessons
+            if (!lessonMatch && allCourseLessons.length > 0) {
+              const normSearch = normalizeArabic(lecture_title.toLowerCase());
+              let bestL = null, bestS = 0;
+              for (const cl of allCourseLessons) {
+                const normDb = normalizeArabic((cl.title || "").toLowerCase());
+                let s = 0;
+                if (normDb.includes(normSearch) || normSearch.includes(normDb)) s = 90;
+                else {
+                  const words = normSearch.split(/\s+/).filter(w => w.length > 2);
+                  const matched = words.filter(w => normDb.includes(w));
+                  s = words.length > 0 ? Math.round((matched.length / words.length) * 80) : 0;
+                }
+                if (s > bestS) { bestS = s; bestL = cl; }
+              }
+              if (bestL && bestS >= 25) {
+                lessonMatch = bestL;
+                console.log(`📖 Fallback match → "${bestL.title}" (score=${bestS}%)`);
+              }
+            }
+          }
+
+          // Step 3: Get ALL chunks of current lesson
+          if (lessonMatch) {
+            const currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
+            ragStats.currentLesson = currentChunks.length;
+            if (currentChunks.length > 0) {
+              currentLessonContext = currentChunks.map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n\n");
+            }
+          } else {
+            console.log(`⚠️ No lesson matched — currentLessonContext will be empty`);
+          }
+
+// Step 4: Search OTHER lessons + OTHER COURSES (🆕 FIX #55)
+          const currentLessonId = lessonMatch ? lessonMatch.id : null;
+          const otherChunksMap = new Map();
+          const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
+
+          
+const searchQuery = message + (lecture_title ? " " + lecture_title : "");
+
+// 🆕 FIX #58: Smart Topic Extraction before searching other courses
+const recentMsgs = (guideConversations[session_id]?.messages || [])
+    .filter(m => m.role !== 'system')
+    .slice(-4);
+const smartTopic = await extractSearchTopic(message, course_name || "", recentMsgs);
+
+let otherCourseSearchText = message; // default: raw message
+if (smartTopic && smartTopic !== "CURRENT_COURSE" && smartTopic !== "NONE") {
+    otherCourseSearchText = smartTopic;
+    console.log(`🧠 FIX #58: Using smart topic "${smartTopic}" instead of raw message`);
+} else if (smartTopic === "CURRENT_COURSE" || smartTopic === "NONE") {
+    otherCourseSearchText = null; // Don't search other courses
+    console.log(`🧠 FIX #58: Topic is "${smartTopic}" — skipping other course search`);
+}
+
+// 🆕 FIX #55+#58: Run both searches in parallel (with smart topic)
+const [semanticChunks, _otherCourseRec] = await Promise.all([
+    getRelevantChunks(searchQuery, courseId, 8),
+    otherCourseSearchText 
+        ? searchOtherCoursesForGuide(otherCourseSearchText, courseId)
+        : Promise.resolve(null),
+]);
+          otherCourseRecommendation = _otherCourseRec;
+          
+          ragStats.semantic = semanticChunks.length;
+
+          for (const sc of semanticChunks) {
+            if (currentLessonId && sc.lesson_id === currentLessonId) continue;
+            const lessonName = lessonTitleMap.get(sc.lesson_id) || sc.lesson_title || "درس آخر";
+            if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
+            otherChunksMap.get(lessonName).push(sc);
+          }
+
+          // Text search
+          const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase()));
+          if (textTerms.length > 0) {
+            const textChunks = await searchChunksByText(textTerms, courseId, null, 10);
+            ragStats.text = textChunks.length;
+            for (const tc of textChunks) {
+              if (currentLessonId && tc.lesson_id === currentLessonId) continue;
+              const lessonName = lessonTitleMap.get(tc.lesson_id) || tc.lesson_title || "درس آخر";
+              if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
+              const existing = otherChunksMap.get(lessonName);
+              if (!existing.find((e) => e.id === tc.id)) existing.push(tc);
+            }
+          }
+
+          // Build other lessons context
+          if (otherChunksMap.size > 0) {
+            const parts = [];
+            for (const [lessonName, chunks] of otherChunksMap) {
+              ragStats.otherLessons += chunks.length;
+              const chunkTexts = chunks.slice(0, 4).map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n");
+              parts.push(`📎 درس: "${lessonName}"\n${chunkTexts}`);
+            }
+            otherLessonsContext = parts.join("\n\n---\n\n");
+          }
+
+          ragStats.total = ragStats.currentLesson + ragStats.otherLessons;
+          if (currentLessonContext.length > 40000) currentLessonContext = currentLessonContext.substring(0, 40000) + "\n\n[... بقية محتوى الدرس]";
+          if (otherLessonsContext.length > 10000) otherLessonsContext = otherLessonsContext.substring(0, 10000) + "\n\n[... بقية المحتوى]";
+
+          console.log(`📚 Guide RAG: current=${ragStats.currentLesson} | semantic=${ragStats.semantic} | text=${ragStats.text} | other=${ragStats.otherLessons} | total=${ragStats.total}`);
+
+
+console.log("═══════════════════════════════════════");
+          console.log("📖 CURRENT LESSON CONTEXT LENGTH:", currentLessonContext.length, "chars");
+          console.log("📖 CURRENT LESSON PREVIEW:", currentLessonContext.substring(0, 200));
+          console.log("📚 OTHER LESSONS CONTEXT LENGTH:", otherLessonsContext.length, "chars");
+          console.log("═══════════════════════════════════════");
+
+        } catch (ragErr) {
+          console.error("═══════════════════════════════════════");
+          console.error("❌ GUIDE RAG ERROR (CRITICAL):");
+          console.error("   Error:", ragErr.message);
+          console.error("   Stack:", ragErr.stack?.substring(0, 300));
+          console.error("   course_name:", course_name);
+          console.error("   lecture_title:", lecture_title);
+          console.error("═══════════════════════════════════════");
+          currentLessonContext = "[❌ حصل خطأ تقني في تحميل محتوى الدرس — جاوب بحذر]";
+        }
+
+      }
+
+
+// 🆕 FIX #51: Debug logging (CORRECTED variable names)
+      console.log(`\n═══════ FIX #51 DEBUG ═══════`);
+      console.log(`📍 lecture_title: "${lecture_title}"`);
+      console.log(`📍 course_name: "${course_name}"`);
+      console.log(`📍 lessonMatch: ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : 'NULL'}`);
+      console.log(`📍 currentLessonContext length: ${currentLessonContext ? currentLessonContext.length : 0}`);
+      console.log(`📍 currentLessonContext first 300 chars: "${currentLessonContext ? currentLessonContext.substring(0, 300) : 'EMPTY'}"`);
+      console.log(`📍 otherLessonsContext length: ${otherLessonsContext ? otherLessonsContext.length : 0}`);
+      if (otherLessonsContext) {
+        console.log(`📍 otherLessonsContext first 300 chars: "${otherLessonsContext.substring(0, 300)}"`);
+      }
+      console.log(`═══════════════════════════\n`);
+
+
+ // Build System Prompt
+const finalSystemPrompt = buildGuideSystemPrompt({
+    courseName: course_name || "",
+    lectureTitle: lecture_title || "",
+    clientPrompt: system_prompt || "",
+    currentLessonContext,
+    otherLessonsContext,
+    allCourseLessons,
+    lessonFound: !!lessonMatch,
+    otherCourseRecommendation,
+    botInstructions: guideInstructions,
+});
+
+// ═══ Conversation Management ═══
+      // 🆕 FIX #49: Clear history when lesson changes
+      if (!guideConversations[session_id]) {
+        guideConversations[session_id] = {
+          messages: [{ role: "system", content: finalSystemPrompt }],
+          lastActivity: Date.now(),
+          lastLecture: lecture_title || "",
+          lastCourse: course_name || "",
+        };
+      }
+
+      const conv = guideConversations[session_id];
+      
+      // 🆕 FIX #49: Detect lesson change → clear history
+      const lectureChanged = lecture_title && conv.lastLecture && conv.lastLecture !== lecture_title;
+      const courseChanged = course_name && conv.lastCourse && conv.lastCourse !== course_name;
+      
+      if (lectureChanged || courseChanged) {
+        console.log(`🔄 FIX #49: Context changed!`);
+        if (lectureChanged) console.log(`   Lecture: "${conv.lastLecture}" → "${lecture_title}"`);
+        if (courseChanged) console.log(`   Course: "${conv.lastCourse}" → "${course_name}"`);
+        console.log(`   → Clearing conversation history (${conv.messages.length - 1} old messages)`);
+        conv.messages = [{ role: "system", content: finalSystemPrompt }];
+      }
+      
+      conv.lastLecture = lecture_title || conv.lastLecture;
+      conv.lastCourse = course_name || conv.lastCourse;
+      
+      // Always update system prompt (context may have changed)
+      conv.messages[0] = { role: "system", content: finalSystemPrompt };
+      conv.lastActivity = Date.now();
+      conv.messages.push({ role: "user", content: message });
+
+      // Trim history
+      if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
+        conv.messages = [
+          conv.messages[0],
+          ...conv.messages.slice(-GUIDE_MAX_HISTORY),
+        ];
+      }
+
+      // ═══ Call GPT ═══
+// ═══ Call GPT ═══
+const completion = await gptWithRetry(() => openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: conv.messages,
+        max_tokens: 1200,
+        temperature: 0.6,
+      }));
+
+      const reply = completion.choices[0].message.content;
+
+      // 🆕 FIX #54: Post-processing — detect bot saying "ما اتكلمش" about current lesson
+      let finalReply = reply;
+      if (lecture_title && finalReply) {
+        const normLecture = normalizeArabic((lecture_title || "").toLowerCase());
+        const replyNorm = normalizeArabic((finalReply || "").toLowerCase());
+        
+        const saysNotCovered = finalReply.includes('ما اتكلمش') || finalReply.includes('مااتكلمش');
+        
+        if (saysNotCovered && lessonMatch) {
+          const normMatchedTitle = normalizeArabic((lessonMatch.title || "").toLowerCase());
+          if (replyNorm.includes(normMatchedTitle)) {
+            console.log(`⚠️ FIX #54: Bot says "ما اتكلمش" but references current lesson "${lessonMatch.title}"!`);
+            finalReply = finalReply
+              .replace(/⚠️?\s*النقطة دي المحاضر ما اتكلمش عنها في الدرس الحالي[^.]*/g, 
+                '✅ المحاضر شرح النقطة دي في الدرس ده')
+              .replace(/لكن شرحها في درس\s*["']?[^"']*["']?\s*عند الدقيقة/g, 
+                'عند الدقيقة');
+          }
+        }
+      }
+
+
+// 🆕 FIX #56: Force recommendation if bot answered from knowledge but forgot
+      if (otherCourseRecommendation && finalReply) {
+        const replyLower = (finalReply || '').toLowerCase();
+        const hasKnowledgeAnswer = finalReply.includes('معلومة إضافية') || finalReply.includes('🧠');
+        const alreadyMentionsCourse = replyLower.includes(
+          otherCourseRecommendation.courseTitle.toLowerCase().substring(0, 15)
+        );
+        
+        if (hasKnowledgeAnswer && !alreadyMentionsCourse) {
+          console.log(`⚠️ FIX #56: Bot forgot to recommend "${otherCourseRecommendation.courseTitle}" — appending!`);
+          
+          let recText = `\n\n📚 بالمناسبة! الموضوع ده متشرح بالتفصيل في كورس "${otherCourseRecommendation.courseTitle}" على المنصة!`;
+          recText += `\n🔗 ${otherCourseRecommendation.courseLink}`;
+          
+          if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
+            recText += `\n📖 الدروس المرتبطة:`;
+            for (const l of otherCourseRecommendation.lessons) {
+              recText += `\n  - "${l.title}"${l.timestamp ? ` ⏱️ ${l.timestamp}` : ''}`;
+            }
+          }
+          
+          finalReply += recText;
+        }
+      }
+
+
+
+      // Add to conversation history AFTER post-processing
+      conv.messages.push({ role: "assistant", content: finalReply });
+
+      const newRemaining = getGuideRemaining(session_id);
+
+console.log(
+        `🎓 Guide v2.1 | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || "N/A"} | Lecture: ${
+          lecture_title || "N/A"
+        } | RAG: ${ragStats.total > 0 ? `YES (${ragStats.total} chunks)` : "NO"
+        } | OtherCourse: ${otherCourseRecommendation ? otherCourseRecommendation.courseTitle : "NONE"
+        } | Remaining: ${newRemaining}`
+      );
+
+// 🆕 FIX #60: Make links clickable in guide replies
+      finalReply = markdownToHtml(finalReply);
+      finalReply = finalizeReply(finalReply);
+
+// 🆕 Generate smart suggestions — SPECIFIC, NEVER GENERIC
+let suggestions = [];
+if (newRemaining > 0) {
+    try {
+        const cleanReplyText = finalReply.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        const replyLast800 = cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800));
+        
+        const suggResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: `مهمتك: تطلع 3 أسئلة محددة جداً الطالب ممكن يسألها بعد الرد ده.
+
+🔴🔴🔴 القاعدة الوحيدة: كل اقتراح لازم يحتوي على كلمة أو مصطلح تقني من الرد نفسه!
+
+مثال — لو الرد كان عن "السيلز فانل وصفحة الهبوط":
+✅ "إيه أحسن أداة لبناء سيلز فانل؟"
+✅ "صفحة الهبوط محتاجة إيه بالظبط؟"
+✅ "الفرق بين السيلز فانل والويب سايت؟"
+
+مثال — لو الرد كان عن "التسويق بالإيميل":
+✅ "إيه أحسن وقت لإرسال الإيميلات؟"
+✅ "إزاي أكتب subject line قوي؟"
+✅ "معدل الفتح الطبيعي كام في المية؟"
+
+مثال — لو الرد كان عن "إنشاء متجر إلكتروني":
+✅ "إيه أحسن بوابة دفع في مصر؟"
+✅ "الشحن بتاع المتجر بيشتغل إزاي؟"
+✅ "إزاي أختار المنتجات المربحة؟"
+
+ارجع JSON: {"suggestions": ["...", "...", "..."], "keywords_used": ["كلمة1", "كلمة2", "كلمة3"]}`
+                },
+                {
+                    role: "user",
+                    content: `سؤال الطالب: "${message.substring(0, 300)}"
+
+رد المرشد: "${replyLast800}"`
+                }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 200,
+            temperature: 1.0,
+        });
+
+        const suggResult = JSON.parse(suggResp.choices[0].message.content);
+        if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
+            const banned = [
+                'وضحلي أكتر', 'وضّحلي أكتر', 'وضحلي اكتر',
+                'اديني مثال', 'اديني مثال عملي',
+                'اشرحلي أكتر', 'اشرحلي اكتر',
+                'مش فاهم', 'مش فاهمه',
+                'لخصلي الدرس', 'لخّصلي الدرس',
+                'وبعدين أعمل', 'وبعدين اعمل',
+                'عندي سؤال', 'سؤال تاني',
+                'اشرحلي بمثال', 'ممكن توضح',
+                'إيه الخطوة الجاية', 'ايه الخطوه الجايه',
+            ];
+            
+            suggestions = suggResult.suggestions
+                .filter(s => {
+                    const sNorm = s.replace(/[؟?!\.،,]/g, '').trim();
+                    return !banned.some(b => {
+                        const bNorm = b.replace(/[؟?!\.،,]/g, '').trim();
+                        return sNorm.includes(bNorm) || bNorm.includes(sNorm);
+                    });
+                })
+                .filter(s => s.length >= 8 && s.length <= 60)
+                .slice(0, 3);
+        }
+    } catch (suggErr) {
+        console.error("⚠️ Suggestions error:", suggErr.message);
+    }
+    
+    // If still empty — extract keywords from reply and build suggestions
+    if (suggestions.length === 0) {
+        try {
+            const words = finalReply
+                .replace(/<[^>]*>/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 4)
+                .filter(w => !/^(عشان|علشان|ممكن|لازم|محتاج|الطالب|المحاضر|الدرس|الكورس|بتاع|كمان|دلوقتي|هتلاقي|بالتفصيل)$/i.test(w));
+            
+            const unique = [...new Set(words)].slice(0, 3);
+            if (unique.length >= 1) {
+                suggestions = unique.map(w => `إيه التفاصيل عن ${w}؟`).slice(0, 3);
+            }
+        } catch (e) {}
+    }
+}
+
+// ═══ تسجيل رد المرشد في guide_logs ═══
+      await logGuide(session_id, "assistant", finalReply, course_name, lecture_title, newRemaining, {
+        version: "10.9",
+        rag_stats: ragStats,
+        lesson_found: !!lessonMatch,
+        other_course: otherCourseRecommendation ? otherCourseRecommendation.courseTitle : null,
+        suggestions_count: suggestions.length,
+      });
+
+res.json({
+    reply: finalReply,
+    remaining_messages: newRemaining,
+    suggestions: suggestions,
+});
+
+} catch (error) {
+      console.error("❌ Guide Error:", error.message);
+
+      // ═══ تسجيل الخطأ في guide_logs ═══
+      const errSessionId = req.body?.session_id || "unknown";
+      await logGuide(errSessionId, "assistant", "❌ ERROR: " + error.message, req.body?.course_name, req.body?.lecture_title, null, {
+        version: "10.9",
+        error: true,
+        error_message: error.message,
+      });
+
+res.status(500).json({
+        reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
+        remaining_messages: getGuideRemaining(errSessionId),
+        error: true,
+      });
+    }
+  });
 
 
 /* ═══════════════════════════════════
@@ -10707,13 +11502,18 @@ ${summaryInstruction}
       model: "gpt-4o-mini",
       daily_limit: GUIDE_DAILY_LIMIT,
       active_sessions: Object.keys(guideConversations).length,
+      fixes: [
+        "FIX #40: getAllLessonChunks",
+        "FIX #41: courseId filter",
+        "FIX #42: higher limits",
+        "FIX #43: 1200 chars",
+        "FIX #44: better findLesson",
+        "FIX #45: content-first prompt",
+        "FIX #46: cross-lesson refs",
+        "FIX #47: timestamps mandatory",
+        "FIX #48: split context",
+      ],
     });
-  });
-
-  app.get("/api/guide/status", (req, res) => {
-    const session_id = req.query.session_id;
-    if (!session_id) return res.status(400).json({ error: "Missing session_id" });
-    res.json({ remaining_messages: getGuideRemaining(session_id) });
   });
 
 
@@ -10860,580 +11660,6 @@ const embRes = await openai.embeddings.create({
   /* ═══════════════════════════════════
      Start Listening
      ═══════════════════════════════════ */
-// ═══════════════════════════════════════════════════════
-
-  /* ═══════════════════════════════════════════════════════════
-     🎓 /api/guide — Main Guide Endpoint
-     ══════════════════════════════════════════════════════════ */
-  app.post("/api/guide", limiter, async (req, res) => {
-      try {
-        const {
-          message,
-          session_id,
-          course_name,
-          lecture_title,
-          system_prompt,
-        } = req.body;
-
-        if (!message || !session_id) {
-          return res
-            .status(400)
-            .json({ error: "Missing message or session_id" });
-        }
-
-        const remaining = getGuideRemaining(session_id);
-        if (remaining <= 0) {
-          return res.json({
-            reply:
-              "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪",
-            remaining_messages: 0,
-          });
-        }
-
-        consumeGuideMsg(session_id);
-
-    // 🆕 تحميل تعليمات المرشد التعليمي
-        const guideInstructions = await loadBotInstructions("guide");
-
-
-  // ═══ تسجيل رسالة المستخدم في guide_logs ═══
-        await logGuide(session_id, "user", message, course_name, lecture_title, remaining - 1, {
-          version: "10.9",
-        });
-
-
-  // Memory protection: limit concurrent guide sessions
-        if (Object.keys(guideConversations).length > MAX_GUIDE_SESSIONS) {
-          const sorted = Object.entries(guideConversations)
-            .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
-          sorted.slice(0, 100).forEach(([sid]) => delete guideConversations[sid]);
-        }
-
-  let currentLessonContext = "";
-        let otherLessonsContext = "";
-        let allCourseLessons = [];
-        let lessonMatch = null;
-        let otherCourseRecommendation = null;  // 🆕 FIX #55
-        let ragStats = { currentLesson: 0, semantic: 0, text: 0, otherLessons: 0, total: 0 };
-
-        if (course_name || lecture_title) {
-          try {
-
-            // Step 1: Find Course
-            const courseMatch = await findCourseByName(course_name || lecture_title);
-  let courseId = courseMatch ? courseMatch.id : null;
-            console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
-
-            // Step 1.5: Get ALL lessons (sorted by lesson_order)
-            if (courseId) {
-              const { data: courseLessons } = await supabase
-                .from("lessons")
-                .select("id, title, lesson_order")
-                .eq("course_id", courseId)
-                .order("lesson_order", { ascending: true });
-              allCourseLessons = courseLessons || [];
-              allCourseLessons.forEach((l, i) => {
-              });
-            }
-
-            // Step 2: Find Current Lesson
-            if (lecture_title) {
-              lessonMatch = await findLessonByTitle(lecture_title, courseId);
-              console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : "❌ NOT FOUND"}`);
-
-              // Extra fallback using all course lessons
-              if (!lessonMatch && allCourseLessons.length > 0) {
-                const normSearch = normalizeArabic(lecture_title.toLowerCase());
-                let bestL = null, bestS = 0;
-                for (const cl of allCourseLessons) {
-                  const normDb = normalizeArabic((cl.title || "").toLowerCase());
-                  let s = 0;
-                  if (normDb.includes(normSearch) || normSearch.includes(normDb)) s = 90;
-                  else {
-                    const words = normSearch.split(/\s+/).filter(w => w.length > 2);
-                    const matched = words.filter(w => normDb.includes(w));
-                    s = words.length > 0 ? Math.round((matched.length / words.length) * 80) : 0;
-                  }
-                  if (s > bestS) { bestS = s; bestL = cl; }
-                }
-                if (bestL && bestS >= 25) {
-                  lessonMatch = bestL;
-                  console.log(`📖 Fallback match → "${bestL.title}" (score=${bestS}%)`);
-                }
-              }
-            }
-
-            // Step 3: Get ALL chunks of current lesson
-            if (lessonMatch) {
-              const currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
-              ragStats.currentLesson = currentChunks.length;
-              if (currentChunks.length > 0) {
-                currentLessonContext = currentChunks.map((c) => {
-                  const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
-                  return `${ts} ${(c.content || "").substring(0, 1200)}`;
-                }).join("\n\n");
-              }
-            } else {
-              console.log(`⚠️ No lesson matched — currentLessonContext will be empty`);
-            }
-
-  // Step 4: Search OTHER lessons + OTHER COURSES (🆕 FIX #55)
-            const currentLessonId = lessonMatch ? lessonMatch.id : null;
-            const otherChunksMap = new Map();
-            const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
-
-          
-  const searchQuery = message + (lecture_title ? " " + lecture_title : "");
-
-  // 🆕 FIX #58: Smart Topic Extraction before searching other courses
-  const recentMsgs = (guideConversations[session_id]?.messages || [])
-      .filter(m => m.role !== 'system')
-      .slice(-4);
-  const smartTopic = await extractSearchTopic(message, course_name || "", recentMsgs);
-
-  let otherCourseSearchText = message; // default: raw message
-  if (smartTopic && smartTopic !== "CURRENT_COURSE" && smartTopic !== "NONE") {
-      otherCourseSearchText = smartTopic;
-      console.log(`🧠 FIX #58: Using smart topic "${smartTopic}" instead of raw message`);
-  } else if (smartTopic === "CURRENT_COURSE" || smartTopic === "NONE") {
-      otherCourseSearchText = null; // Don't search other courses
-      console.log(`🧠 FIX #58: Topic is "${smartTopic}" — skipping other course search`);
-  }
-
-  // 🆕 FIX #55+#58: Run both searches in parallel (with smart topic)
-  const [semanticChunks, _otherCourseRec] = await Promise.all([
-      getRelevantChunks(searchQuery, courseId, 8),
-      otherCourseSearchText 
-          ? searchOtherCoursesForGuide(otherCourseSearchText, courseId)
-          : Promise.resolve(null),
-  ]);
-            otherCourseRecommendation = _otherCourseRec;
-          
-            ragStats.semantic = semanticChunks.length;
-
-            for (const sc of semanticChunks) {
-              if (currentLessonId && sc.lesson_id === currentLessonId) continue;
-              const lessonName = lessonTitleMap.get(sc.lesson_id) || sc.lesson_title || "درس آخر";
-              if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
-              otherChunksMap.get(lessonName).push(sc);
-            }
-
-            // Text search
-            const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase()));
-            if (textTerms.length > 0) {
-              const textChunks = await searchChunksByText(textTerms, courseId, null, 10);
-              ragStats.text = textChunks.length;
-              for (const tc of textChunks) {
-                if (currentLessonId && tc.lesson_id === currentLessonId) continue;
-                const lessonName = lessonTitleMap.get(tc.lesson_id) || tc.lesson_title || "درس آخر";
-                if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
-                const existing = otherChunksMap.get(lessonName);
-                if (!existing.find((e) => e.id === tc.id)) existing.push(tc);
-              }
-            }
-
-            // Build other lessons context
-            if (otherChunksMap.size > 0) {
-              const parts = [];
-              for (const [lessonName, chunks] of otherChunksMap) {
-                ragStats.otherLessons += chunks.length;
-                const chunkTexts = chunks.slice(0, 4).map((c) => {
-                  const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
-                  return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
-                }).join("\n");
-                parts.push(`📎 درس: "${lessonName}"\n${chunkTexts}`);
-              }
-              otherLessonsContext = parts.join("\n\n---\n\n");
-            }
-
-            ragStats.total = ragStats.currentLesson + ragStats.otherLessons;
-            if (currentLessonContext.length > 40000) currentLessonContext = currentLessonContext.substring(0, 40000) + "\n\n[... بقية محتوى الدرس]";
-            if (otherLessonsContext.length > 10000) otherLessonsContext = otherLessonsContext.substring(0, 10000) + "\n\n[... بقية المحتوى]";
-
-            console.log(`📚 Guide RAG: current=${ragStats.currentLesson} | semantic=${ragStats.semantic} | text=${ragStats.text} | other=${ragStats.otherLessons} | total=${ragStats.total}`);
-
-
-            console.log("📖 CURRENT LESSON CONTEXT LENGTH:", currentLessonContext.length, "chars");
-            console.log("📖 CURRENT LESSON PREVIEW:", currentLessonContext.substring(0, 200));
-            console.log("📚 OTHER LESSONS CONTEXT LENGTH:", otherLessonsContext.length, "chars");
-
-          } catch (ragErr) {
-            console.error("═══════════════════════════════════════");
-            console.error("❌ GUIDE RAG ERROR (CRITICAL):");
-            console.error("   Error:", ragErr.message);
-            console.error("   Stack:", ragErr.stack?.substring(0, 300));
-            console.error("   course_name:", course_name);
-            console.error("   lecture_title:", lecture_title);
-            console.error("═══════════════════════════════════════");
-            currentLessonContext = "[❌ حصل خطأ تقني في تحميل محتوى الدرس — جاوب بحذر]";
-          }
-
-        }
-
-
-  // 🆕 FIX #51: Debug logging (CORRECTED variable names)
-        console.log(`\n═══════ FIX #51 DEBUG ═══════`);
-        if (otherLessonsContext) {
-        }
-
-
-   // Build System Prompt
-  const finalSystemPrompt = buildGuideSystemPrompt({
-      courseName: course_name || "",
-      lectureTitle: lecture_title || "",
-      clientPrompt: system_prompt || "",
-      currentLessonContext,
-      otherLessonsContext,
-      allCourseLessons,
-      lessonFound: !!lessonMatch,
-      otherCourseRecommendation,
-      botInstructions: guideInstructions,
-  });
-
-  // ═══ Conversation Management ═══
-        // 🆕 FIX #49: Clear history when lesson changes
-        if (!guideConversations[session_id]) {
-          guideConversations[session_id] = {
-            messages: [{ role: "system", content: finalSystemPrompt }],
-            lastActivity: Date.now(),
-            lastLecture: lecture_title || "",
-            lastCourse: course_name || "",
-          };
-        }
-
-        const conv = guideConversations[session_id];
-      
-        // 🆕 FIX #49: Detect lesson change → clear history
-        const lectureChanged = lecture_title && conv.lastLecture && conv.lastLecture !== lecture_title;
-        const courseChanged = course_name && conv.lastCourse && conv.lastCourse !== course_name;
-      
-        if (lectureChanged || courseChanged) {
-          if (lectureChanged) console.log(`   Lecture: "${conv.lastLecture}" → "${lecture_title}"`);
-          if (courseChanged) console.log(`   Course: "${conv.lastCourse}" → "${course_name}"`);
-          conv.messages = [{ role: "system", content: finalSystemPrompt }];
-        }
-      
-        conv.lastLecture = lecture_title || conv.lastLecture;
-        conv.lastCourse = course_name || conv.lastCourse;
-      
-        // Always update system prompt (context may have changed)
-        conv.messages[0] = { role: "system", content: finalSystemPrompt };
-        conv.lastActivity = Date.now();
-        conv.messages.push({ role: "user", content: message });
-
-        // Trim history
-        if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
-          conv.messages = [
-            conv.messages[0],
-            ...conv.messages.slice(-GUIDE_MAX_HISTORY),
-          ];
-        }
-
-        // ═══ Call GPT ═══
-  // ═══ Call GPT ═══
-  const completion = await gptWithRetry(() => openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: conv.messages,
-          max_tokens: 1200,
-          temperature: 0.6,
-        }));
-
-        const reply = completion.choices[0].message.content;
-
-        // 🆕 FIX #54: Post-processing — detect bot saying "ما اتكلمش" about current lesson
-        let finalReply = reply;
-        if (lecture_title && finalReply) {
-          const normLecture = normalizeArabic((lecture_title || "").toLowerCase());
-          const replyNorm = normalizeArabic((finalReply || "").toLowerCase());
-        
-          const saysNotCovered = finalReply.includes('ما اتكلمش') || finalReply.includes('مااتكلمش');
-        
-          if (saysNotCovered && lessonMatch) {
-            const normMatchedTitle = normalizeArabic((lessonMatch.title || "").toLowerCase());
-            if (replyNorm.includes(normMatchedTitle)) {
-              console.log(`⚠️ FIX #54: Bot says "ما اتكلمش" but references current lesson "${lessonMatch.title}"!`);
-              finalReply = finalReply
-                .replace(/⚠️?\s*النقطة دي المحاضر ما اتكلمش عنها في الدرس الحالي[^.]*/g, 
-                  '✅ المحاضر شرح النقطة دي في الدرس ده')
-                .replace(/لكن شرحها في درس\s*["']?[^"']*["']?\s*عند الدقيقة/g, 
-                  'عند الدقيقة');
-            }
-          }
-        }
-
-
-  // 🆕 FIX #56: Force recommendation if bot answered from knowledge but forgot
-        if (otherCourseRecommendation && finalReply) {
-          const replyLower = (finalReply || '').toLowerCase();
-          const hasKnowledgeAnswer = finalReply.includes('معلومة إضافية') || finalReply.includes('🧠');
-          const alreadyMentionsCourse = replyLower.includes(
-            otherCourseRecommendation.courseTitle.toLowerCase().substring(0, 15)
-          );
-        
-          if (hasKnowledgeAnswer && !alreadyMentionsCourse) {
-            console.log(`⚠️ FIX #56: Bot forgot to recommend "${otherCourseRecommendation.courseTitle}" — appending!`);
-          
-            let recText = `\n\n📚 بالمناسبة! الموضوع ده متشرح بالتفصيل في كورس "${otherCourseRecommendation.courseTitle}" على المنصة!`;
-            recText += `\n🔗 ${otherCourseRecommendation.courseLink}`;
-          
-            if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
-              recText += `\n📖 الدروس المرتبطة:`;
-              for (const l of otherCourseRecommendation.lessons) {
-                recText += `\n  - "${l.title}"${l.timestamp ? ` ⏱️ ${l.timestamp}` : ''}`;
-              }
-            }
-          
-            finalReply += recText;
-          }
-        }
-
-
-
-        // Add to conversation history AFTER post-processing
-        conv.messages.push({ role: "assistant", content: finalReply });
-
-        const newRemaining = getGuideRemaining(session_id);
-
-  console.log(
-          `🎓 Guide v2.1 | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || "N/A"} | Lecture: ${
-            lecture_title || "N/A"
-          } | RAG: ${ragStats.total > 0 ? `YES (${ragStats.total} chunks)` : "NO"
-          } | OtherCourse: ${otherCourseRecommendation ? otherCourseRecommendation.courseTitle : "NONE"
-          } | Remaining: ${newRemaining}`
-        );
-
-  // 🆕 FIX #60: Make links clickable in guide replies
-        finalReply = markdownToHtml(finalReply);
-        finalReply = finalizeReply(finalReply);
-
-  // 🆕 Generate smart suggestions — SPECIFIC, NEVER GENERIC
-  let suggestions = [];
-  if (newRemaining > 0) {
-      try {
-          const cleanReplyText = finalReply.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-          const replyLast800 = cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800));
-        
-          const suggResp = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: [
-                  {
-                      role: "system",
-                      content: `مهمتك: تطلع 3 أسئلة محددة جداً الطالب ممكن يسألها بعد الرد ده.
-
-  🔴🔴🔴 القاعدة الوحيدة: كل اقتراح لازم يحتوي على كلمة أو مصطلح تقني من الرد نفسه!
-
-  مثال — لو الرد كان عن "السيلز فانل وصفحة الهبوط":
-  ✅ "إيه أحسن أداة لبناء سيلز فانل؟"
-  ✅ "صفحة الهبوط محتاجة إيه بالظبط؟"
-  ✅ "الفرق بين السيلز فانل والويب سايت؟"
-
-  مثال — لو الرد كان عن "التسويق بالإيميل":
-  ✅ "إيه أحسن وقت لإرسال الإيميلات؟"
-  ✅ "إزاي أكتب subject line قوي؟"
-  ✅ "معدل الفتح الطبيعي كام في المية؟"
-
-  مثال — لو الرد كان عن "إنشاء متجر إلكتروني":
-  ✅ "إيه أحسن بوابة دفع في مصر؟"
-  ✅ "الشحن بتاع المتجر بيشتغل إزاي؟"
-  ✅ "إزاي أختار المنتجات المربحة؟"
-
-  ارجع JSON: {"suggestions": ["...", "...", "..."], "keywords_used": ["كلمة1", "كلمة2", "كلمة3"]}`
-                  },
-                  {
-                      role: "user",
-                      content: `سؤال الطالب: "${message.substring(0, 300)}"
-
-  رد المرشد: "${replyLast800}"`
-                  }
-              ],
-              response_format: { type: "json_object" },
-              max_tokens: 200,
-              temperature: 1.0,
-          });
-
-          const suggResult = JSON.parse(suggResp.choices[0].message.content);
-          if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
-              const banned = [
-                  'وضحلي أكتر', 'وضّحلي أكتر', 'وضحلي اكتر',
-                  'اديني مثال', 'اديني مثال عملي',
-                  'اشرحلي أكتر', 'اشرحلي اكتر',
-                  'مش فاهم', 'مش فاهمه',
-                  'لخصلي الدرس', 'لخّصلي الدرس',
-                  'وبعدين أعمل', 'وبعدين اعمل',
-                  'عندي سؤال', 'سؤال تاني',
-                  'اشرحلي بمثال', 'ممكن توضح',
-                  'إيه الخطوة الجاية', 'ايه الخطوه الجايه',
-              ];
-            
-              suggestions = suggResult.suggestions
-                  .filter(s => {
-                      const sNorm = s.replace(/[؟?!\.،,]/g, '').trim();
-                      return !banned.some(b => {
-                          const bNorm = b.replace(/[؟?!\.،,]/g, '').trim();
-                          return sNorm.includes(bNorm) || bNorm.includes(sNorm);
-                      });
-                  })
-                  .filter(s => s.length >= 8 && s.length <= 60)
-                  .slice(0, 3);
-          }
-      } catch (suggErr) {
-          console.error("⚠️ Suggestions error:", suggErr.message);
-      }
-    
-      // If still empty — extract keywords from reply and build suggestions
-      if (suggestions.length === 0) {
-          try {
-              const words = finalReply
-                  .replace(/<[^>]*>/g, '')
-                  .split(/\s+/)
-                  .filter(w => w.length > 4)
-                  .filter(w => !/^(عشان|علشان|ممكن|لازم|محتاج|الطالب|المحاضر|الدرس|الكورس|بتاع|كمان|دلوقتي|هتلاقي|بالتفصيل)$/i.test(w));
-            
-              const unique = [...new Set(words)].slice(0, 3);
-              if (unique.length >= 1) {
-                  suggestions = unique.map(w => `إيه التفاصيل عن ${w}؟`).slice(0, 3);
-              }
-          } catch (e) {}
-      }
-  }
-
-  // ═══ تسجيل رد المرشد في guide_logs ═══
-        await logGuide(session_id, "assistant", finalReply, course_name, lecture_title, newRemaining, {
-          version: "10.9",
-          rag_stats: ragStats,
-          lesson_found: !!lessonMatch,
-          other_course: otherCourseRecommendation ? otherCourseRecommendation.courseTitle : null,
-          suggestions_count: suggestions.length,
-        });
-
-  res.json({
-      reply: finalReply,
-      remaining_messages: newRemaining,
-      suggestions: suggestions,
-  });
-
-  } catch (error) {
-        console.error("❌ Guide Error:", error.message);
-
-        // ═══ تسجيل الخطأ في guide_logs ═══
-        const errSessionId = req.body?.session_id || "unknown";
-        await logGuide(errSessionId, "assistant", "❌ ERROR: " + error.message, req.body?.course_name, req.body?.lecture_title, null, {
-          version: "10.9",
-          error: true,
-          error_message: error.message,
-        });
-
-  res.status(500).json({
-          reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
-          remaining_messages: getGuideRemaining(errSessionId),
-          error: true,
-        });
-      }
-    });
-
-// 🆕 ZIKO WIDGET ENDPOINTS
-// ═══════════════════════════════════════════════════════
-
-// ── 1. QUIZ ENDPOINT ────────────────────────────────────
-  app.post("/api/guide/quiz", limiter, async (req, res) => {
-    try {
-      const { session_id, course_name, lecture_title, count = 10 } = req.body;
-      if (!session_id) return res.status(400).json({ error: "Missing session_id" });
-
-      const remaining = getGuideRemaining(session_id);
-      if (remaining <= 0) return res.json({ error: "limit_reached" });
-
-      consumeGuideMsg(session_id);
-
-      const topic = lecture_title || course_name || "الدرس الحالي";
-      const numQ = Math.min(Math.max(parseInt(count) || 10, 5), 15);
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "أنت مساعد متخصص في إنشاء أسئلة اختبار. رد بـ JSON فقط." },
-          { role: "user", content: `أنشئ اختباراً من ${numQ} سؤال متعدد الاختيارات عن موضوع: "${topic}". كل سؤال له 4 اختيارات. correct هو index الإجابة الصحيحة (0-3). رد بـ JSON فقط: {"questions":[{"q":"السؤال","opts":["أ","ب","ج","د"],"correct":0,"explanation":"شرح"}]}` }
-        ],
-        temperature: 0.7,
-        response_format: { type: "json_object" }
-      });
-
-      const parsed = JSON.parse(completion.choices[0].message.content);
-      res.json({ questions: parsed.questions || [], remaining_messages: getGuideRemaining(session_id) });
-
-    } catch (e) {
-      console.error("❌ quiz error:", e.message);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-// ── 2. TOOL ENDPOINT ────────────────────────────────────
-  app.post("/api/guide/tool", limiter, async (req, res) => {
-    try {
-      const { session_id, tool, course_name, lecture_title } = req.body;
-      if (!session_id || !tool) return res.status(400).json({ error: "Missing params" });
-
-      const remaining = getGuideRemaining(session_id);
-      if (remaining <= 0) return res.json({ error: "limit_reached" });
-
-      consumeGuideMsg(session_id);
-
-      const topic = lecture_title || course_name || "الدرس الحالي";
-
-      const prompts = {
-        summary: {
-          system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
-          user: `لخص موضوع "${topic}" في نقاط مرتبة وواضحة. ابدأ كل نقطة بـ •`,
-          json: false
-        },
-        infographic: {
-          system: "أنت مرشد تعليمي. رد بـ JSON فقط.",
-          user: `حلل موضوع "${topic}": لو مفاهيم → type=tree, لو خطوات → type=flow. رد بـ JSON: {"type":"flow","title":"العنوان","steps":[{"head":"عنوان","body":"شرح"}]} أو {"type":"tree","title":"العنوان","branches":[{"name":"فرع","detail":"تفصيل"}]}. 4-7 عناصر.`,
-          json: true
-        },
-        exercise: {
-          system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
-          user: `اعمل تمريناً عملياً على موضوع "${topic}". التمرين يكون واضح وقابل للتطبيق الفوري.`,
-          json: false
-        },
-        glossary: {
-          system: "أنت مرشد تعليمي. رد بـ JSON فقط.",
-          user: `استخرج 5-7 مصطلحات تقنية من موضوع "${topic}". رد بـ JSON: {"terms":[{"term":"المصطلح","def":"التعريف المختصر"}]}`,
-          json: true
-        },
-        rephrase: {
-          system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
-          user: `اشرح موضوع "${topic}" بطريقة مختلفة وأسلوب جديد يساعد على الفهم بشكل أعمق.`,
-          json: false
-        },
-        updates: {
-          system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML. اذكر آخر المستجدات.",
-          user: `ما هي آخر المستجدات والتطورات الحديثة في مجال "${topic}"؟`,
-          json: false
-        }
-      };
-
-      const selected = prompts[tool];
-      if (!selected) return res.status(400).json({ error: "Unknown tool" });
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: selected.system },
-          { role: "user", content: selected.user }
-        ],
-        temperature: 0.7,
-        ...(selected.json ? { response_format: { type: "json_object" } } : {})
-      });
-
-      res.json({ reply: completion.choices[0].message.content, tool, remaining_messages: getGuideRemaining(session_id) });
-
-    } catch (e) {
-      console.error("❌ tool error:", e.message);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
@@ -11780,6 +12006,7 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
 
     // ═══ 1) If lessonId provided, delete old chunks ═══
     if (targetLessonId) {
+      console.log(`🔄 Re-uploading lesson ${targetLessonId}: "${lessonName}"`);
 
       const { error: delErr } = await supabase
         .from("chunks")
@@ -11878,6 +12105,146 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
   } catch (e) {
     console.error("❌ process-lesson error:", e.message);
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// 🆕 ZIKO WIDGET ENDPOINTS
+// ضيف الكود ده قبل سطر startServer() في الآخر
+// ═══════════════════════════════════════════════════════
+
+// ── 1. QUIZ ENDPOINT ────────────────────────────────────
+app.post("/api/guide/quiz", limiter, async (req, res) => {
+  try {
+    const { session_id, course_name, lecture_title, count = 10 } = req.body;
+    if (!session_id) return res.status(400).json({ error: "Missing session_id" });
+
+    const remaining = getGuideRemaining(session_id);
+    if (remaining <= 0) return res.json({ error: "limit_reached" });
+
+    consumeGuideMsg(session_id);
+
+    const topic = lecture_title || course_name || "الدرس الحالي";
+    const numQ = Math.min(Math.max(parseInt(count) || 10, 5), 15);
+
+    const prompt = `أنشئ اختباراً من ${numQ} سؤال متعدد الاختيارات عن موضوع: "${topic}"
+قواعد صارمة:
+- كل سؤال له 4 اختيارات فقط
+- correct هو index الإجابة الصحيحة (0-3)
+- explanation شرح مختصر للإجابة الصحيحة
+- الأسئلة تكون متنوعة وتغطي جوانب مختلفة
+- رد بـ JSON فقط بدون أي كلام آخر أو markdown
+
+{
+  "questions": [
+    {
+      "q": "نص السؤال",
+      "opts": ["اختيار أ", "اختيار ب", "اختيار ج", "اختيار د"],
+      "correct": 0,
+      "explanation": "شرح مختصر"
+    }
+  ]
+}`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "أنت مساعد متخصص في إنشاء أسئلة اختبار. رد بـ JSON فقط." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      response_format: { type: "json_object" }
+    });
+
+    const text = completion.choices[0].message.content;
+    const parsed = JSON.parse(text);
+
+    res.json({
+      questions: parsed.questions || [],
+      remaining_messages: getGuideRemaining(session_id)
+    });
+
+  } catch (e) {
+    console.error("❌ quiz error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── 2. TOOL ENDPOINT (summary, infographic, exercise, glossary, rephrase, updates) ──
+app.post("/api/guide/tool", limiter, async (req, res) => {
+  try {
+    const { session_id, tool, course_name, lecture_title } = req.body;
+    if (!session_id || !tool) return res.status(400).json({ error: "Missing params" });
+
+    const remaining = getGuideRemaining(session_id);
+    if (remaining <= 0) return res.json({ error: "limit_reached" });
+
+    consumeGuideMsg(session_id);
+
+    const topic = lecture_title || course_name || "الدرس الحالي";
+
+    const prompts = {
+      summary: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `لخص موضوع "${topic}" في نقاط مرتبة وواضحة. ابدأ كل نقطة بـ • `
+      },
+      infographic: {
+        system: "أنت مرشد تعليمي. رد بـ JSON فقط بدون أي كلام.",
+        user: `حلل موضوع "${topic}" وقرر:
+- لو المحتوى مفاهيم ومتفرعات → type: tree
+- لو المحتوى خطوات متسلسلة → type: flow
+
+رد بـ JSON فقط:
+لو tree: {"type":"tree","title":"العنوان","branches":[{"name":"الفرع","detail":"تفصيل مختصر"}]}
+لو flow: {"type":"flow","title":"العنوان","steps":[{"head":"عنوان الخطوة","body":"شرح مختصر"}]}
+من 4 إلى 7 عناصر فقط.`
+      },
+      exercise: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `اعمل تمريناً عملياً على موضوع "${topic}". التمرين يكون واضح وقابل للتطبيق الفوري.`
+      },
+      glossary: {
+        system: "أنت مرشد تعليمي. رد بـ JSON فقط بدون أي كلام.",
+        user: `استخرج 5-7 مصطلحات تقنية مهمة من موضوع "${topic}".
+رد بـ JSON فقط:
+{"terms":[{"term":"اسم المصطلح","def":"تعريف مختصر وواضح في جملة أو جملتين"}]}`
+      },
+      rephrase: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `اشرح موضوع "${topic}" بطريقة مختلفة وأسلوب جديد يساعد على الفهم بشكل أعمق.`
+      },
+      updates: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML. اذكر آخر المستجدات والتطورات.",
+        user: `ما هي آخر المستجدات والتطورات الحديثة في مجال "${topic}"؟ اذكر أهم التحديثات والتغييرات الجديدة.`
+      }
+    };
+
+    const selected = prompts[tool];
+    if (!selected) return res.status(400).json({ error: "Unknown tool" });
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: selected.system },
+        { role: "user", content: selected.user }
+      ],
+      temperature: 0.7,
+      ...(tool === "infographic" || tool === "glossary"
+        ? { response_format: { type: "json_object" } }
+        : {})
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    res.json({
+      reply,
+      tool,
+      remaining_messages: getGuideRemaining(session_id)
+    });
+
+  } catch (e) {
+    console.error("❌ tool error:", e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
