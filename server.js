@@ -12108,4 +12108,144 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════
+// 🆕 ZIKO WIDGET ENDPOINTS
+// ضيف الكود ده قبل سطر startServer() في الآخر
+// ═══════════════════════════════════════════════════════
+
+// ── 1. QUIZ ENDPOINT ────────────────────────────────────
+app.post("/api/guide/quiz", limiter, async (req, res) => {
+  try {
+    const { session_id, course_name, lecture_title, count = 10 } = req.body;
+    if (!session_id) return res.status(400).json({ error: "Missing session_id" });
+
+    const remaining = getGuideRemaining(session_id);
+    if (remaining <= 0) return res.json({ error: "limit_reached" });
+
+    consumeGuideMsg(session_id);
+
+    const topic = lecture_title || course_name || "الدرس الحالي";
+    const numQ = Math.min(Math.max(parseInt(count) || 10, 5), 15);
+
+    const prompt = `أنشئ اختباراً من ${numQ} سؤال متعدد الاختيارات عن موضوع: "${topic}"
+قواعد صارمة:
+- كل سؤال له 4 اختيارات فقط
+- correct هو index الإجابة الصحيحة (0-3)
+- explanation شرح مختصر للإجابة الصحيحة
+- الأسئلة تكون متنوعة وتغطي جوانب مختلفة
+- رد بـ JSON فقط بدون أي كلام آخر أو markdown
+
+{
+  "questions": [
+    {
+      "q": "نص السؤال",
+      "opts": ["اختيار أ", "اختيار ب", "اختيار ج", "اختيار د"],
+      "correct": 0,
+      "explanation": "شرح مختصر"
+    }
+  ]
+}`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "أنت مساعد متخصص في إنشاء أسئلة اختبار. رد بـ JSON فقط." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      response_format: { type: "json_object" }
+    });
+
+    const text = completion.choices[0].message.content;
+    const parsed = JSON.parse(text);
+
+    res.json({
+      questions: parsed.questions || [],
+      remaining_messages: getGuideRemaining(session_id)
+    });
+
+  } catch (e) {
+    console.error("❌ quiz error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── 2. TOOL ENDPOINT (summary, infographic, exercise, glossary, rephrase, updates) ──
+app.post("/api/guide/tool", limiter, async (req, res) => {
+  try {
+    const { session_id, tool, course_name, lecture_title } = req.body;
+    if (!session_id || !tool) return res.status(400).json({ error: "Missing params" });
+
+    const remaining = getGuideRemaining(session_id);
+    if (remaining <= 0) return res.json({ error: "limit_reached" });
+
+    consumeGuideMsg(session_id);
+
+    const topic = lecture_title || course_name || "الدرس الحالي";
+
+    const prompts = {
+      summary: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `لخص موضوع "${topic}" في نقاط مرتبة وواضحة. ابدأ كل نقطة بـ • `
+      },
+      infographic: {
+        system: "أنت مرشد تعليمي. رد بـ JSON فقط بدون أي كلام.",
+        user: `حلل موضوع "${topic}" وقرر:
+- لو المحتوى مفاهيم ومتفرعات → type: tree
+- لو المحتوى خطوات متسلسلة → type: flow
+
+رد بـ JSON فقط:
+لو tree: {"type":"tree","title":"العنوان","branches":[{"name":"الفرع","detail":"تفصيل مختصر"}]}
+لو flow: {"type":"flow","title":"العنوان","steps":[{"head":"عنوان الخطوة","body":"شرح مختصر"}]}
+من 4 إلى 7 عناصر فقط.`
+      },
+      exercise: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `اعمل تمريناً عملياً على موضوع "${topic}". التمرين يكون واضح وقابل للتطبيق الفوري.`
+      },
+      glossary: {
+        system: "أنت مرشد تعليمي. رد بـ JSON فقط بدون أي كلام.",
+        user: `استخرج 5-7 مصطلحات تقنية مهمة من موضوع "${topic}".
+رد بـ JSON فقط:
+{"terms":[{"term":"اسم المصطلح","def":"تعريف مختصر وواضح في جملة أو جملتين"}]}`
+      },
+      rephrase: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML أو markdown.",
+        user: `اشرح موضوع "${topic}" بطريقة مختلفة وأسلوب جديد يساعد على الفهم بشكل أعمق.`
+      },
+      updates: {
+        system: "أنت مرشد تعليمي. رد بنص عادي بدون HTML. اذكر آخر المستجدات والتطورات.",
+        user: `ما هي آخر المستجدات والتطورات الحديثة في مجال "${topic}"؟ اذكر أهم التحديثات والتغييرات الجديدة.`
+      }
+    };
+
+    const selected = prompts[tool];
+    if (!selected) return res.status(400).json({ error: "Unknown tool" });
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: selected.system },
+        { role: "user", content: selected.user }
+      ],
+      temperature: 0.7,
+      ...(tool === "infographic" || tool === "glossary"
+        ? { response_format: { type: "json_object" } }
+        : {})
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    res.json({
+      reply,
+      tool,
+      remaining_messages: getGuideRemaining(session_id)
+    });
+
+  } catch (e) {
+    console.error("❌ tool error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 startServer();
