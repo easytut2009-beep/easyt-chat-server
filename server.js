@@ -11464,6 +11464,89 @@ res.status(500).json({
 
 
 /* ═══════════════════════════════════
+     Streaming Guide Endpoint
+     ═══════════════════════════════════ */
+  app.post("/api/guide/stream", limiter, async (req, res) => {
+    try {
+      const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
+
+      if (!message || !session_id) {
+        return res.status(400).json({ error: "Missing message or session_id" });
+      }
+
+      const remaining = getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.write('data: ' + JSON.stringify({ error: "no_messages", reply: "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪", remaining_messages: 0 }) + "\n\n");
+        return res.end();
+      }
+
+      consumeGuideMsg(session_id);
+      const newRemaining = getGuideRemaining(session_id);
+
+      // Setup SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.flushHeaders();
+
+      // Build messages
+      const systemMsg = system_prompt || "أنت زيكو مرشد تعليمي. رد بشكل واضح ومفيد.";
+      const conv = guideConversations[session_id] || { messages: [] };
+      const messages = [
+        { role: "system", content: systemMsg },
+        ...conv.messages.slice(-10),
+        { role: "user", content: message }
+      ];
+
+      // Update conversation
+      if (!guideConversations[session_id]) {
+        guideConversations[session_id] = { messages: [], lastActivity: Date.now() };
+      }
+      guideConversations[session_id].messages.push({ role: "user", content: message });
+      guideConversations[session_id].lastActivity = Date.now();
+
+      // Stream from OpenAI
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: messages,
+        max_tokens: 1200,
+        temperature: 0.6,
+        stream: true,
+      });
+
+      let fullReply = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        if (delta) {
+          fullReply += delta;
+          res.write('data: ' + JSON.stringify({ delta }) + "\n\n");
+        }
+      }
+
+      // Send done event
+      res.write('data: ' + JSON.stringify({ done: true, remaining_messages: newRemaining }) + "\n\n");
+      res.end();
+
+      // Update conversation with assistant reply
+      guideConversations[session_id].messages.push({ role: "assistant", content: fullReply });
+
+    } catch (error) {
+      console.error("❌ Stream Error:", error.message);
+      if (!res.headersSent) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+      }
+      res.write('data: ' + JSON.stringify({ error: true, reply: "عذراً حصل مشكلة. حاول تاني 🙏" }) + "\n\n");
+      res.end();
+    }
+  });
+
+
+/* ═══════════════════════════════════
      Check if course has transcribed content
      ═══════════════════════════════════ */
   app.get("/api/guide/check-course", async (req, res) => {
