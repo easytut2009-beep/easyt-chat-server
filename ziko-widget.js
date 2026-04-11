@@ -925,7 +925,6 @@ addExNext();
 }
 
 function submitExercise(){
-if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0)return;
 var txt=($exInput&&$exInput.value)||"";
 var hasImg=!!exImgBase64;
 if(!txt.trim()&&!hasImg){if($exInput)$exInput.focus();return;}
@@ -1013,7 +1012,7 @@ if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
 stopSending();
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+sending=true;if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 var myGenM=++streamGen;
 showTyp();
 var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. استخدم هذا التنسيق لكل خطأ:\n❌ الخطأ: **[الخطأ بوضوح]** — [شرح ليه غلط]\n✅ الصح: **[الحل الصحيح]**\n\nالقاعدة: ❌ و✅ بدون بولد. كل حاجة بعد : تكون عادية ما عدا الكلمات بين ** تكون بولد.";
@@ -1032,13 +1031,12 @@ sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.sen
 var analyticalState={questions:[],current:0};
 
 function closeAnalytical(){
-analyticalState={questions:[],current:0,done:false};
+analyticalState={questions:[],current:0};
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 if($exBody)$exBody.innerHTML="";
-if($exInput){$exInput.value="";$exInput.style.display="";$exInput.disabled=false;}
-if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.style.background="";$exSend.disabled=false;$exSend.onclick=null;}
-var exBtnsEl=document.getElementById("zg-ex-btns");if(exBtnsEl)exBtnsEl.style.display="";
+if($exInput){$exInput.value="";}
+if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.onclick=null;}
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="";
 enableToolsBtn();hideBackBtn();
 }
@@ -1076,9 +1074,11 @@ loadDiv.innerHTML='<div class="zg-typing" style="justify-content:center"><div cl
 $exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
 var sys="UPDATES_MODE\nأنت مصحح إجابات. السؤال: "+q+"\nصحح إجابة الطالب بوضوح بدون ذكر دقائق أو أوقات. ابدأ بـ ✅ لو صح أو ❌ لو غلط. استخدم **بولد** للنقاط المهمة. كن مختصراً لا تتجاوز 5 أسطر.";
+var myGenAN=++streamGen;
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:"an_eval_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:sys})})
 .then(function(r){return r.json();})
 .then(function(data){
+if(streamGen!==myGenAN)return;
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 loadDiv.remove();
 var fbDiv=document.createElement("div");
@@ -1108,8 +1108,7 @@ $exBody.appendChild(btn);
 $exBody.scrollTop=$exBody.scrollHeight;
 if(isLast){
 if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
-analyticalState.done=true;
-if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;}
+if($exSend){$exSend.textContent="رجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=function(){closeAnalytical();};}
 }else{
 if($exInput)$exInput.disabled=false;
 if($exSend)$exSend.disabled=false;
@@ -1128,7 +1127,7 @@ $exOverlay.classList.add("zg-ex-open");
 disableToolsBtn();
 showBackBtn(closeAnalytical);
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="none";
-if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=null;}
+if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=function(){submitAnalyticalAnswer();};}
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
 var anSys="UPDATES_MODE\nأنت مساعد. اكتب 3 أسئلة تحليلية على الموضوع. رد بـ JSON نقي فقط بدون أي كلام: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}. لا تكتب أي شيء غير الـ JSON.";
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:"an_q_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
@@ -1681,15 +1680,7 @@ if($quizClose)$quizClose.addEventListener("click",function(){closeQuiz();});
 var $backBtn=document.getElementById("zg-back-btn");
 if($backBtn)$backBtn.addEventListener("click",function(){if(this._cb)this._cb();});
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
-if($exSend)$exSend.addEventListener("click",function(){
-if(analyticalState&&analyticalState.done){
-closeAnalytical();
-}else if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0){
-submitAnalyticalAnswer();
-}else{
-submitExercise();
-}
-});
+if($exSend)$exSend.addEventListener("click",function(){submitExercise();});
 if($exImgBtn)$exImgBtn.addEventListener("click",function(){if($exImgFile)$exImgFile.click();});
 document.addEventListener("paste",function(e){
 if(!$exOverlay||!$exOverlay.classList.contains("zg-ex-open"))return;
