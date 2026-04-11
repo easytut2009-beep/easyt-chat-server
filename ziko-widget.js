@@ -51,7 +51,7 @@ _s.textContent=''
 +'#zg-header-info{display:flex;align-items:center;gap:7px}'
 +'#zg-header-avatar{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,0.35);background-image:url(https://uploads.teachablecdn.com/attachments/f553568064fb487ba83d72db46b43caf.png);background-size:cover;background-position:center;flex-shrink:0}'
 +'#zg-header-text{display:flex;flex-direction:column}'
-+'#zg-header-name{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
++'#zg-header-name{font-size:14px;font-weight:700}'
 +'#zg-header-status{font-size:9px;opacity:0.85;display:flex;align-items:center;gap:3px;direction:rtl}'
 +'#zg-status-dot{width:5px;height:5px;background:#4ade80;border-radius:50%;display:inline-block}'
 +'#zg-header-btns{display:flex;align-items:center;gap:4px}'
@@ -275,10 +275,18 @@ _s.textContent=''
 +'#zg-chat-box{width:100vw!important;max-width:100vw!important;height:var(--zg-vh,100vh)!important;max-height:var(--zg-vh,100vh)!important;min-height:0!important;top:0!important;left:0!important;right:0!important;bottom:auto!important;border-radius:0!important}'
 +'#zg-footer{border-radius:0}'
 +'#zg-header{border-radius:0!important}'
++'#zg-header-name{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
 +'#zg-toggle{width:60px;height:60px}'
 +'#zg-toggle.zg-mini{width:30px;height:30px}'
 +'.zg-rz-handle{display:none!important}'
 +'#zg-drop-overlay{border-radius:0}'
++'#zg-ctx-banner-title{font-size:11px!important}'
++'#zg-ctx-banner-body{font-size:10px!important}'
++'#zg-level-label{font-size:11px!important}'
++'#zg-chat-box .zg-lvl-btn{font-size:9px!important}'
++'#zg-chat-box .zg-msg{font-size:14px!important}'
++'#zg-chat-box .zg-bot pre{font-size:12px!important}'
++'#zg-chat-box .zg-bot code{font-size:12px!important}'
 +'}';
 (document.head||document.documentElement).appendChild(_s);
 
@@ -1607,7 +1615,7 @@ var tool=TOOLS[ti];
 var item=document.createElement("button");
 item.className="zg-tool-item";
 item.setAttribute("data-tool",tool.id);
-item.innerHTML='<div style="display:flex;align-items:center;gap:12px;width:100%;direction:rtl;text-align:right;padding:4px 0"><div style="background:'+tool.color+';width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px">'+tool.icon.replace('viewBox=','style="stroke:'+tool.stroke+';width:18px;height:18px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox=')+'</div><div style="flex:1"><div style="font-size:12px;font-weight:700;color:#1f2937">'+tool.label+'</div><div style="font-size:10px;color:#9ca3af;margin-top:2px">'+tool.sub+'</div></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-left:4px"><path d="M15 18l-6-6 6-6"/></svg></div>';
+item.innerHTML='<div style="display:flex;align-items:center;gap:12px;width:100%;direction:rtl;text-align:right;padding:4px 0"><div style="background:'+tool.color+';width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px">'+tool.icon.replace('viewBox=','style="stroke:'+tool.stroke+';width:18px;height:18px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox=')+'</div><div style="flex:1"><div style="font-size:'+(window.innerWidth<=480?'13px':'12px')+';font-weight:700;color:#1f2937">'+tool.label+'</div><div style="font-size:'+(window.innerWidth<=480?'11px':'10px')+';color:#9ca3af;margin-top:2px">'+tool.sub+'</div></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-left:4px"><path d="M15 18l-6-6 6-6"/></svg></div>';
 $menuBody.appendChild(item);
 }
 }
