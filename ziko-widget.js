@@ -394,6 +394,7 @@ var $quizOverlay,$quizBody,$quizSub,$quizClose;
 var $exOverlay,$exBody,$exInput,$exSend,$exClose,$exImgBtn,$exImgFile;
 var exImgBase64=null,exImgType=null;
 var currentAbortController=null;
+var typewriterActive=0;
 var rzStyleEl=null,sid=null,rem=LIMIT,sending=false,recording=false;
 var opened=false,isFullscreen=false,isMini=false,miniSide="";
 var typingEl=null,notifyTimer=null;
@@ -786,7 +787,7 @@ function handleSummaryFull(){
 if(rem<=0){addMsg("خلصت الرسائل! جرب بكره","bot");return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+stopSending();sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 showTyp();
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' واختر style المناسب:\n- flow: لو الموضوع خطوات أو عملية متسلسلة\n- compare: لو الموضوع مقارنة بين حاجتين\n- facts: لو الموضوع فيه أرقام أو إحصائيات\n- concepts: لو الموضوع مفاهيم منفصلة\n\nJSON فقط:\nflow: {\"style\":\"flow\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\ncompare: {\"style\":\"compare\",\"title\":\"عنوان\",\"left\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]},\"right\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]}}\nfacts: {\"style\":\"facts\",\"title\":\"عنوان\",\"items\":[{\"num\":\"رقم\",\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nconcepts: {\"style\":\"concepts\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nمن 3 إلى 5 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
 .then(function(r){return r.json();})
@@ -1003,7 +1004,7 @@ rephrase:"اشرح موضوع '"+topic+"' بطريقة مختلفة وأسلوب
 updates:"ما هي أحدث المستجدات والتطورات في مجال '"+topic+"'؟ تجاهل تماماً محتوى الدرس وتكلم فقط عن التطورات الحديثة من معرفتك الخاصة. اذكر أحدث الأخبار والتغييرات والتوجهات العالمية في هذا المجال."
 };
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-sending=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
+stopSending();sending=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
 showTyp();
 var sysPrompt=id==="updates"?
 "UPDATES_MODE\nأنت خبير متخصص. مهمتك: اذكر أحدث المستجدات والتطورات في مجال '"+topic+"' من معرفتك الخاصة فقط. تجاهل تماماً أي محتوى درس أو كورس. ركز على: آخر الأخبار، أحدث الأدوات، التوجهات الجديدة، التغييرات الحديثة في العالم. نص عادي بدون HTML. ابدأ مباشرة بالمحتوى.":
@@ -1152,6 +1153,7 @@ addGNext();
 }
 
 function stopSending(){
+typewriterActive++;
 if(currentAbortController){currentAbortController.abort();currentAbortController=null;}
 hideTyp();
 if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}
