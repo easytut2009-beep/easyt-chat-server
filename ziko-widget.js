@@ -1075,7 +1075,7 @@ $exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
 var sys="UPDATES_MODE\nأنت مصحح إجابات. السؤال: "+q+"\nصحح إجابة الطالب بوضوح بدون ذكر دقائق أو أوقات. ابدأ بـ ✅ لو صح أو ❌ لو غلط. استخدم **بولد** للنقاط المهمة. كن مختصراً لا تتجاوز 5 أسطر.";
 var myGenAN=++streamGen;
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:getSid()+"_analytical_eval_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:"an_eval_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:sys})})
 .then(function(r){return r.json();})
 .then(function(data){
 if(streamGen!==myGenAN)return;
@@ -1122,7 +1122,7 @@ var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display=
 if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=function(){submitAnalyticalAnswer();};}
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
 var anSys="UPDATES_MODE\nأنت مساعد. اكتب 3 أسئلة تحليلية على الموضوع. رد بـ JSON نقي فقط بدون أي كلام: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}. لا تكتب أي شيء غير الـ JSON.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:getSid()+"_analytical_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:"an_q_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
 var txt=(data.reply||"").replace(/```json|```/g,"").trim();
 var startI=txt.indexOf("{");var endI=txt.lastIndexOf("}");
 if(startI>-1&&endI>-1){txt=txt.substring(startI,endI+1);}
