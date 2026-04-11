@@ -168,7 +168,7 @@ _s.textContent=''
 +'#zg-drop-overlay{display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(25,135,84,0.08);border:2px dashed #198754;border-radius:18px;z-index:10001;align-items:center;justify-content:center;pointer-events:none}'
 +'#zg-drop-overlay span{background:linear-gradient(135deg,#1E9B5E,#198754);color:white;padding:10px 20px;border-radius:12px;font-size:14px;font-weight:700;direction:rtl}'
 /* Quiz styles */
-+'#zg-quiz-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#E9ECEB;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
++'#zg-quiz-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:#E9ECEB;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-quiz-overlay.zg-quiz-open{display:flex}'
 +'#zg-ex-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:#fff;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-ex-overlay.zg-ex-open{display:flex}'
@@ -651,8 +651,11 @@ function showWelcSugg(){var s=[];if(page.lecture_title)s=["اشرحلي الدر
 function showWelcome(){var m="أهلاً بيك! أنا <strong>زيكو</strong> مرشدك التعليمي.";if(page.lecture_title)m+="<br>لو عندك أي سؤال عن الدرس، اسألني!";else if(page.course_name)m+="<br>لو عندك أي سؤال عن الكورس، اسألني!";else m+="<br>اسألني أي سؤال وهشرحلك!";addMsg(m,"bot");showWelcSugg();}
 
 /* ==================== QUIZ ==================== */
+function disableToolsBtn(){if($toolsWrap){$toolsWrap.style.opacity="0.4";$toolsWrap.style.pointerEvents="none";$toolsWrap.style.cursor="not-allowed";}}
+function enableToolsBtn(){if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";$toolsWrap.style.cursor="";}}
 function openQuiz(){
 if(!$quizOverlay)return;
+disableToolsBtn();
 closeToolsMenu();
 quizState={active:false,questions:[],current:0,score:0,answered:false,count:10};
 $quizOverlay.classList.add("zg-quiz-open");
@@ -663,6 +666,7 @@ function closeQuiz(){
 if(!$quizOverlay)return;
 $quizOverlay.classList.remove("zg-quiz-open");
 quizState.active=false;
+enableToolsBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
@@ -827,6 +831,7 @@ sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opac
 function openExercise(){
 if(!$exOverlay)return;
 $exOverlay.classList.add("zg-ex-open");
+disableToolsBtn();
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:30px 0"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز التمرين...</div></div>';
 if($exInput)$exInput.value="";
 exImgBase64=null;exImgType=null;
@@ -935,9 +940,12 @@ function closeExercise(){
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 exImgBase64=null;exImgType=null;
-if($exInput)$exInput.value="";
+if($exInput){$exInput.value="";$exInput.style.display="";}
 if($exBody)$exBody.innerHTML="";
 if($exSend)$exSend.disabled=false;
+var exBtnsEl=document.getElementById("zg-ex-btns");
+if(exBtnsEl)exBtnsEl.style.display="";
+enableToolsBtn();
 }
 
 function handleExercise(){
