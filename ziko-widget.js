@@ -205,7 +205,7 @@ _s.textContent=''
 /* Quiz count screen */
 +'.zg-count-title{font-size:18px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:16px}'
 +'.zg-count-sub{font-size:13px;color:#374151;text-align:center;margin-bottom:48px}'
-+'.zg-count-row{display:flex;gap:20px;justify-content:center;margin-bottom:36px}'
++'.zg-count-row{display:flex;gap:20px;justify-content:center;margin-bottom:40px}'
 +'.zg-count-btn{width:88px;height:88px;border-radius:16px;border:2px solid #badbcc;background:#f9fafb;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:6px;transition:all .2s;font-family:Tahoma,Geneva,sans-serif}'
 +'.zg-count-btn.zg-count-active{border-color:#198754;background:#d1e7dd}'
 +'.zg-count-num{font-size:26px;font-weight:700;color:#0F5132}'
