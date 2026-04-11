@@ -1022,8 +1022,7 @@ fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.s
 if(streamGen!==myGenM)return;
 hideTyp();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
-typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
+typewriterMsg(data.reply||"","bot",function(){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 })
 .catch(function(){if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 }
@@ -1188,8 +1187,7 @@ fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.s
 if(streamGen!==myGenR)return;
 hideTyp();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
-typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
+typewriterMsg(data.reply||"","bot",function(){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 })
 .catch(function(){if(streamGen!==myGenR)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 });
@@ -1226,10 +1224,9 @@ hideTyp();
 var reply=data.reply||"";
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
-if(id==="infographic"){renderInfographic(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
-else if(id==="glossary"){renderGlossary(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
-else{typewriterMsg(reply,"bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});}
+if(id==="infographic"){sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}renderInfographic(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
+else if(id==="glossary"){sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}renderGlossary(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
+else{typewriterMsg(reply,"bot",function(){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});}
 })
 .catch(function(){if(streamGen!==myToolGen)return;hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
 }
