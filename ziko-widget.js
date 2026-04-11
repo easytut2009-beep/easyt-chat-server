@@ -1004,7 +1004,7 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($send)$send.disabled=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
 showTyp();
 var sysPrompt=id==="updates"?
-"أنت خبير متخصص. مهمتك: اذكر أحدث المستجدات والتطورات في المجال المطلوب من معرفتك الخاصة فقط. تجاهل تماماً أي محتوى درس أو كورس. ركز على: آخر الأخبار، أحدث الأدوات، التوجهات الجديدة، التغييرات الحديثة. نص عادي بدون HTML. ابدأ مباشرة بالمحتوى.":
+"UPDATES_MODE\nأنت خبير متخصص. مهمتك: اذكر أحدث المستجدات والتطورات في مجال '"+topic+"' من معرفتك الخاصة فقط. تجاهل تماماً أي محتوى درس أو كورس. ركز على: آخر الأخبار، أحدث الأدوات، التوجهات الجديدة، التغييرات الحديثة في العالم. نص عادي بدون HTML. ابدأ مباشرة بالمحتوى.":
 "أنت مرشد تعليمي اسمك زيكو.\nقواعد صارمة جداً:\n1. ممنوع تماماً استخدام HTML tags من أي نوع (<br>, <strong>, <b> إلخ)\n2. ممنوع استخدام ** أو * للتنسيق\n3. استخدم نص عادي فقط\n4. لما تُطلب قائمة مرقمة، كل عنصر لازم يكون في سطر جديد منفصل\n5. لا تكتب مقدمة أو خاتمة — ابدأ مباشرة بالمحتوى المطلوب";
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msgMap[id],session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPrompt})})
 .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
