@@ -758,7 +758,7 @@ sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#555;p
 sep.textContent="ملخص الدرس";
 $msgs.appendChild(sep);
 showTyp();
-return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ الملخص بجملة مثل: تناول الدرس... أو يدور الدرس حول... بدون ذكر أوقات أو timestamps. نص عادي فقط بدون HTML."})});
+return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ بـ: تناول الدرس... قواعد صارمة: لا تستخدم HTML أو br أو strong أو أي tag. لا تذكر أوقات. استخدم ** للعناوين فقط. مثال: **الألوان الأساسية**: هي الألوان التي..."})});
 })
 .then(function(r){if(!r)return;return r.json();})
 .then(function(data){
