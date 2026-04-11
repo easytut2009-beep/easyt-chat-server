@@ -1214,10 +1214,8 @@ if($chatBox)$chatBox.appendChild(overlay);
 var cancelled=false;
 document.getElementById("zgCancel").onclick=function(){cancelled=true;overlay.parentNode&&overlay.parentNode.removeChild(overlay);};
 function setBar(pct,msg){var b=document.getElementById("zgBar"),m=document.getElementById("zgMsg");if(b)b.style.width=pct+"%";if(m)m.textContent=msg;}
-
 var printWin=window.open("","_blank","width=960,height=750");
 if(printWin){printWin.document.write('<html><head><meta charset="UTF-8"><title>جاري التحميل...</title></head><body style="font-family:Tahoma;direction:rtl;text-align:center;padding:60px;color:#0F5132"><h2>⏳ جاري تجهيز الملف...</h2><p style="color:#6b7280;margin-top:12px">انتظر لحظة</p></body></html>');printWin.document.close();}
-
 setBar(20,"جاري جلب المحتوى من السيرفر...");
 fetch("https://easyt-chat-server.onrender.com/api/guide/pdf-resources",{
 method:"POST",headers:{"Content-Type":"application/json"},
@@ -1229,12 +1227,11 @@ if(typeof D.remaining_messages==="number"){rem=D.remaining_messages;saveRem(rem)
 setBar(80,"جاري بناء الـ PDF...");
 setTimeout(function(){
 if(cancelled){if(printWin)printWin.close();return;}
-var html=zgBuildHTML(D);
-if(printWin){printWin.document.open();printWin.document.write(html);printWin.document.close();printWin.focus();}
+if(printWin){var html=zgBuildHTML(D);printWin.document.open();printWin.document.write(html);printWin.document.close();printWin.focus();}
 setBar(100,"✅ تم!");
 setTimeout(function(){overlay.parentNode&&overlay.parentNode.removeChild(overlay);},800);
 },200);
-}).catch(function(e){
+}).catch(function(){
 overlay.parentNode&&overlay.parentNode.removeChild(overlay);
 if(printWin)printWin.close();
 addMsg("حصل خطأ في تجهيز الملف. حاول تاني.","bot");
@@ -1253,7 +1250,7 @@ function rows(arr,fn){return(arr||[]).map(fn).join("");}
 var html='<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>'+esc(title)+'</title><style>';
 html+='*{box-sizing:border-box;margin:0;padding:0}';
 html+='body{font-family:Tahoma,Arial,sans-serif;background:#fff;color:#1a1a1a;font-size:13px;line-height:1.7;direction:rtl}';
-html+='.page{width:210mm;min-height:297mm;padding:15mm 18mm;position:relative;page-break-after:always}';
+html+='.page{width:210mm;padding:15mm 18mm;position:relative;page-break-after:always}';
 html+='.page:last-child{page-break-after:auto}';
 html+='.wm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:100px;font-weight:900;color:rgba(200,0,0,0.04);white-space:nowrap;pointer-events:none;z-index:0;font-family:Arial Black}';
 html+='.hdr{background:#1a1a1a;color:#fff;padding:14px 18px;display:flex;align-items:center;gap:14px;margin:-15mm -18mm 16px;border-bottom:4px solid #cc0000}';
