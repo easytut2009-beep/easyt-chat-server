@@ -139,6 +139,7 @@ _s.textContent=''
 +'#zg-img-btn:hover svg{color:#888}'
 +'#zg-img-file{position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0}'
 +'#zg-send{width:40px;height:40px;min-width:40px;background:linear-gradient(135deg,#1E9B5E,#198754);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .25s ease;padding:0;box-shadow:0 3px 10px rgba(25,135,84,0.3);order:0;flex-shrink:0}'
++'#zg-send.zg-stop{background:linear-gradient(135deg,#dc2626,#b91c1c);box-shadow:0 3px 10px rgba(220,38,38,0.3)}'
 +'#zg-send:hover{transform:scale(1.06);box-shadow:0 5px 16px rgba(25,135,84,0.4)}'
 +'#zg-send:active{transform:scale(0.92)}'
 +'#zg-send:disabled{opacity:0.4;cursor:not-allowed;transform:none}'
@@ -392,6 +393,7 @@ var $toolsWrap,$toolsMenu;
 var $quizOverlay,$quizBody,$quizSub,$quizClose;
 var $exOverlay,$exBody,$exInput,$exSend,$exClose,$exImgBtn,$exImgFile;
 var exImgBase64=null,exImgType=null;
+var currentAbortController=null;
 var rzStyleEl=null,sid=null,rem=LIMIT,sending=false,recording=false;
 var opened=false,isFullscreen=false,isMini=false,miniSide="";
 var typingEl=null,notifyTimer=null;
@@ -1098,43 +1100,111 @@ div.innerHTML=inner;
 $msgs.appendChild(div);scrollBot();
 }
 
+function stopSending(){
+if(currentAbortController){currentAbortController.abort();currentAbortController=null;}
+hideTyp();
+if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}
+if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
+sending=false;
+}
+
 function doSend(){
+if(sending){stopSending();return;}
 if(recording&&stopRecSilent)stopRecSilent();
 var text=($inp.value||"").trim();
 var hasImage=!!selectedImageBase64;
 if(!text&&!hasImage)return;
-if(sending)return;
 if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" للتجديد","bot");updCtr();return;}
 var f=scanPage();if(f.course_name)page.course_name=f.course_name;if(f.lecture_title){page.lecture_title=f.lecture_title;lastLesson=f.lecture_title;}
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-sending=true;if($send)$send.disabled=true;
+sending=true;
+if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';}
+if($toolsWrap){$toolsWrap.style.opacity='0.4';$toolsWrap.style.pointerEvents='none';}
 if(hasImage){
 var imgHtml='<img src="data:'+selectedImageType+';base64,'+selectedImageBase64+'" class="zg-user-img" alt="صورة">';
 if(text)imgHtml+='<br>'+esc(text);
 addMsgHtml(imgHtml,"user");
 }else{addMsg(text,"user");}
-$inp.value="";$inp.focus();showTyp();
-var fetchPromise;
+$inp.value="";$inp.focus();
 if(hasImage){
 var imgB64Tmp=selectedImageBase64,imgTypTmp=selectedImageType;
 clearSelectedImage();
-fetchPromise=fetch(IMAGE_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),image_base64:imgB64Tmp,image_type:imgTypTmp})});
-}else{
-fetchPromise=fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()})});
-}
-fetchPromise
-.then(function(res){if(!res.ok)throw new Error("HTTP "+res.status);return res.json();})
+showTyp();
+currentAbortController=new AbortController();
+fetch(IMAGE_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),image_base64:imgB64Tmp,image_type:imgTypTmp}),signal:currentAbortController.signal})
+.then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(data){
 hideTyp();addMsg(data.reply,"bot");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-if(data.suggestions&&data.suggestions.length>0&&rem>0)showSugg(data.suggestions);
-sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
+stopSending();
 })
-.catch(function(){
+.catch(function(e){
+if(e.name==="AbortError")return;
 hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");
-sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
+stopSending();
 });
+}else{
+var STREAM_API=API.replace("/guide","/guide/stream");
+currentAbortController=new AbortController();
+fetch(STREAM_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
+.then(function(r){
+if(!r.ok)throw new Error("HTTP "+r.status);
+hideTyp();
+var msgDiv=document.createElement("div");
+msgDiv.className="zg-msg zg-bot";
+$msgs.appendChild(msgDiv);
+var reader=r.body.getReader();
+var decoder=new TextDecoder();
+var buffer="";
+var fullText="";
+function read(){
+return reader.read().then(function(result){
+if(currentAbortController===null){reader.cancel();return;}
+if(result.done){
+stopSending();
+return;
+}
+buffer+=decoder.decode(result.value,{stream:true});
+var lines=buffer.split("\n");
+buffer=lines.pop();
+for(var i=0;i<lines.length;i++){
+var line=lines[i].trim();
+if(!line.startsWith("data:"))continue;
+var jsonStr=line.substring(5).trim();
+try{
+var evt=JSON.parse(jsonStr);
+if(evt.delta){
+fullText+=evt.delta;
+var h=fullText;
+h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
+msgDiv.innerHTML=h;
+scrollBot();
+}
+if(evt.done){
+if(typeof evt.remaining_messages==="number"){rem=evt.remaining_messages;saveRem(rem);updCtr();}
+else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+stopSending();
+return;
+}
+if(evt.error){
+if(!fullText)msgDiv.textContent="عذراً، حصل مشكلة. حاول تاني.";
+stopSending();
+return;
+}
+}catch(e){}
+}
+return read();
+});
+}
+return read();
+})
+.catch(function(e){
+if(e.name==="AbortError"){return;}
+hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");
+stopSending();
+});
+}
 }
 
 function sysPr(){
