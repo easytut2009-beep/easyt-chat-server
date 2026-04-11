@@ -11486,58 +11486,79 @@ res.status(500).json({
 
 
 /* ═══════════════════════════════════
-     Stream endpoint — wraps /api/guide as SSE
+     Stream endpoint — real OpenAI streaming
      ═══════════════════════════════════ */
   app.post("/api/guide/stream", limiter, async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
     try {
       const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
       if (!message || !session_id) {
-        res.write(`data: ${JSON.stringify({ error: "Missing params" })}\n\n`);
-        return res.end();
+        send({ error: "Missing params" }); return res.end();
       }
 
       const remaining = await getGuideRemaining(session_id);
       if (remaining <= 0) {
-        res.write(`data: ${JSON.stringify({ delta: "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪", done: true, remaining_messages: 0 })}\n\n`);
+        send({ delta: "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪", done: true, remaining_messages: 0 });
         return res.end();
       }
 
-      // Forward to internal guide handler
-      const fakeReq = { body: req.body };
-      const fakeRes = {
-        _data: null,
-        json(data) { this._data = data; },
-        status(code) { return this; }
-      };
+      await consumeGuideMsg(session_id);
 
-      // Call the guide logic by making internal fetch
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/guide`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal": "1" },
-        body: JSON.stringify(req.body)
+      // Build context same as /api/guide
+      const guideInstructions = await loadBotInstructions("guide");
+      const guideConv = guideConversations[session_id] || { messages: [] };
+      guideConversations[session_id] = guideConv;
+
+      // Simple system prompt for stream
+      const sysPrompt = system_prompt && system_prompt.startsWith("UPDATES_MODE")
+        ? system_prompt
+        : buildGuideSystemPrompt({
+            courseName: course_name || "",
+            lectureTitle: lecture_title || "",
+            currentContext: "",
+            otherContext: "",
+            botInstructions: guideInstructions,
+            level: "طالب",
+          });
+
+      const messages = [
+        { role: "system", content: sysPrompt },
+        ...guideConv.messages.slice(-10),
+        { role: "user", content: message }
+      ];
+
+      guideConv.messages.push({ role: "user", content: message });
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
       });
 
-      const data = await response.json();
-      const reply = data.reply || "";
-      const words = reply.split(" ");
-
-      // Stream word by word
-      for (let i = 0; i < words.length; i++) {
-        const chunk = (i === 0 ? "" : " ") + words[i];
-        res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
-        await new Promise(r => setTimeout(r, 18));
+      let fullText = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        if (delta) {
+          fullText += delta;
+          send({ delta });
+        }
       }
 
-      res.write(`data: ${JSON.stringify({ done: true, remaining_messages: data.remaining_messages, suggestions: data.suggestions || [] })}\n\n`);
+      guideConv.messages.push({ role: "assistant", content: fullText });
+      const newRemaining = await getGuideRemaining(session_id);
+      send({ done: true, remaining_messages: newRemaining, suggestions: [] });
       res.end();
 
     } catch (e) {
       console.error("❌ Stream error:", e.message);
-      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      send({ error: e.message });
       res.end();
     }
   });
