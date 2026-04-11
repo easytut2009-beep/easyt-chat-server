@@ -308,7 +308,6 @@ w.innerHTML=''
 +'</div></div>'
 +'</div>'
 +'<div id="zg-header">'
-+'<button id="zg-hdr-back" onclick="closeToolsMenu()" style="display:none;width:30px;height:30px;min-width:30px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:#fff;cursor:pointer;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>'
 +'<div id="zg-header-info">'
 +'<div id="zg-header-avatar"></div>'
 +'<div id="zg-header-text">'
@@ -327,7 +326,7 @@ w.innerHTML=''
 +'</div>'
 +'<div id="zg-level-row"><span id="zg-level-label"></span></div>'
 +'</div>'
-+'<div id="zg-tools-menu"><button id="zg-tools-menu-close" style="position:absolute;top:8px;left:10px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,0.08);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button><div id="zg-tools-menu-body"></div></div>'
++'<div id="zg-tools-menu"><div style="padding:12px 16px 8px;display:flex;align-items:center;gap:10px;border-bottom:0.5px solid #f0f0f0"><button id="zg-tools-menu-close" style="width:32px;height:32px;border-radius:50%;background:#0F5132;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button><span style="font-size:13px;font-weight:700;color:#0F5132;font-family:Tahoma,Geneva,sans-serif">أدوات زيكو</span></div><div id="zg-tools-menu-body"></div></div>'
 +'<div id="zg-messages"></div>'
 +'<div id="zg-img-preview">'
 +'<img id="zg-img-preview-thumb" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="preview">'
@@ -1283,7 +1282,7 @@ if($resize)$resize.addEventListener("click",function(e){e.preventDefault();e.sto
 $send.addEventListener("click",function(){doSend();});
 $inp.addEventListener("keypress",function(e){if(e.key==="Enter"){e.preventDefault();doSend();}});
 
-if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");if($toolsWrap)$toolsWrap.style.display="none";var $hdrBack=document.getElementById("zg-hdr-back");if($hdrBack)$hdrBack.style.display="flex";});}});}
+if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");});}});}
 var $tmClose=document.getElementById("zg-tools-menu-close");
 if($tmClose){$tmClose.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeToolsMenu();});}
 
