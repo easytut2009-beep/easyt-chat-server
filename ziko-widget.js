@@ -1035,8 +1035,11 @@ analyticalState={questions:[],current:0};
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 if($exBody)$exBody.innerHTML="";
-if($exInput){$exInput.value="";}
-if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.onclick=null;}
+if($exInput){$exInput.value="";$exInput.style.display="";$exInput.disabled=false;}
+if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.style.display="";$exSend.disabled=false;$exSend.onclick=null;}
+var exBtnsEl=document.getElementById("zg-ex-btns");if(exBtnsEl)exBtnsEl.style.display="";
+var doneBtns=$exOverlay?$exOverlay.querySelectorAll("button[data-done-btn]"):[];
+for(var i=0;i<doneBtns.length;i++){doneBtns[i].remove();}
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="";
 enableToolsBtn();hideBackBtn();
 }
@@ -1108,10 +1111,20 @@ $exBody.appendChild(btn);
 $exBody.scrollTop=$exBody.scrollHeight;
 if(isLast){
 if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
-if($exSend){$exSend.textContent="رجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=function(){closeAnalytical();};}
+if($exSend){$exSend.disabled=true;$exSend.style.display="none";}
+var exBtnsEl=document.getElementById("zg-ex-btns");
+if(exBtnsEl)exBtnsEl.style.display="none";
+var doneBtn=document.createElement("button");
+doneBtn.setAttribute("data-done-btn","1");
+doneBtn.style.cssText="width:calc(100% - 24px);margin:10px 12px;padding:12px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block";
+doneBtn.textContent="إغلاق والرجوع للشات ←";
+doneBtn.onclick=function(){closeAnalytical();};
+var exInputArea=document.getElementById("zg-ex-input-area");
+if(exInputArea)exInputArea.parentNode.insertBefore(doneBtn,exInputArea);
+else if($exOverlay)$exOverlay.appendChild(doneBtn);
 }else{
 if($exInput)$exInput.disabled=false;
-if($exSend)$exSend.disabled=false;
+if($exSend){$exSend.disabled=false;$exSend.style.display="";}
 }
 })
 .catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
