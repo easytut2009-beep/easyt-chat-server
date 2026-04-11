@@ -808,12 +808,10 @@ fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.s
 .then(function(r){return r.json();})
 .then(function(data){
 hideTyp();
-var reply=(data.reply||"").replace(/<br\s*\/?>/gi,"
-").replace(/<[^>]+>/g,"").trim();
+var reply=(data.reply||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,"").trim();
 var exDiv=document.createElement("div");
 exDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;max-width:480px;margin:8px 0";
-var lines=reply.split(/
-+/);
+var lines=reply.split(/\n+/);
 var html='<div style="background:#d97706;border-radius:10px 10px 0 0;padding:8px 14px;display:flex;align-items:center;justify-content:center;gap:7px">';
 html+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>';
 html+='<span style="font-size:12px;font-weight:700;color:#fff">تمرين عملي</span></div>';
