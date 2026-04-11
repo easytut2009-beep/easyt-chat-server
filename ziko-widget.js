@@ -828,8 +828,20 @@ html+='<div style="font-size:11px;color:#374151;line-height:1.7;padding:3px 10px
 html+='<div style="font-size:12px;color:#374151;line-height:1.8;margin-bottom:8px">'+esc(line)+'</div>';
 }
 }
-sumDiv.innerHTML=html;
-$msgs.appendChild(sumDiv);scrollBot();
+var tempSum=document.createElement("div");
+tempSum.innerHTML=html;
+sumDiv.innerHTML="";
+$msgs.appendChild(sumDiv);
+var sEls=Array.from(tempSum.children);
+var si=0;
+function addSumNext(){
+if(si>=sEls.length){scrollBot();return;}
+sumDiv.appendChild(sEls[si].cloneNode(true));
+scrollBot();
+si++;
+setTimeout(addSumNext,150);
+}
+addSumNext();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 })
@@ -878,8 +890,19 @@ html+='<div style="background:#d1fae5;border-radius:10px;padding:10px 14px;margi
 html+='<div style="font-size:12px;color:#6b7280;line-height:1.8;margin-bottom:6px;text-align:right;direction:rtl">'+esc(line)+'</div>';
 }
 }
-$exBody.innerHTML=html;
-window.__zikoExTask=reply.substring(0,200);
+var tempEx=document.createElement("div");
+tempEx.innerHTML=html;
+$exBody.innerHTML="";
+var exEls=Array.from(tempEx.children);
+var ei=0;
+function addExNext(){
+if(ei>=exEls.length){window.__zikoExTask=reply.substring(0,200);return;}
+$exBody.appendChild(exEls[ei].cloneNode(true));
+$exBody.scrollTop=$exBody.scrollHeight;
+ei++;
+setTimeout(addExNext,200);
+}
+addExNext();
 }
 
 function submitExercise(){
@@ -1056,8 +1079,20 @@ html+='</div>';
 }
 html+='</div>';
 }
-div.innerHTML=html;
-$msgs.appendChild(div);scrollBot();
+div.innerHTML="";
+$msgs.appendChild(div);
+var tempDiv=document.createElement("div");
+tempDiv.innerHTML=html;
+var children=Array.from(tempDiv.children);
+var di=0;
+function addNext(){
+if(di>=children.length)return;
+div.appendChild(children[di].cloneNode(true));
+scrollBot();
+di++;
+setTimeout(addNext,200);
+}
+addNext();
 }
 
 function renderGlossary(text){
@@ -1096,8 +1131,20 @@ inner+='<div style="font-size:11px;color:#444;line-height:1.6;text-align:right">
 inner+='</div>';
 }
 if(!terms.length){inner+='<div style="padding:10px 14px;font-size:11px;color:#444;border-radius:0 0 10px 10px;background:#fff">'+esc(text.substring(0,400))+'</div>';}
-div.innerHTML=inner;
-$msgs.appendChild(div);scrollBot();
+var tempG=document.createElement("div");
+tempG.innerHTML=inner;
+div.innerHTML="";
+$msgs.appendChild(div);
+var gItems=Array.from(tempG.children);
+var gi=0;
+function addGNext(){
+if(gi>=gItems.length){scrollBot();return;}
+div.appendChild(gItems[gi].cloneNode(true));
+scrollBot();
+gi++;
+setTimeout(addGNext,150);
+}
+addGNext();
 }
 
 function stopSending(){
@@ -1106,6 +1153,37 @@ hideTyp();
 if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}
 if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 sending=false;
+}
+
+
+function typewriterMsg(text,type,onDone){
+if(!$msgs)return;
+var m=document.createElement("div");m.className="zg-msg zg-"+type;
+$msgs.appendChild(m);scrollBot();
+var h=text.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");
+var chars=h.split("");
+var i=0;
+var speed=18;
+function tick(){
+if(i>=chars.length){if(onDone)onDone();return;}
+m.innerHTML=h.substring(0,i+1).replace(/<[^>]*$/,"");
+i++;
+scrollBot();
+setTimeout(tick,speed);
+}
+tick();
+return m;
+}
+
+function typewriterItems(items,renderItem,onDone){
+var i=0;
+function next(){
+if(i>=items.length){if(onDone)onDone();return;}
+renderItem(items[i],i);
+i++;
+setTimeout(next,300);
+}
+next();
 }
 
 function doSend(){
