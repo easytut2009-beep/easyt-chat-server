@@ -37,7 +37,7 @@ _s.textContent=''
 +'#zg-notify-title{font-size:12px;font-weight:700;margin-bottom:3px}'
 +'#zg-notify-body{font-size:10px;opacity:0.9;line-height:1.5}'
 +'#zg-notify-arrow{position:absolute;width:12px;height:12px;background:#198754;transform:rotate(45deg);pointer-events:none}'
-+'#zg-chat-box{position:fixed;width:400px;max-width:95vw;height:80vh;max-height:680px;min-height:380px;background:#E9ECEB;border-radius:18px;box-shadow:0 16px 50px rgba(0,0,0,0.22);display:none;overflow:visible;direction:rtl;z-index:10000;opacity:0;transform:scale(0.92);transition:opacity .25s ease,transform .25s ease;pointer-events:auto;flex-direction:column}'
++'#zg-chat-box{position:fixed;width:400px;max-width:95vw;height:80vh;max-height:680px;min-height:380px;background:#E9ECEB;border-radius:18px;box-shadow:0 16px 50px rgba(0,0,0,0.22);display:none;overflow:hidden;direction:rtl;z-index:10000;opacity:0;transform:scale(0.92);transition:opacity .25s ease,transform .25s ease;pointer-events:auto;flex-direction:column}'
 +'#zg-chat-box.zg-visible{opacity:1;transform:scale(1)}'
 +'#zg-chat-box.zg-full{width:100vw;height:100vh;height:100dvh;max-width:100vw;max-height:100vh;max-height:100dvh;min-height:100vh;min-height:100dvh;top:0!important;left:0!important;right:auto!important;border-radius:0}'
 +'#zg-chat-box.zg-snap-left{width:50vw;height:100vh;height:100dvh;max-width:none;max-height:100vh;max-height:100dvh;min-height:100vh;min-height:100dvh;top:0!important;left:0!important;right:auto!important;border-radius:0}'
@@ -123,7 +123,7 @@ _s.textContent=''
 +'.zg-dot:nth-child(2){animation-delay:-0.16s}'
 +'@keyframes zgB{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}'
 +'#zg-input-area{padding:8px 12px !important;background:#E9ECEB !important;flex-shrink:0;border-top:1px solid #d0d0d0}'
-+'#zg-input-wrap{display:flex;align-items:center;gap:8px;direction:rtl}'
++'#zg-input-wrap{display:flex;align-items:center;gap:8px;direction:ltr}'
 +'.zg-input-container{flex:1;position:relative;display:flex;align-items:center}'
 +'#zg-input{width:100%;padding:8px 38px 8px 36px !important;border-radius:20px;border:2px solid #e0e0e0;outline:none;font-size:16px;background:#fff;transition:border-color .2s,box-shadow .2s;direction:rtl;height:40px;font-family:Tahoma,Geneva,sans-serif;touch-action:manipulation}'
 +'#zg-input:focus{border-color:#198754;box-shadow:0 0 0 3px rgba(25,135,84,0.08)}'
@@ -138,7 +138,7 @@ _s.textContent=''
 +'#zg-img-btn svg{width:15px;height:15px;color:#bbb;transition:color .2s;pointer-events:none}'
 +'#zg-img-btn:hover svg{color:#888}'
 +'#zg-img-file{position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0}'
-+'#zg-send{width:40px;height:40px;min-width:40px;background:linear-gradient(135deg,#1E9B5E,#198754);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .25s ease;padding:0;box-shadow:0 3px 10px rgba(25,135,84,0.3)}'
++'#zg-send{width:40px;height:40px;min-width:40px;background:linear-gradient(135deg,#1E9B5E,#198754);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .25s ease;padding:0;box-shadow:0 3px 10px rgba(25,135,84,0.3);order:0;flex-shrink:0}'
 +'#zg-send:hover{transform:scale(1.06);box-shadow:0 5px 16px rgba(25,135,84,0.4)}'
 +'#zg-send:active{transform:scale(0.92)}'
 +'#zg-send:disabled{opacity:0.4;cursor:not-allowed;transform:none}'
@@ -170,7 +170,7 @@ _s.textContent=''
 /* Quiz styles */
 +'#zg-quiz-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#E9ECEB;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-quiz-overlay.zg-quiz-open{display:flex}'
-+'#zg-ex-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
++'#zg-ex-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:#fff;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-ex-overlay.zg-ex-open{display:flex}'
 +'#zg-ex-hdr{background:#0F5132;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}'
 +'#zg-ex-title{font-size:13px;font-weight:700;color:#fff}'
@@ -180,7 +180,7 @@ _s.textContent=''
 +'#zg-ex-input-area{padding:10px 12px;background:#f9fafb;border-top:1px solid #e0e0e0;flex-shrink:0}'
 +'#zg-ex-input{width:100%;border:1.5px solid #e0e0e0;border-radius:10px;padding:8px 12px;font-size:13px;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none}'
 +'#zg-ex-input:focus{border-color:#198754}'
-+'#zg-ex-btns{display:flex;gap:8px;margin-top:8px}'
++'#zg-ex-btns{display:flex;gap:8px;margin-top:8px;flex-direction:row-reverse}'
 +'#zg-ex-send{flex:1;background:#198754;color:#fff;border:none;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif}'
 +'#zg-ex-img-btn{width:38px;height:38px;background:#d1fae5;border:1.5px solid #198754;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
 +'#zg-ex-img-btn svg{width:16px;height:16px;stroke:#198754;fill:none;stroke-width:2;stroke-linecap:round}'
@@ -304,9 +304,9 @@ w.innerHTML=''
 +'<div id="zg-ex-input-area">'
 +'<textarea id="zg-ex-input" placeholder="اكتب إجابتك هنا، أو ابعت صورة..."></textarea>'
 +'<div id="zg-ex-btns">'
-+'<button id="zg-ex-img-btn"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>'
++'<button id="zg-ex-img-btn" title="رفع ملف أو صورة"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>'
 +'<button id="zg-ex-send">إرسال النتيجة للتقييم</button>'
-+'<input type="file" id="zg-ex-img-file" accept="image/*">'
++'<input type="file" id="zg-ex-img-file" accept="image/*,.pdf,.doc,.docx,.txt">'
 +'</div></div>'
 +'</div>'
 +'<div id="zg-header">'
@@ -1285,6 +1285,26 @@ if($quizClose)$quizClose.addEventListener("click",function(){closeQuiz();});
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
 if($exSend)$exSend.addEventListener("click",function(){submitExercise();});
 if($exImgBtn)$exImgBtn.addEventListener("click",function(){if($exImgFile)$exImgFile.click();});
+document.addEventListener("paste",function(e){
+if(!$exOverlay||!$exOverlay.classList.contains("zg-ex-open"))return;
+var items=e.clipboardData&&e.clipboardData.items;
+if(!items)return;
+for(var i=0;i<items.length;i++){
+if(items[i].type.indexOf("image")!==-1){
+var file=items[i].getAsFile();
+if(!file)continue;
+var reader=new FileReader();
+reader.onload=function(ev){
+exImgBase64=ev.target.result.split(",")[1];
+exImgType="image/png";
+if($exInput)$exInput.placeholder="✅ صورة ملصوقة — اكتب ملاحظة أو اضغط إرسال";
+};
+reader.readAsDataURL(file);
+e.preventDefault();
+break;
+}
+}
+});
 if($exImgFile)$exImgFile.addEventListener("change",function(e){
 var file=e.target.files&&e.target.files[0];
 if(!file)return;
