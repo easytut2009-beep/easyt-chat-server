@@ -370,7 +370,9 @@ var TOOLS=[
 {id:"exercise",label:"تمرين عملي",sub:"طبّق ما تعلمته",color:"#fef3c7",stroke:"#d97706",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>'},
 {id:"glossary",label:"مصطلحات الدرس",sub:"قاموس لكل مصطلح تقني",color:"#ccfbf1",stroke:"#0d9488",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>'},
 {id:"rephrase",label:"شرح بطريقة أخرى",sub:"أسلوب مختلف لنفس الفكرة",color:"#ede9fe",stroke:"#7c3aed",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'},
-{id:"updates",label:"آخر التحديثات",sub:"أحدث مستجدات الموضوع",color:"#f3f4f6",stroke:"#6b7280",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
+{id:"updates",label:"آخر التحديثات",sub:"أحدث مستجدات الموضوع",color:"#f3f4f6",stroke:"#6b7280",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
+{id:"mistakes",label:"أخطاء شائعة",sub:"أكثر الأخطاء شيوعاً",color:"#fee2e2",stroke:"#dc2626",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'},
+{id:"analytical",label:"أسئلة تحليلية",sub:"فكر وحلل زي الامتحان",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'}
 ];
 
 var API="https://easyt-chat-server.onrender.com/api/guide";
@@ -1004,6 +1006,55 @@ closeToolsMenu();
 openExercise();
 }
 
+function handleMistakes(){
+if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
+stopSending();
+var topic=page.lecture_title||page.course_name||"الدرس الحالي";
+var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
+sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+var myGenM=++streamGen;
+showTyp();
+var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. لكل خطأ: اذكر الخطأ بوضوح، ثم اشرح ليه ده غلط، ثم قول الصح. استخدم ❌ قبل الخطأ و✅ قبل الصح. نص عادي بدون HTML.";
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي خبير. ركز على الأخطاء العملية الحقيقية اللي الطلاب بيقعوا فيها فعلاً."})})
+.then(function(r){if(!r.ok)throw new Error();return r.json();})
+.then(function(data){
+if(streamGen!==myGenM)return;
+hideTyp();
+typewriterMsg(data.reply||"","bot");
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+})
+.catch(function(){if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+}
+
+function handleAnalytical(){
+if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
+stopSending();
+var topic=page.lecture_title||page.course_name||"الدرس الحالي";
+var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
+sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+var myGenA=++streamGen;
+showTyp();
+var prompt="اعمل 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة في الصعوبة:\nسؤال 1 (فهم): سؤال مباشر عن المفهوم\nسؤال 2 (تطبيق): سؤال عملي بمثال\nسؤال 3 (تحليل): سؤال يتطلب تفكير ومقارنة\nاكتب الأسئلة بس بدون إجابات. في النهاية قول للطالب: اكتب إجاباتك وزيكو هيصحح لك.";
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. اكتب أسئلة مقالية حقيقية زي الامتحانات. نص عادي بدون HTML."})})
+.then(function(r){if(!r.ok)throw new Error();return r.json();})
+.then(function(data){
+if(streamGen!==myGenA)return;
+hideTyp();
+var reply=data.reply||"";
+window.__zikoAnalyticalMode=true;
+typewriterMsg(reply,"bot",function(){
+var note=document.createElement("div");
+note.style.cssText="background:#dbeafe;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:11px;color:#1d4ed8;direction:rtl;font-family:Tahoma,Geneva,sans-serif";
+note.textContent="اكتب إجاباتك في الشات وزيكو هيصحح لك 📝";
+$msgs.appendChild(note);scrollBot();
+});
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+})
+.catch(function(){if(streamGen!==myGenA)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+}
+
 function handleRephrase(){
 if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" للتجديد","bot");return;}
 stopSending();
@@ -1066,6 +1117,8 @@ if(id==="quiz"){openQuiz();return;}
 if(id==="summary_full"){handleSummaryFull();return;}
 if(id==="exercise"){handleExercise();return;}
 if(id==="rephrase"){handleRephrase();return;}
+if(id==="mistakes"){handleMistakes();return;}
+if(id==="analytical"){handleAnalytical();return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var msgMap={
 glossary:"استخرج 5-7 مصطلحات تقنية من موضوع '"+topic+"'. كل مصطلح يكون بالعربي والإنجليزي. JSON فقط: {\"terms\":[{\"term\":\"الاسم بالعربي (English Name)\",\"def\":\"تعريف مختصر\"}]}. ابدأ بـ { مباشرة.",
@@ -1376,6 +1429,7 @@ stopSending();
 }
 
 function sysPr(){
+if(window.__zikoAnalyticalMode){window.__zikoAnalyticalMode=false;return "أنت مرشد تعليمي اسمك زيكو. الطالب أجاب على أسئلة تحليلية. صحح إجاباته بوضوح: ✅ الصح وليه، ❌ الغلط وكيف يصحح. في النهاية أعطه تقييم إجمالي من 100. نص عادي بدون HTML.";}
 var p="أنت مرشد تعليمي اسمك زيكو.\nأسلوبك: ودود، بسيط، مفيد.\n\nمهم جداً: لا تقتصر فقط على محتوى الدرس — أضف معلومات حديثة ومفيدة من معرفتك تكون إضافة حقيقية للطالب وتوسع فهمه للموضوع.";
 var lvlPrompt="";
 for(var lv=0;lv<LEVELS.length;lv++){if(LEVELS[lv].id===currentLevel){lvlPrompt=LEVELS[lv].prompt;break;}}
