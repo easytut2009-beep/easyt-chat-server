@@ -51,7 +51,7 @@ _s.textContent=''
 +'#zg-header-info{display:flex;align-items:center;gap:7px}'
 +'#zg-header-avatar{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,0.35);background-image:url(https://uploads.teachablecdn.com/attachments/f553568064fb487ba83d72db46b43caf.png);background-size:cover;background-position:center;flex-shrink:0}'
 +'#zg-header-text{display:flex;flex-direction:column}'
-+'#zg-header-name{font-size:14px;font-weight:700}'
++'#zg-header-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}'
 +'#zg-header-status{font-size:9px;opacity:0.85;display:flex;align-items:center;gap:3px;direction:rtl}'
 +'#zg-status-dot{width:5px;height:5px;background:#4ade80;border-radius:50%;display:inline-block}'
 +'#zg-header-btns{display:flex;align-items:center;gap:4px}'
@@ -68,9 +68,9 @@ _s.textContent=''
 +'#zg-ctx-banner-text{display:none;flex:1;overflow:hidden}'
 +'#zg-ctx-banner.zg-show #zg-ctx-banner-icon{display:inline-flex}'
 +'#zg-ctx-banner.zg-show #zg-ctx-banner-text{display:block}'
-+'#zg-ctx-banner-title{font-size:11.5px;font-weight:700;color:#0F5132;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
-+'#zg-ctx-banner-body{font-size:10.5px;color:#0F5132;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
-+'#zg-tools-menu{display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;z-index:1000;flex-direction:column;overflow:hidden;border-radius:0;position:absolute;transform-origin:top right;transform:scale(0);opacity:0;transition:transform .25s cubic-bezier(0.34,1.56,0.64,1),opacity .2s ease}'
++'#zg-ctx-banner-title{font-size:10px;font-weight:700;color:#0F5132;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
++'#zg-ctx-banner-body{font-size:9px;color:#0F5132;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
++'#zg-tools-menu{display:none;position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:#fff;z-index:10002;flex-direction:column;overflow:hidden;border-radius:0;transform-origin:top center;transform:scale(0);opacity:0;transition:transform .25s cubic-bezier(0.34,1.56,0.64,1),opacity .2s ease}'
 +'#zg-tools-menu.zg-tools-show{display:flex}'
 +'#zg-tools-menu.zg-tools-open{transform:scale(1);opacity:1}'
 +'@keyframes zgMenuClose{from{transform:scale(1);opacity:1}to{transform:scale(0);opacity:0}}'
@@ -85,8 +85,8 @@ _s.textContent=''
 +'.zg-tool-item:hover{background:#f9fafb}'
 +'#zg-level-row{display:flex;align-items:center;flex-wrap:wrap;gap:3px;width:100% !important;padding:5px 10px !important;margin:0 !important;background:rgba(255,255,255,0.5);box-sizing:border-box !important;overflow:hidden;direction:rtl}'
 +'#zg-ctx-banner.zg-show #zg-level-row{border-top:1px solid #C4D9CC}'
-+'#zg-level-label{font-size:11.5px !important;font-weight:700 !important;color:#0F5132 !important;white-space:nowrap;flex-shrink:0}'
-+'#zg-chat-box .zg-lvl-btn{display:inline-flex !important;align-items:center !important;gap:2px !important;padding:2px 7px !important;border-radius:8px !important;font-size:9.5px !important;font-weight:700 !important;border:1.5px solid #BADBCC !important;background:#D1E7DD !important;color:#0F5132 !important;cursor:pointer;transition:all .2s;white-space:nowrap !important;flex-shrink:0;font-family:Tahoma,Geneva,sans-serif !important;min-height:unset !important;height:auto !important;width:auto !important;line-height:1.4 !important;text-decoration:none !important;box-shadow:none !important}'
++'#zg-level-label{font-size:10px !important;font-weight:700 !important;color:#0F5132 !important;white-space:nowrap;flex-shrink:0}'
++'#zg-chat-box .zg-lvl-btn{display:inline-flex !important;align-items:center !important;gap:2px !important;padding:2px 7px !important;border-radius:8px !important;font-size:8px !important;font-weight:700 !important;border:1.5px solid #BADBCC !important;background:#D1E7DD !important;color:#0F5132 !important;cursor:pointer;transition:all .2s;white-space:nowrap !important;flex-shrink:0;font-family:Tahoma,Geneva,sans-serif !important;min-height:unset !important;height:auto !important;width:auto !important;line-height:1.4 !important;text-decoration:none !important;box-shadow:none !important}'
 +'#zg-chat-box .zg-lvl-btn svg{width:8px !important;height:8px !important;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}'
 +'#zg-chat-box .zg-lvl-btn:hover{background:#C4DED0 !important;border-color:#198754 !important}'
 +'#zg-chat-box .zg-lvl-btn.zg-lvl-active{background:#198754 !important;color:#fff !important;border-color:#198754 !important}'
@@ -1607,7 +1607,7 @@ var tool=TOOLS[ti];
 var item=document.createElement("button");
 item.className="zg-tool-item";
 item.setAttribute("data-tool",tool.id);
-item.innerHTML='<div style="display:flex;align-items:center;gap:12px;width:100%;direction:rtl;text-align:right;padding:4px 0"><div style="background:'+tool.color+';width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px">'+tool.icon.replace('viewBox=','style="stroke:'+tool.stroke+';width:18px;height:18px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox=')+'</div><div style="flex:1"><div style="font-size:13.5px;font-weight:700;color:#1f2937">'+tool.label+'</div><div style="font-size:11.5px;color:#9ca3af;margin-top:2px">'+tool.sub+'</div></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-left:4px"><path d="M15 18l-6-6 6-6"/></svg></div>';
+item.innerHTML='<div style="display:flex;align-items:center;gap:12px;width:100%;direction:rtl;text-align:right;padding:4px 0"><div style="background:'+tool.color+';width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px">'+tool.icon.replace('viewBox=','style="stroke:'+tool.stroke+';width:18px;height:18px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox=')+'</div><div style="flex:1"><div style="font-size:12px;font-weight:700;color:#1f2937">'+tool.label+'</div><div style="font-size:10px;color:#9ca3af;margin-top:2px">'+tool.sub+'</div></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-left:4px"><path d="M15 18l-6-6 6-6"/></svg></div>';
 $menuBody.appendChild(item);
 }
 }
