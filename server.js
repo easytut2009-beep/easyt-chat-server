@@ -11207,17 +11207,20 @@ console.log("══════════════════════�
 
 
  // Build System Prompt
-const finalSystemPrompt = buildGuideSystemPrompt({
-    courseName: course_name || "",
-    lectureTitle: lecture_title || "",
-    clientPrompt: system_prompt || "",
-    currentLessonContext,
-    otherLessonsContext,
-    allCourseLessons,
-    lessonFound: !!lessonMatch,
-    otherCourseRecommendation,
-    botInstructions: guideInstructions,
-});
+const isUpdatesMode = system_prompt && system_prompt.includes("UPDATES_MODE");
+const finalSystemPrompt = isUpdatesMode
+    ? system_prompt
+    : buildGuideSystemPrompt({
+        courseName: course_name || "",
+        lectureTitle: lecture_title || "",
+        clientPrompt: system_prompt || "",
+        currentLessonContext,
+        otherLessonsContext,
+        allCourseLessons,
+        lessonFound: !!lessonMatch,
+        otherCourseRecommendation,
+        botInstructions: guideInstructions,
+    });
 
 // ═══ Conversation Management ═══
       // 🆕 FIX #49: Clear history when lesson changes
