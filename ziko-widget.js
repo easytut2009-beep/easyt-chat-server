@@ -188,8 +188,8 @@ _s.textContent=''
 +'#zg-ex-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
 +'#zg-ex-body{flex:1;overflow-y:auto;padding:14px;padding-top:60px;min-height:0}'
 +'#zg-ex-input-area{padding:10px 12px;padding-bottom:50px;background:#f9fafb;border-top:1px solid #e0e0e0;flex-shrink:0}'
-+'#zg-ex-input{width:100%;border:1.5px solid #e0e0e0;border-radius:10px;padding:8px 12px;font-size:13px;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none}'
-+'#zg-ex-input:focus{border-color:#198754}'
++'#zg-ex-input{width:100%;border:1.5px solid #e0e0e0 !important;border-radius:10px !important;padding:8px 12px;font-size:13px;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none !important;box-shadow:none !important}'
++'#zg-ex-input:focus{border-color:#198754 !important;box-shadow:none !important;outline:none !important}'
 +'#zg-ex-btns{display:flex;gap:8px;margin-top:8px;flex-direction:row-reverse}'
 +'#zg-ex-send{flex:1;background:#198754;color:#fff;border:none;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif}'
 +'#zg-ex-img-btn{width:38px;height:38px;background:#d1fae5;border:1.5px solid #198754;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
@@ -1047,12 +1047,14 @@ var total=analyticalState.questions.length;
 var num=analyticalState.current+1;
 var dots="";
 for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#1d4ed8':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
+var labels=['فهم','تطبيق','تحليل'];
+var lbl=labels[analyticalState.current]||'تحليل';
 $exBody.innerHTML='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:6px">'
 +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
 +'<div style="font-size:10px;color:#6b7280">سؤال '+num+' من '+total+'</div>'
 +'<div>'+dots+'</div></div>'
 +'<div style="background:#eff6ff;border-radius:10px;padding:14px;border-right:3px solid #1d4ed8;margin-bottom:8px">'
-+'<div style="font-size:9px;color:#1d4ed8;font-weight:700;margin-bottom:6px">'+['فهم','تطبيق','تحليل'][analyticalState.current]||'تحليل'+'</div>'
++'<div style="font-size:9px;color:#1d4ed8;font-weight:700;margin-bottom:6px">'+lbl+'</div>'
 +'<div style="font-size:13px;font-weight:700;color:#1e3a8a;line-height:1.6">'+esc(q)+'</div>'
 +'</div></div>';
 if($exInput){$exInput.value="";$exInput.focus();}
