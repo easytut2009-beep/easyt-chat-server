@@ -211,7 +211,7 @@ _s.textContent=''
 +'.zg-count-num{font-size:26px;font-weight:700;color:#0F5132}'
 +'.zg-count-lbl{font-size:8px;color:#9ca3af}'
 +'.zg-count-btn.zg-count-active .zg-count-lbl{color:#198754}'
-+'.zg-start-btn{width:85%;display:flex;align-items:center;justify-content:center;background:#198754;color:#fff;border:none;border-radius:14px;padding:22px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;gap:8px}'
++'.zg-start-btn{width:85%;display:flex;align-items:center;justify-content:center;background:#198754;color:#fff;border:none;border-radius:14px;padding:28px 12px;font-size:14px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;gap:8px}'
 +'.zg-start-btn svg{width:13px;height:13px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round}'
 /* Quiz question screen */
 +'.zg-progress-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}'
