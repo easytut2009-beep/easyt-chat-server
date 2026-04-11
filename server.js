@@ -10778,35 +10778,7 @@ async function startServer() {
      Guide Bot State
      ═══════════════════════════════════ */
   const guideConversations = {};
-  const guideRateLimits = {};
-  const GUIDE_DAILY_LIMIT = 15;
   const GUIDE_MAX_HISTORY = 20;
-
-  function getToday() {
-    return new Date().toISOString().split("T")[0];
-  }
-
-  function getGuideRemaining(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
-      return GUIDE_DAILY_LIMIT;
-    }
-    return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
-  }
-
-  function consumeGuideMsg(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
-      guideRateLimits[sessionId] = { date: today, count: 0 };
-    }
-    guideRateLimits[sessionId].count++;
-  }
 
 
 // ═══════════════════════════════════════
