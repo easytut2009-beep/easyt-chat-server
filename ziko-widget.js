@@ -394,6 +394,7 @@ var $quizOverlay,$quizBody,$quizSub,$quizClose;
 var $exOverlay,$exBody,$exInput,$exSend,$exClose,$exImgBtn,$exImgFile;
 var exImgBase64=null,exImgType=null;
 var currentAbortController=null;
+var streamGen=0;
 var typewriterActive=0;
 var rzStyleEl=null,sid=null,rem=LIMIT,sending=false,recording=false;
 var opened=false,isFullscreen=false,isMini=false,miniSide="";
@@ -784,6 +785,7 @@ $quizBody.querySelector("#zg-quiz-done").addEventListener("click",function(){clo
 
 /* ==================== TOOLS ==================== */
 function handleSummaryFull(){
+stopSending();
 if(rem<=0){addMsg("خلصت الرسائل! جرب بكره","bot");return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
@@ -994,6 +996,7 @@ openExercise();
 
 function handleToolAction(id){
 closeToolsMenu();
+stopSending();
 if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" للتجديد","bot");return;}
 if(id==="quiz"){openQuiz();return;}
 if(id==="summary_full"){handleSummaryFull();return;}
@@ -1157,6 +1160,7 @@ addGNext();
 
 function stopSending(){
 typewriterActive++;
+streamGen++;
 if(currentAbortController){currentAbortController.abort();currentAbortController=null;}
 hideTyp();
 if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}
@@ -1240,6 +1244,7 @@ stopSending();
 }else{
 var STREAM_API=API.replace("/guide","/guide/stream");
 currentAbortController=new AbortController();
+var myStreamGen=++streamGen;
 fetch(STREAM_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
 .then(function(r){
 if(!r.ok)throw new Error("HTTP "+r.status);
@@ -1253,7 +1258,7 @@ var buffer="";
 var fullText="";
 function read(){
 return reader.read().then(function(result){
-if(currentAbortController===null){reader.cancel();return;}
+if(currentAbortController===null||streamGen!==myStreamGen){reader.cancel();return;}
 if(result.done){
 stopSending();
 return;
