@@ -1799,7 +1799,7 @@ var ntBody=document.getElementById("zg-notify-body");if(ntBody)ntBody.textConten
 
 if($close)$close.innerHTML=IC.close;if($resize)$resize.innerHTML=IC.max;if($send)$send.innerHTML=IC.send;if($mic)$mic.innerHTML=IC.mic;if($notifyX)$notifyX.innerHTML=IC.notifyX;
 
-var hdrName=document.getElementById("zg-header-name");if(hdrName){hdrName.textContent="زيكو — المرشد التعليمي";function updateHdrName(){var info=document.getElementById("zg-header-info");var btns=document.getElementById("zg-header-btns");var hdr=document.getElementById("zg-header");if(!hdr||!btns)return;var avail=hdr.offsetWidth-btns.offsetWidth-80;hdrName.textContent="زيكو — المرشد التعليمي";if(hdrName.scrollWidth>avail)hdrName.textContent="زيكو";}if(window.ResizeObserver){new ResizeObserver(updateHdrName).observe(document.getElementById("zg-chat-box")||document.body);}setTimeout(updateHdrName,300);}
+var hdrName=document.getElementById("zg-header-name");var updateHdrName=function(){var hdr=document.getElementById("zg-header");var btns=document.getElementById("zg-header-btns");if(!hdr||!btns||!hdrName)return;var avail=hdr.offsetWidth-btns.offsetWidth-80;hdrName.textContent="زيكو — المرشد التعليمي";if(hdrName.scrollWidth>avail)hdrName.textContent="زيكو";};if(hdrName){hdrName.textContent="زيكو — المرشد التعليمي";if(window.ResizeObserver){new ResizeObserver(updateHdrName).observe(document.getElementById("zg-chat-box")||document.body);}setTimeout(updateHdrName,300);}
 var statusText=document.getElementById("zg-status-text");if(statusText)statusText.textContent="متصل الآن";
 var powEl=document.getElementById("zg-pow");if(powEl)powEl.textContent="مرشدك التعليمي — EasyT";
 if($inp)$inp.placeholder="اسأل عن أي حاجة في الدرس...";
@@ -1830,7 +1830,7 @@ if($resize)$resize.addEventListener("click",function(e){e.preventDefault();e.sto
 $send.addEventListener("click",function(){doSend();});
 $inp.addEventListener("keypress",function(e){if(e.key==="Enter"){e.preventDefault();doSend();}});
 
-if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");showBackBtn(closeToolsMenu);});}});}
+if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");showBackBtn(closeToolsMenu);if(typeof updateHdrName==="function")updateHdrName();});}});}
 var $tmClose=document.getElementById("zg-tools-menu-close");
 if($tmClose){$tmClose.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeToolsMenu();});}
 
