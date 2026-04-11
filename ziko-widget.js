@@ -172,18 +172,18 @@ _s.textContent=''
 +'#zg-quiz-overlay.zg-quiz-open{display:flex}'
 +'#zg-ex-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;z-index:200;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-ex-overlay.zg-ex-open{display:flex}'
-+'#zg-ex-hdr{background:#d97706;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}'
++'#zg-ex-hdr{background:#0F5132;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}'
 +'#zg-ex-title{font-size:13px;font-weight:700;color:#fff}'
 +'#zg-ex-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
 +'#zg-ex-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
 +'#zg-ex-body{flex:1;overflow-y:auto;padding:14px}'
 +'#zg-ex-input-area{padding:10px 12px;background:#f9fafb;border-top:1px solid #e0e0e0;flex-shrink:0}'
 +'#zg-ex-input{width:100%;border:1.5px solid #e0e0e0;border-radius:10px;padding:8px 12px;font-size:13px;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none}'
-+'#zg-ex-input:focus{border-color:#d97706}'
++'#zg-ex-input:focus{border-color:#198754}'
 +'#zg-ex-btns{display:flex;gap:8px;margin-top:8px}'
-+'#zg-ex-send{flex:1;background:#d97706;color:#fff;border:none;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif}'
-+'#zg-ex-img-btn{width:38px;height:38px;background:#fef3c7;border:1.5px solid #d97706;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
-+'#zg-ex-img-btn svg{width:16px;height:16px;stroke:#d97706;fill:none;stroke-width:2;stroke-linecap:round}'
++'#zg-ex-send{flex:1;background:#198754;color:#fff;border:none;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif}'
++'#zg-ex-img-btn{width:38px;height:38px;background:#d1fae5;border:1.5px solid #198754;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
++'#zg-ex-img-btn svg{width:16px;height:16px;stroke:#198754;fill:none;stroke-width:2;stroke-linecap:round}'
 +'#zg-ex-img-file{position:absolute;top:-9999px;opacity:0}'
 +'#zg-quiz-hdr{background:#0F5132;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}'
 +'#zg-quiz-title{font-size:13px;font-weight:700;color:#fff}'
@@ -850,15 +850,15 @@ for(var i=0;i<lines.length;i++){
 var line=lines[i].trim();
 if(!line)continue;
 if(line.match(/^🎯/)){
-html+='<div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:12px;text-align:right;direction:rtl">'+esc(line)+'</div>';
+html+='<div style="font-size:14px;font-weight:700;color:#0F5132;margin-bottom:12px;text-align:right;direction:rtl">'+esc(line)+'</div>';
 }else if(line.match(/^\d+\./)){
 var num=line.match(/^(\d+)\./)[1];
 var rest=line.replace(/^\d+\.\s*/,"");
 html+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;direction:rtl">';
-html+='<div style="width:24px;height:24px;border-radius:50%;background:#d97706;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">'+num+'</div>';
+html+='<div style="width:24px;height:24px;border-radius:50%;background:#0F5132;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">'+num+'</div>';
 html+='<div style="font-size:12px;color:#374151;line-height:1.8;text-align:right;flex:1">'+esc(rest)+'</div></div>';
 }else if(line.match(/^[📸✍️💻🗣️⏳]/)){
-html+='<div style="background:#fef3c7;border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12px;font-weight:700;color:#92400e;text-align:right;direction:rtl;border-right:3px solid #d97706">'+esc(line)+'</div>';
+html+='<div style="background:#d1fae5;border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12px;font-weight:700;color:#0F5132;text-align:right;direction:rtl;border-right:3px solid #198754">'+esc(line)+'</div>';
 }else{
 html+='<div style="font-size:12px;color:#6b7280;line-height:1.8;margin-bottom:6px;text-align:right;direction:rtl">'+esc(line)+'</div>';
 }
@@ -874,7 +874,7 @@ if(rem<=0){addMsg("خلصت رسائلك!","bot");closeExercise();return;}
 if($exSend)$exSend.disabled=true;
 if($exBody)$exBody.innerHTML+='<div style="text-align:center;padding:20px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:8px;font-size:11px;color:#9ca3af">زيكو بيقيّم شغلك...</div></div>';
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
-var sys="أنت مرشد تعليمي اسمك زيكو. الطالب أرسل نتيجة تمرينه على موضوع '"+topic+"'. قيّم العمل بوضوح ومشجع:\n- ابدأ بـ ✅ النقاط الإيجابية (جملة أو اثنتين)\n- ثم ⚠️ نقطة تحتاج تحسين (إن وجدت)\n- اختم بدرجة هكذا بالضبط: 🏆 درجتك: XX/100\n- وجملة تشجيعية قصيرة.\nلا تستخدم HTML.";
+var sys="أنت مرشد تعليمي اسمك زيكو. الطالب أرسل نتيجة تمرينه على موضوع '"+topic+"'. إذا كانت الصورة غير واضحة أو سوداء أو فارغة، قل للطالب ذلك واطلب منه إرسال صورة أوضح. وإلا قيّم العمل هكذا:\n- ابدأ بـ ✅ النقاط الإيجابية\n- ثم ⚠️ نقطة تحتاج تحسين (إن وجدت)\n- اختم بدرجة هكذا بالضبط: 🏆 درجتك: XX/100\n- وجملة تشجيعية.\nلا تستخدم HTML.";
 var msgContent=hasImg?[{type:"image_url",image_url:{url:"data:"+exImgType+";base64,"+exImgBase64}},{type:"text",text:txt||"قيّم شغلي"}]:(txt);
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:typeof msgContent==="string"?msgContent:"[صورة من الطالب] "+(txt||""),image_base64:hasImg?exImgBase64:null,image_type:hasImg?exImgType:null,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
 .then(function(r){return r.json();})
@@ -892,7 +892,7 @@ if(!$exBody)return;
 var lines=reply.split(/\n+/);
 var score=null;
 var html='<div style="border-top:2px solid #fde68a;margin-top:16px;padding-top:14px">';
-html+='<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px;text-align:right;direction:rtl">نتيجة التقييم</div>';
+html+='<div style="font-size:13px;font-weight:700;color:#0F5132;margin-bottom:10px;text-align:right;direction:rtl">نتيجة التقييم</div>';
 for(var i=0;i<lines.length;i++){
 var line=lines[i].trim();
 if(!line)continue;
@@ -909,7 +909,7 @@ html+='<div style="width:70px;height:70px;border-radius:50%;border:4px solid '+c
 html+='<div style="font-size:20px;font-weight:700;color:'+c+'">'+score+'</div>';
 html+='<div style="font-size:9px;color:'+c+'">/ 100</div></div></div>';
 }
-html+='<button onclick="closeExercise()" style="width:100%;margin-top:14px;padding:10px;background:#d97706;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
+html+='<button onclick="closeExercise()" style="width:100%;margin-top:14px;padding:10px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
 html+='</div>';
 $exBody.innerHTML+=html;
 $exBody.scrollTop=$exBody.scrollHeight;
