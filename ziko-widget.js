@@ -864,6 +864,7 @@ html+='<div style="font-size:12px;color:#6b7280;line-height:1.8;margin-bottom:6p
 }
 }
 $exBody.innerHTML=html;
+window.__zikoExTask=reply.substring(0,200);
 }
 
 function submitExercise(){
@@ -872,9 +873,20 @@ var hasImg=!!exImgBase64;
 if(!txt.trim()&&!hasImg){if($exInput)$exInput.focus();return;}
 if(rem<=0){addMsg("خلصت رسائلك!","bot");closeExercise();return;}
 if($exSend)$exSend.disabled=true;
-if($exBody)$exBody.innerHTML+='<div style="text-align:center;padding:20px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:8px;font-size:11px;color:#9ca3af">زيكو بيقيّم شغلك...</div></div>';
+if($exInput)$exInput.style.display="none";
+var exBtnsEl=document.getElementById("zg-ex-btns");
+if(exBtnsEl)exBtnsEl.style.display="none";
+var loadDiv=document.createElement("div");
+loadDiv.style.cssText="text-align:center;padding:20px";
+if(hasImg){
+loadDiv.innerHTML='<img src="data:'+exImgType+';base64,'+exImgBase64+'" style="width:100%;max-height:180px;object-fit:contain;border-radius:8px;margin-bottom:10px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:8px;font-size:11px;color:#9ca3af">زيكو بيقيّم شغلك...</div>';
+}else{
+loadDiv.innerHTML='<div style="background:#f0faf5;border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px;color:#374151;text-align:right">'+esc(txt)+'</div><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:8px;font-size:11px;color:#9ca3af">زيكو بيقيّم شغلك...</div>';
+}
+$exBody.appendChild(loadDiv);
+$exBody.scrollTop=$exBody.scrollHeight;
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
-var sys="أنت مرشد تعليمي اسمك زيكو. الطالب أرسل نتيجة تمرينه على موضوع '"+topic+"'. إذا كانت الصورة غير واضحة أو سوداء أو فارغة، قل للطالب ذلك واطلب منه إرسال صورة أوضح. وإلا قيّم العمل هكذا:\n- ابدأ بـ ✅ النقاط الإيجابية\n- ثم ⚠️ نقطة تحتاج تحسين (إن وجدت)\n- اختم بدرجة هكذا بالضبط: 🏆 درجتك: XX/100\n- وجملة تشجيعية.\nلا تستخدم HTML.";
+var exTask=window.__zikoExTask||"";var sys="أنت مرشد تعليمي اسمك زيكو. الطالب أرسل نتيجة تمرينه على موضوع '"+topic+"'."+(exTask?"\nالتمرين المطلوب كان: "+exTask:"")+"\nقواعد التقييم:\n1. إذا كانت الصورة غير واضحة أو سوداء أو لا علاقة لها بالموضوع، قل ذلك بوضوح ولا تعطِ درجة.\n2. إذا الإجابة لا علاقة لها بالتمرين المطلوب، نبّه الطالب بلطف.\n3. وإلا قيّم العمل:\n- ابدأ بـ ✅ النقاط الإيجابية\n- ثم ⚠️ نقطة تحتاج تحسين\n- اختم بدرجة: 🏆 درجتك: XX/100\n- وجملة تشجيعية.\nلا تستخدم HTML.";
 var msgContent=hasImg?[{type:"image_url",image_url:{url:"data:"+exImgType+";base64,"+exImgBase64}},{type:"text",text:txt||"قيّم شغلي"}]:(txt);
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:typeof msgContent==="string"?msgContent:"[صورة من الطالب] "+(txt||""),image_base64:hasImg?exImgBase64:null,image_type:hasImg?exImgType:null,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
 .then(function(r){return r.json();})
@@ -918,6 +930,10 @@ $exBody.scrollTop=$exBody.scrollHeight;
 function closeExercise(){
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
+exImgBase64=null;exImgType=null;
+if($exInput)$exInput.value="";
+if($exBody)$exBody.innerHTML="";
+if($exSend)$exSend.disabled=false;
 }
 
 function handleExercise(){
