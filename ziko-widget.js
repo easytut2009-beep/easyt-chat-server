@@ -804,7 +804,7 @@ if(id==="summary_full"){handleSummaryFull();return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var msgMap={
 exercise:"ادي تمرين عملي على موضوع '"+topic+"'.",
-glossary:"استخرج من 5 إلى 7 مصطلحات تقنية مهمة من موضوع '"+topic+"'.\nرد بـ JSON نقي فقط بدون أي كلام:\n{\"terms\":[{\"term\":\"اسم المصطلح\",\"def\":\"تعريف مختصر في جملة أو جملتين\"},{\"term\":\"اسم المصطلح\",\"def\":\"تعريف مختصر\"}]}\nJSON نقي فقط. ابدأ بـ { مباشرة.",
+glossary:"استخرج 5-7 مصطلحات تقنية من موضوع '"+topic+"'. كل مصطلح يكون بالعربي والإنجليزي. JSON فقط: {\"terms\":[{\"term\":\"الاسم بالعربي (English Name)\",\"def\":\"تعريف مختصر\"}]}. ابدأ بـ { مباشرة.",
 rephrase:"اشرح موضوع '"+topic+"' بطريقة مختلفة وأسلوب جديد.",
 updates:"ما هي آخر المستجدات والتطورات الحديثة في مجال '"+topic+"'؟ اذكر أحدث المعلومات من معرفتك."
 };
@@ -922,7 +922,7 @@ var t=terms[i];
 if(!t.term||!t.def||t.term.length<2)continue;
 var isLast=i===terms.length-1;
 inner+='<div style="border-bottom:'+(isLast?'none':'0.5px solid #e0e0e0')+';padding:10px 14px;background:#fff;border-radius:'+(isLast?'0 0 10px 10px':'0')+'">';
-inner+='<div style="font-size:12px;font-weight:700;color:#0F5132;margin-bottom:4px;text-align:right">'+esc(t.term)+'</div>';
+inner+='<div style="font-size:13px;font-weight:700;color:#0F5132;margin-bottom:5px;text-align:right">'+esc(t.term)+'</div>';
 inner+='<div style="font-size:11px;color:#444;line-height:1.6;text-align:right">'+esc(t.def)+'</div>';
 inner+='</div>';
 }
