@@ -429,7 +429,7 @@ function scheduleFrame(fn){pendingFrame=fn;if(!rafId){rafId=requestAnimationFram
 function clamp(x,y,w,h){var vww=document.documentElement.clientWidth||window.innerWidth;return{x:Math.max(0,Math.min(x,vww-w)),y:Math.max(0,Math.min(y,window.innerHeight-h))};}
 function curIconSize(){return isMini?ICON_MINI:ICON_W;}
 function vw(){return document.documentElement.clientWidth||window.innerWidth;}
-function closeToolsMenu(){if(!$toolsMenu)return;$toolsMenu.classList.remove("zg-tools-open");setTimeout(function(){$toolsMenu.classList.remove("zg-tools-show");},220);hideBackBtn();}
+function closeToolsMenu(){if(!$toolsMenu)return;$toolsMenu.classList.remove("zg-tools-open");setTimeout(function(){$toolsMenu.classList.remove("zg-tools-show");},220);}
 
 function setIconPos(x,y){var s=curIconSize();var c=clamp(x,y,s,s);$tog.style.left=c.x+"px";$tog.style.top=c.y+"px";$tog.style.bottom="auto";$tog.style.right="auto";}
 function getIconPos(){var r=$tog.getBoundingClientRect();return{x:r.left,y:r.top};}
