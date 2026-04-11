@@ -1008,7 +1008,8 @@ rephrase:"اشرح موضوع '"+topic+"' بطريقة مختلفة وأسلوب
 updates:"ما هي أحدث المستجدات والتطورات في مجال '"+topic+"'؟ تجاهل تماماً محتوى الدرس وتكلم فقط عن التطورات الحديثة من معرفتك الخاصة. اذكر أحدث الأخبار والتغييرات والتوجهات العالمية في هذا المجال."
 };
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-stopSending();sending=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
+sending=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
+var myToolGen=++streamGen;
 showTyp();
 var sysPrompt=id==="updates"?
 "UPDATES_MODE\nأنت خبير متخصص. مهمتك: اذكر أحدث المستجدات والتطورات في مجال '"+topic+"' من معرفتك الخاصة فقط. تجاهل تماماً أي محتوى درس أو كورس. ركز على: آخر الأخبار، أحدث الأدوات، التوجهات الجديدة، التغييرات الحديثة في العالم. نص عادي بدون HTML. ابدأ مباشرة بالمحتوى.":
@@ -1016,6 +1017,7 @@ var sysPrompt=id==="updates"?
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msgMap[id],session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPrompt})})
 .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(data){
+if(streamGen!==myToolGen){return;}
 hideTyp();
 var reply=data.reply||"";
 if(id==="infographic"){renderInfographic(reply);}
@@ -1025,7 +1027,7 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 })
-.catch(function(){hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
+.catch(function(){if(streamGen!==myToolGen)return;hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
 }
 
 function renderInfographic(text){
@@ -1273,6 +1275,7 @@ var jsonStr=line.substring(5).trim();
 try{
 var evt=JSON.parse(jsonStr);
 if(evt.delta){
+if(streamGen!==myStreamGen)return;
 fullText+=evt.delta;
 var h=fullText;
 h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
@@ -1280,12 +1283,14 @@ msgDiv.innerHTML=h;
 scrollBot();
 }
 if(evt.done){
+if(streamGen!==myStreamGen)return;
 if(typeof evt.remaining_messages==="number"){rem=evt.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 stopSending();
 return;
 }
 if(evt.error){
+if(streamGen!==myStreamGen)return;
 if(!fullText)msgDiv.textContent="عذراً، حصل مشكلة. حاول تاني.";
 stopSending();
 return;
