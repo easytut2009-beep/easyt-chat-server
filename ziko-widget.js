@@ -1047,16 +1047,16 @@ var q=analyticalState.questions[analyticalState.current];
 var total=analyticalState.questions.length;
 var num=analyticalState.current+1;
 var dots="";
-for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#1d4ed8':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
+for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#0F5132':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
 var labels=['فهم','تطبيق','تحليل'];
 var lbl=labels[analyticalState.current]||'تحليل';
 $exBody.innerHTML='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:6px">'
 +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
 +'<div style="font-size:10px;color:#6b7280">سؤال '+num+' من '+total+'</div>'
 +'<div>'+dots+'</div></div>'
-+'<div style="background:#eff6ff;border-radius:10px;padding:14px;border-right:3px solid #1d4ed8;margin-bottom:8px">'
-+'<div style="font-size:9px;color:#1d4ed8;font-weight:700;margin-bottom:6px">'+lbl+'</div>'
-+'<div style="font-size:13px;font-weight:700;color:#1e3a8a;line-height:1.6">'+esc(q)+'</div>'
++'<div style="background:#f0faf5;border-radius:10px;padding:14px;border-right:3px solid #0F5132;margin-bottom:8px">'
++'<div style="font-size:9px;color:#0F5132;font-weight:700;margin-bottom:6px">'+lbl+'</div>'
++'<div style="font-size:13px;font-weight:700;color:#0F5132;line-height:1.6">'+esc(q)+'</div>'
 +'</div></div>';
 if($exInput){$exInput.value="";$exInput.focus();}
 }
@@ -1096,12 +1096,15 @@ if($exInput)$exInput.disabled=false;
 if($exSend){$exSend.disabled=false;}
 };
 $exBody.appendChild(btn);
-}else{
-showBackBtn(closeAnalytical);
 }
 $exBody.scrollTop=$exBody.scrollHeight;
+if(isLast){
+if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
+if($exSend){$exSend.textContent="رجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=function(){closeAnalytical();};}
+}else{
 if($exInput)$exInput.disabled=false;
 if($exSend)$exSend.disabled=false;
+}
 })
 .catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
 }
