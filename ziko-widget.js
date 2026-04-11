@@ -188,8 +188,9 @@ _s.textContent=''
 +'#zg-ex-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
 +'#zg-ex-body{flex:1;overflow-y:auto;padding:14px;padding-top:60px;min-height:0}'
 +'#zg-ex-input-area{padding:10px 12px;padding-bottom:50px;background:#f9fafb;border-top:1px solid #e0e0e0;flex-shrink:0}'
-+'#zg-ex-input{width:100%;border:1.5px solid #e0e0e0 !important;border-radius:10px !important;padding:8px 12px;font-size:13px;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none !important;box-shadow:none !important}'
++'#zg-ex-input{width:100%!important;border:1.5px solid #d0d0d0 !important;border-radius:10px !important;padding:8px 12px !important;font-size:13px !important;direction:rtl;resize:none;font-family:Tahoma,Geneva,sans-serif;min-height:60px;outline:none !important;box-shadow:none !important;background:#fff !important}'
 +'#zg-ex-input:focus{border-color:#198754 !important;box-shadow:none !important;outline:none !important}'
++'#zg-ex-input:invalid{border-color:#d0d0d0 !important;box-shadow:none !important}'
 +'#zg-ex-btns{display:flex;gap:8px;margin-top:8px;flex-direction:row-reverse}'
 +'#zg-ex-send{flex:1;background:#198754;color:#fff;border:none;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif}'
 +'#zg-ex-img-btn{width:38px;height:38px;background:#d1fae5;border:1.5px solid #198754;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
@@ -1118,8 +1119,11 @@ showBackBtn(closeAnalytical);
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="none";
 if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=function(){submitAnalyticalAnswer();};}
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة الصعوبة. JSON فقط: {\"questions\":[\"سؤال1\",\"سؤال2\",\"سؤال3\"]}",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا كلام قبل أو بعد."})}).then(function(r){return r.json();}).then(function(data){
+var anSys="UPDATES_MODE\nأنت مساعد. اكتب 3 أسئلة تحليلية على الموضوع. رد بـ JSON نقي فقط بدون أي كلام: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}. لا تكتب أي شيء غير الـ JSON.";
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:getSid()+"_analytical_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
 var txt=(data.reply||"").replace(/```json|```/g,"").trim();
+var startI=txt.indexOf("{");var endI=txt.lastIndexOf("}");
+if(startI>-1&&endI>-1){txt=txt.substring(startI,endI+1);}
 try{analyticalState.questions=JSON.parse(txt).questions||[];}catch(e){analyticalState.questions=[];}
 if(!analyticalState.questions.length){if($exBody)$exBody.innerHTML='<div style="text-align:center;color:#dc2626;padding:20px;font-family:Tahoma">حصل خطأ، حاول تاني</div>';return;}
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
