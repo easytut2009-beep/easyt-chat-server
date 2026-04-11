@@ -10728,58 +10728,34 @@ async function startServer() {
      Guide Bot State
      ═══════════════════════════════════ */
   const guideConversations = {};
+  const guideRateLimits = {};
   const GUIDE_DAILY_LIMIT = 15;
   const GUIDE_MAX_HISTORY = 20;
-
-  // إنشاء جدول rate limits لو مش موجود
-  if (supabase) {
-    await supabase.rpc('create_guide_rate_limits_if_not_exists').catch(() => {});
-  }
 
   function getToday() {
     return new Date().toISOString().split("T")[0];
   }
 
-  async function await getGuideRemaining(sessionId) {
-    if (!supabase) return GUIDE_DAILY_LIMIT;
-    try {
-      const today = getToday();
-      const { data } = await supabase
-        .from("guide_rate_limits")
-        .select("count, date")
-        .eq("session_id", sessionId)
-        .single();
-      if (!data || data.date !== today) return GUIDE_DAILY_LIMIT;
-      return Math.max(0, GUIDE_DAILY_LIMIT - data.count);
-    } catch(e) {
+  async function getGuideRemaining(sessionId) {
+    const today = getToday();
+    if (
+      !guideRateLimits[sessionId] ||
+      guideRateLimits[sessionId].date !== today
+    ) {
       return GUIDE_DAILY_LIMIT;
     }
+    return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
   }
 
-  async function await consumeGuideMsg(sessionId) {
-    if (!supabase) return;
-    try {
-      const today = getToday();
-      const { data } = await supabase
-        .from("guide_rate_limits")
-        .select("count, date")
-        .eq("session_id", sessionId)
-        .single();
-      if (!data || data.date !== today) {
-        await supabase.from("guide_rate_limits").upsert({
-          session_id: sessionId,
-          date: today,
-          count: 1,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "session_id" });
-      } else {
-        await supabase.from("guide_rate_limits")
-          .update({ count: data.count + 1, updated_at: new Date().toISOString() })
-          .eq("session_id", sessionId);
-      }
-    } catch(e) {
-      console.error("consumeGuideMsg error:", e.message);
+  async function consumeGuideMsg(sessionId) {
+    const today = getToday();
+    if (
+      !guideRateLimits[sessionId] ||
+      guideRateLimits[sessionId].date !== today
+    ) {
+      guideRateLimits[sessionId] = { date: today, count: 0 };
     }
+    guideRateLimits[sessionId].count++;
   }
 
 
