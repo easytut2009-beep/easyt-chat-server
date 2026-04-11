@@ -211,7 +211,7 @@ _s.textContent=''
 +'.zg-count-num{font-size:26px;font-weight:700;color:#0F5132}'
 +'.zg-count-lbl{font-size:8px;color:#9ca3af}'
 +'.zg-count-btn.zg-count-active .zg-count-lbl{color:#198754}'
-+'.zg-start-btn{width:70%;margin:0 auto;background:#198754;color:#fff;border:none;border-radius:14px;padding:18px 20px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}'
++'.zg-start-btn{width:85%;display:flex;align-items:center;justify-content:center;margin:0 auto;background:#198754;color:#fff;border:none;border-radius:14px;padding:22px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;gap:8px}'
 +'.zg-start-btn svg{width:13px;height:13px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round}'
 /* Quiz question screen */
 +'.zg-progress-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}'
@@ -615,13 +615,13 @@ var hash=0;
 for(var i=0;i<parts.length;i++){hash=((hash<<5)-hash)+parts.charCodeAt(i);hash|=0;}
 return "fp_"+(Math.abs(hash)).toString(36);
 }
+var zgFP=getFingerprint();
 function getSid(){
 if(!sid){
-var fp=getFingerprint();
 var stored=null;
 try{stored=localStorage.getItem(SK_SES);}catch(e){}
-if(stored&&stored.indexOf(fp)!==-1){sid=stored;}
-else{sid="zg_"+fp+"_"+Date.now().toString(36);try{localStorage.setItem(SK_SES,sid);}catch(e){}}}
+if(stored){sid=stored;}
+else{sid="zg_"+zgFP+"_"+Date.now().toString(36);try{localStorage.setItem(SK_SES,sid);}catch(e){}}}
 return sid;
 }
 try{sid=localStorage.getItem(SK_SES)||null;}catch(e){}
@@ -724,7 +724,7 @@ hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
-$quizBody.innerHTML='<div style="text-align:center;padding:10px 0 4px">'
+$quizBody.innerHTML='<div style="text-align:center;padding:50px 0 4px">'
 +'<div class="zg-count-title">كام سؤال عايز؟</div>'
 +'<div class="zg-count-sub">اختار عدد الأسئلة وابدأ الاختبار</div>'
 +'</div>'
@@ -733,7 +733,7 @@ $quizBody.innerHTML='<div style="text-align:center;padding:10px 0 4px">'
 +'<button class="zg-count-btn zg-count-active" data-n="10"><div class="zg-count-num">10</div><div class="zg-count-lbl">متوسط</div></button>'
 +'<button class="zg-count-btn" data-n="15"><div class="zg-count-num">15</div><div class="zg-count-lbl">شامل</div></button>'
 +'</div>'
-+'<button class="zg-start-btn" id="zg-quiz-start" style="margin-top:16px">'
++'<button class="zg-start-btn" id="zg-quiz-start" style="margin-top:24px">'
 +'ابدأ الاختبار'
 +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>'
 +'</button>';
@@ -1611,7 +1611,6 @@ stopSending();
 var STREAM_API=API.replace("/guide","/guide/stream");
 currentAbortController=new AbortController();
 var myStreamGen=++streamGen;
-showTyp();
 fetch(STREAM_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
 .then(function(r){
 if(!r.ok)throw new Error("HTTP "+r.status);
