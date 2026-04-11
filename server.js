@@ -11486,6 +11486,63 @@ res.status(500).json({
 
 
 /* ═══════════════════════════════════
+     Stream endpoint — wraps /api/guide as SSE
+     ═══════════════════════════════════ */
+  app.post("/api/guide/stream", limiter, async (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    try {
+      const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
+      if (!message || !session_id) {
+        res.write(`data: ${JSON.stringify({ error: "Missing params" })}\n\n`);
+        return res.end();
+      }
+
+      const remaining = await getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        res.write(`data: ${JSON.stringify({ delta: "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nاستنى لبكره وهتتجدد تلقائياً! 💪", done: true, remaining_messages: 0 })}\n\n`);
+        return res.end();
+      }
+
+      // Forward to internal guide handler
+      const fakeReq = { body: req.body };
+      const fakeRes = {
+        _data: null,
+        json(data) { this._data = data; },
+        status(code) { return this; }
+      };
+
+      // Call the guide logic by making internal fetch
+      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/guide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-internal": "1" },
+        body: JSON.stringify(req.body)
+      });
+
+      const data = await response.json();
+      const reply = data.reply || "";
+      const words = reply.split(" ");
+
+      // Stream word by word
+      for (let i = 0; i < words.length; i++) {
+        const chunk = (i === 0 ? "" : " ") + words[i];
+        res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
+        await new Promise(r => setTimeout(r, 18));
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true, remaining_messages: data.remaining_messages, suggestions: data.suggestions || [] })}\n\n`);
+      res.end();
+
+    } catch (e) {
+      console.error("❌ Stream error:", e.message);
+      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      res.end();
+    }
+  });
+
+/* ═══════════════════════════════════
      Check if course has transcribed content
      ═══════════════════════════════════ */
   app.get("/api/guide/check-course", async (req, res) => {
