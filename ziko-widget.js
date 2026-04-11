@@ -339,8 +339,7 @@ notifyX:'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0
 
 var TOOLS=[
 {id:"quiz",label:"اختبار تفاعلي",sub:"قيّم فهمك واحصل على درجة",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>'},
-{id:"summary",label:"تلخيص الدرس",sub:"ملخص سريع لأهم النقاط",color:"#d1e7dd",stroke:"#198754",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>'},
-{id:"infographic",label:"إنفوجراف الدرس",sub:"تلخيص بصري رأسي",color:"#ffedd5",stroke:"#ea580c",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17 14v7"/></svg>'},
+{id:"summary_full",label:"ملخص الدرس",sub:"إنفوجراف + ملخص مفصل",color:"#d1e7dd",stroke:"#198754",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>'},
 {id:"exercise",label:"تمرين عملي",sub:"طبّق ما تعلمته",color:"#fef3c7",stroke:"#d97706",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>'},
 {id:"glossary",label:"مصطلحات الدرس",sub:"قاموس لكل مصطلح تقني",color:"#ccfbf1",stroke:"#0d9488",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>'},
 {id:"rephrase",label:"شرح بطريقة أخرى",sub:"أسلوب مختلف لنفس الفكرة",color:"#ede9fe",stroke:"#7c3aed",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'},
@@ -741,14 +740,44 @@ $quizBody.querySelector("#zg-quiz-done").addEventListener("click",function(){clo
 }
 
 /* ==================== TOOLS ==================== */
+function handleSummaryFull(){
+if(rem<=0){addMsg("خلصت الرسائل! جرب بكره","bot");return;}
+var topic=page.lecture_title||page.course_name||"الدرس الحالي";
+var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
+sending=true;if($send)$send.disabled=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+showTyp();
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"': لو مفاهيم اجعل type=tree, لو خطوات اجعل type=flow. رد بـ JSON صحيح من 4 إلى 6 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. رد بـ JSON فقط."})})
+.then(function(r){return r.json();})
+.then(function(data){
+hideTyp();
+renderInfographic(data.reply||"");
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+if(rem<=0){sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
+var sep=document.createElement("div");
+sep.style.cssText="text-align:center;font-size:10px;color:#9ca3af;padding:6px 0;border-top:1px dashed #e0e0e0;margin:4px 0";
+sep.textContent="── ملخص ──";
+$msgs.appendChild(sep);
+showTyp();
+return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص '"+topic+"' في نقاط مرتبة مع شرح مختصر لكل نقطة.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بنص عادي بدون HTML."})});
+})
+.then(function(r){if(!r)return;return r.json();})
+.then(function(data){
+if(!data)return;
+hideTyp();
+addMsg(data.reply||"","bot");
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+})
+.catch(function(){hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+}
+
 function handleToolAction(id){
 closeToolsMenu();
 if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" للتجديد","bot");return;}
 if(id==="quiz"){openQuiz();return;}
+if(id==="summary_full"){handleSummaryFull();return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var msgMap={
-summary:"لخص الدرس عن موضوع '"+topic+"' في نقاط مرتبة وواضحة.",
-infographic:"حلل موضوع '"+topic+"' وقرر:\n- لو المحتوى فيه مفاهيم ومتفرعات: استخدم type=tree\n- لو المحتوى فيه خطوات متسلسلة: استخدم type=flow\n\nرد بـ JSON نقي فقط بدون أي كلام:\n\nلو tree:\n{\"type\":\"tree\",\"title\":\"عنوان الموضوع\",\"branches\":[{\"name\":\"الفرع الأول\",\"detail\":\"تفصيل مختصر\"},{\"name\":\"الفرع الثاني\",\"detail\":\"تفصيل مختصر\"}]}\n\nلو flow:\n{\"type\":\"flow\",\"title\":\"عنوان الموضوع\",\"steps\":[{\"head\":\"عنوان الخطوة\",\"body\":\"شرح مختصر\"},{\"head\":\"عنوان الخطوة\",\"body\":\"شرح مختصر\"}]}\n\nمن 4 إلى 6 عناصر فقط. JSON نقي فقط.",
 exercise:"ادي تمرين عملي على موضوع '"+topic+"'.",
 glossary:"استخرج من 5 إلى 7 مصطلحات تقنية مهمة من موضوع '"+topic+"'.\nرد بـ JSON نقي فقط بدون أي كلام:\n{\"terms\":[{\"term\":\"اسم المصطلح\",\"def\":\"تعريف مختصر في جملة أو جملتين\"},{\"term\":\"اسم المصطلح\",\"def\":\"تعريف مختصر\"}]}\nJSON نقي فقط. ابدأ بـ { مباشرة.",
 rephrase:"اشرح موضوع '"+topic+"' بطريقة مختلفة وأسلوب جديد.",
@@ -779,42 +808,36 @@ var start=text.indexOf("{");var end=text.lastIndexOf("}");
 var parsed=null;
 if(start!==-1&&end!==-1){try{parsed=JSON.parse(text.substring(start,end+1));}catch(e){parsed=null;}}
 var div=document.createElement("div");div.className="zg-msg zg-bot";
-if(!parsed){div.innerHTML='<div class="zg-infographic"><div class="zg-info-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17 14v7"/></svg> إنفوجراف الدرس</div><div style="font-size:11px;color:#444;line-height:1.7;padding:4px 0">'+esc(text.substring(0,400))+'</div></div>';$msgs.appendChild(div);scrollBot();return;}
-var type=parsed.type||"flow";
-var title=esc(parsed.title||"إنفوجراف الدرس");
+var title=parsed?esc(parsed.title||"إنفوجراف الدرس"):"إنفوجراف الدرس";
+var items=[];
+if(parsed){
+if(parsed.steps&&parsed.steps.length)items=parsed.steps.map(function(s){return{head:s.head||"",sub:s.body||""};});
+else if(parsed.branches&&parsed.branches.length)items=parsed.branches.map(function(b){return{head:b.name||"",sub:b.detail||""};});
+}
+var colors=["#0F5132","#1a6b44","#228b55","#2aac66","#32cd77","#3aee88"];
 var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
-html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">';
+html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;justify-content:flex-end">';
+html+='<span style="font-size:12px;font-weight:700;color:#0F5132">إنفوجراف الدرس</span>';
 html+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17 14v7"/></svg>';
-html+='<span style="font-size:12px;font-weight:700;color:#0F5132">إنفوجراف الدرس</span></div>';
-if(type==="tree"){
-var branches=parsed.branches||[];
-html+='<div style="text-align:center;margin-bottom:4px">';
-html+='<div style="display:inline-block;background:#0F5132;color:#fff;border-radius:10px;padding:7px 16px;font-size:11px;font-weight:700">'+title+'</div></div>';
-html+='<div style="display:flex;justify-content:center"><div style="width:2px;height:16px;background:#BADBCC"></div></div>';
-html+='<div style="position:relative;display:flex;justify-content:center">';
-html+='<div style="position:absolute;top:0;right:15%;left:15%;height:2px;background:#BADBCC"></div>';
-html+='<div style="display:flex;gap:8px;width:100%;justify-content:center">';
-for(var bi=0;bi<branches.length;bi++){
-var br=branches[bi];
-html+='<div style="display:flex;flex-direction:column;align-items:center;flex:1;max-width:130px">';
-html+='<div style="width:2px;height:14px;background:#BADBCC;margin:0 auto"></div>';
-html+='<div style="background:#fff;border:2px solid #198754;border-radius:8px;padding:6px 8px;font-size:10px;font-weight:700;color:#0F5132;text-align:center;width:100%">'+esc(br.name||"");
-if(br.detail)html+='<div style="font-size:8px;color:#6b7280;font-weight:400;margin-top:2px;line-height:1.4">'+esc(br.detail)+'</div>';
+html+='</div>';
+html+='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;text-align:center">';
+html+='<span style="font-size:11px;font-weight:700;color:#fff">'+title+'</span></div>';
+if(items.length){
+for(var i=0;i<items.length;i++){
+var it=items[i];
+var c=colors[Math.min(i+1,colors.length-1)];
+var isLast=i===items.length-1;
+var radius=isLast?"0 0 10px 10px":"0";
+html+='<div style="width:2px;height:7px;background:#BADBCC;margin-right:16px"></div>';
+html+='<div style="background:'+c+';border-radius:'+radius+';padding:9px 14px;display:flex;align-items:center;gap:10px;position:relative">';
+html+='<div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">'+(i+1)+'</div>';
+html+='<div style="flex:1;text-align:right">';
+html+='<div style="font-size:11px;font-weight:700;color:#fff">'+esc(it.head)+'</div>';
+if(it.sub)html+='<div style="font-size:9px;color:rgba(255,255,255,0.75);margin-top:2px">'+esc(it.sub)+'</div>';
 html+='</div></div>';
 }
-html+='</div></div>';
 }else{
-var steps=parsed.steps||[];
-for(var si=0;si<steps.length;si++){
-var st=steps[si];
-html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px;direction:rtl">';
-html+='<div style="width:24px;height:24px;border-radius:50%;background:#198754;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">'+(si+1)+'</div>';
-html+='<div style="background:#fff;border-right:3px solid #198754;border-radius:0 8px 8px 0;padding:7px 10px;flex:1;text-align:right">';
-html+='<div style="font-size:11px;font-weight:700;color:#0F5132">'+esc(st.head||"")+'</div>';
-if(st.body)html+='<div style="font-size:10px;color:#444;line-height:1.5;margin-top:2px">'+esc(st.body)+'</div>';
-html+='</div></div>';
-if(si<steps.length-1){html+='<div style="text-align:center;margin-bottom:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BADBCC" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div>';}
-}
+html+='<div style="padding:10px 14px;font-size:11px;color:#444;border-radius:0 0 10px 10px;border:1px solid #e0e0e0;border-top:none">'+esc(text.substring(0,300))+'</div>';
 }
 html+='</div>';
 div.innerHTML=html;
