@@ -765,6 +765,7 @@ return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body
 if(!data)return;
 hideTyp();
 var reply=(data.reply||"");
+reply=reply.replace(/<br\s*\/?>/gi,"\n").replace(/<strong>(.*?)<\/strong>/gi,"**$1**").replace(/<[^>]+>/g,"").replace(/&quot;/g,'"').replace(/&amp;/g,"&").trim();
 var sumDiv=document.createElement("div");
 sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;margin-top:4px";
 var lines=reply.split(/\n+/);
@@ -772,21 +773,17 @@ var html="";
 for(var li=0;li<lines.length;li++){
 var line=lines[li].trim();
 if(!line)continue;
-var isBold=line.match(/^\*\*(.+?)\*\*[:\s]/)||line.match(/^\d+\.\s*\*\*(.+?)\*\*/);
-if(isBold){
-var head=line.replace(/^\d+\.\s*/,"").replace(/\*\*(.*?)\*\*/,"$1").replace(/:.*$/,"").trim();
-var rest=line.replace(/^\d+\.\s*/,"").replace(/\*\*[^*]+\*\*:?\s*/,"").trim();
+var boldMatch=line.match(/^(\d+\.\s*)?\*\*(.+?)\*\*:?\s*(.*)/);
+if(boldMatch){
+var head=boldMatch[2].trim();
+var rest=(boldMatch[3]||"").trim();
 html+='<div style="margin-bottom:10px;border-right:3px solid #0F5132;padding:8px 12px;background:#f0faf5;border-radius:0 8px 8px 0">';
 html+='<div style="font-size:12px;font-weight:700;color:#0F5132;margin-bottom:4px">'+esc(head)+'</div>';
 if(rest)html+='<div style="font-size:11px;color:#374151;line-height:1.7">'+esc(rest)+'</div>';
 html+='</div>';
-}else if(line.match(/^\d+\./)){
-var rest2=line.replace(/^\d+\.\s*/,"").trim();
-var num=line.match(/^(\d+)\./)[1];
-html+='<div style="margin-bottom:10px;border-right:3px solid #0F5132;padding:8px 12px;background:#f0faf5;border-radius:0 8px 8px 0;display:flex;gap:8px">';
-html+='<div style="min-width:20px;height:20px;border-radius:50%;background:#0F5132;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+num+'</div>';
-html+='<div style="font-size:11px;color:#374151;line-height:1.7">'+esc(rest2)+'</div>';
-html+='</div>';
+}else if(line.match(/^[\-•]\s*/)){
+var item=line.replace(/^[\-•]\s*/,"").trim();
+html+='<div style="font-size:11px;color:#374151;line-height:1.7;padding:3px 10px;border-right:2px solid #BADBCC;margin-bottom:5px">'+esc(item)+'</div>';
 }else{
 html+='<div style="font-size:12px;color:#374151;line-height:1.8;margin-bottom:8px">'+esc(line)+'</div>';
 }
