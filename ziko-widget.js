@@ -789,15 +789,17 @@ stopSending();
 if(rem<=0){addMsg("خلصت الرسائل! جرب بكره","bot");return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-stopSending();sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+var myGenSF=++streamGen;
 showTyp();
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' واختر style المناسب:\n- flow: لو الموضوع خطوات أو عملية متسلسلة\n- compare: لو الموضوع مقارنة بين حاجتين\n- facts: لو الموضوع فيه أرقام أو إحصائيات\n- concepts: لو الموضوع مفاهيم منفصلة\n\nJSON فقط:\nflow: {\"style\":\"flow\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\ncompare: {\"style\":\"compare\",\"title\":\"عنوان\",\"left\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]},\"right\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]}}\nfacts: {\"style\":\"facts\",\"title\":\"عنوان\",\"items\":[{\"num\":\"رقم\",\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nconcepts: {\"style\":\"concepts\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nمن 3 إلى 5 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
 .then(function(r){return r.json();})
 .then(function(data){
+if(streamGen!==myGenSF){return null;}
 hideTyp();
 renderInfographic(data.reply||"");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-if(rem<=0){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
+if(rem<=0){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return null;}
 var sep=document.createElement("div");
 sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#333;padding:10px 0 6px;margin:4px 0;display:flex;align-items:center;justify-content:center;gap:6px";
 sep.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><span>الخلاصة</span>';
@@ -808,6 +810,7 @@ return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body
 .then(function(r){if(!r)return;return r.json();})
 .then(function(data){
 if(!data)return;
+if(streamGen!==myGenSF){return;}
 hideTyp();
 var reply=(data.reply||"");
 reply=reply.replace(/<br\s*\/?>/gi,"\n").replace(/<strong>(.*?)<\/strong>/gi,"**$1**").replace(/<[^>]+>/g,"").replace(/&quot;/g,'"').replace(/&amp;/g,"&").trim();
