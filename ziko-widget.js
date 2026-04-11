@@ -911,22 +911,22 @@ if(trm.length>1&&def.length>2)terms.push({term:trm,def:def});
 }
 }
 }
-var div=document.createElement("div");div.className="zg-msg zg-bot";
-var inner='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;text-align:right">';
-inner+='<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-bottom:10px">';
-inner+='<span style="font-size:12px;font-weight:700;color:#0F5132">مصطلحات الدرس</span>';
-inner+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>';
+var div=document.createElement("div");
+div.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;max-width:480px;margin:8px 0";
+var inner='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;display:flex;align-items:center;justify-content:center;gap:7px">';
+inner+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>';
+inner+='<span style="font-size:12px;font-weight:700;color:#fff">مصطلحات الدرس</span>';
 inner+='</div>';
 for(var i=0;i<terms.length;i++){
 var t=terms[i];
 if(!t.term||!t.def||t.term.length<2)continue;
-inner+='<div style="border-right:3px solid #198754;padding:7px 10px;margin-bottom:8px;background:rgba(25,135,84,0.04);border-radius:0 8px 8px 0">';
-inner+='<div style="font-size:11px;font-weight:700;color:#0F5132;margin-bottom:3px">'+esc(t.term)+'</div>';
-inner+='<div style="font-size:10px;color:#444;line-height:1.6">'+esc(t.def)+'</div>';
+var isLast=i===terms.length-1;
+inner+='<div style="border-bottom:'+(isLast?'none':'0.5px solid #e0e0e0')+';padding:10px 14px;background:#fff;border-radius:'+(isLast?'0 0 10px 10px':'0')+'">';
+inner+='<div style="font-size:12px;font-weight:700;color:#0F5132;margin-bottom:4px;text-align:right">'+esc(t.term)+'</div>';
+inner+='<div style="font-size:11px;color:#444;line-height:1.6;text-align:right">'+esc(t.def)+'</div>';
 inner+='</div>';
 }
-if(!terms.length){inner+='<div style="font-size:11px;color:#444;line-height:1.7">'+esc(text.substring(0,400))+'</div>';}
-inner+='</div>';
+if(!terms.length){inner+='<div style="padding:10px 14px;font-size:11px;color:#444;border-radius:0 0 10px 10px;background:#fff">'+esc(text.substring(0,400))+'</div>';}
 div.innerHTML=inner;
 $msgs.appendChild(div);scrollBot();
 }
