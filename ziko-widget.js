@@ -1004,6 +1004,60 @@ closeToolsMenu();
 openExercise();
 }
 
+function handleRephrase(){
+if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" للتجديد","bot");return;}
+stopSending();
+var topic=page.lecture_title||page.course_name||"الدرس الحالي";
+var styles=[
+{id:"story",icon:"🎬",name:"كقصة",desc:"أحداث وشخصيات",prompt:"اشرح موضوع '"+topic+"' كقصة قصيرة بشخصيات وأحداث واقعية. ابدأ بـ 'تخيل إن...' أو 'كان فيه...'"},
+{id:"short",icon:"⚡",name:"مختصر جداً",desc:"نقاط بس",prompt:"لخص موضوع '"+topic+"' في 5 نقاط بس، كل نقطة سطر واحد. مباشر جداً بدون مقدمة."},
+{id:"compare",icon:"🔄",name:"بمقارنة",desc:"حاجة تعرفها",prompt:"اشرح موضوع '"+topic+"' بمقارنته بحاجة الطالب يعرفها من حياته اليومية أو تطبيقات مشهورة."},
+{id:"questions",icon:"❓",name:"بأسئلة",desc:"تكتشف بنفسك",prompt:"اشرح موضوع '"+topic+"' عن طريق أسئلة سقراطية توصل الطالب للمعنى بنفسه. اسأل سؤالاً وانتظر تفكيره."},
+{id:"realworld",icon:"🌍",name:"بأمثلة واقعية",desc:"أحداث حقيقية",prompt:"اشرح موضوع '"+topic+"' بأمثلة حقيقية من شركات أو أحداث حصلت فعلاً في العالم. اذكر أسماء حقيقية وأرقام."},
+{id:"deep",icon:"🔬",name:"بالعمق",desc:"تفاصيل واستثناءات",prompt:"اشرح موضوع '"+topic+"' بعمق أكاديمي للمتقدمين. ادخل في التفاصيل والاستثناءات والحالات الخاصة والـ edge cases."}
+];
+var msgDiv=document.createElement("div");
+msgDiv.className="zg-msg zg-bot";
+var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
+html+='<div style="font-size:11px;font-weight:700;color:#0F5132;margin-bottom:10px">كيف تحب أشرح لك؟</div>';
+html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+for(var i=0;i<styles.length;i++){
+var s=styles[i];
+html+='<div class="zg-reph-btn" data-prompt="'+esc(s.prompt)+'" style="background:#f0faf5;border:1.5px solid #BADBCC;border-radius:10px;padding:8px 10px;cursor:pointer;text-align:center;transition:all .2s">';
+html+='<div style="font-size:18px;margin-bottom:3px">'+s.icon+'</div>';
+html+='<div style="font-size:11px;font-weight:700;color:#0F5132">'+s.name+'</div>';
+html+='<div style="font-size:9px;color:#6b7280;margin-top:1px">'+s.desc+'</div>';
+html+='</div>';
+}
+html+='</div></div>';
+msgDiv.innerHTML=html;
+$msgs.appendChild(msgDiv);
+scrollBot();
+msgDiv.addEventListener("click",function(e){
+var btn=e.target.closest(".zg-reph-btn");
+if(!btn)return;
+var prompt=btn.getAttribute("data-prompt");
+if(!prompt)return;
+msgDiv.querySelectorAll(".zg-reph-btn").forEach(function(b){b.style.opacity="0.5";b.style.pointerEvents="none";});
+btn.style.opacity="1";btn.style.background="#d1fae5";btn.style.borderColor="#198754";
+if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
+sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
+var myGenR=++streamGen;
+showTyp();
+var sys="أنت مرشد تعليمي اسمك زيكو. نفذ التعليمات بدقة. نص عادي فقط بدون HTML. ابدأ مباشرة بالمحتوى.";
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+.then(function(r){if(!r.ok)throw new Error();return r.json();})
+.then(function(data){
+if(streamGen!==myGenR)return;
+hideTyp();
+typewriterMsg(data.reply||"","bot");
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+})
+.catch(function(){if(streamGen!==myGenR)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+});
+}
+
 function handleToolAction(id){
 closeToolsMenu();
 stopSending();
@@ -1011,6 +1065,7 @@ if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" لل
 if(id==="quiz"){openQuiz();return;}
 if(id==="summary_full"){handleSummaryFull();return;}
 if(id==="exercise"){handleExercise();return;}
+if(id==="rephrase"){handleRephrase();return;}
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var msgMap={
 glossary:"استخرج 5-7 مصطلحات تقنية من موضوع '"+topic+"'. كل مصطلح يكون بالعربي والإنجليزي. JSON فقط: {\"terms\":[{\"term\":\"الاسم بالعربي (English Name)\",\"def\":\"تعريف مختصر\"}]}. ابدأ بـ { مباشرة.",
