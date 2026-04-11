@@ -1014,7 +1014,7 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 var myGenM=++streamGen;
 showTyp();
-var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. لكل خطأ: اذكر الخطأ بوضوح، ثم اشرح ليه ده غلط، ثم قول الصح. استخدم ❌ قبل الخطأ و✅ قبل الصح. نص عادي بدون HTML.";
+var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. لكل خطأ استخدم هذا التنسيق بالضبط:\n❌ الخطأ: **[وصف الخطأ]** — [شرح ليه غلط]\n✅ الصح: **[الصح]**\n\nاستخدم ** للبولد. نص عادي بدون HTML.";
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي خبير. ركز على الأخطاء العملية الحقيقية اللي الطلاب بيقعوا فيها فعلاً."})})
 .then(function(r){if(!r.ok)throw new Error();return r.json();})
 .then(function(data){
@@ -1027,32 +1027,134 @@ sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.sen
 .catch(function(){if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 }
 
+var analyticalState={questions:[],current:0,answers:[]};
+
+function openAnalytical(){
+if(!$exOverlay)return;
+$exOverlay.classList.add("zg-ex-open");
+disableToolsBtn();
+showBackBtn(closeAnalytical);
+if($toolsWrap){$toolsWrap.style.opacity='0.4';$toolsWrap.style.pointerEvents='none';}
+if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:30px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز الأسئلة...</div></div>';
+if($exInput){$exInput.value="";$exInput.placeholder="اكتب إجابتك هنا...";}
+if($exSend)$exSend.textContent="إرسال الإجابة";
+var $imgBtnEl=document.getElementById("zg-ex-img-btn");
+if($imgBtnEl)$imgBtnEl.style.display="none";
+}
+
+function closeAnalytical(){
+analyticalState={questions:[],current:0,answers:[]};
+if(!$exOverlay)return;
+$exOverlay.classList.remove("zg-ex-open");
+if($exBody)$exBody.innerHTML="";
+if($exInput)$exInput.value="";
+if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.onclick=null;}
+var imgBtnEl=document.getElementById("zg-ex-img-btn");
+if(imgBtnEl)imgBtnEl.style.display="";
+enableToolsBtn();
+hideBackBtn();
+}
+
+function renderAnalyticalQ(){
+if(!$exBody)return;
+var q=analyticalState.questions[analyticalState.current];
+var total=analyticalState.questions.length;
+var num=analyticalState.current+1;
+var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:4px">';
+html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+html+='<div style="font-size:11px;color:#6b7280">سؤال '+num+' من '+total+'</div>';
+html+='<div style="display:flex;gap:4px">';
+for(var i=0;i<total;i++){
+html+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#1d4ed8':'#e0e0e0')+'">';
+html+='</div>';
+}
+html+='</div></div>';
+html+='<div style="background:#eff6ff;border-radius:10px;padding:14px;margin-bottom:14px;border-right:3px solid #1d4ed8">';
+html+='<div style="font-size:10px;color:#1d4ed8;margin-bottom:6px;font-weight:700">'+['فهم','تطبيق','تحليل'][analyticalState.current]+'</div>';
+html+='<div style="font-size:13px;font-weight:700;color:#1e3a8a;line-height:1.6">'+esc(q)+'</div>';
+html+='</div>';
+html+='</div>';
+$exBody.innerHTML=html;
+}
+
+function renderAnalyticalFeedback(feedback,isLast){
+if(!$exBody)return;
+var existing=$exBody.innerHTML;
+var html=existing+'<div style="border-top:1px solid #e0e0e0;margin-top:12px;padding-top:12px;direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
+html+=feedback.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+html+='</div>';
+if(isLast){
+html+='<button id="zg-an-close" style="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
+}else{
+html+='<button id="zg-an-next" style="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">السؤال التالي ←</button>';
+}
+$exBody.innerHTML=html;
+$exBody.scrollTop=$exBody.scrollHeight;
+var nextBtn=document.getElementById("zg-an-next");
+if(nextBtn)nextBtn.addEventListener("click",function(){
+analyticalState.current++;
+renderAnalyticalQ();
+if($exInput)$exInput.value="";
+});
+var closeBtn=document.getElementById("zg-an-close");
+if(closeBtn)closeBtn.addEventListener("click",function(){closeAnalytical();});
+}
+
+function submitAnalyticalAnswer(){
+var txt=($exInput&&$exInput.value)||"";
+if(!txt.trim()){if($exInput)$exInput.focus();return;}
+if($exSend)$exSend.disabled=true;
+var q=analyticalState.questions[analyticalState.current];
+var isLast=analyticalState.current>=analyticalState.questions.length-1;
+var topic=page.lecture_title||page.course_name||"الدرس الحالي";
+var loadHtml=$exBody.innerHTML+'<div style="text-align:center;padding:14px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div></div>';
+$exBody.innerHTML=loadHtml;
+$exBody.scrollTop=$exBody.scrollHeight;
+var sys="أنت مرشد تعليمي. صحح إجابة الطالب على السؤال بوضوح: ابدأ بـ ✅ لو صح أو ❌ لو غلط. اشرح الصواب بـ **بولد**. كن مشجعاً ومختصراً. نص عادي فقط.";
+var msg="السؤال: "+q+"\nإجابة الطالب: "+txt;
+var myGenAN=++streamGen;
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+.then(function(r){return r.json();})
+.then(function(data){
+if(streamGen!==myGenAN)return;
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+renderAnalyticalFeedback(data.reply||"",isLast);
+if($exSend)$exSend.disabled=false;
+})
+.catch(function(){if($exBody)$exBody.innerHTML+='<div style="color:#dc2626;padding:8px">حصل خطأ!</div>';if($exSend)$exSend.disabled=false;});
+}
+
 function handleAnalytical(){
 if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
 stopSending();
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
-var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
-sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
-var myGenA=++streamGen;
-showTyp();
-var prompt="اعمل 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة في الصعوبة:\nسؤال 1 (فهم): سؤال مباشر عن المفهوم\nسؤال 2 (تطبيق): سؤال عملي بمثال\nسؤال 3 (تحليل): سؤال يتطلب تفكير ومقارنة\nاكتب الأسئلة بس بدون إجابات. في النهاية قول للطالب: اكتب إجاباتك وزيكو هيصحح لك.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. اكتب أسئلة مقالية حقيقية زي الامتحانات. نص عادي بدون HTML."})})
-.then(function(r){if(!r.ok)throw new Error();return r.json();})
+analyticalState={questions:[],current:0,answers:[]};
+openAnalytical();
+var prompt="اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: سؤال فهم، سؤال تطبيق، سؤال تحليل. JSON فقط: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}";
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON فقط. لا كلام قبل أو بعد."})})
+.then(function(r){return r.json();})
 .then(function(data){
-if(streamGen!==myGenA)return;
-hideTyp();
-var reply=data.reply||"";
-window.__zikoAnalyticalMode=true;
-typewriterMsg(reply,"bot",function(){
-var note=document.createElement("div");
-note.style.cssText="background:#dbeafe;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:11px;color:#1d4ed8;direction:rtl;font-family:Tahoma,Geneva,sans-serif";
-note.textContent="اكتب إجاباتك في الشات وزيكو هيصحح لك 📝";
-$msgs.appendChild(note);scrollBot();
-});
+var reply=(data.reply||"").replace(/```json|```/g,"").trim();
+try{
+var parsed=JSON.parse(reply);
+analyticalState.questions=parsed.questions||[];
+}catch(e){
+analyticalState.questions=[reply];
+}
+if(analyticalState.questions.length===0){
+if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:20px;color:#dc2626">حصل خطأ، حاول تاني</div>';
+return;
+}
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+renderAnalyticalQ();
+if($exSend){
+$exSend.textContent="إرسال الإجابة";
+$exSend.onclick=function(){submitAnalyticalAnswer();};
+}
 })
-.catch(function(){if(streamGen!==myGenA)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(){
+if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:20px;color:#dc2626">حصل خطأ!</div>';
+});
 }
 
 function handleRephrase(){
@@ -1429,7 +1531,6 @@ stopSending();
 }
 
 function sysPr(){
-if(window.__zikoAnalyticalMode){window.__zikoAnalyticalMode=false;return "أنت مرشد تعليمي اسمك زيكو. الطالب أجاب على أسئلة تحليلية. صحح إجاباته بوضوح: ✅ الصح وليه، ❌ الغلط وكيف يصحح. في النهاية أعطه تقييم إجمالي من 100. نص عادي بدون HTML.";}
 var p="أنت مرشد تعليمي اسمك زيكو.\nأسلوبك: ودود، بسيط، مفيد.\n\nمهم جداً: لا تقتصر فقط على محتوى الدرس — أضف معلومات حديثة ومفيدة من معرفتك تكون إضافة حقيقية للطالب وتوسع فهمه للموضوع.";
 var lvlPrompt="";
 for(var lv=0;lv<LEVELS.length;lv++){if(LEVELS[lv].id===currentLevel){lvlPrompt=LEVELS[lv].prompt;break;}}
