@@ -795,7 +795,7 @@ fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.s
 hideTyp();
 renderInfographic(data.reply||"");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-if(rem<=0){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
+if(rem<=0){sending=false;hideStop();if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
 var sep=document.createElement("div");
 sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#333;padding:10px 0 6px;margin:4px 0;display:flex;align-items:center;justify-content:center;gap:6px";
 sep.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><span>الخلاصة</span>';
@@ -836,9 +836,12 @@ tempSum.innerHTML=html;
 sumDiv.innerHTML="";
 $msgs.appendChild(sumDiv);
 var sEls=Array.from(tempSum.children);
+showStop();
+var myGenS=++typewriterActive;
 var si=0;
 function addSumNext(){
-if(si>=sEls.length){scrollBot();return;}
+if(typewriterActive!==myGenS){hideStop();return;}
+if(si>=sEls.length){scrollBot();hideStop();return;}
 sumDiv.appendChild(sEls[si].cloneNode(true));
 scrollBot();
 si++;
@@ -846,7 +849,7 @@ setTimeout(addSumNext,150);
 }
 addSumNext();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
+sending=false;hideStop();if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 })
 .catch(function(){hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="\";";}});
 }
@@ -897,6 +900,7 @@ var tempEx=document.createElement("div");
 tempEx.innerHTML=html;
 $exBody.innerHTML="";
 var exEls=Array.from(tempEx.children);
+showStop();
 var ei=0;
 function addExNext(){
 if(ei>=exEls.length){window.__zikoExTask=reply.substring(0,200);return;}
@@ -1019,9 +1023,9 @@ else if(id==="glossary"){renderGlossary(reply);}
 else{typewriterMsg(reply,"bot");}
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
+sending=false;hideStop();if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 })
-.catch(function(){hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
+.catch(function(){hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;hideStop();if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
 }
 
 function renderInfographic(text){
@@ -1089,9 +1093,12 @@ $msgs.appendChild(div);
 var tempDiv=document.createElement("div");
 tempDiv.innerHTML=html;
 var children=Array.from(tempDiv.children);
+showStop();
+var myGenI=++typewriterActive;
 var di=0;
 function addNext(){
-if(di>=children.length)return;
+if(typewriterActive!==myGenI){hideStop();return;}
+if(di>=children.length){hideStop();return;}
 div.appendChild(children[di].cloneNode(true));
 scrollBot();
 di++;
@@ -1141,9 +1148,12 @@ tempG.innerHTML=inner;
 div.innerHTML="";
 $msgs.appendChild(div);
 var gItems=Array.from(tempG.children);
+showStop();
+var myGenG=++typewriterActive;
 var gi=0;
 function addGNext(){
-if(gi>=gItems.length){scrollBot();return;}
+if(typewriterActive!==myGenG){hideStop();return;}
+if(gi>=gItems.length){scrollBot();hideStop();return;}
 div.appendChild(gItems[gi].cloneNode(true));
 scrollBot();
 gi++;
@@ -1152,11 +1162,13 @@ setTimeout(addGNext,150);
 addGNext();
 }
 
+function showStop(){if($send&&!$send.classList.contains("zg-stop")){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}}
+function hideStop(){hideStop();}
 function stopSending(){
 typewriterActive++;
 if(currentAbortController){currentAbortController.abort();currentAbortController=null;}
 hideTyp();
-if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}
+hideStop();
 if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 sending=false;
 }
@@ -1164,9 +1176,10 @@ sending=false;
 
 function typewriterMsg(text,type,onDone){
 if(!$msgs)return;
+showStop();
+var myGen=++typewriterActive;
 var m=document.createElement("div");m.className="zg-msg zg-"+type;
 $msgs.appendChild(m);scrollBot();
-// Convert markdown to HTML first
 var h=text
 .replace(/^###\s+(.+)$/gm,"<strong>$1</strong>")
 .replace(/^##\s+(.+)$/gm,"<strong>$1</strong>")
@@ -1174,12 +1187,11 @@ var h=text
 .replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")
 .replace(/\*(.*?)\*/g,"<em>$1</em>")
 .replace(/\n/g,"<br>");
-// Split into words for smoother typewriter
 var words=h.split(/(<[^>]+>|\s+)/);
-var i=0;var built="";
-var speed=30;
+var i=0;var built="";var speed=25;
 function tick(){
-if(i>=words.length){m.innerHTML=built;if(onDone)onDone();scrollBot();return;}
+if(typewriterActive!==myGen){m.innerHTML=h;hideStop();return;}
+if(i>=words.length){m.innerHTML=built;hideStop();if(onDone)onDone();scrollBot();return;}
 built+=words[i]||"";
 m.innerHTML=built;
 i++;
