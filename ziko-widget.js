@@ -901,9 +901,11 @@ if($exSend)$exSend.disabled=false;
 
 function renderExerciseResult(reply){
 if(!$exBody)return;
+var loadDivs=$exBody.querySelectorAll("div[style*='text-align:center']");
+for(var ld=0;ld<loadDivs.length;ld++){if(loadDivs[ld].querySelector(".zg-typing"))loadDivs[ld].remove();}
 var lines=reply.split(/\n+/);
 var score=null;
-var html='<div style="border-top:2px solid #fde68a;margin-top:16px;padding-top:14px">';
+var html='<div style="border-top:2px solid #BADBCC;margin-top:16px;padding-top:14px">';
 html+='<div style="font-size:13px;font-weight:700;color:#0F5132;margin-bottom:10px;text-align:right;direction:rtl">نتيجة التقييم</div>';
 for(var i=0;i<lines.length;i++){
 var line=lines[i].trim();
@@ -921,10 +923,12 @@ html+='<div style="width:70px;height:70px;border-radius:50%;border:4px solid '+c
 html+='<div style="font-size:20px;font-weight:700;color:'+c+'">'+score+'</div>';
 html+='<div style="font-size:9px;color:'+c+'">/ 100</div></div></div>';
 }
-html+='<button onclick="closeExercise()" style="width:100%;margin-top:14px;padding:10px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
+html+='<button id="zg-ex-result-close" style="width:100%;margin-top:14px;padding:10px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
 html+='</div>';
 $exBody.innerHTML+=html;
 $exBody.scrollTop=$exBody.scrollHeight;
+var $rc=document.getElementById("zg-ex-result-close");
+if($rc)$rc.addEventListener("click",function(){closeExercise();});
 }
 
 function closeExercise(){
