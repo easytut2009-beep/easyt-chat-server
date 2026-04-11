@@ -1085,12 +1085,9 @@ var fbDiv=document.createElement("div");
 fbDiv.style.cssText="border-top:1px solid #e0e0e0;margin-top:10px;padding-top:10px;direction:rtl;font-family:Tahoma,Geneva,sans-serif;font-size:12px;line-height:1.7;color:#1f2937";
 fbDiv.innerHTML=(data.reply||"").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
 $exBody.appendChild(fbDiv);
+if(!isLast){
 var btn=document.createElement("button");
-btn.style.cssText="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif";
-if(isLast){
-btn.textContent="إغلاق ✓";
-btn.onclick=function(){closeAnalytical();};
-}else{
+btn.style.cssText="width:100%;margin-top:14px;padding:10px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif";
 btn.textContent="السؤال التالي ←";
 btn.onclick=function(){
 analyticalState.current++;
@@ -1098,8 +1095,10 @@ renderAnalyticalQuestion();
 if($exInput)$exInput.disabled=false;
 if($exSend){$exSend.disabled=false;}
 };
-}
 $exBody.appendChild(btn);
+}else{
+showBackBtn(closeAnalytical);
+}
 $exBody.scrollTop=$exBody.scrollHeight;
 if($exInput)$exInput.disabled=false;
 if($exSend)$exSend.disabled=false;
