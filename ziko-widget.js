@@ -767,7 +767,7 @@ hideTyp();
 var reply=(data.reply||"");
 reply=reply.replace(/<br\s*\/?>/gi,"\n").replace(/<strong>(.*?)<\/strong>/gi,"**$1**").replace(/<[^>]+>/g,"").replace(/&quot;/g,'"').replace(/&amp;/g,"&").trim();
 var sumDiv=document.createElement("div");
-sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;margin-top:4px";
+sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;max-width:480px;margin-top:4px";
 var lines=reply.split(/\n+/);
 var html="";
 for(var li=0;li<lines.length;li++){
@@ -832,33 +832,32 @@ text=(text||"").replace(/<br\s*\/?>/gi," ").replace(/&quot;/g,'"').replace(/&amp
 var start=text.indexOf("{");var end=text.lastIndexOf("}");
 var parsed=null;
 if(start!==-1&&end!==-1){try{parsed=JSON.parse(text.substring(start,end+1));}catch(e){parsed=null;}}
-var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%";
+var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;max-width:480px";
 var title=parsed?esc(parsed.title||"إنفوجراف الدرس"):"إنفوجراف الدرس";
 var items=[];
 if(parsed){
 if(parsed.steps&&parsed.steps.length)items=parsed.steps.map(function(s){return{head:s.head||"",sub:s.body||""};});
 else if(parsed.branches&&parsed.branches.length)items=parsed.branches.map(function(b){return{head:b.name||"",sub:b.detail||""};});
 }
-var colors=["#0F5132","#135f38","#186e40","#1d7d48","#227c46","#1d7a44"];
 var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
-html+='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;text-align:center">';
-html+='<span style="font-size:13px;font-weight:700;color:#fff">'+title+'</span></div>';
 if(items.length){
-for(var i=0;i<items.length;i++){
+var total=items.length;
+for(var i=0;i<total;i++){
 var it=items[i];
-var c=colors[Math.min(i+1,colors.length-1)];
-var isLast=i===items.length-1;
-var radius=isLast?"0 0 10px 10px":"0";
-html+='<div style="width:2px;height:7px;background:#BADBCC;margin-right:16px"></div>';
-html+='<div style="background:'+c+';border-radius:'+radius+';padding:9px 14px;display:flex;align-items:center;gap:10px;position:relative">';
-html+='<div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">'+(i+1)+'</div>';
-html+='<div style="flex:1;text-align:right">';
-html+='<div style="font-size:13px;font-weight:700;color:#fff">'+esc(it.head)+'</div>';
-if(it.sub)html+='<div style="font-size:11px;color:rgba(255,255,255,0.88);margin-top:3px">'+esc(it.sub)+'</div>';
-html+='</div></div>';
+var pct=Math.round(100-(i*(40/Math.max(total-1,1))));
+var pad=Math.round(i*(30/Math.max(total-1,1)));
+var green=Math.round(15+(i*10));
+var bgColor="hsl("+green+",70%,"+(22+(i*7))+"%)";
+var isFirst=i===0;var isLast=i===total-1;
+var br=isFirst?"10px 10px 0 0":isLast?"0 0 10px 10px":"0";
+html+='<div style="background:'+bgColor+';border-radius:'+br+';padding:10px 14px;margin-right:'+pad+'px;margin-left:'+pad+'px;text-align:center;position:relative">';
+html+='<div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:'+(it.sub?3:0)+'px">'+esc(it.head)+'</div>';
+if(it.sub)html+='<div style="font-size:11px;color:rgba(255,255,255,0.85)">'+esc(it.sub)+'</div>';
+html+='</div>';
+if(!isLast)html+='<div style="width:0;height:0;border-right:'+Math.round((pct/2)*1.5)+'px solid transparent;border-left:'+Math.round((pct/2)*1.5)+'px solid transparent;border-top:8px solid '+bgColor+';margin:0 auto"></div>';
 }
 }else{
-html+='<div style="padding:10px 14px;font-size:11px;color:#444;border-radius:0 0 10px 10px;border:1px solid #e0e0e0;border-top:none">'+esc(text.substring(0,300))+'</div>';
+html+='<div style="padding:10px;font-size:11px;color:#444;border:1px solid #e0e0e0;border-radius:8px">'+esc(text.substring(0,300))+'</div>';
 }
 html+='</div>';
 div.innerHTML=html;
