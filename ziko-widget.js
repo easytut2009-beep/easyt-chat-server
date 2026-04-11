@@ -1162,16 +1162,25 @@ function typewriterMsg(text,type,onDone){
 if(!$msgs)return;
 var m=document.createElement("div");m.className="zg-msg zg-"+type;
 $msgs.appendChild(m);scrollBot();
-var h=text.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");
-var chars=h.split("");
-var i=0;
-var speed=18;
+// Convert markdown to HTML first
+var h=text
+.replace(/^###\s+(.+)$/gm,"<strong>$1</strong>")
+.replace(/^##\s+(.+)$/gm,"<strong>$1</strong>")
+.replace(/^#\s+(.+)$/gm,"<strong>$1</strong>")
+.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")
+.replace(/\*(.*?)\*/g,"<em>$1</em>")
+.replace(/\n/g,"<br>");
+// Split into words for smoother typewriter
+var words=h.split(/(<[^>]+>|\s+)/);
+var i=0;var built="";
+var speed=30;
 function tick(){
-if(i>=chars.length){if(onDone)onDone();return;}
-m.innerHTML=h.substring(0,i+1).replace(/<[^>]*$/,"");
+if(i>=words.length){m.innerHTML=built;if(onDone)onDone();scrollBot();return;}
+built+=words[i]||"";
+m.innerHTML=built;
 i++;
 scrollBot();
-setTimeout(tick,speed);
+setTimeout(tick,words[i-1]&&words[i-1].match(/[^<>]/)?speed:0);
 }
 tick();
 return m;
