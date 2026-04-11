@@ -746,7 +746,7 @@ var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($send)$send.disabled=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 showTyp();
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' وارجع JSON فقط بدون أي نص آخر. لو مفاهيم: {\"type\":\"tree\",\"title\":\"العنوان\",\"branches\":[{\"name\":\"اسم\",\"detail\":\"تفصيل\"}]}. لو خطوات: {\"type\":\"flow\",\"title\":\"العنوان\",\"steps\":[{\"head\":\"عنوان\",\"body\":\"شرح\"}]}. من 4 إلى 6 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' واختر style المناسب:\n- flow: لو الموضوع خطوات أو عملية متسلسلة\n- compare: لو الموضوع مقارنة بين حاجتين\n- facts: لو الموضوع فيه أرقام أو إحصائيات\n- concepts: لو الموضوع مفاهيم منفصلة\n\nJSON فقط:\nflow: {\"style\":\"flow\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\ncompare: {\"style\":\"compare\",\"title\":\"عنوان\",\"left\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]},\"right\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]}}\nfacts: {\"style\":\"facts\",\"title\":\"عنوان\",\"items\":[{\"num\":\"رقم\",\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nconcepts: {\"style\":\"concepts\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nمن 3 إلى 5 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
 .then(function(r){return r.json();})
 .then(function(data){
 hideTyp();
@@ -754,8 +754,8 @@ renderInfographic(data.reply||"");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 if(rem<=0){sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
 var sep=document.createElement("div");
-sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#555;padding:10px 0 6px;margin:4px 0";
-sep.textContent="ملخص الدرس";
+sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#333;padding:10px 0 6px;margin:4px 0;display:flex;align-items:center;justify-content:center;gap:6px";
+sep.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><span>الخلاصة</span>';
 $msgs.appendChild(sep);
 showTyp();
 return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ بـ: تناول الدرس... قواعد صارمة: لا تستخدم HTML أو br أو strong أو أي tag. لا تذكر أوقات. استخدم ** للعناوين فقط. مثال: **الألوان الأساسية**: هي الألوان التي..."})});
@@ -833,33 +833,60 @@ var start=text.indexOf("{");var end=text.lastIndexOf("}");
 var parsed=null;
 if(start!==-1&&end!==-1){try{parsed=JSON.parse(text.substring(start,end+1));}catch(e){parsed=null;}}
 var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;max-width:480px";
-var title=parsed?esc(parsed.title||"إنفوجراف الدرس"):"إنفوجراف الدرس";
-var items=[];
-if(parsed){
-if(parsed.steps&&parsed.steps.length)items=parsed.steps.map(function(s){return{head:s.head||"",sub:s.body||""};});
-else if(parsed.branches&&parsed.branches.length)items=parsed.branches.map(function(b){return{head:b.name||"",sub:b.detail||""};});
+if(!parsed){div.innerHTML='<div style="padding:10px;font-size:11px;color:#444;border:1px solid #e0e0e0;border-radius:8px">'+esc(text.substring(0,300))+'</div>';$msgs.appendChild(div);scrollBot();return;}
+var title=esc(parsed.title||"إنفوجراف الدرس");
+var style=parsed.style||"concepts";
+var html='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;text-align:center"><span style="font-size:12px;font-weight:700;color:#fff">'+title+'</span></div>';
+
+if(style==="flow"){
+var items=parsed.items||[];
+for(var i=0;i<items.length;i++){
+var it=items[i];var isLast=i===items.length-1;
+var c=["#135f38","#186e40","#1d7d48","#227c46","#22845a"][i]||"#1d7d48";
+html+='<div style="background:'+c+';padding:10px 14px;border-radius:'+(isLast?"0 0 10px 10px":"0")+';display:flex;align-items:center;gap:10px">';
+html+='<div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.2);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(i+1)+'</div>';
+html+='<div style="flex:1;text-align:right"><div style="font-size:12px;font-weight:700;color:#fff">'+esc(it.head||"")+'</div>';
+if(it.sub)html+='<div style="font-size:10px;color:rgba(255,255,255,0.85);margin-top:2px">'+esc(it.sub)+'</div>';
+html+='</div></div>';
+if(!isLast)html+='<div style="text-align:center;background:#e8f5e9"><svg width="12" height="10" viewBox="0 0 12 10"><path d="M6 0v8M2 5l4 4 4-4" stroke="#0F5132" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></div>';
 }
-var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
-if(items.length){
-var total=items.length;
-for(var i=0;i<total;i++){
-var it=items[i];
-var pct=Math.round(100-(i*(40/Math.max(total-1,1))));
-var pad=Math.round(i*(30/Math.max(total-1,1)));
-var green=Math.round(15+(i*10));
-var bgColor="hsl("+green+",70%,"+(22+(i*7))+"%)";
-var isFirst=i===0;var isLast=i===total-1;
-var br=isFirst?"10px 10px 0 0":isLast?"0 0 10px 10px":"0";
-html+='<div style="background:'+bgColor+';border-radius:'+br+';padding:10px 14px;margin-right:'+pad+'px;margin-left:'+pad+'px;text-align:center;position:relative">';
-html+='<div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:'+(it.sub?3:0)+'px">'+esc(it.head)+'</div>';
-if(it.sub)html+='<div style="font-size:11px;color:rgba(255,255,255,0.85)">'+esc(it.sub)+'</div>';
+}else if(style==="compare"){
+var L=parsed.left||{};var R=parsed.right||{};
+var lp=L.points||[];var rp=R.points||[];
+html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#e0e0e0;border-radius:0 0 10px 10px;overflow:hidden">';
+html+='<div style="background:#0F5132;padding:8px;text-align:center"><div style="font-size:11px;font-weight:700;color:#fff">'+esc(L.label||"")+'</div></div>';
+html+='<div style="background:#198754;padding:8px;text-align:center"><div style="font-size:11px;font-weight:700;color:#fff">'+esc(R.label||"")+'</div></div>';
+var maxLen=Math.max(lp.length,rp.length);
+for(var i=0;i<maxLen;i++){
+html+='<div style="background:#f0faf5;padding:7px 10px;font-size:10px;color:#374151;text-align:center;border-bottom:0.5px solid #e0e0e0">'+esc(lp[i]||"")+'</div>';
+html+='<div style="background:#e8f5e9;padding:7px 10px;font-size:10px;color:#374151;text-align:center;border-bottom:0.5px solid #e0e0e0">'+esc(rp[i]||"")+'</div>';
+}
 html+='</div>';
-if(!isLast)html+='<div style="width:0;height:0;border-right:'+Math.round((pct/2)*1.5)+'px solid transparent;border-left:'+Math.round((pct/2)*1.5)+'px solid transparent;border-top:8px solid '+bgColor+';margin:0 auto"></div>';
+}else if(style==="facts"){
+var items=parsed.items||[];
+for(var i=0;i<items.length;i++){
+var it=items[i];var isLast=i===items.length-1;
+var c=["#0F5132","#186e40","#22845a"][i%3];
+html+='<div style="background:'+c+';padding:10px 14px;border-radius:'+(isLast?"0 0 10px 10px":"0")+';display:flex;align-items:center;gap:12px">';
+html+='<div style="font-size:22px;font-weight:700;color:#fff;min-width:44px;text-align:center">'+esc(it.num||"")+'</div>';
+html+='<div style="flex:1;border-right:1px solid rgba(255,255,255,0.2);padding-right:12px;text-align:right"><div style="font-size:12px;font-weight:700;color:#fff">'+esc(it.head||"")+'</div>';
+if(it.sub)html+='<div style="font-size:10px;color:rgba(255,255,255,0.85);margin-top:2px">'+esc(it.sub)+'</div>';
+html+='</div></div>';
+if(!isLast)html+='<div style="height:1px;background:#e0e0e0"></div>';
 }
 }else{
-html+='<div style="padding:10px;font-size:11px;color:#444;border:1px solid #e0e0e0;border-radius:8px">'+esc(text.substring(0,300))+'</div>';
+var items=parsed.items||[];
+var cols=items.length<=4?2:3;
+html+='<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:6px;padding:10px;background:#f9fafb;border-radius:0 0 10px 10px">';
+for(var i=0;i<items.length;i++){
+var it=items[i];var c=["#0F5132","#186e40","#1d7d48","#227c46","#22845a","#2aac6a"][i]||"#198754";
+html+='<div style="background:'+c+';border-radius:8px;padding:10px;text-align:center">';
+html+='<div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:'+(it.sub?3:0)+'px">'+esc(it.head||"")+'</div>';
+if(it.sub)html+='<div style="font-size:9px;color:rgba(255,255,255,0.85)">'+esc(it.sub)+'</div>';
+html+='</div>';
 }
 html+='</div>';
+}
 div.innerHTML=html;
 $msgs.appendChild(div);scrollBot();
 }
