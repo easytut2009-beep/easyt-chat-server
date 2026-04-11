@@ -308,6 +308,7 @@ w.innerHTML=''
 +'</div></div>'
 +'</div>'
 +'<div id="zg-header">'
++'<button id="zg-hdr-back" onclick="closeToolsMenu()" style="display:none;width:30px;height:30px;min-width:30px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:#fff;cursor:pointer;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>'
 +'<div id="zg-header-info">'
 +'<div id="zg-header-avatar"></div>'
 +'<div id="zg-header-text">'
@@ -654,7 +655,7 @@ function enableToolsBtn(){if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.
 function openQuiz(){
 if(!$quizOverlay)return;
 disableToolsBtn();
-closeToolsMenu();
+$toolsMenu&&$toolsMenu.classList.remove('zg-tools-open','zg-tools-show');
 quizState={active:false,questions:[],current:0,score:0,answered:false,count:10};
 $quizOverlay.classList.add("zg-quiz-open");
 if($quizSub)$quizSub.textContent=page.lecture_title||page.course_name||"";
@@ -830,6 +831,7 @@ function openExercise(){
 if(!$exOverlay)return;
 $exOverlay.classList.add("zg-ex-open");
 disableToolsBtn();
+$toolsMenu&&$toolsMenu.classList.remove('zg-tools-open','zg-tools-show');
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:30px 0"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز التمرين...</div></div>';
 if($exInput)$exInput.value="";
 exImgBase64=null;exImgType=null;
@@ -1281,7 +1283,7 @@ if($resize)$resize.addEventListener("click",function(e){e.preventDefault();e.sto
 $send.addEventListener("click",function(){doSend();});
 $inp.addEventListener("keypress",function(e){if(e.key==="Enter"){e.preventDefault();doSend();}});
 
-if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");});}});}
+if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");if($toolsWrap)$toolsWrap.style.display="none";var $hdrBack=document.getElementById("zg-hdr-back");if($hdrBack)$hdrBack.style.display="flex";});}});}
 var $tmClose=document.getElementById("zg-tools-menu-close");
 if($tmClose){$tmClose.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeToolsMenu();});}
 
