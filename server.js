@@ -9910,6 +9910,14 @@ app.get("/admin/debug", adminAuth, async (req, res) => {
   res.json(diag);
 });
 
+
+app.get('/ziko-widget.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(path.join(__dirname, 'ziko-widget.js'));
+});
+
+
 app.get("/health", async (req, res) => {
   let dbStatus = "unknown";
   if (supabase) {
