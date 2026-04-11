@@ -758,7 +758,7 @@ sep.style.cssText="text-align:center;font-size:10px;color:#9ca3af;padding:6px 0;
 sep.textContent="── ملخص ──";
 $msgs.appendChild(sep);
 showTyp();
-return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص '"+topic+"' في نقاط مرتبة مع شرح مختصر لكل نقطة.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بنص عادي بدون HTML."})});
+return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ الملخص بجملة مثل: تناول الدرس... أو يدور الدرس حول... بدون ذكر أوقات أو timestamps. نص عادي فقط بدون HTML."})});
 })
 .then(function(r){if(!r)return;return r.json();})
 .then(function(data){
@@ -807,17 +807,17 @@ text=(text||"").replace(/<br\s*\/?>/gi," ").replace(/&quot;/g,'"').replace(/&amp
 var start=text.indexOf("{");var end=text.lastIndexOf("}");
 var parsed=null;
 if(start!==-1&&end!==-1){try{parsed=JSON.parse(text.substring(start,end+1));}catch(e){parsed=null;}}
-var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif";
+var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%";
 var title=parsed?esc(parsed.title||"إنفوجراف الدرس"):"إنفوجراف الدرس";
 var items=[];
 if(parsed){
 if(parsed.steps&&parsed.steps.length)items=parsed.steps.map(function(s){return{head:s.head||"",sub:s.body||""};});
 else if(parsed.branches&&parsed.branches.length)items=parsed.branches.map(function(b){return{head:b.name||"",sub:b.detail||""};});
 }
-var colors=["#0F5132","#1a6b44","#228b55","#2aac66","#32cd77","#3aee88"];
+var colors=["#0F5132","#135f38","#186e40","#1d7d48","#227c46","#1d7a44"];
 var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
 html+='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;text-align:center">';
-html+='<span style="font-size:11px;font-weight:700;color:#fff">'+title+'</span></div>';
+html+='<span style="font-size:13px;font-weight:700;color:#fff">'+title+'</span></div>';
 if(items.length){
 for(var i=0;i<items.length;i++){
 var it=items[i];
@@ -828,8 +828,8 @@ html+='<div style="width:2px;height:7px;background:#BADBCC;margin-right:16px"></
 html+='<div style="background:'+c+';border-radius:'+radius+';padding:9px 14px;display:flex;align-items:center;gap:10px;position:relative">';
 html+='<div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">'+(i+1)+'</div>';
 html+='<div style="flex:1;text-align:right">';
-html+='<div style="font-size:11px;font-weight:700;color:#fff">'+esc(it.head)+'</div>';
-if(it.sub)html+='<div style="font-size:9px;color:rgba(255,255,255,0.75);margin-top:2px">'+esc(it.sub)+'</div>';
+html+='<div style="font-size:13px;font-weight:700;color:#fff">'+esc(it.head)+'</div>';
+if(it.sub)html+='<div style="font-size:11px;color:rgba(255,255,255,0.88);margin-top:3px">'+esc(it.sub)+'</div>';
 html+='</div></div>';
 }
 }else{
