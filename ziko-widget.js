@@ -1083,7 +1083,15 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 loadDiv.remove();
 var fbDiv=document.createElement("div");
 fbDiv.style.cssText="border-top:1px solid #e0e0e0;margin-top:10px;padding-top:10px;direction:rtl;font-family:Tahoma,Geneva,sans-serif;font-size:12px;line-height:1.7;color:#1f2937";
-fbDiv.innerHTML=(data.reply||"").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
+var cleanReply=(data.reply||"")
+.split("\n")
+.filter(function(line){
+var l=line.trim();
+return !l.includes("نتيجة التقييم") && !l.includes("إغلاق") && !l.includes("السؤال التالي") && !l.includes("تواصل مع فريق") && !l.includes("تواصل مع");
+})
+.join("\n")
+.trim();
+fbDiv.innerHTML=cleanReply.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
 $exBody.appendChild(fbDiv);
 if(!isLast){
 var btn=document.createElement("button");
