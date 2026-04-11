@@ -70,7 +70,7 @@ _s.textContent=''
 +'#zg-ctx-banner.zg-show #zg-ctx-banner-text{display:block}'
 +'#zg-ctx-banner-title{font-size:10px;font-weight:700;color:#0F5132;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
 +'#zg-ctx-banner-body{font-size:9px;color:#0F5132;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
-+'#zg-tools-menu{display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;z-index:500;flex-direction:column;overflow:hidden;border-radius:0;transform-origin:top right;transform:scale(0);opacity:0;transition:transform .25s cubic-bezier(0.34,1.56,0.64,1),opacity .2s ease}'
++'#zg-tools-menu{display:none;position:absolute;top:46px;left:0;right:0;bottom:0;background:#fff;z-index:500;flex-direction:column;overflow:hidden;border-radius:0;transform-origin:top right;transform:scale(0);opacity:0;transition:transform .25s cubic-bezier(0.34,1.56,0.64,1),opacity .2s ease}'
 +'#zg-tools-menu.zg-tools-show{display:flex}'
 +'#zg-tools-menu.zg-tools-open{transform:scale(1);opacity:1}'
 +'@keyframes zgMenuClose{from{transform:scale(1);opacity:1}to{transform:scale(0);opacity:0}}'
@@ -168,13 +168,11 @@ _s.textContent=''
 +'#zg-drop-overlay{display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(25,135,84,0.08);border:2px dashed #198754;border-radius:18px;z-index:10001;align-items:center;justify-content:center;pointer-events:none}'
 +'#zg-drop-overlay span{background:linear-gradient(135deg,#1E9B5E,#198754);color:white;padding:10px 20px;border-radius:12px;font-size:14px;font-weight:700;direction:rtl}'
 /* Quiz styles */
-+'#zg-quiz-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#E9ECEB;z-index:500;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
++'#zg-quiz-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:#E9ECEB;z-index:500;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-quiz-overlay.zg-quiz-open{display:flex}'
-+'#zg-ex-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;z-index:500;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
++'#zg-ex-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:#fff;z-index:500;display:none;flex-direction:column;direction:rtl;overflow:hidden}'
 +'#zg-ex-overlay.zg-ex-open{display:flex}'
-+'#zg-chat-box:has(#zg-ex-overlay.zg-ex-open) #zg-input-area{display:none}'
-+'#zg-chat-box:has(#zg-quiz-overlay.zg-quiz-open) #zg-input-area{display:none}'
-+'#zg-chat-box:has(#zg-tools-menu.zg-tools-open) #zg-input-area{display:none}'
+
 +'#zg-ex-hdr{background:#0F5132;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}'
 +'#zg-ex-title{font-size:13px;font-weight:700;color:#fff}'
 +'#zg-ex-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}'
@@ -308,7 +306,6 @@ w.innerHTML=''
 +'</div></div>'
 +'</div>'
 +'<div id="zg-header">'
-+'<button id="zg-back-btn" style="display:none;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:#fff;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>'
 +'<div id="zg-header-info">'
 +'<div id="zg-header-avatar"></div>'
 +'<div id="zg-header-text">'
@@ -650,30 +647,11 @@ function showWelcSugg(){var s=[];if(page.lecture_title)s=["اشرحلي الدر
 function showWelcome(){var m="أهلاً بيك! أنا <strong>زيكو</strong> مرشدك التعليمي.";if(page.lecture_title)m+="<br>لو عندك أي سؤال عن الدرس، اسألني!";else if(page.course_name)m+="<br>لو عندك أي سؤال عن الكورس، اسألني!";else m+="<br>اسألني أي سؤال وهشرحلك!";addMsg(m,"bot");showWelcSugg();}
 
 /* ==================== QUIZ ==================== */
-function showBackBtn(title,onBack){
-var $back=document.getElementById("zg-back-btn");
-var $hdrName=document.getElementById("zg-header-name");
-var $close=document.getElementById("zg-close");
-var $resize=document.getElementById("zg-resize-btn");
-if($back){$back.style.display="flex";$back._onBack=onBack;}
-if($hdrName)$hdrName.setAttribute("data-orig",$hdrName.textContent);
-if($close)$close.style.display="none";
-if($resize)$resize.style.display="none";
-}
-function hideBackBtn(){
-var $back=document.getElementById("zg-back-btn");
-var $close=document.getElementById("zg-close");
-var $resize=document.getElementById("zg-resize-btn");
-if($back){$back.style.display="none";}
-if($close)$close.style.display="";
-if($resize)$resize.style.display="";
-}
 function disableToolsBtn(){if($toolsWrap){$toolsWrap.style.opacity="0.4";$toolsWrap.style.pointerEvents="none";$toolsWrap.style.cursor="not-allowed";}}
 function enableToolsBtn(){if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";$toolsWrap.style.cursor="";}}
 function openQuiz(){
 if(!$quizOverlay)return;
 disableToolsBtn();
-showBackBtn("اختبار تفاعلي",closeQuiz);
 closeToolsMenu();
 quizState={active:false,questions:[],current:0,score:0,answered:false,count:10};
 $quizOverlay.classList.add("zg-quiz-open");
@@ -685,7 +663,6 @@ if(!$quizOverlay)return;
 $quizOverlay.classList.remove("zg-quiz-open");
 quizState.active=false;
 enableToolsBtn();
-hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
@@ -851,7 +828,6 @@ function openExercise(){
 if(!$exOverlay)return;
 $exOverlay.classList.add("zg-ex-open");
 disableToolsBtn();
-showBackBtn("تمرين عملي",closeExercise);
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:30px 0"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز التمرين...</div></div>';
 if($exInput)$exInput.value="";
 exImgBase64=null;exImgType=null;
@@ -966,7 +942,6 @@ if($exSend)$exSend.disabled=false;
 var exBtnsEl=document.getElementById("zg-ex-btns");
 if(exBtnsEl)exBtnsEl.style.display="";
 enableToolsBtn();
-hideBackBtn();
 }
 
 function handleExercise(){
@@ -1304,15 +1279,13 @@ if($resize)$resize.addEventListener("click",function(e){e.preventDefault();e.sto
 $send.addEventListener("click",function(){doSend();});
 $inp.addEventListener("keypress",function(e){if(e.key==="Enter"){e.preventDefault();doSend();}});
 
-if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");showBackBtn("أدوات زيكو",closeToolsMenu);});}});}
+if($toolsWrap){$toolsWrap.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if($toolsMenu){$toolsMenu.classList.add("zg-tools-show");requestAnimationFrame(function(){$toolsMenu.classList.add("zg-tools-open");});}});}
 var $tmClose=document.getElementById("zg-tools-menu-close");
 if($tmClose){$tmClose.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeToolsMenu();});}
 
 if($toolsMenu){$toolsMenu.addEventListener("click",function(e){var item=e.target.closest(".zg-tool-item");if(item){var toolId=item.getAttribute("data-tool");if(toolId)handleToolAction(toolId);}});}
 
 if($quizClose)$quizClose.addEventListener("click",function(){closeQuiz();});
-var $backBtn=document.getElementById("zg-back-btn");
-if($backBtn)$backBtn.addEventListener("click",function(){if(this._onBack)this._onBack();});
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
 if($exSend)$exSend.addEventListener("click",function(){submitExercise();});
 if($exImgBtn)$exImgBtn.addEventListener("click",function(){if($exImgFile)$exImgFile.click();});
