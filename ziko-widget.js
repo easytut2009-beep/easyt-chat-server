@@ -1013,10 +1013,10 @@ hideTyp();
 var reply=data.reply||"";
 if(id==="infographic"){renderInfographic(reply);}
 else if(id==="glossary"){renderGlossary(reply);}
-else{addMsg(reply,"bot");}
+else{typewriterMsg(reply,"bot");}
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
+sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 })
 .catch(function(){hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
 }
