@@ -1,4 +1,3 @@
-<script>
 (function(){
 "use strict";
 if(window.__zikoLoaded)return;
@@ -1079,4 +1078,3 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else init();
 window.addEventListener("load",function(){if(!document.getElementById("zg-toggle"))init();});
 })();
-</script>
