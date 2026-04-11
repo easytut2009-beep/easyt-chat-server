@@ -764,10 +764,34 @@ return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body
 .then(function(data){
 if(!data)return;
 hideTyp();
+var reply=(data.reply||"");
 var sumDiv=document.createElement("div");
-sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;font-size:12px;line-height:1.8;color:#1f2937;width:100%;text-align:right";
-var txt=(data.reply||"").replace(/\*\*(.*?)\*\*/g,"<strong style='color:#0F5132'>$1</strong>").replace(/\n/g,"<br>");
-sumDiv.innerHTML=txt;
+sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;width:100%;margin-top:4px";
+var lines=reply.split(/\n+/);
+var html="";
+for(var li=0;li<lines.length;li++){
+var line=lines[li].trim();
+if(!line)continue;
+var isBold=line.match(/^\*\*(.+?)\*\*[:\s]/)||line.match(/^\d+\.\s*\*\*(.+?)\*\*/);
+if(isBold){
+var head=line.replace(/^\d+\.\s*/,"").replace(/\*\*(.*?)\*\*/,"$1").replace(/:.*$/,"").trim();
+var rest=line.replace(/^\d+\.\s*/,"").replace(/\*\*[^*]+\*\*:?\s*/,"").trim();
+html+='<div style="margin-bottom:10px;border-right:3px solid #0F5132;padding:8px 12px;background:#f0faf5;border-radius:0 8px 8px 0">';
+html+='<div style="font-size:12px;font-weight:700;color:#0F5132;margin-bottom:4px">'+esc(head)+'</div>';
+if(rest)html+='<div style="font-size:11px;color:#374151;line-height:1.7">'+esc(rest)+'</div>';
+html+='</div>';
+}else if(line.match(/^\d+\./)){
+var rest2=line.replace(/^\d+\.\s*/,"").trim();
+var num=line.match(/^(\d+)\./)[1];
+html+='<div style="margin-bottom:10px;border-right:3px solid #0F5132;padding:8px 12px;background:#f0faf5;border-radius:0 8px 8px 0;display:flex;gap:8px">';
+html+='<div style="min-width:20px;height:20px;border-radius:50%;background:#0F5132;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+num+'</div>';
+html+='<div style="font-size:11px;color:#374151;line-height:1.7">'+esc(rest2)+'</div>';
+html+='</div>';
+}else{
+html+='<div style="font-size:12px;color:#374151;line-height:1.8;margin-bottom:8px">'+esc(line)+'</div>';
+}
+}
+sumDiv.innerHTML=html;
 $msgs.appendChild(sumDiv);scrollBot();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
