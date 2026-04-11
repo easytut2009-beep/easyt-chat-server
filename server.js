@@ -10720,6 +10720,54 @@ const embResponse = await openai.embeddings.create({
 /* ══════════════════════════════════════════════════════════
    SECTION 17: Start Server + 🎓 Guide Bot v2.0
    ══════════════════════════════════════════════════════════ */
+const GUIDE_DAILY_LIMIT = 15;
+
+function getToday() {
+  return new Date().toISOString().split("T")[0];
+}
+
+async function getGuideRemaining(sessionId) {
+  if (!supabase) return GUIDE_DAILY_LIMIT;
+  try {
+    const today = getToday();
+    const { data } = await supabase
+      .from("guide_rate_limits")
+      .select("count, date")
+      .eq("session_id", sessionId)
+      .single();
+    if (!data || data.date !== today) return GUIDE_DAILY_LIMIT;
+    return Math.max(0, GUIDE_DAILY_LIMIT - data.count);
+  } catch(e) {
+    return GUIDE_DAILY_LIMIT;
+  }
+}
+
+async function consumeGuideMsg(sessionId) {
+  if (!supabase) return;
+  try {
+    const today = getToday();
+    const { data } = await supabase
+      .from("guide_rate_limits")
+      .select("count, date")
+      .eq("session_id", sessionId)
+      .single();
+    if (!data || data.date !== today) {
+      await supabase.from("guide_rate_limits").upsert({
+        session_id: sessionId,
+        date: today,
+        count: 1,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "session_id" });
+    } else {
+      await supabase.from("guide_rate_limits")
+        .update({ count: data.count + 1, updated_at: new Date().toISOString() })
+        .eq("session_id", sessionId);
+    }
+  } catch(e) {
+    console.error("consumeGuideMsg error:", e.message);
+  }
+}
+
 async function startServer() {
   console.log("\n🚀 Starting Ziko Chatbot v10.9...\n");
   supabaseConnected = await testSupabaseConnection();
@@ -10729,34 +10777,7 @@ async function startServer() {
      ═══════════════════════════════════ */
   const guideConversations = {};
   const guideRateLimits = {};
-  const GUIDE_DAILY_LIMIT = 15;
   const GUIDE_MAX_HISTORY = 20;
-
-  function getToday() {
-    return new Date().toISOString().split("T")[0];
-  }
-
-  async function getGuideRemaining(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
-      return GUIDE_DAILY_LIMIT;
-    }
-    return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
-  }
-
-  async function consumeGuideMsg(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
-      guideRateLimits[sessionId] = { date: today, count: 0 };
-    }
-    guideRateLimits[sessionId].count++;
-  }
 
 
 // ═══════════════════════════════════════
