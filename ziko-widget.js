@@ -1047,7 +1047,7 @@ var q=analyticalState.questions[analyticalState.current];
 var total=analyticalState.questions.length;
 var num=analyticalState.current+1;
 var dots="";
-for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#0F5132':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
+for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<=analyticalState.current?'#0F5132':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
 var labels=['فهم','تطبيق','تحليل'];
 var lbl=labels[analyticalState.current]||'تحليل';
 $exBody.innerHTML='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:6px">'
@@ -1073,9 +1073,9 @@ loadDiv.style.cssText="text-align:center;padding:14px";
 loadDiv.innerHTML='<div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div>';
 $exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
-var sys="أنت مرشد تعليمي. صحح إجابة الطالب بوضوح. ابدأ بـ ✅ لو صح أو ❌ لو غلط ثم اشرح. استخدم **بولد** للنقاط المهمة. كن مشجعاً ومختصراً.";
+var sys="UPDATES_MODE\nأنت مصحح إجابات. السؤال: "+q+"\nصحح إجابة الطالب بوضوح بدون ذكر دقائق أو أوقات. ابدأ بـ ✅ لو صح أو ❌ لو غلط. استخدم **بولد** للنقاط المهمة. كن مختصراً لا تتجاوز 5 أسطر.";
 var myGenAN=++streamGen;
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"السؤال: "+q+"\nإجابة الطالب: "+answer,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:getSid()+"_analytical_eval_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
 .then(function(r){return r.json();})
 .then(function(data){
 if(streamGen!==myGenAN)return;
