@@ -754,8 +754,8 @@ renderInfographic(data.reply||"");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 if(rem<=0){sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return;}
 var sep=document.createElement("div");
-sep.style.cssText="text-align:center;font-size:10px;color:#9ca3af;padding:6px 0;border-top:1px dashed #e0e0e0;margin:4px 0";
-sep.textContent="── ملخص ──";
+sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#555;padding:10px 0 6px;margin:4px 0";
+sep.textContent="ملخص الدرس";
 $msgs.appendChild(sep);
 showTyp();
 return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ الملخص بجملة مثل: تناول الدرس... أو يدور الدرس حول... بدون ذكر أوقات أو timestamps. نص عادي فقط بدون HTML."})});
@@ -764,11 +764,15 @@ return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body
 .then(function(data){
 if(!data)return;
 hideTyp();
-addMsg(data.reply||"","bot");
+var sumDiv=document.createElement("div");
+sumDiv.style.cssText="direction:rtl;font-family:Tahoma,Geneva,sans-serif;font-size:12px;line-height:1.8;color:#1f2937;width:100%;text-align:right";
+var txt=(data.reply||"").replace(/\*\*(.*?)\*\*/g,"<strong style='color:#0F5132'>$1</strong>").replace(/\n/g,"<br>");
+sumDiv.innerHTML=txt;
+$msgs.appendChild(sumDiv);scrollBot();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 })
-.catch(function(){hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(){hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="\";";}});
 }
 
 function handleToolAction(id){
