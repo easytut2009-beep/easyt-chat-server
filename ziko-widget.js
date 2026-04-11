@@ -746,7 +746,7 @@ var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($send)$send.disabled=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 showTyp();
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"': لو مفاهيم اجعل type=tree, لو خطوات اجعل type=flow. رد بـ JSON صحيح من 4 إلى 6 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. رد بـ JSON فقط."})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' وارجع JSON فقط بدون أي نص آخر. لو مفاهيم: {\"type\":\"tree\",\"title\":\"العنوان\",\"branches\":[{\"name\":\"اسم\",\"detail\":\"تفصيل\"}]}. لو خطوات: {\"type\":\"flow\",\"title\":\"العنوان\",\"steps\":[{\"head\":\"عنوان\",\"body\":\"شرح\"}]}. من 4 إلى 6 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
 .then(function(r){return r.json();})
 .then(function(data){
 hideTyp();
@@ -803,11 +803,11 @@ sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opac
 }
 
 function renderInfographic(text){
-text=text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
+text=(text||"").replace(/<br\s*\/?>/gi," ").replace(/&quot;/g,'"').replace(/&amp;/g,"&").replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
 var start=text.indexOf("{");var end=text.lastIndexOf("}");
 var parsed=null;
 if(start!==-1&&end!==-1){try{parsed=JSON.parse(text.substring(start,end+1));}catch(e){parsed=null;}}
-var div=document.createElement("div");div.className="zg-msg zg-bot";
+var div=document.createElement("div");div.style.cssText="margin:8px 0;direction:rtl;font-family:Tahoma,Geneva,sans-serif";
 var title=parsed?esc(parsed.title||"إنفوجراف الدرس"):"إنفوجراف الدرس";
 var items=[];
 if(parsed){
@@ -816,10 +816,6 @@ else if(parsed.branches&&parsed.branches.length)items=parsed.branches.map(functi
 }
 var colors=["#0F5132","#1a6b44","#228b55","#2aac66","#32cd77","#3aee88"];
 var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
-html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;justify-content:flex-end">';
-html+='<span style="font-size:12px;font-weight:700;color:#0F5132">إنفوجراف الدرس</span>';
-html+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17 14v7"/></svg>';
-html+='</div>';
 html+='<div style="background:#0F5132;border-radius:10px 10px 0 0;padding:8px 14px;text-align:center">';
 html+='<span style="font-size:11px;font-weight:700;color:#fff">'+title+'</span></div>';
 if(items.length){
