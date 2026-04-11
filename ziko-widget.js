@@ -925,6 +925,7 @@ addExNext();
 }
 
 function submitExercise(){
+if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0)return;
 var txt=($exInput&&$exInput.value)||"";
 var hasImg=!!exImgBase64;
 if(!txt.trim()&&!hasImg){if($exInput)$exInput.focus();return;}
@@ -1108,10 +1109,10 @@ $exBody.appendChild(btn);
 $exBody.scrollTop=$exBody.scrollHeight;
 if(isLast){
 if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
-if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=null;}
+if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=function(e){e.stopImmediatePropagation();closeAnalytical();};}
 }else{
 if($exInput)$exInput.disabled=false;
-if($exSend){$exSend.disabled=false;$exSend.textContent="إرسال الإجابة";}
+if($exSend){$exSend.disabled=false;$exSend.onclick=null;}
 }
 })
 .catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
@@ -1682,9 +1683,7 @@ if($backBtn)$backBtn.addEventListener("click",function(){if(this._cb)this._cb();
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
 if($exSend)$exSend.addEventListener("click",function(){
 if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0){
-var isLastDone=analyticalState.current>=analyticalState.questions.length-1&&$exInput&&$exInput.style.display==="none";
-if(isLastDone){closeAnalytical();}
-else{submitAnalyticalAnswer();}
+submitAnalyticalAnswer();
 }else{
 submitExercise();
 }
