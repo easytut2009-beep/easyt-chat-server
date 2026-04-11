@@ -1036,10 +1036,7 @@ if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 if($exBody)$exBody.innerHTML="";
 if($exInput){$exInput.value="";$exInput.style.display="";$exInput.disabled=false;}
-if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.style.display="";$exSend.disabled=false;$exSend.onclick=null;}
-var exBtnsEl=document.getElementById("zg-ex-btns");if(exBtnsEl)exBtnsEl.style.display="";
-var doneBtns=$exOverlay?$exOverlay.querySelectorAll("button[data-done-btn]"):[];
-for(var i=0;i<doneBtns.length;i++){doneBtns[i].remove();}
+if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.style.background="";$exSend.disabled=false;$exSend.onclick=null;}
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="";
 enableToolsBtn();hideBackBtn();
 }
@@ -1111,20 +1108,10 @@ $exBody.appendChild(btn);
 $exBody.scrollTop=$exBody.scrollHeight;
 if(isLast){
 if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
-if($exSend){$exSend.disabled=true;$exSend.style.display="none";}
-var exBtnsEl=document.getElementById("zg-ex-btns");
-if(exBtnsEl)exBtnsEl.style.display="none";
-var doneBtn=document.createElement("button");
-doneBtn.setAttribute("data-done-btn","1");
-doneBtn.style.cssText="width:calc(100% - 24px);margin:10px 12px;padding:12px;background:#0F5132;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block";
-doneBtn.textContent="إغلاق والرجوع للشات ←";
-doneBtn.onclick=function(){closeAnalytical();};
-var exInputArea=document.getElementById("zg-ex-input-area");
-if(exInputArea)exInputArea.parentNode.insertBefore(doneBtn,exInputArea);
-else if($exOverlay)$exOverlay.appendChild(doneBtn);
+if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=null;}
 }else{
 if($exInput)$exInput.disabled=false;
-if($exSend){$exSend.disabled=false;$exSend.style.display="";}
+if($exSend){$exSend.disabled=false;$exSend.textContent="إرسال الإجابة";}
 }
 })
 .catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
@@ -1140,7 +1127,7 @@ $exOverlay.classList.add("zg-ex-open");
 disableToolsBtn();
 showBackBtn(closeAnalytical);
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="none";
-if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=function(){submitAnalyticalAnswer();};}
+if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=null;}
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
 var anSys="UPDATES_MODE\nأنت مساعد. اكتب 3 أسئلة تحليلية على الموضوع. رد بـ JSON نقي فقط بدون أي كلام: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}. لا تكتب أي شيء غير الـ JSON.";
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:"an_q_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
@@ -1693,7 +1680,15 @@ if($quizClose)$quizClose.addEventListener("click",function(){closeQuiz();});
 var $backBtn=document.getElementById("zg-back-btn");
 if($backBtn)$backBtn.addEventListener("click",function(){if(this._cb)this._cb();});
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
-if($exSend)$exSend.addEventListener("click",function(){submitExercise();});
+if($exSend)$exSend.addEventListener("click",function(){
+if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0){
+var isLastDone=analyticalState.current>=analyticalState.questions.length-1&&$exInput&&$exInput.style.display==="none";
+if(isLastDone){closeAnalytical();}
+else{submitAnalyticalAnswer();}
+}else{
+submitExercise();
+}
+});
 if($exImgBtn)$exImgBtn.addEventListener("click",function(){if($exImgFile)$exImgFile.click();});
 document.addEventListener("paste",function(e){
 if(!$exOverlay||!$exOverlay.classList.contains("zg-ex-open"))return;
