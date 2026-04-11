@@ -10728,34 +10728,58 @@ async function startServer() {
      Guide Bot State
      ═══════════════════════════════════ */
   const guideConversations = {};
-  const guideRateLimits = {};
   const GUIDE_DAILY_LIMIT = 15;
   const GUIDE_MAX_HISTORY = 20;
+
+  // إنشاء جدول rate limits لو مش موجود
+  if (supabase) {
+    await supabase.rpc('create_guide_rate_limits_if_not_exists').catch(() => {});
+  }
 
   function getToday() {
     return new Date().toISOString().split("T")[0];
   }
 
-  function getGuideRemaining(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
+  async function await getGuideRemaining(sessionId) {
+    if (!supabase) return GUIDE_DAILY_LIMIT;
+    try {
+      const today = getToday();
+      const { data } = await supabase
+        .from("guide_rate_limits")
+        .select("count, date")
+        .eq("session_id", sessionId)
+        .single();
+      if (!data || data.date !== today) return GUIDE_DAILY_LIMIT;
+      return Math.max(0, GUIDE_DAILY_LIMIT - data.count);
+    } catch(e) {
       return GUIDE_DAILY_LIMIT;
     }
-    return Math.max(0, GUIDE_DAILY_LIMIT - guideRateLimits[sessionId].count);
   }
 
-  function consumeGuideMsg(sessionId) {
-    const today = getToday();
-    if (
-      !guideRateLimits[sessionId] ||
-      guideRateLimits[sessionId].date !== today
-    ) {
-      guideRateLimits[sessionId] = { date: today, count: 0 };
+  async function await consumeGuideMsg(sessionId) {
+    if (!supabase) return;
+    try {
+      const today = getToday();
+      const { data } = await supabase
+        .from("guide_rate_limits")
+        .select("count, date")
+        .eq("session_id", sessionId)
+        .single();
+      if (!data || data.date !== today) {
+        await supabase.from("guide_rate_limits").upsert({
+          session_id: sessionId,
+          date: today,
+          count: 1,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "session_id" });
+      } else {
+        await supabase.from("guide_rate_limits")
+          .update({ count: data.count + 1, updated_at: new Date().toISOString() })
+          .eq("session_id", sessionId);
+      }
+    } catch(e) {
+      console.error("consumeGuideMsg error:", e.message);
     }
-    guideRateLimits[sessionId].count++;
   }
 
 
@@ -10991,7 +11015,7 @@ app.post("/api/guide", limiter, async (req, res) => {
           .json({ error: "Missing message or session_id" });
       }
 
-      const remaining = getGuideRemaining(session_id);
+      const remaining = await getGuideRemaining(session_id);
       if (remaining <= 0) {
         return res.json({
           reply:
@@ -11000,7 +11024,7 @@ app.post("/api/guide", limiter, async (req, res) => {
         });
       }
 
-      consumeGuideMsg(session_id);
+      await consumeGuideMsg(session_id);
 
   // 🆕 تحميل تعليمات المرشد التعليمي
       const guideInstructions = await loadBotInstructions("guide");
@@ -11323,7 +11347,7 @@ const completion = await gptWithRetry(() => openai.chat.completions.create({
       // Add to conversation history AFTER post-processing
       conv.messages.push({ role: "assistant", content: finalReply });
 
-      const newRemaining = getGuideRemaining(session_id);
+      const newRemaining = await getGuideRemaining(session_id);
 
 console.log(
         `🎓 Guide v2.1 | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || "N/A"} | Lecture: ${
@@ -11456,7 +11480,7 @@ res.json({
 
 res.status(500).json({
         reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
-        remaining_messages: getGuideRemaining(errSessionId),
+        remaining_messages: await getGuideRemaining(errSessionId),
         error: true,
       });
     }
@@ -11673,7 +11697,7 @@ const embRes = await openai.embeddings.create({
       const { session_id, course_name, lecture_title } = req.body;
       if (!session_id) return res.status(400).json({ error: "Missing session_id" });
 
-      const remaining = getGuideRemaining(session_id);
+      const remaining = await getGuideRemaining(session_id);
       if (remaining <= 0) return res.json({ error: "limit_reached" });
 
       const topic = lecture_title || course_name || "الدرس الحالي";
@@ -11704,7 +11728,7 @@ const embRes = await openai.embeddings.create({
         return [];
       };
 
-      consumeGuideMsg(session_id);
+      await consumeGuideMsg(session_id);
 
       res.json({
         topic,
@@ -11716,7 +11740,7 @@ const embRes = await openai.embeddings.create({
         exercise,
         analytical: parseJ(analyticalRaw, "qa"),
         questions: parseJ(questionsRaw, "questions"),
-        remaining_messages: getGuideRemaining(session_id)
+        remaining_messages: await getGuideRemaining(session_id)
       });
 
     } catch (e) {
@@ -12187,10 +12211,10 @@ app.post("/api/guide/quiz", limiter, async (req, res) => {
     const { session_id, course_name, lecture_title, count = 10 } = req.body;
     if (!session_id) return res.status(400).json({ error: "Missing session_id" });
 
-    const remaining = getGuideRemaining(session_id);
+    const remaining = await getGuideRemaining(session_id);
     if (remaining <= 0) return res.json({ error: "limit_reached" });
 
-    consumeGuideMsg(session_id);
+    await consumeGuideMsg(session_id);
 
     const topic = lecture_title || course_name || "الدرس الحالي";
     const numQ = Math.min(Math.max(parseInt(count) || 10, 5), 15);
@@ -12229,7 +12253,7 @@ app.post("/api/guide/quiz", limiter, async (req, res) => {
 
     res.json({
       questions: parsed.questions || [],
-      remaining_messages: getGuideRemaining(session_id)
+      remaining_messages: await getGuideRemaining(session_id)
     });
 
   } catch (e) {
@@ -12244,10 +12268,10 @@ app.post("/api/guide/tool", limiter, async (req, res) => {
     const { session_id, tool, course_name, lecture_title } = req.body;
     if (!session_id || !tool) return res.status(400).json({ error: "Missing params" });
 
-    const remaining = getGuideRemaining(session_id);
+    const remaining = await getGuideRemaining(session_id);
     if (remaining <= 0) return res.json({ error: "limit_reached" });
 
-    consumeGuideMsg(session_id);
+    await consumeGuideMsg(session_id);
 
     const topic = lecture_title || course_name || "الدرس الحالي";
 
@@ -12307,7 +12331,7 @@ app.post("/api/guide/tool", limiter, async (req, res) => {
     res.json({
       reply,
       tool,
-      remaining_messages: getGuideRemaining(session_id)
+      remaining_messages: await getGuideRemaining(session_id)
     });
 
   } catch (e) {
