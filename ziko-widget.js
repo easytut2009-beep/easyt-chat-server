@@ -615,13 +615,13 @@ var hash=0;
 for(var i=0;i<parts.length;i++){hash=((hash<<5)-hash)+parts.charCodeAt(i);hash|=0;}
 return "fp_"+(Math.abs(hash)).toString(36);
 }
-var zgFP=getFingerprint();
 function getSid(){
 if(!sid){
+var fp=getFingerprint();
 var stored=null;
 try{stored=localStorage.getItem(SK_SES);}catch(e){}
-if(stored){sid=stored;}
-else{sid="zg_"+zgFP+"_"+Date.now().toString(36);try{localStorage.setItem(SK_SES,sid);}catch(e){}}}
+if(stored&&stored.indexOf(fp)!==-1){sid=stored;}
+else{sid="zg_"+fp+"_"+Date.now().toString(36);try{localStorage.setItem(SK_SES,sid);}catch(e){}}}
 return sid;
 }
 try{sid=localStorage.getItem(SK_SES)||null;}catch(e){}
@@ -1611,6 +1611,7 @@ stopSending();
 var STREAM_API=API.replace("/guide","/guide/stream");
 currentAbortController=new AbortController();
 var myStreamGen=++streamGen;
+showTyp();
 fetch(STREAM_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
 .then(function(r){
 if(!r.ok)throw new Error("HTTP "+r.status);
