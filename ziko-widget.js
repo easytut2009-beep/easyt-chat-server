@@ -1275,6 +1275,13 @@ html+='.ftr{position:absolute;bottom:10mm;left:18mm;right:18mm;display:flex;just
 html+='@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{page-break-after:always}}';
 html+='</style></head><body>';
 html+='<div class="wm">easyt</div>';
+html+='<div id="zgToolbar" style="position:fixed;top:0;left:0;right:0;background:#1a1a1a;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;z-index:9999;direction:rtl;font-family:Tahoma">';
+html+='<span style="color:#fff;font-size:13px;font-weight:700">📄 موارد الدرس جاهزة</span>';
+html+='<div style="display:flex;align-items:center;gap:12px">';
+html+='<span style="color:rgba(255,255,255,0.6);font-size:11px">اختار "حفظ كـ PDF" من قائمة الطباعة</span>';
+html+='<button onclick="window.print()" style="background:#cc0000;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Tahoma">💾 احفظ كـ PDF</button>';
+html+='</div></div>';
+html+='<div style="height:44px"></div>';
 
 function hdr(){return'<div class="hdr"><img src="data:image/jpeg;base64,'+LOGO+'" alt="logo"><div class="hdr-info"><h1>موارد الدرس التعليمية</h1><p>'+esc(title)+'</p></div><div class="hdr-site">easyt.online</div></div>';}
 
@@ -1322,7 +1329,8 @@ html+='</div>';
 html+='<div class="ftr"><span>easyt.online — جميع الحقوق محفوظة</span><span>4 / 4</span></div>';
 html+='</div>';
 
-html+='<script>window.onload=function(){document.title="'+fileName+'";setTimeout(function(){window.print();},500);}<\/script>';
+html+='<script>window.onload=function(){document.title="'+fileName+'";};<\/script>';
+html+='<style>@media print{#zgToolbar,div[style*="height:44px"]{display:none!important}}<\/style>';
 html+='</body></html>';
 
 var w=window.open("","_blank","width=900,height=700");
