@@ -201,36 +201,39 @@ _s.textContent=''
 +'#zg-quiz-sub{font-size:9px;color:rgba(255,255,255,0.7);margin-top:1px}'
 +'#zg-quiz-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}'
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
-+'#zg-quiz-body{flex:1;overflow-y:auto;padding:70px 20px 20px;display:flex;flex-direction:column;align-items:stretch}'
-/* Quiz count screen */
-+'.zg-count-title{font-size:18px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:16px;width:100%}'
-+'.zg-count-sub{font-size:13px;color:#374151;text-align:center;margin-bottom:36px;width:100%}'
-+'.zg-count-row{display:flex;gap:20px;justify-content:center;margin-bottom:0;width:100%}'
-+'.zg-count-btn{width:88px;height:88px;border-radius:16px;border:2px solid #badbcc;background:#f9fafb;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:6px;transition:all .2s;font-family:Tahoma,Geneva,sans-serif}'
-+'.zg-count-btn.zg-count-active{border-color:#198754;background:#d1e7dd}'
-+'.zg-count-num{font-size:26px;font-weight:700;color:#0F5132}'
-+'.zg-count-lbl{font-size:8px;color:#9ca3af}'
++'#zg-quiz-body{flex:1;overflow-y:auto;padding:32px 18px 24px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
+/* Count screen */
++'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
++'.zg-count-sub{font-size:13px;color:#6b7280;text-align:center;margin-bottom:32px;width:100%}'
++'.zg-count-row{display:flex;gap:14px;justify-content:center;margin-bottom:32px;width:100%}'
++'.zg-count-btn{flex:1;max-width:100px;padding:18px 10px;border-radius:16px;border:2px solid #e0e0e0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:4px;transition:all .2s;font-family:Tahoma,Geneva,sans-serif}'
++'.zg-count-btn.zg-count-active{border-color:#198754;background:#f0faf5}'
++'.zg-count-num{font-size:28px;font-weight:700;color:#0F5132}'
++'.zg-count-lbl{font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif}'
++'.zg-count-btn.zg-count-active .zg-count-num{color:#198754}'
 +'.zg-count-btn.zg-count-active .zg-count-lbl{color:#198754}'
-+'.zg-start-btn{width:85%;min-height:58px;align-self:center;display:flex !important;align-items:center;justify-content:center;background:#198754 !important;color:#fff !important;border:none !important;border-radius:14px;padding:14px 6px !important;font-size:16px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;gap:8px;box-sizing:border-box}'
-+'.zg-start-btn svg{width:13px;height:13px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round}'
-/* Quiz question screen */
-+'.zg-progress-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}'
-+'.zg-progress-q{font-size:10px;font-weight:700;color:#0F5132}'
-+'.zg-progress-pct{font-size:9px;color:#9ca3af}'
-+'.zg-progress-bar{height:5px;background:#e0e0e0;border-radius:4px;margin-bottom:14px}'
-+'.zg-progress-fill{height:5px;background:#198754;border-radius:4px;transition:width .4s ease}'
-+'.zg-q-text{font-size:14px;font-weight:700;color:#222;line-height:1.6;margin-bottom:12px;margin-top:16px;text-align:right;width:100%}'
-+'.zg-q-opts{display:flex;flex-direction:column;gap:7px}'
-+'.zg-q-opt{padding:16px 16px !important;min-height:52px;border-radius:10px;border:1.5px solid #e0e0e0 !important;background:#fff !important;font-size:13px;color:#374151;cursor:pointer;display:flex !important;align-items:center;gap:10px;text-align:right;direction:rtl;transition:all .2s;font-family:Tahoma,Geneva,sans-serif;width:100%;box-sizing:border-box}'
-+'.zg-q-opt-letter{width:22px;height:22px;border-radius:50%;background:#e9eceb;font-size:10px;font-weight:700;color:#6b7280;display:flex;align-items:center;justify-content:center;flex-shrink:0}'
-+'.zg-q-opt.zg-opt-correct{border-color:#198754;background:#d1e7dd}'
++'.zg-start-btn{width:100%;align-self:center;display:flex !important;align-items:center;justify-content:center;background:#198754 !important;color:#fff !important;border:none !important;border-radius:14px;padding:18px 12px !important;font-size:15px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;gap:8px;box-sizing:border-box;letter-spacing:0.3px}'
++'.zg-start-btn svg{width:14px;height:14px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round}'
+/* Progress bar only - no text */
++'.zg-progress-bar{height:6px;background:#e5e7eb;border-radius:6px;margin-bottom:24px;width:100%}'
++'.zg-progress-fill{height:6px;background:linear-gradient(90deg,#198754,#34d399);border-radius:6px;transition:width .5s ease}'
+/* Question */
++'.zg-q-text{font-size:15px;font-weight:700;color:#111;line-height:1.7;margin-bottom:20px;text-align:right;width:100%;direction:rtl}'
+/* Options */
++'.zg-q-opts{display:flex;flex-direction:column;gap:10px;width:100%}'
++'.zg-q-opt{padding:14px 16px !important;border-radius:12px;border:1.5px solid #e5e7eb !important;background:#fff !important;font-size:14px;color:#374151;cursor:pointer;display:flex !important;align-items:center;gap:12px;direction:rtl;transition:all .18s;font-family:Tahoma,Geneva,sans-serif;width:100%;box-sizing:border-box;text-align:right}'
++'.zg-q-opt-letter{min-width:30px;height:30px;border-radius:50%;background:#f3f4f6;font-size:12px;font-weight:700;color:#6b7280;display:flex;align-items:center;justify-content:center;flex-shrink:0}'
++'.zg-q-opt:hover:not(:disabled){border-color:#198754 !important;background:#f0faf5 !important}'
++'.zg-q-opt.zg-opt-correct{border-color:#198754 !important;background:#d1e7dd !important}'
 +'.zg-q-opt.zg-opt-correct .zg-q-opt-letter{background:#198754;color:#fff}'
-+'.zg-q-opt.zg-opt-wrong{border-color:#dc2626;background:#fee2e2}'
++'.zg-q-opt.zg-opt-wrong{border-color:#dc2626 !important;background:#fee2e2 !important}'
 +'.zg-q-opt.zg-opt-wrong .zg-q-opt-letter{background:#dc2626;color:#fff}'
-+'.zg-q-feedback{margin-top:16px;margin-bottom:8px;padding:14px 16px;border-radius:10px;font-size:14px;line-height:1.6}'
-+'.zg-q-feedback.zg-fb-correct{background:#d1e7dd;color:#0F5132}'
-+'.zg-q-feedback.zg-fb-wrong{background:#fee2e2;color:#991b1b}'
-+'.zg-next-btn{width:100%;min-height:52px;margin-top:12px;background:#198754 !important;color:#fff !important;border:none !important;border-radius:10px;padding:16px !important;font-size:13px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block;box-sizing:border-box}'
+/* Feedback */
++'.zg-q-feedback{margin-top:14px;margin-bottom:4px;padding:14px 16px;border-radius:12px;font-size:13px;line-height:1.7;direction:rtl;text-align:right}'
++'.zg-q-feedback.zg-fb-correct{background:#d1e7dd;color:#0a4a2a;border:1px solid #a3cfbb}'
++'.zg-q-feedback.zg-fb-wrong{background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5}'
+/* Next button */
++'.zg-next-btn{width:100%;margin-top:14px;background:#198754 !important;color:#fff !important;border:none !important;border-radius:12px;padding:16px 12px !important;font-size:15px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block !important;box-sizing:border-box;letter-spacing:0.3px}'
 /* Quiz result screen */
 +'.zg-result-circle-wrap{display:flex;justify-content:center;margin-bottom:14px;margin-top:4px}'
 +'.zg-result-circle{width:96px;height:96px;border-radius:50%;border:5px solid #198754;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f0faf5}'
@@ -725,7 +728,7 @@ hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
-$quizBody.innerHTML='<div style="text-align:center;padding:50px 0 4px">'
+$quizBody.innerHTML='<div style="text-align:center;padding:24px 0 0">'
 +'<div class="zg-count-title">كام سؤال عايز؟</div>'
 +'<div class="zg-count-sub">اختار عدد الأسئلة وابدأ الاختبار</div>'
 +'</div>'
@@ -734,7 +737,7 @@ $quizBody.innerHTML='<div style="text-align:center;padding:50px 0 4px">'
 +'<button class="zg-count-btn zg-count-active" data-n="10"><div class="zg-count-num">10</div><div class="zg-count-lbl">متوسط</div></button>'
 +'<button class="zg-count-btn" data-n="15"><div class="zg-count-num">15</div><div class="zg-count-lbl">شامل</div></button>'
 +'</div>'
-+'<button class="zg-start-btn" id="zg-quiz-start" style="margin-top:24px">'
++'<button class="zg-start-btn" id="zg-quiz-start">'
 +'ابدأ الاختبار'
 +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>'
 +'</button>';
@@ -788,8 +791,7 @@ var q=quizState.questions[quizState.current];
 var total=quizState.questions.length;
 var pct=Math.round((quizState.current/total)*100);
 var letters=["أ","ب","ج","د"];
-var html='<div class="zg-progress-top"><span class="zg-progress-q">السؤال '+(quizState.current+1)+' من '+total+'</span><span class="zg-progress-pct">'+pct+'%</span></div>'
-+'<div class="zg-progress-bar"><div class="zg-progress-fill" style="width:'+pct+'%"></div></div>'
+var html='<div class="zg-progress-bar"><div class="zg-progress-fill" style="width:'+pct+'%"></div></div>'
 +'<div class="zg-q-text">'+esc(q.q)+'</div>'
 +'<div class="zg-q-opts">';
 for(var i=0;i<q.opts.length;i++){html+='<button class="zg-q-opt" data-idx="'+i+'"><div class="zg-q-opt-letter">'+letters[i]+'</div>'+esc(q.opts[i])+'</button>';}
