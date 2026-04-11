@@ -1032,12 +1032,13 @@ sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.sen
 var analyticalState={questions:[],current:0};
 
 function closeAnalytical(){
-analyticalState={questions:[],current:0};
+analyticalState={questions:[],current:0,done:false};
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 if($exBody)$exBody.innerHTML="";
 if($exInput){$exInput.value="";$exInput.style.display="";$exInput.disabled=false;}
 if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.style.background="";$exSend.disabled=false;$exSend.onclick=null;}
+var exBtnsEl=document.getElementById("zg-ex-btns");if(exBtnsEl)exBtnsEl.style.display="";
 var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="";
 enableToolsBtn();hideBackBtn();
 }
@@ -1075,11 +1076,9 @@ loadDiv.innerHTML='<div class="zg-typing" style="justify-content:center"><div cl
 $exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
 var sys="UPDATES_MODE\nأنت مصحح إجابات. السؤال: "+q+"\nصحح إجابة الطالب بوضوح بدون ذكر دقائق أو أوقات. ابدأ بـ ✅ لو صح أو ❌ لو غلط. استخدم **بولد** للنقاط المهمة. كن مختصراً لا تتجاوز 5 أسطر.";
-var myGenAN=++streamGen;
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:"an_eval_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:sys})})
 .then(function(r){return r.json();})
 .then(function(data){
-if(streamGen!==myGenAN)return;
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 loadDiv.remove();
 var fbDiv=document.createElement("div");
@@ -1109,10 +1108,11 @@ $exBody.appendChild(btn);
 $exBody.scrollTop=$exBody.scrollHeight;
 if(isLast){
 if($exInput){$exInput.disabled=true;$exInput.style.display="none";}
-if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;$exSend.onclick=function(e){e.stopImmediatePropagation();closeAnalytical();};}
+analyticalState.done=true;
+if($exSend){$exSend.textContent="إغلاق والرجوع للشات ←";$exSend.style.background="#0F5132";$exSend.disabled=false;}
 }else{
 if($exInput)$exInput.disabled=false;
-if($exSend){$exSend.disabled=false;$exSend.onclick=null;}
+if($exSend)$exSend.disabled=false;
 }
 })
 .catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
@@ -1682,7 +1682,9 @@ var $backBtn=document.getElementById("zg-back-btn");
 if($backBtn)$backBtn.addEventListener("click",function(){if(this._cb)this._cb();});
 if($exClose)$exClose.addEventListener("click",function(){closeExercise();});
 if($exSend)$exSend.addEventListener("click",function(){
-if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0){
+if(analyticalState&&analyticalState.done){
+closeAnalytical();
+}else if(analyticalState&&analyticalState.questions&&analyticalState.questions.length>0){
 submitAnalyticalAnswer();
 }else{
 submitExercise();
