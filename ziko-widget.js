@@ -1014,7 +1014,7 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 var myGenM=++streamGen;
 showTyp();
-var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. لكل خطأ استخدم هذا التنسيق بالضبط:\n❌ الخطأ: **[وصف الخطأ]** — [شرح ليه غلط]\n✅ الصح: **[الصح]**\n\nاستخدم ** للبولد. نص عادي بدون HTML.";
+var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. استخدم هذا التنسيق لكل خطأ:\n❌ الخطأ: **[الخطأ بوضوح]** — [شرح ليه غلط]\n✅ الصح: **[الحل الصحيح]**\n\nالقاعدة: ❌ و✅ بدون بولد. كل حاجة بعد : تكون عادية ما عدا الكلمات بين ** تكون بولد.";
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي خبير. ركز على الأخطاء العملية الحقيقية اللي الطلاب بيقعوا فيها فعلاً."})})
 .then(function(r){if(!r.ok)throw new Error();return r.json();})
 .then(function(data){
@@ -1027,134 +1027,102 @@ sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.sen
 .catch(function(){if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 }
 
-var analyticalState={questions:[],current:0,answers:[]};
-
-function openAnalytical(){
-if(!$exOverlay)return;
-$exOverlay.classList.add("zg-ex-open");
-disableToolsBtn();
-showBackBtn(closeAnalytical);
-if($toolsWrap){$toolsWrap.style.opacity='0.4';$toolsWrap.style.pointerEvents='none';}
-if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:30px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز الأسئلة...</div></div>';
-if($exInput){$exInput.value="";$exInput.placeholder="اكتب إجابتك هنا...";}
-if($exSend)$exSend.textContent="إرسال الإجابة";
-var $imgBtnEl=document.getElementById("zg-ex-img-btn");
-if($imgBtnEl)$imgBtnEl.style.display="none";
-}
+var analyticalState={questions:[],current:0};
 
 function closeAnalytical(){
-analyticalState={questions:[],current:0,answers:[]};
+analyticalState={questions:[],current:0};
 if(!$exOverlay)return;
 $exOverlay.classList.remove("zg-ex-open");
 if($exBody)$exBody.innerHTML="";
-if($exInput)$exInput.value="";
+if($exInput){$exInput.value="";}
 if($exSend){$exSend.textContent="إرسال النتيجة للتقييم";$exSend.onclick=null;}
-var imgBtnEl=document.getElementById("zg-ex-img-btn");
-if(imgBtnEl)imgBtnEl.style.display="";
-enableToolsBtn();
-hideBackBtn();
+var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="";
+enableToolsBtn();hideBackBtn();
 }
 
-function renderAnalyticalQ(){
+function renderAnalyticalQuestion(){
 if(!$exBody)return;
 var q=analyticalState.questions[analyticalState.current];
 var total=analyticalState.questions.length;
 var num=analyticalState.current+1;
-var html='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:4px">';
-html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-html+='<div style="font-size:11px;color:#6b7280">سؤال '+num+' من '+total+'</div>';
-html+='<div style="display:flex;gap:4px">';
-for(var i=0;i<total;i++){
-html+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#1d4ed8':'#e0e0e0')+'">';
-html+='</div>';
-}
-html+='</div></div>';
-html+='<div style="background:#eff6ff;border-radius:10px;padding:14px;margin-bottom:14px;border-right:3px solid #1d4ed8">';
-html+='<div style="font-size:10px;color:#1d4ed8;margin-bottom:6px;font-weight:700">'+['فهم','تطبيق','تحليل'][analyticalState.current]+'</div>';
-html+='<div style="font-size:13px;font-weight:700;color:#1e3a8a;line-height:1.6">'+esc(q)+'</div>';
-html+='</div>';
-html+='</div>';
-$exBody.innerHTML=html;
-}
-
-function renderAnalyticalFeedback(feedback,isLast){
-if(!$exBody)return;
-var existing=$exBody.innerHTML;
-var html=existing+'<div style="border-top:1px solid #e0e0e0;margin-top:12px;padding-top:12px;direction:rtl;font-family:Tahoma,Geneva,sans-serif">';
-html+=feedback.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
-html+='</div>';
-if(isLast){
-html+='<button id="zg-an-close" style="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">إغلاق والرجوع للشات</button>';
-}else{
-html+='<button id="zg-an-next" style="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif">السؤال التالي ←</button>';
-}
-$exBody.innerHTML=html;
-$exBody.scrollTop=$exBody.scrollHeight;
-var nextBtn=document.getElementById("zg-an-next");
-if(nextBtn)nextBtn.addEventListener("click",function(){
-analyticalState.current++;
-renderAnalyticalQ();
-if($exInput)$exInput.value="";
-});
-var closeBtn=document.getElementById("zg-an-close");
-if(closeBtn)closeBtn.addEventListener("click",function(){closeAnalytical();});
+var dots="";
+for(var i=0;i<total;i++){dots+='<div style="width:8px;height:8px;border-radius:50%;background:'+(i<num?'#1d4ed8':'#d1d5db')+';display:inline-block;margin:0 2px"></div>';}
+$exBody.innerHTML='<div style="direction:rtl;font-family:Tahoma,Geneva,sans-serif;padding:6px">'
++'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
++'<div style="font-size:10px;color:#6b7280">سؤال '+num+' من '+total+'</div>'
++'<div>'+dots+'</div></div>'
++'<div style="background:#eff6ff;border-radius:10px;padding:14px;border-right:3px solid #1d4ed8;margin-bottom:8px">'
++'<div style="font-size:9px;color:#1d4ed8;font-weight:700;margin-bottom:6px">'+['فهم','تطبيق','تحليل'][analyticalState.current]||'تحليل'+'</div>'
++'<div style="font-size:13px;font-weight:700;color:#1e3a8a;line-height:1.6">'+esc(q)+'</div>'
++'</div></div>';
+if($exInput){$exInput.value="";$exInput.focus();}
 }
 
 function submitAnalyticalAnswer(){
-var txt=($exInput&&$exInput.value)||"";
-if(!txt.trim()){if($exInput)$exInput.focus();return;}
-if($exSend)$exSend.disabled=true;
+if(!$exInput||!$exInput.value.trim()){if($exInput)$exInput.focus();return;}
+var answer=$exInput.value.trim();
 var q=analyticalState.questions[analyticalState.current];
 var isLast=analyticalState.current>=analyticalState.questions.length-1;
-var topic=page.lecture_title||page.course_name||"الدرس الحالي";
-var loadHtml=$exBody.innerHTML+'<div style="text-align:center;padding:14px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div></div>';
-$exBody.innerHTML=loadHtml;
+if($exSend)$exSend.disabled=true;
+if($exInput)$exInput.disabled=true;
+var loadDiv=document.createElement("div");
+loadDiv.style.cssText="text-align:center;padding:14px";
+loadDiv.innerHTML='<div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div>';
+$exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
-var sys="أنت مرشد تعليمي. صحح إجابة الطالب على السؤال بوضوح: ابدأ بـ ✅ لو صح أو ❌ لو غلط. اشرح الصواب بـ **بولد**. كن مشجعاً ومختصراً. نص عادي فقط.";
-var msg="السؤال: "+q+"\nإجابة الطالب: "+txt;
+var sys="أنت مرشد تعليمي. صحح إجابة الطالب بوضوح. ابدأ بـ ✅ لو صح أو ❌ لو غلط ثم اشرح. استخدم **بولد** للنقاط المهمة. كن مشجعاً ومختصراً.";
 var myGenAN=++streamGen;
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"السؤال: "+q+"\nإجابة الطالب: "+answer,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
 .then(function(r){return r.json();})
 .then(function(data){
 if(streamGen!==myGenAN)return;
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-renderAnalyticalFeedback(data.reply||"",isLast);
+loadDiv.remove();
+var fbDiv=document.createElement("div");
+fbDiv.style.cssText="border-top:1px solid #e0e0e0;margin-top:10px;padding-top:10px;direction:rtl;font-family:Tahoma,Geneva,sans-serif;font-size:12px;line-height:1.7;color:#1f2937";
+fbDiv.innerHTML=(data.reply||"").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
+$exBody.appendChild(fbDiv);
+var btn=document.createElement("button");
+btn.style.cssText="width:100%;margin-top:14px;padding:10px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif";
+if(isLast){
+btn.textContent="إغلاق ✓";
+btn.onclick=function(){closeAnalytical();};
+}else{
+btn.textContent="السؤال التالي ←";
+btn.onclick=function(){
+analyticalState.current++;
+renderAnalyticalQuestion();
+if($exInput)$exInput.disabled=false;
+if($exSend){$exSend.disabled=false;}
+};
+}
+$exBody.appendChild(btn);
+$exBody.scrollTop=$exBody.scrollHeight;
+if($exInput)$exInput.disabled=false;
 if($exSend)$exSend.disabled=false;
 })
-.catch(function(){if($exBody)$exBody.innerHTML+='<div style="color:#dc2626;padding:8px">حصل خطأ!</div>';if($exSend)$exSend.disabled=false;});
+.catch(function(){loadDiv.remove();if($exBody){var e=document.createElement("div");e.style.cssText="color:#dc2626;padding:8px;font-size:11px";e.textContent="حصل خطأ!";$exBody.appendChild(e);}if($exSend)$exSend.disabled=false;if($exInput)$exInput.disabled=false;});
 }
 
 function handleAnalytical(){
 if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
 stopSending();
+analyticalState={questions:[],current:0};
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
-analyticalState={questions:[],current:0,answers:[]};
-openAnalytical();
-var prompt="اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: سؤال فهم، سؤال تطبيق، سؤال تحليل. JSON فقط: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON فقط. لا كلام قبل أو بعد."})})
-.then(function(r){return r.json();})
-.then(function(data){
-var reply=(data.reply||"").replace(/```json|```/g,"").trim();
-try{
-var parsed=JSON.parse(reply);
-analyticalState.questions=parsed.questions||[];
-}catch(e){
-analyticalState.questions=[reply];
-}
-if(analyticalState.questions.length===0){
-if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:20px;color:#dc2626">حصل خطأ، حاول تاني</div>';
-return;
-}
+if(!$exOverlay)return;
+$exOverlay.classList.add("zg-ex-open");
+disableToolsBtn();
+showBackBtn(closeAnalytical);
+var imgEl=document.getElementById("zg-ex-img-btn");if(imgEl)imgEl.style.display="none";
+if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=function(){submitAnalyticalAnswer();};}
+if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة الصعوبة. JSON فقط: {\"questions\":[\"سؤال1\",\"سؤال2\",\"سؤال3\"]}",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا كلام قبل أو بعد."})}).then(function(r){return r.json();}).then(function(data){
+var txt=(data.reply||"").replace(/```json|```/g,"").trim();
+try{analyticalState.questions=JSON.parse(txt).questions||[];}catch(e){analyticalState.questions=[];}
+if(!analyticalState.questions.length){if($exBody)$exBody.innerHTML='<div style="text-align:center;color:#dc2626;padding:20px;font-family:Tahoma">حصل خطأ، حاول تاني</div>';return;}
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
-renderAnalyticalQ();
-if($exSend){
-$exSend.textContent="إرسال الإجابة";
-$exSend.onclick=function(){submitAnalyticalAnswer();};
-}
-})
-.catch(function(){
-if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:20px;color:#dc2626">حصل خطأ!</div>';
-});
+renderAnalyticalQuestion();
+}).catch(function(){if($exBody)$exBody.innerHTML='<div style="text-align:center;color:#dc2626;padding:20px;font-family:Tahoma">حصل خطأ!</div>';});
 }
 
 function handleRephrase(){
@@ -1531,6 +1499,7 @@ stopSending();
 }
 
 function sysPr(){
+if(window.__zikoAnalyticalMode){window.__zikoAnalyticalMode=false;return "أنت مرشد تعليمي اسمك زيكو. الطالب أجاب على أسئلة تحليلية. صحح إجاباته بوضوح: ✅ الصح وليه، ❌ الغلط وكيف يصحح. في النهاية أعطه تقييم إجمالي من 100. نص عادي بدون HTML.";}
 var p="أنت مرشد تعليمي اسمك زيكو.\nأسلوبك: ودود، بسيط، مفيد.\n\nمهم جداً: لا تقتصر فقط على محتوى الدرس — أضف معلومات حديثة ومفيدة من معرفتك تكون إضافة حقيقية للطالب وتوسع فهمه للموضوع.";
 var lvlPrompt="";
 for(var lv=0;lv<LEVELS.length;lv++){if(LEVELS[lv].id===currentLevel){lvlPrompt=LEVELS[lv].prompt;break;}}
