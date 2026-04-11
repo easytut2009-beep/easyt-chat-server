@@ -125,8 +125,8 @@ _s.textContent=''
 +'#zg-input-area{padding:8px 12px !important;background:#E9ECEB !important;flex-shrink:0;border-top:1px solid #d0d0d0;position:relative;z-index:5}'
 +'#zg-input-wrap{display:flex;align-items:center;gap:8px;direction:ltr}'
 +'.zg-input-container{flex:1;position:relative;display:flex;align-items:center}'
-+'#zg-input{width:100%;padding:8px 38px 8px 36px !important;border-radius:20px;border:2px solid #e0e0e0;outline:none;font-size:16px;background:#fff;transition:border-color .2s,box-shadow .2s;direction:rtl;height:40px;font-family:Tahoma,Geneva,sans-serif;touch-action:manipulation}'
-+'#zg-input:focus{border-color:#198754;box-shadow:0 0 0 3px rgba(25,135,84,0.08)}'
++'#zg-input{width:100%;padding:8px 38px 8px 36px !important;border-radius:20px !important;border:1.5px solid #e0e0e0 !important;outline:none !important;box-shadow:none !important;font-size:16px;background:#fff;transition:border-color .2s;direction:rtl;height:40px;font-family:Tahoma,Geneva,sans-serif;touch-action:manipulation}'
++'#zg-input:focus{border-color:#198754 !important;box-shadow:none !important;outline:none !important}'
 +'#zg-input::placeholder{color:#aaa;font-size:14px}'
 +'#zg-mic{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;cursor:pointer;color:#bbb;transition:all .2s;z-index:2;display:flex;align-items:center;justify-content:center}'
 +'#zg-mic:hover{color:#888}'
@@ -139,7 +139,7 @@ _s.textContent=''
 +'#zg-img-btn:hover svg{color:#888}'
 +'#zg-img-file{position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0}'
 +'#zg-send{width:40px;height:40px;min-width:40px;background:linear-gradient(135deg,#1E9B5E,#198754);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .25s ease;padding:0;box-shadow:0 3px 10px rgba(25,135,84,0.3);order:0;flex-shrink:0}'
-+'#zg-send.zg-stop{background:linear-gradient(135deg,#dc2626,#b91c1c);box-shadow:0 3px 10px rgba(220,38,38,0.3)}'
++'#zg-send.zg-stop{background:linear-gradient(135deg,#0F5132,#198754);box-shadow:0 3px 10px rgba(25,135,84,0.4)}'
 +'#zg-send:hover{transform:scale(1.06);box-shadow:0 5px 16px rgba(25,135,84,0.4)}'
 +'#zg-send:active{transform:scale(0.92)}'
 +'#zg-send:disabled{opacity:0.4;cursor:not-allowed;transform:none}'
@@ -352,7 +352,7 @@ var IC={
 close:'<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
 max:'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>',
 restore:'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="8" width="13" height="13" rx="1"/><path d="M3 16V5a2 2 0 012-2h11"/></svg>',
-send:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>',
+send:'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
 mic:'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 1 3 3v8a3 3 0 0 1-6 0V4a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
 imgIcon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
 notifyX:'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>'
@@ -1196,7 +1196,7 @@ if(rem<=0){addMsg("خلصت رسائلك! باقي "+hoursUntilMidnight()+" لل
 var f=scanPage();if(f.course_name)page.course_name=f.course_name;if(f.lecture_title){page.lecture_title=f.lecture_title;lastLesson=f.lecture_title;}
 var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;
-if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';}
+if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 if($toolsWrap){$toolsWrap.style.opacity='0.4';$toolsWrap.style.pointerEvents='none';}
 if(hasImage){
 var imgHtml='<img src="data:'+selectedImageType+';base64,'+selectedImageBase64+'" class="zg-user-img" alt="صورة">';
