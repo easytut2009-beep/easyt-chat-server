@@ -800,6 +800,7 @@ hideTyp();
 renderInfographic(data.reply||"");
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 if(rem<=0){sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}return null;}
+if(streamGen!==myGenSF){return null;}
 var sep=document.createElement("div");
 sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#333;padding:10px 0 6px;margin:4px 0;display:flex;align-items:center;justify-content:center;gap:6px";
 sep.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><span>الخلاصة</span>';
@@ -807,7 +808,7 @@ $msgs.appendChild(sep);
 showTyp();
 return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ بـ: تناول الدرس... قواعد صارمة: لا تستخدم HTML أو br أو strong أو أي tag. لا تذكر أوقات. استخدم ** للعناوين فقط. مثال: **الألوان الأساسية**: هي الألوان التي..."})});
 })
-.then(function(r){if(!r)return;return r.json();})
+.then(function(r){if(!r)return;if(streamGen!==myGenSF)return;return r.json();})
 .then(function(data){
 if(!data)return;
 if(streamGen!==myGenSF){return;}
