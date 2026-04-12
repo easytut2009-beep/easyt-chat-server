@@ -111,10 +111,20 @@ async function analyzeIntent(message, history = []) {
 - لو is_ambiguous=true: ضيف clarify_question وclarify_options (2-4 خيارات)
 - لو type مش search: ضيف direct_reply بالعامية المصرية
 
+قواعد مهمة للـ keywords:
+- "كورس اكسيل" → keywords: ["اكسيل", "excel"] — مش "كورس اكسيل"
+- "ابني عايز يتعلم برمجة" → keywords: ["برمجة"] — مش "برمجة تعليم"
+- "أوتوكاد" → keywords: ["أوتوكاد", "autocad"]
+- "تعليم سباحة" → type: "info" مش search — المنصة تعليمية أكاديمية مش رياضية
+- الـ keywords = اسم الموضوع/البرنامج بس بدون أفعال أو كلمات زيادة
+
 أمثلة:
-"عايز اكسيل" → {"type":"search","keywords":["excel","اكسيل"],"is_ambiguous":false}
+"عايز اكسيل" → {"type":"search","keywords":["اكسيل","excel"],"is_ambiguous":false}
+"ابني عايز يتعلم برمجة" → {"type":"search","keywords":["برمجة"],"is_ambiguous":false}
+"أوتوكاد" → {"type":"search","keywords":["أوتوكاد","autocad"],"is_ambiguous":false}
+"تعليم سباحة" → {"type":"info","direct_reply":"مش عندنا كورسات سباحة، إحنا منصة تعليمية أكاديمية 😊 بتدور على حاجة تانية؟","is_ambiguous":false}
 "عايز تصميم" → {"type":"clarify","is_ambiguous":true,"clarify_question":"تصميم إيه بالظبط؟","clarify_options":["🎨 جرافيك وصور","🖥️ مواقع وتطبيقات","🏠 ديكور داخلي","📱 سوشيال ميديا"]}
-"سعر الاشتراك" → {"type":"subscription","direct_reply":"..."}
+"سعر الاشتراك" → {"type":"subscription","direct_reply":""}
 "أهلاً" → {"type":"greeting","direct_reply":"أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في منصة إيزي تي. بتدور على إيه النهارده؟"}`;
 
   try {
@@ -156,9 +166,15 @@ async function performSearch(keywords, instructors) {
 
   // 2. بحث في الكورسات
   try {
-    const courseResults = await searchCourses(keywords, [], null);
+    let courseResults = await searchCourses(keywords, [], null);
+    // لو مفيش — جرب كل keyword منفردة
+    if (!courseResults || courseResults.length === 0) {
+      for (const kw of keywords) {
+        const single = await searchCourses([kw], [], null).catch(() => []);
+        if (single && single.length > 0) { courseResults = single; break; }
+      }
+    }
     if (courseResults && courseResults.length > 0) {
-      // inject diploma info
       const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
       results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
     }
@@ -331,13 +347,17 @@ async function smartChat(message, sessionId) {
 
   // ── Subscription ──
   else if (intent.type === "subscription") {
-    reply = intent.direct_reply ||
-      `💳 <strong>أسعار الاشتراك:</strong><br><br>` +
-      `✨ <strong>سنوي:</strong> $59/سنة — أوفر وأحسن 🏆<br>` +
-      `📅 <strong>شهري:</strong> $25/شهر<br>` +
-      `📘 <strong>كورس منفرد:</strong> $10 في المتوسط<br>` +
-      `🎓 <strong>دبلومة:</strong> $29.99<br><br>` +
-      `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
+    const subReply = intent.direct_reply || "";
+    // لو GPT رد بسعر غلط أو مجهول، نستخدم الأسعار الصح
+    const hasWrongPrice = subReply.includes("500") || subReply.includes("جنيه") || subReply.includes("مش عارف");
+    reply = (!subReply || hasWrongPrice)
+      ? `💳 <strong>أسعار الاشتراك:</strong><br><br>` +
+        `✨ <strong>سنوي:</strong> $59/سنة — أوفر وأحسن 🏆<br>` +
+        `📅 <strong>شهري:</strong> $25/شهر<br>` +
+        `📘 <strong>كورس منفرد:</strong> ~$10<br>` +
+        `🎓 <strong>دبلومة:</strong> $29.99<br><br>` +
+        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`
+      : subReply;
     suggestions = ["إيه اللي بياخده الاشتراك؟", "فيه كوبون خصم؟", "دفع بطاقة أو فيزا؟"];
   }
 
