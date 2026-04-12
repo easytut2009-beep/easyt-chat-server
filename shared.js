@@ -895,41 +895,20 @@ console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 // 🔧 FIX: Cap terms to avoid Supabase query length limits
 const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
-// 🔧 Phase 1a: بحث في العنوان والـ keywords فقط (الأدق)
-const strictCols = ["title", "subtitle", "keywords", "domain"];
-const strictFilters = cappedIlikeTerms
-  .flatMap((t) => strictCols.map((col) => `${col}.ilike.%${t}%`))
-  .join(",");
-
-// 🔧 Phase 1b: بحث في الـ description كمان (أوسع)
+// 🔧 Phase 1: Search core fields (title, subtitle, description, keywords, domain)
 const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
 
 console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
-    // ابحث في العنوان أولاً
-    const strictResult = await supabase
+    const ilikePromise = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .or(strictFilters)
+      .or(coreFilters)
       .limit(30);
-
-    let ilikePromise;
-    if (!strictResult.error && strictResult.data && strictResult.data.length > 0) {
-      // لاقينا في العنوان/keywords — استخدمهم بدون الـ description
-      ilikePromise = Promise.resolve(strictResult);
-      console.log(`✅ Strict title/keywords match: ${strictResult.data.length} results`);
-    } else {
-      // مفيش في العنوان — جرب مع الـ description
-      ilikePromise = supabase
-        .from("courses")
-        .select(COURSE_SELECT_COLS)
-        .or(coreFilters)
-        .limit(30);
-      console.log(`⚠️ No strict match — falling back to description search`);
-    }
 
     const semanticPromise = openai
       ? (async () => {
@@ -963,13 +942,18 @@ const [ilikeResult, semanticResults] = await Promise.all([
     let allCourses = error ? [] : (courses || []);
     console.log(`🔍 Phase 1 got ${allCourses.length} results`);
 
-// 🔧 Phase 2: لو مفيش نتايج في العنوان — ابحث في الـ description
-    if (allCourses.length === 0) {
-      console.log(`🔍 Phase 2 — expanding to description search...`);
-      const deepCols = ["title", "subtitle", "description", "domain", "keywords"];
-const deepFilters = cappedIlikeTerms
-  .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
-  .join(",");
+// 🔧 Phase 2: لو أقل من 3 نتايج — وسع للـ syllabus وfull_content
+    if (allCourses.length < 3 && limitedTerms.length <= 4) {
+      console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
+      const deepCols = [
+        "title", "description", "subtitle",
+        "full_content", "page_content", "syllabus",
+        "objectives", "domain", "keywords",
+      ];
+      const deepIlikeTerms = expandArabicVariants(limitedTerms).slice(0, 10);
+      const deepFilters = deepIlikeTerms
+        .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
+        .join(",");
 
       const { data: deepResults } = await supabase
         .from("courses")
@@ -978,8 +962,10 @@ const deepFilters = cappedIlikeTerms
         .limit(30);
 
       if (deepResults && deepResults.length > 0) {
-        allCourses = deepResults;
-        console.log(`🔍 Phase 2 got ${deepResults.length} results`);
+        const existingIds = new Set(allCourses.map(c => c.id));
+        const newResults = deepResults.filter(c => !existingIds.has(c.id));
+        allCourses = [...allCourses, ...newResults];
+        console.log(`🔍 Phase 2 added ${newResults.length} deep results`);
       }
     }
 
