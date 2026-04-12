@@ -812,9 +812,9 @@ if(progDots){
   }
   progDots.innerHTML=dotsHtml;
 }
-var html='<div class="zg-q-card" style="padding:16px 20px !important"><div class="zg-q-text">'+esc(q.q)+'</div></div>'
-+'<div class="zg-q-opts">';
-for(var i=0;i<q.opts.length;i++){html+='<button class="zg-q-opt" data-idx="'+i+'"><div class="zg-q-opt-letter">'+letters[i]+'</div>'+esc(q.opts[i])+'</button>';}
+var html='<div style="background:#fff;border-radius:14px;padding:16px 20px;margin-bottom:14px;flex-shrink:0"><div style="font-size:15px;font-weight:700;color:#111;line-height:1.7;text-align:right;direction:rtl">'+esc(q.q)+'</div></div>'
++'<div class="zg-q-opts" style="display:flex;flex-direction:column;gap:0;width:100%">';
+for(var i=0;i<q.opts.length;i++){html+='<button class="zg-q-opt" data-idx="'+i+'" style="padding:14px 16px !important;margin-bottom:8px !important;border-radius:12px !important;border:1.5px solid #e5e7eb !important;background:#fff !important;font-size:14px;color:#374151;display:flex !important;align-items:center;gap:12px;direction:rtl;width:100%;box-sizing:border-box;text-align:right;font-family:Tahoma,Geneva,sans-serif"><div class="zg-q-opt-letter" style="min-width:30px;height:30px;border-radius:50%;background:#f3f4f6;font-size:12px;font-weight:700;color:#6b7280;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+letters[i]+'</div>'+esc(q.opts[i])+'</button>';}
 html+='</div>';
 $quizBody.innerHTML=html;
 var opts=$quizBody.querySelectorAll(".zg-q-opt");
