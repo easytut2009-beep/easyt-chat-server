@@ -434,9 +434,16 @@ async function formatResults(results, query) {
 
   // مفيش نتايج
   if (!found) {
+    // reset الـ session عشان المحادثة الجاية تبدأ نضيفة
+    session.hadClarify = false;
+    session.clarifyCount = 0;
+    session.audience = null;
+    session.history = [];
+
     if (results.noDirectCourse) {
-      html = `مفيش كورس مستقل عن "${escapeHtml(shortQuery)}" دلوقتي 😊<br><br>`;
-      html += `لكن "${escapeHtml(shortQuery)}" بيتدرس كجزء من كورسات تانية — ممكن تدور على الأداة أو التخصص اللي بتستخدم فيه:<br><br>`;
+      html = `مش لاقي كورسات عن "${escapeHtml(shortQuery)}" في المنصة دلوقتي 😊<br><br>`;
+      html += `إيزي تي منصة تعليمية متخصصة في الجرافيك والبرمجة والأعمال والذكاء الاصطناعي وغيرها.<br>`;
+      html += `ممكن تدور على حاجة في مجالاتنا؟<br><br>`;
       html += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a><br>`;
       html += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
     } else {
