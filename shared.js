@@ -895,20 +895,41 @@ console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 // 🔧 FIX: Cap terms to avoid Supabase query length limits
 const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
-// 🔧 Phase 1: Search in title + description + subtitle + keywords + domain
-const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+// 🔧 Phase 1a: بحث في العنوان والـ keywords فقط (الأدق)
+const strictCols = ["title", "subtitle", "keywords", "domain"];
+const strictFilters = cappedIlikeTerms
+  .flatMap((t) => strictCols.map((col) => `${col}.ilike.%${t}%`))
+  .join(",");
 
+// 🔧 Phase 1b: بحث في الـ description كمان (أوسع)
+const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
 
 console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
-    const ilikePromise = supabase
+    // ابحث في العنوان أولاً
+    const strictResult = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .or(coreFilters)
+      .or(strictFilters)
       .limit(30);
+
+    let ilikePromise;
+    if (!strictResult.error && strictResult.data && strictResult.data.length > 0) {
+      // لاقينا في العنوان/keywords — استخدمهم بدون الـ description
+      ilikePromise = Promise.resolve(strictResult);
+      console.log(`✅ Strict title/keywords match: ${strictResult.data.length} results`);
+    } else {
+      // مفيش في العنوان — جرب مع الـ description
+      ilikePromise = supabase
+        .from("courses")
+        .select(COURSE_SELECT_COLS)
+        .or(coreFilters)
+        .limit(30);
+      console.log(`⚠️ No strict match — falling back to description search`);
+    }
 
     const semanticPromise = openai
       ? (async () => {
