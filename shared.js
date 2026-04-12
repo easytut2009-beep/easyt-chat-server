@@ -121,6 +121,33 @@ function normalizeArabic(text) {
     .replace(/ـ+/g, "");
 }
 
+// ─── gptWithRetry ───
+async function gptWithRetry(callFn, maxRetries = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await callFn();
+    } catch (error) {
+      lastError = error;
+      const isRetryable = 
+        error.status === 429 ||  // Rate limit
+        error.status === 500 ||  // Server error
+        error.status === 503 ||  // Service unavailable
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ECONNRESET';
+      
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+      
+      const waitMs = attempt * 1000; // 1s, 2s
+      console.log(`⚠️ GPT retry ${attempt}/${maxRetries} after ${waitMs}ms — ${error.message}`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+  throw lastError;
+}
+
 // ─── levenshteinDistance ───
 function levenshteinDistance(a, b) {
   if (a.length === 0) return b.length;
@@ -1241,6 +1268,6 @@ module.exports = {
   ALL_COURSES_URL, ALL_DIPLOMAS_URL, SUBSCRIPTION_URL,
   COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS,
   CATEGORIES, WHATSAPP_SUPPORT_LINK,
-  BASIC_STOP_WORDS, PAYMENTS_URL, CACHE_TTL,
+  BASIC_STOP_WORDS, PAYMENTS_URL, CACHE_TTL, gptWithRetry,
   initShared,
 };
