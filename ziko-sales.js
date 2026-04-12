@@ -1993,6 +1993,39 @@ function hasActiveConversationContext(sessionId) {
 }
 
 
+
+// ─── findBestCorrectionMatch ───
+async function findBestCorrectionMatch(userMessage, preloadedCorrections = null) {
+  if (!userMessage || userMessage.trim().length < 3) return null;
+  try {
+    const corrections = preloadedCorrections || await loadAllCorrections();
+    if (!corrections || corrections.length === 0) return null;
+    let bestMatch = null;
+    let bestScore = 0;
+    for (const corr of corrections) {
+      const hasReply = corr.corrected_reply && corr.corrected_reply.trim().length > 0;
+      const hasCourseIds = Array.isArray(corr.correct_course_ids) && corr.correct_course_ids.length > 0;
+      if (!hasReply && !hasCourseIds) continue;
+      const score1 = correctionMatchScore(userMessage, corr.original_question || "");
+      let score2 = 0;
+      const um = corr.user_message || "";
+      if (um.trim().length > 0 && um !== (corr.original_question || "")) {
+        score2 = correctionMatchScore(userMessage, um);
+      }
+      const finalScore = Math.max(score1, score2);
+      if (finalScore > bestScore) { bestScore = finalScore; bestMatch = corr; }
+    }
+    if (bestMatch && bestScore >= CORRECTION_CONTEXT_THRESHOLD) {
+      console.log(`📝 [Correction] Best match: score=${bestScore.toFixed(3)} | Q: "${userMessage.substring(0, 60)}" → Correction #${bestMatch.id} ("${(bestMatch.original_question || "").substring(0, 60)}")`);
+      return { correction: bestMatch, score: bestScore };
+    }
+    return null;
+  } catch (e) {
+    console.error("❌ findBestCorrectionMatch error:", e.message);
+    return null;
+  }
+}
+
 /* ═══════════════════════════════════
    11-F: Master Orchestrator (smartChat)
    ═══════════════════════════════════ */
