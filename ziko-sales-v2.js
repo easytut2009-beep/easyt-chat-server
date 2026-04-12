@@ -213,7 +213,6 @@ async function performSearch(keywords, instructors) {
 
       if (hasRealTitleMatch) {
         const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
-        // inject matched lessons
         try {
           const lessonResults = await searchLessonsInCourses(keywords);
           if (lessonResults && lessonResults.length > 0) {
@@ -227,8 +226,12 @@ async function performSearch(keywords, instructors) {
         } catch (e) { }
         results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
       } else {
-        // مفيش title match → اكمل للدروس (Step 3)
-        console.log("⚠️ No title match in courses → falling through to lessons");
+        // مفيش في العنوان — بس في الـ syllabus/description
+        // نعرض الكورسات دي مع flag إن الموضوع في المحتوى
+        const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
+        withDiploma.forEach(c => { c._foundInContent = true; });
+        results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+        console.log(`📄 Found ${results.courses.length} courses via content (syllabus/description)`);
       }
     }
   } catch (e) { console.error("course search error:", e.message); }
@@ -289,8 +292,11 @@ async function formatResults(results, query) {
   // كورسات
   if (results.courses.length > 0) {
     found = true;
+    const foundInContent = results.courses.some(c => c._foundInContent);
     if (results.diplomas.length > 0) {
       html += `📘 <strong>كورسات مرتبطة:</strong><br><br>`;
+    } else if (foundInContent) {
+      html += `📘 <strong>كورسات فيها "${shortQuery}" في محتواها:</strong><br><br>`;
     } else {
       html += `📘 <strong>الكورسات المرتبطة بـ "${shortQuery}":</strong><br><br>`;
     }
