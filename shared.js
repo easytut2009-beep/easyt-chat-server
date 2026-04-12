@@ -870,7 +870,15 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     console.log("🔍 Search terms:", allTerms);
 
-const limitedTerms = allTerms.slice(0, 8);
+    // فلتر الكلمات العامة جداً لو في كلمات أكثر تحديداً
+    const _genericWords = new Set(["تصميم", "تصميم", "برمجه", "برمجة", "تعلم", "شغل", "عمل", "مجال"]);
+    const _specificTerms = allTerms.filter(t => !_genericWords.has(normalizeArabic(t.toLowerCase())));
+    const finalTerms = _specificTerms.length >= 1 ? _specificTerms : allTerms;
+    if (_specificTerms.length < allTerms.length) {
+      console.log(`🎯 Filtered generic terms: ${allTerms.length} → ${finalTerms.length}`);
+    }
+
+const limitedTerms = finalTerms.slice(0, 8);
 
 // ═══ Expand Arabic variants for ilike matching ═══
 const ilikeTerms = expandArabicVariants(limitedTerms);
@@ -1037,7 +1045,7 @@ const fullQuery = normalizeArabic(
         console.log(`🎯 Brevity bonus: "${c.title}" → +${brevityBonus}`);
       }
 
-      for (const term of allTerms) {
+      for (const term of finalTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
 if (isWordBoundaryMatch(titleNorm, nt)) {
@@ -1065,7 +1073,7 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
         if (fullNorm.includes(nt)) score += 1;
       }
 
-      const titleHits = allTerms.filter((t) =>
+      const titleHits = finalTerms.filter((t) =>
         titleNorm.includes(normalizeArabic(t.toLowerCase()))
       ).length;
       if (titleHits >= 2) score += 40;
@@ -1350,7 +1358,7 @@ const embResp = await openai.embeddings.create({
       let score = 0;
       for (const lesson of matched) {
         const titleNorm = normalizeArabic((lesson.title || "").toLowerCase());
-        for (const term of allTerms) {
+        for (const term of finalTerms) {
           const nt = normalizeArabic(term.toLowerCase());
           if (nt.length <= 1) continue;
           if (titleNorm.includes(nt)) score += 100;
