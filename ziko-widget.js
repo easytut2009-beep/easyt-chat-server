@@ -202,7 +202,7 @@ _s.textContent=''
 +'#zg-quiz-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}'
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
 +'#zg-quiz-body{flex:1;overflow-y:auto;padding:16px 14px 20px;display:flex;flex-direction:column;align-items:stretch;gap:0;min-height:0}'
-+'.zg-quiz-count-wrap{display:flex;flex-direction:column;flex:1;justify-content:space-evenly}'
++'.zg-quiz-count-wrap{display:flex;flex-direction:column;flex:1;justify-content:center;gap:28px}'
 +'.zg-q-card{background:#fff;border-radius:14px;padding:16px 20px;margin-bottom:14px;flex-shrink:0}'
 /* Count screen */
 +'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
