@@ -1642,66 +1642,23 @@ hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");
 stopSending();
 });
 }else{
-var STREAM_API=API.replace("/guide","/guide/stream");
 currentAbortController=new AbortController();
 var myStreamGen=++streamGen;
-fetch(STREAM_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
-.then(function(r){
-if(!r.ok)throw new Error("HTTP "+r.status);
+showTyp();
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPr()}),signal:currentAbortController.signal})
+.then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+.then(function(data){
+if(streamGen!==myStreamGen)return;
 hideTyp();
-var msgDiv=document.createElement("div");
-msgDiv.className="zg-msg zg-bot";
-$msgs.appendChild(msgDiv);
-var reader=r.body.getReader();
-var decoder=new TextDecoder();
-var buffer="";
-var fullText="";
-function read(){
-return reader.read().then(function(result){
-if(currentAbortController===null||streamGen!==myStreamGen){reader.cancel();return;}
-if(result.done){
-stopSending();
-return;
-}
-buffer+=decoder.decode(result.value,{stream:true});
-var lines=buffer.split("\n");
-buffer=lines.pop();
-for(var i=0;i<lines.length;i++){
-var line=lines[i].trim();
-if(!line.startsWith("data:"))continue;
-var jsonStr=line.substring(5).trim();
-try{
-var evt=JSON.parse(jsonStr);
-if(evt.delta){
-if(streamGen!==myStreamGen)return;
-fullText+=evt.delta;
-var h=fullText;
-h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br>");
-msgDiv.innerHTML=h;
-scrollBot();
-}
-if(evt.done){
-if(streamGen!==myStreamGen)return;
-if(typeof evt.remaining_messages==="number"){rem=evt.remaining_messages;saveRem(rem);updCtr();}
+if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+var reply=data.reply||"";
+typewriterMsg(reply,"bot");
 stopSending();
-return;
-}
-if(evt.error){
-if(streamGen!==myStreamGen)return;
-if(!fullText)msgDiv.textContent="عذراً، حصل مشكلة. حاول تاني.";
-stopSending();
-return;
-}
-}catch(e){}
-}
-return read();
-});
-}
-return read();
 })
 .catch(function(e){
 if(e.name==="AbortError"){return;}
+if(streamGen!==myStreamGen)return;
 hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");
 stopSending();
 });
