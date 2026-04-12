@@ -1982,16 +1982,115 @@ ${JSON.stringify(courseList, null, 1)}
 // ═══════════════════════════════════════════════════════════
 
 function hasActiveConversationContext(sessionId) {
-  if (!sessionMemory || typeof sessionMemory.get !== 'function') return false;
-  const mem = sessionMemory.get(sessionId);
-  if (!mem) return false;
-  // _totalMsgs is incremented at top of smartChat for EVERY message (including early returns)
-  if (!mem._totalMsgs || mem._totalMsgs <= 1) return false;
-  // Only consider conversations within last 10 minutes
-  if (Date.now() - mem.lastActivity > 10 * 60 * 1000) return false;
-  return true;
+  try {
+    if (!sessionMemory || typeof sessionMemory.get !== 'function') return false;
+    const mem = sessionMemory.get(sessionId);
+    if (!mem) return false;
+    if (!mem._totalMsgs || mem._totalMsgs <= 1) return false;
+    if (Date.now() - mem.lastActivity > 10 * 60 * 1000) return false;
+    return true;
+  } catch(e) { return false; }
 }
 
+
+
+// ─── Correction & FAQ Helpers (من server.js) ───
+
+const CORRECTION_STOP_WORDS = new Set([
+  'في','من','على','إلى','عن','مع','هل','ما','هو','هي','أن','لو','لأن','لكن',
+  'و','أو','يا','كان','كانت','يكون','تكون','ده','دي','دا','انا','انت','احنا',
+  'بتاعي','بتاعك','بتاعنا','اللي','عشان','علشان','بس','كمان','برضو'
+]);
+
+const CORRECTION_DIRECT_THRESHOLD = 0.45;
+const CORRECTION_CONTEXT_THRESHOLD = 0.20;
+const FAQ_DIRECT_THRESHOLD = 0.50;
+const FAQ_CONTEXT_THRESHOLD = 0.25;
+
+function tokenizeForCorrection(text) {
+  if (!text) return [];
+  return normalizeArabic(text.toLowerCase().trim())
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !CORRECTION_STOP_WORDS.has(w));
+}
+
+function correctionJaccard(tokens1, tokens2) {
+  if (!tokens1.length || !tokens2.length) return 0;
+  const set1 = new Set(tokens1);
+  const set2 = new Set(tokens2);
+  let intersection = 0;
+  for (const t of set1) { if (set2.has(t)) intersection++; }
+  const union = new Set([...set1, ...set2]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function correctionMatchScore(userMessage, referenceText) {
+  if (!userMessage || !referenceText) return 0;
+  const userNorm = normalizeArabic(userMessage.toLowerCase().trim());
+  const refNorm = normalizeArabic(referenceText.toLowerCase().trim());
+  if (userNorm === refNorm) return 1.0;
+  const userTokens = tokenizeForCorrection(userMessage);
+  const refTokens = tokenizeForCorrection(referenceText);
+  let score = correctionJaccard(userTokens, refTokens);
+  if (userNorm.includes(refNorm) || refNorm.includes(userNorm)) {
+    score = Math.min(1.0, score + 0.25);
+  }
+  if (userTokens.length <= 3 || refTokens.length <= 3) {
+    const simRatio = similarityRatio(userNorm, refNorm) / 100;
+    score = Math.max(score, simRatio * 0.85);
+  }
+  if (score < 0.45 && userTokens.length > 0 && refTokens.length > 0) {
+    let partialHits = 0;
+    for (const ut of userTokens) {
+      for (const rt of refTokens) {
+        if (ut === rt) { partialHits++; break; }
+        if (ut.length >= 3 && rt.length >= 3 && similarityRatio(ut, rt) >= 80) {
+          partialHits += 0.7; break;
+        }
+      }
+    }
+    const maxTokens = Math.max(userTokens.length, refTokens.length);
+    const partialScore = maxTokens > 0 ? partialHits / maxTokens : 0;
+    score = Math.max(score, partialScore);
+  }
+  return Math.min(1.0, score);
+}
+
+async function findBestFAQMatch(userMessage, preloadedFAQs = null) {
+  if (!userMessage || userMessage.trim().length < 3) return null;
+  try {
+    const faqs = preloadedFAQs || await loadAllFAQs();
+    if (!faqs || faqs.length === 0) return null;
+    let bestMatch = null; let bestScore = 0;
+    for (const faq of faqs) {
+      if (!faq.question || !faq.answer) continue;
+      const score = correctionMatchScore(userMessage, faq.question);
+      if (score > bestScore) { bestScore = score; bestMatch = faq; }
+    }
+    if (bestMatch && bestScore >= FAQ_CONTEXT_THRESHOLD) {
+      console.log(`📋 [FAQ] Best match: score=${bestScore.toFixed(3)} | Q: "${userMessage.substring(0,60)}" → FAQ #${bestMatch.id}`);
+      return { faq: bestMatch, score: bestScore };
+    }
+    return null;
+  } catch (e) { console.error("❌ findBestFAQMatch error:", e.message); return null; }
+}
+
+async function getFAQsForContext(userMessage, limit = 3, preloadedFAQs = null) {
+  if (!userMessage || userMessage.trim().length < 3) return [];
+  try {
+    const faqs = preloadedFAQs || await loadAllFAQs();
+    if (!faqs || faqs.length === 0) return [];
+    const scored = [];
+    for (const faq of faqs) {
+      if (!faq.question || !faq.answer) continue;
+      const score = correctionMatchScore(userMessage, faq.question);
+      if (score >= FAQ_CONTEXT_THRESHOLD) {
+        scored.push({ question: faq.question.substring(0,200), answer: faq.answer.substring(0,500), section: faq.section || "", score });
+      }
+    }
+    return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+  } catch (e) { console.error("❌ getFAQsForContext error:", e.message); return []; }
+}
 
 
 // ─── findBestCorrectionMatch ───
