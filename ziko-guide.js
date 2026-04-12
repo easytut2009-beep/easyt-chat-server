@@ -1137,4 +1137,181 @@ app.post("/api/guide/tool", limiter, async (req, res) => {
   }
 });
 
+
+  // ═══ check-course endpoint ═══
+  app.get("/api/guide/check-course", async (req, res) => {
+    const courseName = req.query.course_name;
+    if (!courseName) return res.json({ exists: false });
+    try {
+      const courseMatch = await findCourseByName(courseName);
+      if (!courseMatch) return res.json({ exists: false });
+      const { data: lessons } = await supabase.from("lessons").select("id").eq("course_id", courseMatch.id);
+      if (!lessons || lessons.length === 0) return res.json({ exists: false });
+      const lessonIds = lessons.map(l => l.id);
+      const { count } = await supabase.from("chunks").select("id", { count: "exact", head: true }).in("lesson_id", lessonIds);
+      return res.json({ exists: (count || 0) > 0, course_title: courseMatch.title, chunks_count: count || 0 });
+    } catch (e) {
+      console.error("❌ check-course error:", e.message);
+      return res.json({ exists: false });
+    }
+  });
+
+  // ═══ health endpoint ═══
+  app.get("/api/guide/health", (req, res) => {
+    res.json({ status: "ok", supabase: supabaseConnected, openai: !!openai });
+  });
+
+  // ═══ status endpoint ═══
+  app.get("/api/guide/status", async (req, res) => {
+    const session_id = req.query.session_id;
+    if (!session_id) return res.json({ remaining_messages: 0 });
+    try {
+      const remaining = await getGuideRemaining(session_id);
+      res.json({ remaining_messages: remaining });
+    } catch(e) {
+      res.json({ remaining_messages: 0 });
+    }
+  });
+
+
+
+// ─── findCourseByName ───
+async function findCourseByName(courseName) {
+  if (!supabase || !courseName) return null;
+  try {
+    const { data: matches } = await supabase
+      .from("courses")
+      .select("id, title")
+      .ilike("title", `%${courseName}%`)
+      .limit(5);
+
+    if (matches && matches.length > 0) {
+      const normName = normalizeArabic(courseName.toLowerCase());
+      let best = matches[0];
+      let bestSim = 0;
+      for (const m of matches) {
+        const sim = similarityRatio(
+          normName,
+          normalizeArabic((m.title || "").toLowerCase())
+        );
+        if (sim > bestSim) {
+          bestSim = sim;
+          best = m;
+        }
+      }
+      return best;
+    }
+
+    // Fuzzy fallback
+    const { data: all } = await supabase
+      .from("courses")
+      .select("id, title")
+      .limit(500);
+    if (!all) return null;
+
+    const normName = normalizeArabic(courseName.toLowerCase());
+    let bestMatch = null;
+    let bestScore = 0;
+    for (const course of all) {
+      const sim = similarityRatio(
+        normName,
+        normalizeArabic((course.title || "").toLowerCase())
+      );
+      if (sim > bestScore && sim >= 50) {
+        bestScore = sim;
+        bestMatch = course;
+      }
+    }
+    return bestMatch;
+  } catch (e) {
+    console.error("findCourseByName error:", e.message);
+    return null;
+  }
+}
+
+// ─── findLessonByTitle ───
+async function findLessonByTitle(lessonTitle, courseId = null) {
+  if (!supabase || !lessonTitle) return null;
+  try {
+    // Step 1: Direct ilike
+    let query = supabase
+      .from("lessons")
+      .select("id, title, course_id, lesson_order")
+      .ilike("title", `%${lessonTitle}%`)
+      .limit(10);
+    if (courseId) query = query.eq("course_id", courseId);
+    let { data } = await query;
+
+    // Step 2: Try individual words (for bilingual titles)
+    if (!data || data.length === 0) {
+      const words = lessonTitle.split(/\s+/).filter((w) => w.length > 3);
+      if (words.length > 0) {
+        const partialFilter = words
+          .slice(0, 4)
+          .map((w) => `title.ilike.%${w}%`)
+          .join(",");
+        let q2 = supabase
+          .from("lessons")
+          .select("id, title, course_id, lesson_order")
+          .or(partialFilter)
+          .limit(10);
+        if (courseId) q2 = q2.eq("course_id", courseId);
+        const { data: d2 } = await q2;
+        data = d2;
+      }
+    }
+
+    // Step 3: Get ALL lessons for course as fallback
+    if ((!data || data.length === 0) && courseId) {
+      const { data: allLessons } = await supabase
+        .from("lessons")
+        .select("id, title, course_id, lesson_order")
+        .eq("course_id", courseId)
+        .order("lesson_order", { ascending: true });
+      data = allLessons;
+    }
+
+    if (!data || data.length === 0) return null;
+
+    // Smart matching
+    const normTitle = normalizeArabic(lessonTitle.toLowerCase().trim());
+    let best = null;
+    let bestScore = 0;
+
+    for (const d of data) {
+      const dbTitle = (d.title || "").toLowerCase().trim();
+      const dbNorm = normalizeArabic(dbTitle);
+      let score = 0;
+
+      if (dbNorm === normTitle || dbTitle === lessonTitle.toLowerCase().trim()) {
+        score = 100;
+      } else if (dbNorm.includes(normTitle) || dbTitle.includes(lessonTitle.toLowerCase().trim())) {
+        score = 95;
+      } else if (normTitle.includes(dbNorm)) {
+        score = 90;
+      } else {
+        const searchWords = normTitle.split(/\s+/).filter(w => w.length > 2);
+        const matchedWords = searchWords.filter(w => dbNorm.includes(w));
+        if (searchWords.length > 0 && matchedWords.length > 0) {
+          score = 40 + Math.round((matchedWords.length / searchWords.length) * 40);
+        }
+        if (score < 50) {
+          score = Math.max(score, similarityRatio(normTitle, dbNorm));
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = d;
+      }
+    }
+
+    console.log(`🎓 findLessonByTitle: "${lessonTitle}" → "${best ? best.title : 'NONE'}" (score=${bestScore}%)`);
+    return bestScore >= 30 ? best : data.length > 0 ? data[0] : null;
+  } catch (e) {
+    console.error("findLessonByTitle error:", e.message);
+    return null;
+  }
+}
+
 }; // end module.exports
