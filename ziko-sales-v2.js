@@ -340,7 +340,7 @@ async function formatResults(results, query) {
     if (results.diplomas.length > 0) {
       html += `📘 <strong>كورسات مرتبطة:</strong><br><br>`;
     } else if (foundInContent) {
-      html += `📘 <strong>كورسات فيها "${shortQuery}" في محتواها:</strong><br><br>`;
+      html += `📘 <strong>الكورسات دي بتتكلم عن "${shortQuery}":</strong><br><br>`;
     } else {
       html += `📘 <strong>الكورسات المرتبطة بـ "${shortQuery}":</strong><br><br>`;
     }
