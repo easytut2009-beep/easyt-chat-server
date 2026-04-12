@@ -848,6 +848,7 @@ var html='<div style="display:flex;flex-direction:column;height:100%;justify-con
 +'<button class="zg-r-btn-retry" id="zg-quiz-retry">حاول تاني</button>'
 +'<button class="zg-r-btn-done" id="zg-quiz-done">تمام، خلصت</button>'
 +'</div></div>';
+$quizBody.innerHTML=html;
 $quizBody.querySelector("#zg-quiz-retry").addEventListener("click",function(){renderQuizCount();});
 $quizBody.querySelector("#zg-quiz-done").addEventListener("click",function(){closeQuiz();});
 }
