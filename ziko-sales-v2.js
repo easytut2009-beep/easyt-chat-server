@@ -527,8 +527,8 @@ async function smartChat(message, sessionId) {
   // تحليل النية
   let intent;
 
-  // لو اليوزر اختار "بصفة عامة" — semantic search بالموضوع الأصلي
-  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general|كل حاجة/.test(message);
+  // لو اليوزر اختار "بصفة عامة" من الـ options (رسالة قصيرة)
+  const isGeneralRequest = message.length < 30 && /بصفة عامة|عموما|عموماً|general/.test(message);
 
   if (isGeneralRequest && session.lastTopic) {
     intent = {
@@ -622,10 +622,12 @@ async function smartChat(message, sessionId) {
 
   // ── Clarify ──
   else if (intent.type === "clarify" || intent.is_ambiguous) {
-    // حفظ الـ audience والـ topic الأصلي
+    // حفظ الـ audience والـ topic الأصلي من الـ keywords
     if (intent.audience) session.audience = intent.audience;
-    // حفظ الموضوع الأصلي عشان "بصفة عامة" يستخدمه
-    if (!session.lastTopic) session.lastTopic = message;
+    // حفظ الموضوع من الـ keywords اللي GPT استخرجها — مش من الرسالة الكاملة
+    if (!session.lastTopic && intent.keywords && intent.keywords.length > 0) {
+      session.lastTopic = intent.keywords.join(" ");
+    }
     // تسجيل إن سألنا clarify
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
