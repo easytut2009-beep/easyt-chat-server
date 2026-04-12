@@ -129,6 +129,7 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 - لو الطلب عام جداً (عايز أتعلم، أطور نفسي، أشتغل أونلاين)
 - السؤال يكون: "عايز تتعلم إيه بالظبط في مجال [المهنة/الموضوع]؟"
 - الـ options تكون خيارات منطقية للمهنة دي (مش برامج — احتياجات)
+- 🚨 دايماً أضف option أخيرة: "🔍 بصفة عامة عن الموضوع" — عشان اليوزر يقدر يشوف كل الكورسات المرتبطة
 
 أمثلة للـ clarify الذكي:
 "أنا نجار وعايز أتعلم" → clarify: "عايز تتعلم إيه بالظبط؟" options: ["🪑 تصميم الأثاث", "📋 إدارة الورشة والمشاريع", "💰 محاسبة وتسعير", "📣 تسويق شغلك"]
@@ -525,7 +526,19 @@ async function smartChat(message, sessionId) {
 
   // تحليل النية
   let intent;
-  if (wasAskingClarify || session.hadClarify) {
+
+  // لو اليوزر اختار "بصفة عامة" — semantic search بالموضوع الأصلي
+  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general|كل حاجة/.test(message);
+
+  if (isGeneralRequest && session.lastTopic) {
+    intent = {
+      type: "search",
+      keywords: prepareSearchTerms(session.lastTopic.split(/\s+/)),
+      is_ambiguous: false,
+      _semantic: true, // flag للـ semantic search
+    };
+    console.log(`🔮 General request → semantic search for: "${session.lastTopic}"`);
+  } else if (wasAskingClarify || session.hadClarify) {
     // المستخدم اختار من الـ options — نستخدم GPT عشان يحول الاختيار لـ keywords صح
     intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
     // نضمن إن النوع search دايماً بعد clarify
@@ -609,8 +622,10 @@ async function smartChat(message, sessionId) {
 
   // ── Clarify ──
   else if (intent.type === "clarify" || intent.is_ambiguous) {
-    // حفظ الـ audience لو GPT استخرجها
+    // حفظ الـ audience والـ topic الأصلي
     if (intent.audience) session.audience = intent.audience;
+    // حفظ الموضوع الأصلي عشان "بصفة عامة" يستخدمه
+    if (!session.lastTopic) session.lastTopic = message;
     // تسجيل إن سألنا clarify
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
@@ -657,8 +672,55 @@ async function smartChat(message, sessionId) {
 
     const results = await performSearch(keywords, [], audience);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
-    reply = await formatResults(results, displayTopic);
-    session.lastTopic = keywords.join(" ");
+
+    // لو مالقيش حاجة وكان في clarify قبل — ادور بالـ semantic على الموضوع الأصلي
+    const noResults = results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0;
+    if (noResults && session.lastTopic && session.hadClarify) {
+      console.log(`🔮 No results after clarify — semantic fallback on: "${session.lastTopic}"`);
+      try {
+        if (supabase && openai) {
+          const embResp = await openai.embeddings.create({
+            model: COURSE_EMBEDDING_MODEL,
+            input: session.lastTopic,
+          });
+          const { data: semCourses } = await supabase.rpc("match_courses", {
+            query_embedding: embResp.data[0].embedding,
+            match_threshold: 0.70,
+            match_count: 5,
+          });
+          if (semCourses && semCourses.length > 0) {
+            const { data: courseData } = await supabase
+              .from("courses")
+              .select(COURSE_SELECT_COLS)
+              .in("id", semCourses.map(s => s.id));
+            if (courseData && courseData.length > 0) {
+              const withDiploma = await injectDiplomaInfo(courseData).catch(() => courseData);
+              const originalTopic = session.lastTopic;
+              const specificTopic = displayTopic;
+              reply = `مالقتش حاجة محددة عن "<strong>${escapeHtml(specificTopic)}</strong>" 😊<br><br>`;
+              reply += `بس بصفة عامة في موضوع "<strong>${escapeHtml(originalTopic)}</strong>" لقيت الكورسات دي:<br><br>`;
+              const instructors = await getInstructors().catch(() => []);
+              withDiploma.forEach((c, i) => {
+                reply += formatCourseCard(c, instructors, i + 1);
+              });
+              reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
+              // reset session
+              session.history = [];
+              session.hadClarify = false;
+              session.clarifyCount = 0;
+              suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
+            }
+          }
+        }
+      } catch (e) { console.error("semantic fallback error:", e.message); }
+    }
+
+    // لو لسه مافيش reply — عرض النتايج العادية
+    if (!reply) {
+      reply = await formatResults(results, displayTopic);
+    }
+
+    session.lastTopic = session.lastTopic || keywords.join(" ");
     session.lastResults = results;
 
     // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
