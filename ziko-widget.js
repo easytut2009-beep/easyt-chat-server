@@ -201,7 +201,8 @@ _s.textContent=''
 +'#zg-quiz-sub{font-size:9px;color:rgba(255,255,255,0.7);margin-top:1px}'
 +'#zg-quiz-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}'
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
-+'#zg-quiz-body{flex:1;overflow-y:auto;padding:56px 18px 24px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
++'#zg-quiz-body{flex:1;overflow-y:auto;padding:40px 18px 28px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
++'.zg-quiz-count-wrap{display:flex;flex-direction:column;flex:1;justify-content:space-evenly}'
 /* Count screen */
 +'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
 +'.zg-count-sub{font-size:13px;color:#6b7280;text-align:center;margin-bottom:32px;width:100%}'
@@ -728,7 +729,7 @@ hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
-$quizBody.innerHTML='<div style="text-align:center;padding:8px 0 0">'
+$quizBody.innerHTML='<div class="zg-quiz-count-wrap"><div style="text-align:center;padding:8px 0 0">'
 +'<div class="zg-count-title">كام سؤال عايز؟</div>'
 +'<div class="zg-count-sub">اختار عدد الأسئلة وابدأ الاختبار</div>'
 +'</div>'
@@ -740,7 +741,7 @@ $quizBody.innerHTML='<div style="text-align:center;padding:8px 0 0">'
 +'<button class="zg-start-btn" id="zg-quiz-start">'
 +'ابدأ الاختبار'
 +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>'
-+'</button>';
++'</button></div>';
 var cBtns=$quizBody.querySelectorAll(".zg-count-btn");
 for(var i=0;i<cBtns.length;i++){(function(btn){btn.addEventListener("click",function(){for(var j=0;j<cBtns.length;j++)cBtns[j].classList.remove("zg-count-active");btn.classList.add("zg-count-active");quizState.count=parseInt(btn.getAttribute("data-n"));});})(cBtns[i]);}
 var startBtn=$quizBody.querySelector("#zg-quiz-start");
