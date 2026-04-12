@@ -1600,7 +1600,7 @@ var h=text
 var words=h.split(/(<[^>]+>|\s+)/);
 var i=0;var built="";var speed=25;
 function tick(){
-if(typewriterActive!==myGen){m.innerHTML=h;return;}
+if(typewriterActive!==myGen){if(m&&m.parentNode)m.parentNode.removeChild(m);return;}
 if(i>=words.length){m.innerHTML=built;if(onDone)onDone();scrollBot();return;}
 built+=words[i]||"";m.innerHTML=built;i++;scrollBot();
 setTimeout(tick,words[i-1]&&words[i-1].match(/[^<>]/)?speed:0);
