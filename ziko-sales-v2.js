@@ -131,16 +131,20 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 - لا تضيف كلمات زي "كورس" أو "دورة" أو "تعلم"
 
 أمثلة ذكية للـ keywords:
-"تصميم أثاث" → keywords: ["3ds max", "اوتوكاد", "blender", "تصميم داخلي"] — لأن دي البرامج المستخدمة
+"تصميم أثاث" → keywords: ["3ds max", "اوتوكاد", "blender"] — البرامج المستخدمة فقط
+"تصميم داخلي" → keywords: ["3ds max", "sketchup", "اوتوكاد", "تصميم داخلي"] — برامج التصميم الداخلي
 "تصميم مواقع" → keywords: ["html", "css", "wordpress", "web design"]
 "محاسبة" → keywords: ["محاسبة", "اكسيل", "quickbooks", "peachtree"]
 "تسويق" → keywords: ["تسويق رقمي", "سوشيال ميديا", "facebook ads", "seo"]
-"نجار عايز يتعلم" → keywords: ["3ds max", "اوتوكاد", "blender", "تصميم أثاث"]
+"إدارة ورشة" → keywords: ["إدارة مشاريع", "project management", "إدارة أعمال"]
+"نجار عايز يتعلم" → keywords: ["3ds max", "اوتوكاد", "blender"]
 "كورس اكسيل" → keywords: ["اكسيل", "excel"]
 "أوتوكاد" → keywords: ["أوتوكاد", "autocad"]
 "عايز تصميم" → type=clarify: "تصميم إيه بالظبط؟" مع options
 "سعر الاشتراك" → type=subscription
-"أهلاً" → type=greeting`;
+"أهلاً" → type=greeting
+
+⚠️ قاعدة مهمة: الـ keywords لازم تكون أسماء برامج أو تخصصات واضحة — لا كلمات جزئية زي "داخلي" أو "خارجي" أو "متقدم" لوحدها`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
