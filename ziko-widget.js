@@ -812,13 +812,13 @@ if(progDots){
   }
   progDots.innerHTML=dotsHtml;
 }
-var html='<div class="zg-q-card"><div class="zg-q-text">'+esc(q.q)+'</div></div>'
+var html='<div class="zg-q-card" style="padding:16px 20px !important"><div class="zg-q-text">'+esc(q.q)+'</div></div>'
 +'<div class="zg-q-opts">';
 for(var i=0;i<q.opts.length;i++){html+='<button class="zg-q-opt" data-idx="'+i+'"><div class="zg-q-opt-letter">'+letters[i]+'</div>'+esc(q.opts[i])+'</button>';}
 html+='</div>';
 $quizBody.innerHTML=html;
 var opts=$quizBody.querySelectorAll(".zg-q-opt");
-for(var oi=0;oi<opts.length;oi++){(function(btn,idx){btn.addEventListener("click",function(){if(quizState.answered)return;quizState.answered=true;var correct=idx===q.correct;if(correct)quizState.score++;for(var k=0;k<opts.length;k++){opts[k].disabled=true;}if(correct){btn.classList.add("zg-opt-correct");}else{btn.classList.add("zg-opt-wrong");opts[q.correct].classList.add("zg-opt-correct");}var fb=document.createElement("div");fb.className="zg-q-feedback "+(correct?"zg-fb-correct":"zg-fb-wrong");fb.innerHTML="<strong>"+(correct?"صح!":"غلط!")+"</strong> "+esc(q.explanation);$quizBody.querySelector(".zg-q-opts").after(fb);var nb=document.createElement("button");nb.className="zg-next-btn";nb.textContent=quizState.current+1<quizState.questions.length?"السؤال التالي":"النتيجة النهائية";nb.addEventListener("click",function(){quizState.answered=false;quizState.current++;if(quizState.current<quizState.questions.length){renderQuizQuestion();}else{renderQuizResult();}});fb.after(nb);$quizBody.scrollTop=0;});})(opts[oi],oi);}
+for(var oi=0;oi<opts.length;oi++){(function(btn,idx){btn.addEventListener("click",function(){if(quizState.answered)return;quizState.answered=true;var correct=idx===q.correct;if(correct)quizState.score++;for(var k=0;k<opts.length;k++){opts[k].disabled=true;}if(correct){btn.classList.add("zg-opt-correct");}else{btn.classList.add("zg-opt-wrong");opts[q.correct].classList.add("zg-opt-correct");}var fb=document.createElement("div");fb.className="zg-q-feedback "+(correct?"zg-fb-correct":"zg-fb-wrong");fb.style.cssText="padding:14px 20px !important;margin-top:16px !important;margin-bottom:4px !important;";fb.innerHTML="<strong>"+(correct?"صح!":"غلط!")+"</strong> "+esc(q.explanation);$quizBody.querySelector(".zg-q-opts").after(fb);var nb=document.createElement("button");nb.className="zg-next-btn";nb.style.cssText="margin-top:16px !important;margin-bottom:16px !important;";nb.textContent=quizState.current+1<quizState.questions.length?"السؤال التالي":"النتيجة النهائية";nb.addEventListener("click",function(){quizState.answered=false;quizState.current++;if(quizState.current<quizState.questions.length){renderQuizQuestion();}else{renderQuizResult();}});fb.after(nb);$quizBody.scrollTop=0;});})(opts[oi],oi);}
 quizState.answered=false;
 }
 function renderQuizResult(){
