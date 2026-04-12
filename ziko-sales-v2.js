@@ -83,9 +83,15 @@ function formatDiplomaCard(diploma) {
 // Intent Analysis — GPT يفهم النية ويولد keywords
 // ══════════════════════════════════════════════════════════
 async function analyzeIntent(message, history = []) {
+  const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
+  const hadClarifyBefore = history.some(h => h.role === 'assistant' && (
+    h.content.includes('بالظبط') || h.content.includes('بالضبط') || h.content.includes('في إيه') || h.content.includes('في ايه')
+  ));
+
   const prompt = `أنت محلل نوايا لمنصة تعليمية عربية اسمها "إيزي تي".
 
 المستخدم بعت: "${message}"
+${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 حلل النية وارجع JSON فقط:
 {
@@ -110,6 +116,8 @@ async function analyzeIntent(message, history = []) {
 - is_ambiguous: true لو الموضوع محتاج توضيح (زي "تصميم" أو "برمجة" بدون تفاصيل)
 - لو is_ambiguous=true: ضيف clarify_question وclarify_options (2-4 خيارات)
 - لو type مش search: ضيف direct_reply بالعامية المصرية
+- 🚨 قاعدة مهمة: لو في المحادثة السابقة سبق وسألنا المستخدم سؤال توضيح (clarify) — لازم دلوقتي type=search مهما كان الجواب، ابحث بالكلمات الموجودة ولا تسأل تاني
+${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — الآن type=search إلزامي، لا clarify" : ""}
 
 قواعد مهمة للـ keywords:
 - "كورس اكسيل" → keywords: ["اكسيل", "excel"] — مش "كورس اكسيل"
@@ -321,7 +329,7 @@ async function smartChat(message, sessionId) {
   // تحليل النية
   let intent;
   if (wasAskingClarify) {
-    // المستخدم اختار من الـ options — ابحث مباشرة
+    // المستخدم اختار من الـ options — ابحث مباشرة بدون GPT
     intent = {
       type: "search",
       keywords: prepareSearchTerms(message.split(/\s+/)),
@@ -330,6 +338,20 @@ async function smartChat(message, sessionId) {
     console.log(`🔄 Was clarify → forcing search for: "${message}"`);
   } else {
     intent = await analyzeIntent(message, session.history.slice(-4));
+    // لو GPT أصر على clarify تاني — اجبره على search
+    if (intent.type === "clarify" || intent.is_ambiguous) {
+      const prevClarify = session.history.some(h => h.role === 'assistant' && (
+        h.content.includes('بالظبط') || h.content.includes('بالضبط')
+      ));
+      if (prevClarify) {
+        console.log(`⚠️ GPT wanted clarify again — forcing search`);
+        intent.type = "search";
+        intent.is_ambiguous = false;
+        if (!intent.keywords || intent.keywords.length === 0) {
+          intent.keywords = prepareSearchTerms(message.split(/\s+/));
+        }
+      }
+    }
   }
   console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
 
