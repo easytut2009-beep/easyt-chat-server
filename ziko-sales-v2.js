@@ -98,6 +98,7 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
   "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list",
   "keywords": ["كلمة1", "كلمة2"],
   "is_ambiguous": true/false,
+  "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
   "clarify_question": "السؤال لو محتاج توضيح",
   "clarify_options": ["خيار1", "خيار2", "خيار3"],
   "direct_reply": "رد مباشر لو مش بحث"
@@ -110,8 +111,14 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 - type=subscription: لو سؤال عن اشتراك أو دفع
 - type=support: لو مشكلة تقنية
 - type=greeting: لو تحية أو كلام عام
-- 🚨 لو في المحادثة سبق وسألنا توضيح — type=search إلزامي ولا تسأل تاني
-${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — الآن type=search إلزامي" : ""}
+- 🚨 لو في المحادثة سبق وسألنا توضيح — type=search إلزامي ولا تسأل تاني أبداً
+${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — الآن type=search إلزامي بدون clarify" : ""}
+
+قواعد audience — مهمة:
+- لو المستخدم ذكر عمر صغير (أطفال، 8 سنين، 10 سنين، ابني صغير) → audience: "أطفال"
+- لو مبتدئ أو من الصفر → audience: "مبتدئ"
+- لو محترف أو متقدم → audience: "متقدم"
+- غير كده → audience: null
 
 متى تسأل clarify؟
 - لو المستخدم ذكر مهنة أو خلفية (نجار، محاسب، مهندس، طالب، إلخ) بدون تحديد ماذا يريد
@@ -241,10 +248,13 @@ async function formatResults(results, query) {
   let html = "";
   let found = false;
 
+  // اختصر الـ query للعنوان (أول كلمتين بس)
+  const shortQuery = query.split(/\s+/).slice(0, 2).join(" ");
+
   // دبلومات
   if (results.diplomas.length > 0) {
     found = true;
-    html += `🎓 <strong>الدبلومات المرتبطة بـ "${query}":</strong><br><br>`;
+    html += `🎓 <strong>الدبلومات المرتبطة بـ "${shortQuery}":</strong><br><br>`;
     results.diplomas.forEach(d => { html += formatDiplomaCard(d); });
     html += `<br>`;
   }
@@ -255,7 +265,7 @@ async function formatResults(results, query) {
     if (results.diplomas.length > 0) {
       html += `📘 <strong>كورسات مرتبطة:</strong><br><br>`;
     } else {
-      html += `📘 <strong>الكورسات المرتبطة بـ "${query}":</strong><br><br>`;
+      html += `📘 <strong>الكورسات المرتبطة بـ "${shortQuery}":</strong><br><br>`;
     }
     results.courses.forEach((c, i) => {
       html += formatCourseCard(c, instructors, i + 1);
@@ -452,8 +462,19 @@ async function smartChat(message, sessionId) {
       keywords = specificKeywords;
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
-    const results = await performSearch(keywords, []);
-    reply = await formatResults(results, keywords.join(" "));
+    // استخدم الـ audience لو موجود (أطفال، مبتدئ، متقدم)
+    const audience = intent.audience || null;
+    if (audience) console.log(`👥 Audience: ${audience}`);
+
+    // لو أطفال — أضف keywords مناسبة
+    if (audience === "أطفال") {
+      keywords = [...keywords, "أطفال", "مبتدئ", "kids"];
+    }
+
+    const results = await performSearch(keywords, [], audience);
+    // استخدم الموضوع الأصلي من رسالة اليوزر للعنوان
+    const displayTopic = intent.keywords?.[0] || keywords[0] || message;
+    reply = await formatResults(results, displayTopic);
     session.lastTopic = keywords.join(" ");
     session.lastResults = results;
 
