@@ -696,7 +696,7 @@ function showSugg(arr){if(!$msgs||!arr||!arr.length)return;var old=$msgs.querySe
 
 function showWelcSugg(){var s=[];if(page.lecture_title)s=["اشرحلي الدرس ده","مش فاهم حاجة","ادي مثال عملي"];else if(page.course_name)s=["ساعدني أفهم الكورس","مش فاهم حاجة","ادي نصايح"];else s=["مش فاهم الدرس","اشرحلي بمثال","عندي سؤال"];showSugg(s);}
 
-function showWelcome(){var m="أهلاً بيك! أنا <strong>زيكو</strong> مرشدك التعليمي.";if(page.lecture_title)m+="<br>لو عندك أي سؤال عن الدرس، اسألني!";else if(page.course_name)m+="<br>لو عندك أي سؤال عن الكورس، اسألني!";else m+="<br>اسألني أي سؤال وهشرحلك!";addMsg(m,"bot");showWelcSugg();}
+function showWelcome(){var m="أهلاً! أنا <strong>زيكو</strong> مرشدك التعليمي 💪";if(page.lecture_title)m+="<br>هنا عشان تستفيد من درس <strong>"+esc(page.lecture_title)+"</strong> — اسألني أي حاجة!";else if(page.course_name)m+="<br>هنا عشان تستفيد من كورس <strong>"+esc(page.course_name)+"</strong> — اسألني أي حاجة!";else m+="<br>اسألني أي سؤال عن الدرس وهشرحلك!";addMsg(m,"bot");showWelcSugg();}
 
 /* ==================== QUIZ ==================== */
 function showBackBtn(cb){
