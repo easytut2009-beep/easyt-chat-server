@@ -1085,7 +1085,28 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    scored.slice(0, 5).forEach((c, i) => {
+    // 🔧 FIX: فلتر الكورسات اللي عنوانها مش قريب كفاية من الـ query
+    // يمنع ظهور "اكسيس" مع "اكسيل" وما شابه
+    const mainTerm = normalizeArabic(searchTerms[0]?.toLowerCase() || "");
+    const hasStrongResults = scored.some(c => {
+      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+      return titleNorm.split(/\s+/).some(w => similarityRatio(mainTerm, w) >= 85);
+    });
+
+    const finalScored = hasStrongResults
+      ? scored.filter(c => {
+          const titleNorm = normalizeArabic((c.title || "").toLowerCase());
+          const titleWords = titleNorm.split(/\s+/);
+          const bestSim = Math.max(...titleWords.map(w => similarityRatio(mainTerm, w)));
+          if (bestSim < 82) {
+            console.log(`🚫 Filtered out low-sim title: "${c.title}" (sim=${bestSim} for "${mainTerm}")`);
+            return false;
+          }
+          return true;
+        })
+      : scored;
+
+    finalScored.slice(0, 5).forEach((c, i) => {
       console.log(
         `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
           c.domain ? ` (${c.domain})` : ""
@@ -1093,7 +1114,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
       );
     });
 
-    const result = scored.slice(0, 15);
+    const result = finalScored.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
