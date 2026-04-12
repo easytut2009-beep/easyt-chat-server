@@ -201,8 +201,9 @@ _s.textContent=''
 +'#zg-quiz-sub{font-size:9px;color:rgba(255,255,255,0.7);margin-top:1px}'
 +'#zg-quiz-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}'
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
-+'#zg-quiz-body{flex:1;overflow-y:auto;padding:40px 18px 28px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
++'#zg-quiz-body{flex:1;overflow-y:auto;padding:16px 14px 20px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
 +'.zg-quiz-count-wrap{display:flex;flex-direction:column;flex:1;justify-content:space-evenly}'
++'.zg-q-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;flex-shrink:0}'
 /* Count screen */
 +'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
 +'.zg-count-sub{font-size:13px;color:#6b7280;text-align:center;margin-bottom:32px;width:100%}'
@@ -353,7 +354,7 @@ w.innerHTML=''
 +'</div></div>'
 +'<div id="zg-footer"><span id="zg-counter"></span><span id="zg-pow"></span></div>'
 +'<div id="zg-tools-menu"><div style="padding:12px 16px 8px;display:flex;align-items:center;gap:10px;border-bottom:0.5px solid #f0f0f0"><button id="zg-tools-menu-close" style="width:32px;height:32px;border-radius:50%;background:#0F5132;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button><span style="font-size:13px;font-weight:700;color:#0F5132;font-family:Tahoma,Geneva,sans-serif">أدوات زيكو</span></div><div id="zg-tools-menu-body"></div></div>'
-+'<div id="zg-quiz-overlay"><div id="zg-quiz-body"></div></div>'
++'<div id="zg-quiz-overlay"><div id="zg-quiz-prog-hdr" style="display:none;background:#0F5132;padding:9px 14px;flex-shrink:0;flex-direction:row;align-items:center;justify-content:space-between"><span id="zg-quiz-prog-label" style="font-size:11px;color:rgba(255,255,255,0.75);font-family:Tahoma,Geneva,sans-serif"></span><div id="zg-quiz-prog-dots" style="display:flex;gap:5px"></div></div><div id="zg-quiz-body"></div></div>'
 +'<div id="zg-ex-overlay"><div id="zg-ex-body"></div>'
 +'<div id="zg-ex-input-area">'
 +'<textarea id="zg-ex-input" placeholder="اكتب إجابتك هنا، أو ابعت صورة..."></textarea>'
@@ -729,21 +730,26 @@ hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
-$quizBody.innerHTML='<div class="zg-quiz-count-wrap"><div style="text-align:center;padding:8px 0 0">'
-+'<div class="zg-count-title">كام سؤال عايز؟</div>'
-+'<div class="zg-count-sub">اختار عدد الأسئلة وابدأ الاختبار</div>'
+var progHdr=document.getElementById("zg-quiz-prog-hdr");
+if(progHdr)progHdr.style.display="none";
+$quizBody.innerHTML='<div class="zg-quiz-count-wrap">'
++'<div style="text-align:center">'
++'<div style="font-size:13px;color:#6b7280;margin-bottom:12px;font-family:Tahoma,Geneva,sans-serif">عاوز كام سؤال؟</div>'
++'<div id="zg-slider-num" style="font-size:64px;font-weight:700;color:#198754;line-height:1;font-family:Tahoma,Geneva,sans-serif">10</div>'
++'<div style="font-size:12px;color:#6b7280;margin-top:8px;font-family:Tahoma,Geneva,sans-serif">سؤال</div>'
 +'</div>'
-+'<div class="zg-count-row">'
-+'<button class="zg-count-btn" data-n="5"><div class="zg-count-num">5</div><div class="zg-count-lbl">سريع</div></button>'
-+'<button class="zg-count-btn zg-count-active" data-n="10"><div class="zg-count-num">10</div><div class="zg-count-lbl">متوسط</div></button>'
-+'<button class="zg-count-btn" data-n="15"><div class="zg-count-num">15</div><div class="zg-count-lbl">شامل</div></button>'
++'<div style="padding:0 12px">'
++'<div style="display:flex;justify-content:space-between;font-size:11px;color:#9ca3af;margin-bottom:10px;font-family:Tahoma,Geneva,sans-serif"><span>5</span><span>10</span><span>15</span></div>'
++'<input type="range" id="zg-quiz-slider" min="5" max="15" step="5" value="10" style="width:100%;height:6px;accent-color:#198754;cursor:pointer">'
++'<div style="display:flex;justify-content:space-between;font-size:11px;color:#9ca3af;margin-top:10px;font-family:Tahoma,Geneva,sans-serif"><span>سريع</span><span>متوسط</span><span>شامل</span></div>'
 +'</div>'
 +'<button class="zg-start-btn" id="zg-quiz-start">'
 +'ابدأ الاختبار'
 +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>'
 +'</button></div>';
-var cBtns=$quizBody.querySelectorAll(".zg-count-btn");
-for(var i=0;i<cBtns.length;i++){(function(btn){btn.addEventListener("click",function(){for(var j=0;j<cBtns.length;j++)cBtns[j].classList.remove("zg-count-active");btn.classList.add("zg-count-active");quizState.count=parseInt(btn.getAttribute("data-n"));});})(cBtns[i]);}
+var slider=$quizBody.querySelector("#zg-quiz-slider");
+var numEl=$quizBody.querySelector("#zg-slider-num");
+if(slider&&numEl){slider.addEventListener("input",function(){quizState.count=parseInt(slider.value);numEl.textContent=slider.value;});}
 var startBtn=$quizBody.querySelector("#zg-quiz-start");
 if(startBtn)startBtn.addEventListener("click",function(){fetchQuizQuestions(quizState.count);});
 }
@@ -790,10 +796,23 @@ function renderQuizQuestion(){
 if(!$quizBody||!quizState.questions.length)return;
 var q=quizState.questions[quizState.current];
 var total=quizState.questions.length;
-var pct=Math.round((quizState.current/total)*100);
+var cur=quizState.current;
 var letters=["أ","ب","ج","د"];
-var html='<div class="zg-progress-bar"><div class="zg-progress-fill" style="width:'+pct+'%"></div></div>'
-+'<div class="zg-q-text">'+esc(q.q)+'</div>'
+// show progress sub-header
+var progHdr=document.getElementById("zg-quiz-prog-hdr");
+var progLabel=document.getElementById("zg-quiz-prog-label");
+var progDots=document.getElementById("zg-quiz-prog-dots");
+if(progHdr){progHdr.style.display="flex";}
+if(progLabel){progLabel.textContent="سؤال "+(cur+1)+" من "+total;}
+if(progDots){
+  var dotsHtml="";
+  for(var d=0;d<total;d++){
+    var op=d<=cur?"1":"0.25";
+    dotsHtml+='<div style="width:18px;height:4px;border-radius:4px;background:rgba(255,255,255,'+op+')"></div>';
+  }
+  progDots.innerHTML=dotsHtml;
+}
+var html='<div class="zg-q-card"><div class="zg-q-text">'+esc(q.q)+'</div></div>'
 +'<div class="zg-q-opts">';
 for(var i=0;i<q.opts.length;i++){html+='<button class="zg-q-opt" data-idx="'+i+'"><div class="zg-q-opt-letter">'+letters[i]+'</div>'+esc(q.opts[i])+'</button>';}
 html+='</div>';
@@ -804,27 +823,31 @@ quizState.answered=false;
 }
 function renderQuizResult(){
 if(!$quizBody)return;
+var progHdr=document.getElementById("zg-quiz-prog-hdr");
+if(progHdr)progHdr.style.display="none";
 var total=quizState.questions.length;
 var score=quizState.score;
 var pct=Math.round((score/total)*100);
+var wrongPct=100-pct;
 var grade="";var gradeSub="";
 if(pct>=90){grade="ممتاز";gradeSub="أداء رائع — أنت فاهم الدرس كويس جداً";}
 else if(pct>=75){grade="جيد جداً";gradeSub="أداء كويس — في حاجات بسيطة تراجعها";}
 else if(pct>=60){grade="جيد";gradeSub="فاهم المعظم — راجع النقاط اللي وقفت فيها";}
 else{grade="يحتاج مراجعة";gradeSub="لازم تراجع الدرس تاني بتركيز";}
-var wrongPct=Math.round(((total-score)/total)*100);
-var html='<div class="zg-result-circle-wrap"><div class="zg-result-circle"><div class="zg-result-score">'+score+'/'+total+'</div><div class="zg-result-of">درجتك</div></div></div>'
+var html='<div style="display:flex;flex-direction:column;height:100%;justify-content:space-between">'
++'<div style="display:flex;flex-direction:column;gap:16px">'
++'<div class="zg-result-circle-wrap"><div class="zg-result-circle"><div class="zg-result-score">'+score+'/'+total+'</div><div class="zg-result-of">درجتك</div></div></div>'
 +'<div class="zg-result-grade"><div class="zg-result-grade-text">'+grade+'</div><div class="zg-result-grade-sub">'+gradeSub+'</div></div>'
 +'<div class="zg-result-bars">'
 +'<div class="zg-r-bar-row"><div class="zg-r-bar-label">صح</div><div class="zg-r-bar-track"><div class="zg-r-bar-fill zg-green" style="width:'+pct+'%"></div></div><div class="zg-r-bar-num zg-g">'+score+'</div></div>'
 +'<div class="zg-r-bar-row"><div class="zg-r-bar-label">غلط</div><div class="zg-r-bar-track"><div class="zg-r-bar-fill zg-red" style="width:'+wrongPct+'%"></div></div><div class="zg-r-bar-num zg-r">'+(total-score)+'</div></div>'
 +'</div>'
 +'<div class="zg-result-msg"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> '+(score<total?"الأسئلة اللي غلطت فيها — راجع الدرس تاني وحاول الاختبار مرة تانية.":"أنت أجبت على كل الأسئلة صح! عظيم!")+'</div>'
++'</div>'
 +'<div class="zg-result-btns">'
 +'<button class="zg-r-btn-retry" id="zg-quiz-retry">حاول تاني</button>'
 +'<button class="zg-r-btn-done" id="zg-quiz-done">تمام، خلصت</button>'
-+'</div>';
-$quizBody.innerHTML=html;
++'</div></div>';
 $quizBody.querySelector("#zg-quiz-retry").addEventListener("click",function(){renderQuizCount();});
 $quizBody.querySelector("#zg-quiz-done").addEventListener("click",function(){closeQuiz();});
 }
