@@ -40,6 +40,9 @@ function getSession(sid) {
       lastTopic: null,
       lastResults: null,
       lastActivity: Date.now(),
+      audience: null,        // أطفال / مبتدئ / متقدم
+      clarifyCount: 0,       // عدد مرات الـ clarify في المحادثة
+      hadClarify: false,     // هل سألنا توضيح من قبل؟
     });
   }
   const s = sessions.get(sid);
@@ -82,9 +85,9 @@ function formatDiplomaCard(diploma) {
 // ══════════════════════════════════════════════════════════
 // Intent Analysis — GPT يفهم النية ويولد keywords
 // ══════════════════════════════════════════════════════════
-async function analyzeIntent(message, history = []) {
-  const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
-  const hadClarifyBefore = history.some(h => h.role === 'assistant' && (
+async function analyzeIntent(message, history = [], hadClarify = false) {
+  const lastMessages = history.slice(-2).map(h => `${h.role}: ${h.content}`).join("\n");
+  const hadClarifyBefore = hadClarify || history.some(h => h.role === 'assistant' && (
     h.content.includes('بالظبط') || h.content.includes('بالضبط') || h.content.includes('في إيه') || h.content.includes('في ايه')
   ));
 
@@ -135,7 +138,8 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 - الهدف: توليد كلمات البحث الأذكى اللي هتلاقي الكورس المناسب في DB
 - لو الموضوع مهنة أو هدف → حوّله للبرامج والأدوات المستخدمة فيه
 - لو الموضوع برنامج محدد → حطه بالعربي والإنجليزي
-- لا تضيف كلمات زي "كورس" أو "دورة" أو "تعلم"
+- لو الكلمة إنجليزية ممكن تتكتب بأكتر من طريقة → حط كل الطرق: "work flow" → keywords: ["workflow", "work flow", "workflows"]
+- لو الكلمة عربية ولها مقابل إنجليزي معروف → حط الاتنين: "وورك فلو" → keywords: ["workflow", "work flow"]
 
 أمثلة ذكية للـ keywords:
 "تصميم أثاث" → keywords: ["3ds max", "اوتوكاد", "blender"] — البرامج المستخدمة فقط
@@ -349,30 +353,27 @@ async function smartChat(message, sessionId) {
 
   // تحليل النية
   let intent;
-  if (wasAskingClarify) {
+  if (wasAskingClarify || session.hadClarify) {
     // المستخدم اختار من الـ options — نستخدم GPT عشان يحول الاختيار لـ keywords صح
-    intent = await analyzeIntent(message, session.history.slice(-4));
-    // نضمن إن النوع search
+    intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
+    // نضمن إن النوع search دايماً بعد clarify
     intent.type = "search";
     intent.is_ambiguous = false;
     if (!intent.keywords || intent.keywords.length === 0) {
       intent.keywords = prepareSearchTerms(message.split(/\s+/));
     }
-    console.log(`🔄 Was clarify → search with GPT keywords: ${intent.keywords?.join(", ")}`);
+    // احتفظ بالـ audience لو GPT استخرجها
+    if (intent.audience) session.audience = intent.audience;
+    console.log(`🔄 Post-clarify → search: ${intent.keywords?.join(", ")}`);
   } else {
-    intent = await analyzeIntent(message, session.history.slice(-2));
+    intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
     // لو GPT أصر على clarify تاني — اجبره على search
-    if (intent.type === "clarify" || intent.is_ambiguous) {
-      const prevClarify = session.history.some(h => h.role === 'assistant' && (
-        h.content.includes('بالظبط') || h.content.includes('بالضبط')
-      ));
-      if (prevClarify) {
-        console.log(`⚠️ GPT wanted clarify again — forcing search`);
-        intent.type = "search";
-        intent.is_ambiguous = false;
-        if (!intent.keywords || intent.keywords.length === 0) {
-          intent.keywords = prepareSearchTerms(message.split(/\s+/));
-        }
+    if ((intent.type === "clarify" || intent.is_ambiguous) && session.hadClarify) {
+      console.log(`⚠️ GPT wanted clarify again — forcing search`);
+      intent.type = "search";
+      intent.is_ambiguous = false;
+      if (!intent.keywords || intent.keywords.length === 0) {
+        intent.keywords = prepareSearchTerms(message.split(/\s+/));
       }
     }
   }
@@ -436,6 +437,12 @@ async function smartChat(message, sessionId) {
 
   // ── Clarify ──
   else if (intent.type === "clarify" || intent.is_ambiguous) {
+    // حفظ الـ audience لو GPT استخرجها
+    if (intent.audience) session.audience = intent.audience;
+    // تسجيل إن سألنا clarify
+    session.hadClarify = true;
+    session.clarifyCount = (session.clarifyCount || 0) + 1;
+
     reply = intent.clarify_question || "بتدور على إيه بالظبط؟ 😊";
     if (intent.clarify_options && intent.clarify_options.length > 0) {
       reply += "<br><br>";
@@ -450,37 +457,44 @@ async function smartChat(message, sessionId) {
       ? intent.keywords
       : prepareSearchTerms(message.split(/\s+/));
 
-    // نشيل كلمات زي "كورس" و"دورة" من الـ keywords عشان ما تخربش البحث
+    // نشيل كلمات زي "كورس" و"دورة" من الـ keywords
     const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma"]);
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/));
 
-    // لو في كلمات محددة (برامج/أدوات) — نشيل الكلمات العامة جداً اللي بتجيب نتايج غلط
+    // نشيل الكلمات العامة جداً لو في كلمات أكثر تحديداً
     const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع"]);
     const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
     if (specificKeywords.length > 0) {
       keywords = specificKeywords;
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
-    // استخدم الـ audience لو موجود (أطفال، مبتدئ، متقدم)
-    const audience = intent.audience || null;
-    if (audience) console.log(`👥 Audience: ${audience}`);
 
-    // لو أطفال — أضف keywords مناسبة
+    // الـ audience — من intent أو من الـ session المحفوظة
+    const audience = intent.audience || session.audience || null;
+    if (audience) {
+      session.audience = audience; // احتفظ بيها في الـ session
+      console.log(`👥 Audience: ${audience}`);
+    }
+
+    // لو أطفال — أضف keywords مناسبة للأطفال
     if (audience === "أطفال") {
-      keywords = [...keywords, "أطفال", "مبتدئ", "kids"];
+      keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
+      console.log("👧 Kids mode — added scratch/أطفال keywords");
     }
 
     const results = await performSearch(keywords, [], audience);
-    // استخدم الموضوع الأصلي من رسالة اليوزر للعنوان
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
     reply = await formatResults(results, displayTopic);
     session.lastTopic = keywords.join(" ");
     session.lastResults = results;
 
-    // بعد البحث الناجح — امسح الـ history عشان المحادثة الجاية تبدأ نضيفة
+    // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
     if (results.courses.length > 0 || results.diplomas.length > 0) {
       session.history = [];
+      session.hadClarify = false; // reset للمحادثة الجديدة
+      session.clarifyCount = 0;
+      // لا تمسح الـ audience — لو المستخدم سأل تاني نفس الـ audience
     }
 
     // اقتراحات بعد النتايج
