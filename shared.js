@@ -737,6 +737,113 @@ async function loadAllFAQs() {
   }
 }
 
+// ─── getArabicRoot ───
+function getArabicRoot(word) {
+  if (!word) return '';
+  let w = normalizeArabic(word).trim().toLowerCase();
+  if (w.length < 3) return w;
+  const articles = ['وبال', 'وال', 'بال', 'فال', 'كال', 'لل', 'ال'];
+  for (const art of articles) {
+    if (w.startsWith(art) && w.length - art.length >= 3) { w = w.slice(art.length); break; }
+  }
+  const suffixes = ['يه', 'يا', 'وي', 'ات', 'ون', 'ين', 'تين', 'ان', 'وا', 'نا', 'تم', 'تن', 'ه', 'ي'];
+  for (const s of suffixes) {
+    if (w.endsWith(s) && w.length - s.length >= 3) { w = w.slice(0, -s.length); break; }
+  }
+  if (w.startsWith('مست') && w.length >= 6) w = w.slice(3);
+  else if (w.startsWith('است') && w.length >= 6) w = w.slice(3);
+  else if (w.startsWith('مت') && w.length >= 5) w = w.slice(2);
+  else if (w.startsWith('م') && w.length >= 4) w = w.slice(1);
+  else if (w.startsWith('ت') && w.length >= 4) w = w.slice(1);
+  else if (w.startsWith('ا') && w.length >= 4) w = w.slice(1);
+  const weakLetters = new Set(['ا', 'و', 'ي', 'ى', 'آ', 'أ', 'إ', 'ئ', 'ؤ']);
+  let consonants = '';
+  for (const ch of w) { if (!weakLetters.has(ch)) consonants += ch; }
+  return consonants.length >= 3 ? consonants.slice(0, 3) : consonants;
+}
+
+// ─── shareArabicRoot ───
+function shareArabicRoot(word1, word2) {
+  if (!word1 || !word2) return false;
+  const w1 = normalizeArabic(word1).trim();
+  const w2 = normalizeArabic(word2).trim();
+  if (w1.length < 3 || w2.length < 3) return false;
+  const r1 = getArabicRoot(w1);
+  const r2 = getArabicRoot(w2);
+  if (r1.length < 3 || r2.length < 3) return false;
+  return r1 === r2;
+}
+
+// ─── isWordBoundaryMatch ───
+function isWordBoundaryMatch(textNorm, term) {
+  if (!textNorm || !term || term.length <= 2) return false;
+  if (!textNorm.includes(term)) return false;
+  const matchIndex = textNorm.indexOf(term);
+  const charBefore = matchIndex > 0 ? textNorm[matchIndex - 1] : ' ';
+  const charAfter = matchIndex + term.length < textNorm.length ? textNorm[matchIndex + term.length] : ' ';
+  const isWordBoundaryBefore = charBefore === ' ' || matchIndex === 0;
+  const isWordBoundaryAfter = charAfter === ' ' || (matchIndex + term.length) === textNorm.length;
+  if (isWordBoundaryBefore && isWordBoundaryAfter) return true;
+  if (!isWordBoundaryBefore && isWordBoundaryAfter) {
+    const lastSpaceIdx = textNorm.lastIndexOf(' ', matchIndex - 1);
+    const wordStart = lastSpaceIdx >= 0 ? lastSpaceIdx + 1 : 0;
+    const prefix = textNorm.substring(wordStart, matchIndex);
+    const knownPrefixes = ['ال', 'بال', 'وال', 'فال', 'كال', 'لل', 'و', 'ف', 'ب', 'ل', 'ك'];
+    if (knownPrefixes.includes(prefix)) return true;
+  }
+  if (isWordBoundaryBefore && !isWordBoundaryAfter) {
+    const nextSpaceIdx = textNorm.indexOf(' ', matchIndex + term.length);
+    const wordEnd = nextSpaceIdx >= 0 ? nextSpaceIdx : textNorm.length;
+    const suffix = textNorm.substring(matchIndex + term.length, wordEnd);
+    const knownSuffixes = ['ه', 'ة', 'ات', 'ين', 'ون', 'ي', 'يه', 'يا'];
+    if (knownSuffixes.includes(suffix)) return true;
+  }
+  return false;
+}
+
+// ─── fuzzySearchFallback ───
+async function fuzzySearchFallback(terms) {
+  if (!supabase) return [];
+  try {
+    const { data: all, error } = await supabase
+      .from("courses").select(COURSE_SELECT_COLS).limit(500);
+    if (error || !all) return [];
+    const searchable = prepareSearchTerms(terms);
+    const results = [];
+    for (const course of all) {
+      let bestSim = 0;
+      const titleN = normalizeArabic((course.title || "").toLowerCase());
+      const subtitleN = normalizeArabic((course.subtitle || "").toLowerCase());
+      const pageN = normalizeArabic((course.page_content || "").toLowerCase());
+      const domainN = normalizeArabic((course.domain || "").toLowerCase());
+      const keywordsN = normalizeArabic((course.keywords || "").toLowerCase());
+      let matchCount = 0;
+      for (const term of searchable) {
+        const nt = normalizeArabic(term.toLowerCase());
+        if (nt.length <= 1) continue;
+        let matched = false;
+        if (titleN.includes(nt) || nt.includes(titleN)) { bestSim = Math.max(bestSim, 85); matched = true; }
+        if (subtitleN.includes(nt)) { bestSim = Math.max(bestSim, 75); matched = true; }
+        if (domainN.includes(nt)) { bestSim = Math.max(bestSim, 80); matched = true; }
+        if (keywordsN.includes(nt)) { bestSim = Math.max(bestSim, 78); matched = true; }
+        if (pageN.includes(nt)) { bestSim = Math.max(bestSim, 72); matched = true; }
+        if (!matched) {
+          for (const tw of titleN.split(/\s+/)) {
+            const sim = similarityRatio(nt, tw);
+            if (sim >= 82) { bestSim = Math.max(bestSim, sim); matched = true; break; }
+            if (tw.length >= 3 && shareArabicRoot(nt, tw)) { bestSim = Math.max(bestSim, 73); matched = true; break; }
+          }
+        }
+        if (matched) matchCount++;
+      }
+      if (matchCount >= 2) bestSim += matchCount * 3;
+      if (bestSim >= 72) results.push({ ...course, relevanceScore: bestSim });
+    }
+    results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    return results.slice(0, 10);
+  } catch (e) { return []; }
+}
+
 // ─── searchCourses ───
 async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
   if (!supabase) return [];
