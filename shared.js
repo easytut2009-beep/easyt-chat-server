@@ -895,8 +895,8 @@ console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 // 🔧 FIX: Cap terms to avoid Supabase query length limits
 const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
-// 🔧 Phase 1: Search core fields (title, subtitle, description, keywords, domain)
-const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+// 🔧 Phase 1: بحث في العنوان والـ keywords فقط (الأدق)
+const coreCols = ["title", "subtitle", "keywords", "domain"];
 
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
@@ -924,8 +924,7 @@ const embResp = await openai.embeddings.create({
               match_count: 10,
             });
             return data || [];
-          } catch (e) {            return [];
-          }
+          } catch (e) { return []; }
         })()
       : Promise.resolve([]);
 
@@ -940,9 +939,27 @@ const [ilikeResult, semanticResults] = await Promise.all([
     }
 
     let allCourses = error ? [] : (courses || []);
-    console.log(`🔍 Phase 1 got ${allCourses.length} results`);
+    console.log(`🔍 Phase 1 (title/keywords) got ${allCourses.length} results`);
 
-// 🔧 Phase 2: لو مفيش نتايج خالص — وسع للـ syllabus وfull_content
+// 🔧 Phase 2: لو مفيش نتايج — وسع للـ description
+    if (allCourses.length === 0) {
+      console.log(`🔍 Phase 2 — expanding to description...`);
+      const deepCols = ["title", "subtitle", "description", "domain", "keywords"];
+      const deepFilters = cappedIlikeTerms
+        .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
+        .join(",");
+      const { data: deepResults } = await supabase
+        .from("courses")
+        .select(COURSE_SELECT_COLS)
+        .or(deepFilters)
+        .limit(30);
+      if (deepResults && deepResults.length > 0) {
+        allCourses = deepResults;
+        console.log(`🔍 Phase 2 got ${deepResults.length} results`);
+      }
+    }
+
+// 🔧 Phase 3: لو لسه مفيش — وسع للـ syllabus وfull_content
     if (allCourses.length === 0) {
       console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
       const deepCols = [
