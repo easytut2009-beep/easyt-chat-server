@@ -201,7 +201,7 @@ _s.textContent=''
 +'#zg-quiz-sub{font-size:9px;color:rgba(255,255,255,0.7);margin-top:1px}'
 +'#zg-quiz-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}'
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
-+'#zg-quiz-body{flex:1;overflow-y:auto;padding:32px 18px 24px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
++'#zg-quiz-body{flex:1;overflow-y:auto;padding:56px 18px 24px;display:flex;flex-direction:column;align-items:stretch;gap:0}'
 /* Count screen */
 +'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
 +'.zg-count-sub{font-size:13px;color:#6b7280;text-align:center;margin-bottom:32px;width:100%}'
@@ -728,7 +728,7 @@ hideBackBtn();
 }
 function renderQuizCount(){
 if(!$quizBody)return;
-$quizBody.innerHTML='<div style="text-align:center;padding:24px 0 0">'
+$quizBody.innerHTML='<div style="text-align:center;padding:8px 0 0">'
 +'<div class="zg-count-title">كام سؤال عايز؟</div>'
 +'<div class="zg-count-sub">اختار عدد الأسئلة وابدأ الاختبار</div>'
 +'</div>'
