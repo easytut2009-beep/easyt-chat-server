@@ -206,6 +206,21 @@ async function performSearch(keywords, instructors) {
     }
     if (courseResults && courseResults.length > 0) {
       const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
+
+      // 🆕 بحث في الدروس عشان نعرف الدرس المحدد اللي فيه الـ keyword
+      try {
+        const lessonResults = await searchLessonsInCourses(keywords);
+        if (lessonResults && lessonResults.length > 0) {
+          // حقن الدروس في الكورسات المقابلة
+          const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
+          withDiploma.forEach(c => {
+            if (lessonMap.has(c.id) && !c.matchedLessons) {
+              c.matchedLessons = lessonMap.get(c.id);
+            }
+          });
+        }
+      } catch (e) { /* مش مشكلة لو فشل */ }
+
       results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
     }
   } catch (e) { console.error("course search error:", e.message); }
@@ -278,17 +293,45 @@ async function formatResults(results, query) {
     return html;
   }
 
-  // دروس
+  // دروس — عرض الكورس كامل مع الدروس المطابقة والتظليل
   if (results.lessons.length > 0) {
     found = true;
-    html += `📖 <strong>دروس مرتبطة بـ "${query}":</strong><br><br>`;
-    results.lessons.forEach((l, i) => {
-      html += `<div style="border:1px solid #eee;border-radius:10px;margin:6px 0;padding:10px;background:#fff">`;
-      html += `<div style="font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:4px">📘 ${i+1}. ${escapeHtml(l.course_title || "")}</div>`;
-      html += `<div style="font-size:12px;color:#555;margin-bottom:6px">📖 ${escapeHtml(l.title || "")}</div>`;
-      if (l.link) html += `<a href="${l.link}" target="_blank" style="color:#e63946;font-size:12px;font-weight:700;text-decoration:none">🔗 اشترك للوصول ←</a>`;
-      html += `</div>`;
+    html += `📖 <strong>لقيت "${shortQuery}" في الدروس التالية:</strong><br><br>`;
+
+    // دالة تظليل الكلمة بالأصفر
+    function highlightQuery(text, q) {
+      if (!text || !q) return escapeHtml(text || "");
+      const escaped = escapeHtml(text);
+      const terms = q.split(/\s+/).filter(t => t.length > 1);
+      let result = escaped;
+      terms.forEach(term => {
+        const re = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        result = result.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
+      });
+      return result;
+    }
+
+    results.lessons.forEach((course, i) => {
+      // كارت الكورس
+      html += formatCourseCard(course, instructors, i + 1);
+
+      // الدروس المطابقة داخل الكورس
+      if (course.matchedLessons && course.matchedLessons.length > 0) {
+        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
+        html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس اللي فيها "${shortQuery}":</div>`;
+        course.matchedLessons.slice(0, 3).forEach(lesson => {
+          html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #fff9c4">`;
+          html += `• ${highlightQuery(lesson.title, query)}`;
+          if (lesson.timestamp_start) {
+            html += ` <span style="color:#e63946;font-size:11px">⏱ ${lesson.timestamp_start}</span>`;
+          }
+          html += `</div>`;
+        });
+        html += `</div>`;
+      }
     });
+
+    html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
   }
 
