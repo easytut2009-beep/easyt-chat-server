@@ -4,7 +4,7 @@
 
 "use strict";
 
-module.exports = function registerGuideRoutes(app, { openai, supabase, limiter, supabaseConnected }) {
+module.exports = function registerGuideRoutes(app, { openai, supabase, limiter, supabaseConnected, adminAuth, adminLoginLimiter }) {
 
 // ═══ Guide-specific helpers (injected from shared) ═══
 const {
