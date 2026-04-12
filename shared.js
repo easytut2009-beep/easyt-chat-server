@@ -868,10 +868,15 @@ async function searchCourses(searchTerms, excludeTerms = [], audience = null) {
 const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
+    // احتفظ بالعبارات الأصلية متعددة الكلمات (زي "تصميم أثاث") كـ phrase كاملة
+    const originalPhrases = searchTerms
+      .map(t => t.toLowerCase().trim())
+      .filter(t => t.includes(' ') && t.length > 3);
+
     console.log("🔍 Search terms:", allTerms);
 
     // فلتر الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const _genericWords = new Set(["تصميم", "تصميم", "برمجه", "برمجة", "تعلم", "شغل", "عمل", "مجال"]);
+    const _genericWords = new Set(["تصميم", "برمجه", "برمجة", "تعلم", "شغل", "عمل", "مجال"]);
     const _specificTerms = allTerms.filter(t => !_genericWords.has(normalizeArabic(t.toLowerCase())));
     const finalTerms = _specificTerms.length >= 1 ? _specificTerms : allTerms;
     if (_specificTerms.length < allTerms.length) {
@@ -882,11 +887,12 @@ const limitedTerms = finalTerms.slice(0, 8);
 
 // ═══ Expand Arabic variants for ilike matching ═══
 const ilikeTerms = expandArabicVariants(limitedTerms);
-console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
+// أضف الـ original phrases كاملة (تصميم أثاث، تصميم داخلي، إلخ)
+const allIlikeTerms = [...new Set([...originalPhrases, ...ilikeTerms])];
+console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 
 // 🔧 FIX: Cap terms to avoid Supabase query length limits
-// Max ~80 filter conditions (16 terms × 5 cols)
-const cappedIlikeTerms = ilikeTerms.slice(0, 16);
+const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
 // 🔧 Phase 1: Search in title + description + subtitle + keywords + domain
 const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
