@@ -380,15 +380,15 @@ notifyX:'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0
 };
 
 var TOOLS=[
-{id:"quiz",label:"اختبار تفاعلي",sub:"قيّم فهمك واحصل على درجة",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>'},
-{id:"summary_full",label:"ملخص الدرس",sub:"إنفوجراف + ملخص مفصل",color:"#d1e7dd",stroke:"#198754",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>'},
-{id:"exercise",label:"تمرين عملي",sub:"طبّق ما تعلمته",color:"#fef3c7",stroke:"#d97706",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>'},
-{id:"glossary",label:"مصطلحات الدرس",sub:"قاموس لكل مصطلح تقني",color:"#ccfbf1",stroke:"#0d9488",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>'},
-{id:"rephrase",label:"شرح بطريقة أخرى",sub:"أسلوب مختلف لنفس الفكرة",color:"#ede9fe",stroke:"#7c3aed",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'},
-{id:"updates",label:"آخر التحديثات",sub:"أحدث مستجدات الموضوع",color:"#f3f4f6",stroke:"#6b7280",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
-{id:"mistakes",label:"أخطاء شائعة",sub:"أكثر الأخطاء شيوعاً",color:"#fee2e2",stroke:"#dc2626",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'},
-{id:"analytical",label:"أسئلة تحليلية",sub:"فكر وحلل زي الامتحان",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
-{id:"download_resources",label:"تحميل موارد الدرس",sub:"PDF شامل لكل محتوى الدرس",color:"#fce7f3",stroke:"#be185d",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'}
+{id:"summary_full",label:"ملخص الدرس",sub:"إنفوجراف + ملخص مفصل",group:"فهم المحتوى 🧠",color:"#d1e7dd",stroke:"#198754",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>'},
+{id:"rephrase",label:"شرح بطريقة أخرى",sub:"أسلوب مختلف لنفس الفكرة",group:"فهم المحتوى 🧠",color:"#ede9fe",stroke:"#7c3aed",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'},
+{id:"glossary",label:"مصطلحات الدرس",sub:"قاموس لكل مصطلح تقني",group:"فهم المحتوى 🧠",color:"#ccfbf1",stroke:"#0d9488",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>'},
+{id:"quiz",label:"اختبار تفاعلي",sub:"قيّم فهمك واحصل على درجة",group:"تقييم وتطبيق ✅",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>'},
+{id:"exercise",label:"تمرين عملي",sub:"طبّق ما تعلمته",group:"تقييم وتطبيق ✅",color:"#fef3c7",stroke:"#d97706",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>'},
+{id:"analytical",label:"أسئلة تحليلية",sub:"فكر وحلل زي الامتحان",group:"تقييم وتطبيق ✅",color:"#dbeafe",stroke:"#1d4ed8",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+{id:"mistakes",label:"أخطاء شائعة",sub:"أكثر الأخطاء شيوعاً",group:"معلومات إضافية 📡",color:"#fee2e2",stroke:"#dc2626",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'},
+{id:"updates",label:"آخر التحديثات",sub:"أحدث مستجدات الموضوع",group:"معلومات إضافية 📡",color:"#f3f4f6",stroke:"#6b7280",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
+{id:"download_resources",label:"تحميل موارد الدرس",sub:"PDF شامل لكل محتوى الدرس",group:"معلومات إضافية 📡",color:"#fce7f3",stroke:"#be185d",icon:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'}
 ];
 
 var API="https://easyt-chat-server.onrender.com/api/guide";
@@ -1796,8 +1796,16 @@ for(var i=0;i<dirs.length;i++){var h=document.createElement("div");h.className="
 
 var $menuBody=document.getElementById("zg-tools-menu-body");
 if($menuBody){
+var lastGroup="";
 for(var ti=0;ti<TOOLS.length;ti++){
 var tool=TOOLS[ti];
+if(tool.group && tool.group!==lastGroup){
+lastGroup=tool.group;
+var groupLabel=document.createElement("div");
+groupLabel.style.cssText="font-size:10px;font-weight:700;color:#9ca3af;padding:10px 16px 5px;letter-spacing:0.6px;background:#f5f5f5;direction:rtl;text-align:right;";
+groupLabel.textContent=tool.group;
+$menuBody.appendChild(groupLabel);
+}
 var item=document.createElement("button");
 item.className="zg-tool-item";
 item.setAttribute("data-tool",tool.id);
