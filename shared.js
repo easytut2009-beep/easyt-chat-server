@@ -1286,6 +1286,9 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     const orFilters = allTerms.map((t) => `title.ilike.%${t}%`).join(",");
 
+    // الـ terms الأصلية بدون تكسير (للـ word boundary check)
+    const originalTerms = searchTerms.map(t => t.toLowerCase().trim()).filter(t => t.length > 2);
+
     let allLessons = [];
 
     // Title-based search
@@ -1294,10 +1297,18 @@ const allTerms = prepareSearchTerms(searchTerms);
         .from("lessons")
         .select("id, title, course_id")
         .or(orFilters)
-        .limit(20);
+        .limit(50);
 
       if (!error) {
-        allLessons = (lessons || []).map((l) => ({
+        // فلتر بـ word boundary — "work" مش هيطابق "network"
+        const filtered = (lessons || []).filter(l => {
+          const titleNorm = normalizeArabic((l.title || '').toLowerCase());
+          return originalTerms.some(term => {
+            const termNorm = normalizeArabic(term);
+            return isWordBoundaryMatch(titleNorm, termNorm) || titleNorm.includes(termNorm);
+          });
+        });
+        allLessons = filtered.map((l) => ({
           ...l,
           matchSource: "title_search",
         }));
