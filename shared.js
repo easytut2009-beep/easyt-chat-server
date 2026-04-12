@@ -15,7 +15,13 @@ function initShared(clients) {
 
 /* ═══ Constants ═══ */
 const CACHE_TTL = 10 * 60 * 1000;
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+const CORRECTION_CACHE_TTL = 5 * 60 * 1000;
+const FAQ_CACHE_TTL = 5 * 60 * 1000;
 const sessionMemory = new Map();
+let instructorCache = { data: null, ts: 0 };
+const correctionCache = { data: null, ts: 0 };
+const faqCache = { data: null, ts: 0 };
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
@@ -1268,6 +1274,6 @@ module.exports = {
   ALL_COURSES_URL, ALL_DIPLOMAS_URL, SUBSCRIPTION_URL,
   COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS,
   CATEGORIES, WHATSAPP_SUPPORT_LINK,
-  BASIC_STOP_WORDS, PAYMENTS_URL, CACHE_TTL, gptWithRetry,
-  initShared,
+  BASIC_STOP_WORDS, PAYMENTS_URL, CACHE_TTL, SEARCH_CACHE_TTL, CORRECTION_CACHE_TTL, FAQ_CACHE_TTL,
+  gptWithRetry, initShared,
 };
