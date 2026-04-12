@@ -880,19 +880,19 @@ console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
 // Max ~80 filter conditions (16 terms × 5 cols)
 const cappedIlikeTerms = ilikeTerms.slice(0, 16);
 
-// 🔧 Phase 1: Title-only search (الأدق)
-const titleOnlyCols = ["title", "subtitle", "keywords", "domain"];
+// 🔧 Phase 1: Search in title + description + subtitle + keywords + domain
+const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
 
-const titleFilters = cappedIlikeTerms
-  .flatMap((t) => titleOnlyCols.map((col) => `${col}.ilike.%${t}%`))
+const coreFilters = cappedIlikeTerms
+  .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
 
-console.log("🔤 Title filter conditions:", titleFilters.split(',').length);
+console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
-    const titleSearchPromise = supabase
+    const ilikePromise = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .or(titleFilters)
+      .or(coreFilters)
       .limit(30);
 
     const semanticPromise = openai
@@ -914,18 +914,18 @@ const embResp = await openai.embeddings.create({
         })()
       : Promise.resolve([]);
 
-const [titleResult, semanticResults] = await Promise.all([
-      titleSearchPromise,
+const [ilikeResult, semanticResults] = await Promise.all([
+      ilikePromise,
       semanticPromise,
     ]);
 
-    const { data: titleCourses, error } = titleResult;
+    const { data: courses, error } = ilikeResult;
     if (error) {
-      console.error("❌ title query FAILED:", error.message);
+      console.error("❌ ilike query FAILED:", error.message);
     }
 
-    let allCourses = error ? [] : (titleCourses || []);
-    console.log(`🔍 Phase 1 (title/keywords) got ${allCourses.length} results`);
+    let allCourses = error ? [] : (courses || []);
+    console.log(`🔍 Phase 1 got ${allCourses.length} results`);
 
 // 🔧 Phase 2: لو مفيش نتايج في العنوان — ابحث في الـ description
     if (allCourses.length === 0) {
@@ -1022,6 +1022,20 @@ const fullQuery = normalizeArabic(
       );
       if (fullQuery.length > 2 && titleNorm.includes(fullQuery)) score += 500;
       if (fullQuery.length > 2 && titleNorm.startsWith(fullQuery)) score += 100;
+
+      // 🎯 Bonus: لو العنوان = الـ query بالظبط أو الـ query هو الكلمة الرئيسية في العنوان
+      const titleWords = titleNorm.split(/\s+/).filter(w => w.length > 1);
+      const queryWords = fullQuery.split(/\s+/).filter(w => w.length > 1);
+      const queryWordCount = queryWords.length;
+      const titleWordCount = titleWords.length;
+      // كل كلمة في الـ query موجودة في العنوان؟
+      const allQueryWordsInTitle = queryWords.every(qw => titleWords.some(tw => tw.includes(qw) || qw.includes(tw)));
+      if (allQueryWordsInTitle) {
+        // كلما العنوان أقصر (أقرب للـ query) كلما الـ bonus أكبر
+        const brevityBonus = Math.max(0, 300 - (titleWordCount - queryWordCount) * 50);
+        score += brevityBonus;
+        console.log(`🎯 Brevity bonus: "${c.title}" → +${brevityBonus}`);
+      }
 
       for (const term of allTerms) {
         const nt = normalizeArabic(term.toLowerCase());
