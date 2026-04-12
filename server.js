@@ -89,6 +89,7 @@ const limiter = rateLimit({
 });
 
 /* ═══ Routes ═══ */
+const { initShared } = require("./shared");
 const registerGuideRoutes = require("./ziko-guide");
 const registerSalesRoutes = require("./ziko-sales");
 
@@ -2081,6 +2082,7 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
+  initShared({ supabase, openai });
   const ctx = { openai, supabase, limiter, supabaseConnected, adminAuth, adminLoginLimiter };
   registerGuideRoutes(app, ctx);
   registerSalesRoutes(app, { openai, supabase, limiter, adminAuth, adminLoginLimiter });
