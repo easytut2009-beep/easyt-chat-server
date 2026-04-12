@@ -758,7 +758,8 @@ if(!$quizBody)return;
 $quizBody.innerHTML='<div style="text-align:center;padding:30px 0"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:10px;font-size:11px;color:#9ca3af">زيكو بيجهز الأسئلة...</div></div>';
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var prompt="أنشئ اختباراً من "+count+" سؤال متعدد الاختيارات عن موضوع: "+topic+"\n\nمهم جداً: رد بـ JSON نقي فقط بدون أي كلام قبله أو بعده ولا backticks ولا markdown.\nالشكل المطلوب بالضبط:\n{\"questions\":[{\"q\":\"نص السؤال\",\"opts\":[\"الاختيار أ\",\"الاختيار ب\",\"الاختيار ج\",\"الاختيار د\"],\"correct\":0,\"explanation\":\"شرح مختصر\"}]}";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid()+"_quiz_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مساعد متخصص في إنشاء أسئلة اختبار. قاعدة صارمة: رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON. لا تستخدم ```json أو أي markdown. ابدأ مباشرة بـ { وانهِ بـ }."})})
+currentAbortController=new AbortController();
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid()+"_quiz_"+Date.now(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مساعد متخصص في إنشاء أسئلة اختبار. قاعدة صارمة: رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON. لا تستخدم ```json أو أي markdown. ابدأ مباشرة بـ { وانهِ بـ }."}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(data){
 var txt=(data.reply||"").trim();
@@ -868,8 +869,9 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var myGenSF=++streamGen;
+currentAbortController=new AbortController();
 showTyp();
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' واختر style المناسب:\n- flow: لو الموضوع خطوات أو عملية متسلسلة\n- compare: لو الموضوع مقارنة بين حاجتين\n- facts: لو الموضوع فيه أرقام أو إحصائيات\n- concepts: لو الموضوع مفاهيم منفصلة\n\nJSON فقط:\nflow: {\"style\":\"flow\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\ncompare: {\"style\":\"compare\",\"title\":\"عنوان\",\"left\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]},\"right\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]}}\nfacts: {\"style\":\"facts\",\"title\":\"عنوان\",\"items\":[{\"num\":\"رقم\",\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nconcepts: {\"style\":\"concepts\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nمن 3 إلى 5 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"حلل موضوع '"+topic+"' واختر style المناسب:\n- flow: لو الموضوع خطوات أو عملية متسلسلة\n- compare: لو الموضوع مقارنة بين حاجتين\n- facts: لو الموضوع فيه أرقام أو إحصائيات\n- concepts: لو الموضوع مفاهيم منفصلة\n\nJSON فقط:\nflow: {\"style\":\"flow\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\ncompare: {\"style\":\"compare\",\"title\":\"عنوان\",\"left\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]},\"right\":{\"label\":\"اسم\",\"points\":[\"نقطة\"]}}\nfacts: {\"style\":\"facts\",\"title\":\"عنوان\",\"items\":[{\"num\":\"رقم\",\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nconcepts: {\"style\":\"concepts\",\"title\":\"عنوان\",\"items\":[{\"head\":\"عنوان\",\"sub\":\"شرح\"}]}\nمن 3 إلى 5 عناصر.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"رد بـ JSON نقي فقط. لا تكتب أي كلام قبل أو بعد الـ JSON."}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){return r.json();})
 .then(function(data){
 if(streamGen!==myGenSF){return null;}
@@ -883,7 +885,7 @@ sep.style.cssText="text-align:center;font-size:13px;font-weight:700;color:#333;p
 sep.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F5132" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><span>الخلاصة</span>';
 $msgs.appendChild(sep);
 showTyp();
-return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ بـ: تناول الدرس... قواعد صارمة: لا تستخدم HTML أو br أو strong أو أي tag. لا تذكر أوقات. استخدم ** للعناوين فقط. مثال: **الألوان الأساسية**: هي الألوان التي..."})});
+return fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"لخص موضوع '"+topic+"' في نقاط مرتبة وواضحة مع شرح مختصر لكل نقطة. لا تذكر أوقات أو دقائق.",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي. ابدأ بـ: تناول الدرس... قواعد صارمة: لا تستخدم HTML أو br أو strong أو أي tag. لا تذكر أوقات. استخدم ** للعناوين فقط. مثال: **الألوان الأساسية**: هي الألوان التي..."}),signal:currentAbortController?currentAbortController.signal:undefined});
 })
 .then(function(r){if(!r)return;if(streamGen!==myGenSF)return;return r.json();})
 .then(function(data){
@@ -946,7 +948,7 @@ if($exInput)$exInput.value="";
 exImgBase64=null;exImgType=null;
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var sys="أنت مرشد تعليمي اسمك زيكو. اكتب تمرين عملي على موضوع الدرس في 4 أجزاء:\n1. سطر أول: 🎯 اسم التمرين\n2. سطرين: أهمية التمرين\n3. خطوات مرقمة (3-5 خطوات)\n4. سطر أخير فيه إيموجي: 📸 لو بصري، ✍️ لو نصي، 💻 لو كود، 🗣️ لو صوتي — مع جملة تقول للطالب يبعت النتيجة إزاي.\nلا تستخدم HTML. نص عادي فقط.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اعمل تمرين عملي على موضوع '"+topic+"'",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اعمل تمرين عملي على موضوع '"+topic+"'",session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){return r.json();})
 .then(function(data){
 var reply=(data.reply||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,"").trim();
@@ -1013,7 +1015,9 @@ $exBody.scrollTop=$exBody.scrollHeight;
 var topic=page.lecture_title||page.course_name||"الدرس الحالي";
 var exTask=window.__zikoExTask||"";var sys="أنت مرشد تعليمي اسمك زيكو. الطالب أرسل نتيجة تمرينه على موضوع '"+topic+"'."+(exTask?"\nالتمرين المطلوب كان: "+exTask:"")+"\nقواعد التقييم:\n1. إذا كانت الصورة غير واضحة أو سوداء أو لا علاقة لها بالموضوع، قل ذلك بوضوح ولا تعطِ درجة.\n2. إذا الإجابة لا علاقة لها بالتمرين المطلوب، نبّه الطالب بلطف.\n3. وإلا قيّم العمل:\n- ابدأ بـ ✅ النقاط الإيجابية\n- ثم ⚠️ نقطة تحتاج تحسين\n- اختم بدرجة: 🏆 درجتك: XX/100\n- وجملة تشجيعية.\nلا تستخدم HTML.";
 var msgContent=hasImg?[{type:"image_url",image_url:{url:"data:"+exImgType+";base64,"+exImgBase64}},{type:"text",text:txt||"قيّم شغلي"}]:(txt);
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:typeof msgContent==="string"?msgContent:"[صورة من الطالب] "+(txt||""),image_base64:hasImg?exImgBase64:null,image_type:hasImg?exImgType:null,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
+currentAbortController=new AbortController();
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:typeof msgContent==="string"?msgContent:"[صورة من الطالب] "+(txt||""),image_base64:hasImg?exImgBase64:null,image_type:hasImg?exImgType:null,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){return r.json();})
 .then(function(data){
 var reply=(data.reply||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,"").trim();
@@ -1083,9 +1087,10 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var myGenM=++streamGen;
+currentAbortController=new AbortController();
 showTyp();
 var prompt="اذكر أهم 5 أخطاء شائعة يقع فيها الطلاب في موضوع '"+topic+"'. استخدم هذا التنسيق لكل خطأ:\n❌ الخطأ: **[الخطأ بوضوح]** — [شرح ليه غلط]\n✅ الصح: **[الحل الصحيح]**\n\nالقاعدة: ❌ و✅ بدون بولد. كل حاجة بعد : تكون عادية ما عدا الكلمات بين ** تكون بولد.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي خبير. ركز على الأخطاء العملية الحقيقية اللي الطلاب بيقعوا فيها فعلاً."})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:"أنت مرشد تعليمي خبير. ركز على الأخطاء العملية الحقيقية اللي الطلاب بيقعوا فيها فعلاً."}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){if(!r.ok)throw new Error();return r.json();})
 .then(function(data){
 if(streamGen!==myGenM)return;
@@ -1094,7 +1099,7 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
 })
-.catch(function(){if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 }
 
 var analyticalState={questions:[],current:0};
@@ -1143,8 +1148,10 @@ loadDiv.innerHTML='<div class="zg-typing" style="justify-content:center"><div cl
 $exBody.appendChild(loadDiv);
 $exBody.scrollTop=$exBody.scrollHeight;
 var sys="UPDATES_MODE\nأنت مصحح إجابات. السؤال: "+q+"\nصحح إجابة الطالب بوضوح بدون ذكر دقائق أو أوقات. ابدأ بـ ✅ لو صح أو ❌ لو غلط. استخدم **بولد** للنقاط المهمة. كن مختصراً لا تتجاوز 5 أسطر.";
+if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var myGenAN=++streamGen;
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:"an_eval_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:sys})})
+currentAbortController=new AbortController();
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"إجابة الطالب: "+answer,session_id:"an_eval_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:sys}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){return r.json();})
 .then(function(data){
 if(streamGen!==myGenAN)return;
@@ -1200,7 +1207,7 @@ if($exSend){$exSend.textContent="إرسال الإجابة";$exSend.onclick=func
 if($exBody)$exBody.innerHTML='<div style="text-align:center;padding:40px"><div class="zg-typing" style="justify-content:center"><div class="zg-dot"></div><div class="zg-dot"></div><div class="zg-dot"></div></div><div style="margin-top:12px;font-size:11px;color:#9ca3af;font-family:Tahoma,Geneva,sans-serif">زيكو بيجهز الأسئلة...</div></div>';
 if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var anSys="UPDATES_MODE\nأنت مساعد. اكتب 3 أسئلة تحليلية على الموضوع. رد بـ JSON نقي فقط بدون أي كلام: {\"questions\":[\"السؤال الأول\",\"السؤال الثاني\",\"السؤال الثالث\"]}. لا تكتب أي شيء غير الـ JSON.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:"an_q_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:anSys})}).then(function(r){return r.json();}).then(function(data){
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"اكتب 3 أسئلة تحليلية مقالية على موضوع '"+topic+"' متدرجة: فهم، تطبيق، تحليل.",session_id:"an_q_"+Date.now()+"_"+Math.random().toString(36).slice(2),course_name:"",lecture_title:"",system_prompt:anSys}),signal:currentAbortController?currentAbortController.signal:undefined}).then(function(r){return r.json();}).then(function(data){
 var txt=(data.reply||"").replace(/```json|```/g,"").trim();
 var startI=txt.indexOf("{");var endI=txt.lastIndexOf("}");
 if(startI>-1&&endI>-1){txt=txt.substring(startI,endI+1);}
@@ -1251,9 +1258,10 @@ if(rem<=0){addMsg("خلصت رسائلك!","bot");return;}
 sending=true;if($toolsWrap)$toolsWrap.style.opacity="0.4";if($toolsWrap)$toolsWrap.style.pointerEvents="none";
 if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var myGenR=++streamGen;
+currentAbortController=new AbortController();
 showTyp();
 var sys="أنت مرشد تعليمي اسمك زيكو. نفذ التعليمات بدقة. نص عادي فقط بدون HTML. ابدأ مباشرة بالمحتوى.";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:prompt,session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sys}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){if(!r.ok)throw new Error();return r.json();})
 .then(function(data){
 if(streamGen!==myGenR)return;
@@ -1262,7 +1270,7 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
 })
-.catch(function(){if(streamGen!==myGenR)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}if(streamGen!==myGenR)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
 });
 }
 
