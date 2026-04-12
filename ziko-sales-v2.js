@@ -205,23 +205,31 @@ async function performSearch(keywords, instructors) {
       }
     }
     if (courseResults && courseResults.length > 0) {
-      const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
+      // تحقق إن في كورسات فيها الـ keyword في العنوان فعلاً
+      const hasRealTitleMatch = courseResults.some(c => {
+        const titleLow = (c.title || '').toLowerCase();
+        return keywords.some(k => titleLow.includes(k.toLowerCase()));
+      });
 
-      // 🆕 بحث في الدروس عشان نعرف الدرس المحدد اللي فيه الـ keyword
-      try {
-        const lessonResults = await searchLessonsInCourses(keywords);
-        if (lessonResults && lessonResults.length > 0) {
-          // حقن الدروس في الكورسات المقابلة
-          const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
-          withDiploma.forEach(c => {
-            if (lessonMap.has(c.id) && !c.matchedLessons) {
-              c.matchedLessons = lessonMap.get(c.id);
-            }
-          });
-        }
-      } catch (e) { /* مش مشكلة لو فشل */ }
-
-      results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+      if (hasRealTitleMatch) {
+        const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
+        // inject matched lessons
+        try {
+          const lessonResults = await searchLessonsInCourses(keywords);
+          if (lessonResults && lessonResults.length > 0) {
+            const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
+            withDiploma.forEach(c => {
+              if (lessonMap.has(c.id) && !c.matchedLessons) {
+                c.matchedLessons = lessonMap.get(c.id);
+              }
+            });
+          }
+        } catch (e) { }
+        results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+      } else {
+        // مفيش title match → اكمل للدروس (Step 3)
+        console.log("⚠️ No title match in courses → falling through to lessons");
+      }
     }
   } catch (e) { console.error("course search error:", e.message); }
 
