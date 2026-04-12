@@ -2057,6 +2057,20 @@ if (newRemaining > 0) {
         suggestions_count: suggestions.length,
       });
 
+// 🆕 إصلاح لينك الصفحة الرئيسية لو الـ GPT نسي يضيفه
+if (finalReply && finalReply.includes('الصفحة الرئيسية') && !finalReply.includes('href')) {
+    finalReply = finalReply.replace(
+        /الصفحة الرئيسية/g,
+        '<a href="https://easyt.online" target="_blank" style="color:#198754;font-weight:700;text-decoration:underline">الصفحة الرئيسية</a>'
+    );
+}
+// لو الرد فيه "سعر" أو "اشتراك" → نضيف رسالة التحويل في الآخر
+const _commercialKeywords = /سعر|اشتراك|دفع|فلوس|تكلفة|خصم|كوبون|اشترك|باقة/i;
+if (finalReply && _commercialKeywords.test(finalReply) && !finalReply.includes('href')) {
+    finalReply = finalReply.replace(/[.!😊]*\s*$/, '') + 
+        ' — للتفاصيل روح <a href="https://easyt.online" target="_blank" style="color:#198754;font-weight:700;text-decoration:underline">المساعد في الصفحة الرئيسية</a> 😊 خلينا دلوقتي نركز في الدرس!';
+}
+
 res.json({
     reply: finalReply,
     remaining_messages: newRemaining,
