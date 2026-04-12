@@ -1413,11 +1413,12 @@ var old=$msgs.querySelector(".zg-suggestions");if(old)old.remove();
 sending=true;if($toolsWrap)$toolsWrap.style.opacity='0.4';if($toolsWrap)$toolsWrap.style.pointerEvents='none';
 if($send){$send.classList.add("zg-stop");$send.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';}
 var myToolGen=++streamGen;
+currentAbortController=new AbortController();
 showTyp();
 var sysPrompt=id==="updates"?
 "UPDATES_MODE\nأنت خبير متخصص. مهمتك: اذكر أحدث المستجدات والتطورات في مجال '"+topic+"' من معرفتك الخاصة فقط. تجاهل تماماً أي محتوى درس أو كورس. ركز على: آخر الأخبار، أحدث الأدوات، التوجهات الجديدة، التغييرات الحديثة في العالم. نص عادي بدون HTML. ابدأ مباشرة بالمحتوى.":
 "أنت مرشد تعليمي اسمك زيكو.\nقواعد صارمة جداً:\n1. ممنوع تماماً استخدام HTML tags من أي نوع (<br>, <strong>, <b> إلخ)\n2. ممنوع استخدام ** أو * للتنسيق\n3. استخدم نص عادي فقط\n4. لما تُطلب قائمة مرقمة، كل عنصر لازم يكون في سطر جديد منفصل\n5. لا تكتب مقدمة أو خاتمة — ابدأ مباشرة بالمحتوى المطلوب";
-fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msgMap[id],session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPrompt})})
+fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msgMap[id],session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPrompt}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(data){
 if(streamGen!==myToolGen){return;}
@@ -1430,7 +1431,10 @@ if(id==="infographic"){renderInfographic(reply);if($send){$send.classList.remove
 else if(id==="glossary"){renderGlossary(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
 else{typewriterMsg(reply,"bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});}
 })
-.catch(function(){if(streamGen!==myToolGen)return;hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
+.catch(function(e){
+if(e&&e.name==="AbortError"){hideTyp();sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}return;}
+if(streamGen!==myToolGen)return;
+hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
 }
 
 function renderInfographic(text){
