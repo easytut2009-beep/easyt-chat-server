@@ -226,12 +226,23 @@ async function performSearch(keywords, instructors) {
         } catch (e) { }
         results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
       } else {
-        // مفيش في العنوان — بس في الـ syllabus/description
-        // نعرض الكورسات دي مع flag إن الموضوع في المحتوى
-        const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
-        withDiploma.forEach(c => { c._foundInContent = true; });
-        results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
-        console.log(`📄 Found ${results.courses.length} courses via content (syllabus/description)`);
+        // مفيش في العنوان أو الـ keywords — بس في الـ syllabus
+        // نتحقق أولاً لو في keywords match
+        const hasKeywordsMatch = courseResults.some(c =>
+          keywords.some(k => (c.keywords || '').toLowerCase().includes(k.toLowerCase()))
+        );
+
+        if (hasKeywordsMatch) {
+          // في keywords match — نعرضهم
+          const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
+          withDiploma.forEach(c => { c._foundInContent = true; });
+          results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+          console.log(`📄 Found ${results.courses.length} courses via keywords`);
+        } else {
+          // بس في الـ syllabus — مش كافي، اعمل fallback message
+          results.noDirectCourse = true;
+          console.log("⚠️ Only syllabus match — no direct course found");
+        }
       }
     }
   } catch (e) { console.error("course search error:", e.message); }
@@ -368,10 +379,17 @@ async function formatResults(results, query) {
 
   // مفيش نتايج
   if (!found) {
-    html = `مش لاقي كورسات عن "${escapeHtml(query)}" دلوقتي 😕<br><br>`;
-    html += `ممكن تجرب تسأل بطريقة تانية، أو تتصفح:<br>`;
-    html += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a><br>`;
-    html += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 كل الدبلومات ←</a>`;
+    if (results.noDirectCourse) {
+      html = `مفيش كورس مستقل عن "${escapeHtml(shortQuery)}" دلوقتي 😊<br><br>`;
+      html += `لكن "${escapeHtml(shortQuery)}" بيتدرس كجزء من كورسات تانية — ممكن تدور على الأداة أو التخصص اللي بتستخدم فيه:<br><br>`;
+      html += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a><br>`;
+      html += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
+    } else {
+      html = `مش لاقي كورسات عن "${escapeHtml(shortQuery)}" دلوقتي 😕<br><br>`;
+      html += `ممكن تجرب تسأل بطريقة تانية، أو تتصفح:<br>`;
+      html += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a><br>`;
+      html += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 كل الدبلومات ←</a>`;
+    }
   }
 
   return html;
