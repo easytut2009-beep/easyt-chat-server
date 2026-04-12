@@ -880,21 +880,20 @@ console.log("🔤 Expanded ilike terms:", ilikeTerms.length, ilikeTerms);
 // Max ~80 filter conditions (16 terms × 5 cols)
 const cappedIlikeTerms = ilikeTerms.slice(0, 16);
 
-// 🔧 Phase 1: Search core fields only
-const coreCols = ["title", "subtitle", "description", "domain", "keywords"];
+// 🔧 Phase 1: Title-only search (الأدق)
+const titleOnlyCols = ["title", "subtitle", "keywords", "domain"];
 
-const coreFilters = cappedIlikeTerms
-  .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
+const titleFilters = cappedIlikeTerms
+  .flatMap((t) => titleOnlyCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
 
-console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
+console.log("🔤 Title filter conditions:", titleFilters.split(',').length);
 
-    const ilikePromise = supabase
+    const titleSearchPromise = supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
-      .or(coreFilters)
+      .or(titleFilters)
       .limit(30);
-
 
     const semanticPromise = openai
       ? (async () => {
@@ -915,34 +914,24 @@ const embResp = await openai.embeddings.create({
         })()
       : Promise.resolve([]);
 
-const [ilikeResult, semanticResults] = await Promise.all([
-      ilikePromise,
+const [titleResult, semanticResults] = await Promise.all([
+      titleSearchPromise,
       semanticPromise,
     ]);
 
-    const { data: courses, error } = ilikeResult;
+    const { data: titleCourses, error } = titleResult;
     if (error) {
-      console.error("❌ ilike query FAILED:", error.message);
-      console.error("   ilikeTerms count:", ilikeTerms.length);
-      console.error("   coreFilters length:", coreFilters.length);
+      console.error("❌ title query FAILED:", error.message);
     }
 
-    let allCourses = error ? [] : (courses || []);
-    
-    // 🔧 Don't throw away semantic results if ilike failed!
+    let allCourses = error ? [] : (titleCourses || []);
+    console.log(`🔍 Phase 1 (title/keywords) got ${allCourses.length} results`);
 
-// 🔧 Phase 2: If few core results, expand to deep content (syllabus, full_content, etc.)
-    if (allCourses.length < 3 && limitedTerms.length <= 4) {
-      console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
-      
-      const deepCols = [
-        "title", "description", "subtitle",
-        "full_content", "page_content", "syllabus",
-        "objectives", "domain", "keywords",
-      ];
-      
-const deepIlikeTerms = expandArabicVariants(limitedTerms).slice(0, 10);
-const deepFilters = deepIlikeTerms
+// 🔧 Phase 2: لو مفيش نتايج في العنوان — ابحث في الـ description
+    if (allCourses.length === 0) {
+      console.log(`🔍 Phase 2 — expanding to description search...`);
+      const deepCols = ["title", "subtitle", "description", "domain", "keywords"];
+const deepFilters = cappedIlikeTerms
   .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
   .join(",");
 
@@ -953,10 +942,8 @@ const deepFilters = deepIlikeTerms
         .limit(30);
 
       if (deepResults && deepResults.length > 0) {
-        const existingIds = new Set(allCourses.map(c => c.id));
-        const newResults = deepResults.filter(c => !existingIds.has(c.id));
-        allCourses = [...allCourses, ...newResults];
-        console.log(`🔍 Phase 2 added ${newResults.length} deep results`);
+        allCourses = deepResults;
+        console.log(`🔍 Phase 2 got ${deepResults.length} results`);
       }
     }
 
@@ -1085,28 +1072,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
 
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    // 🔧 FIX: فلتر الكورسات اللي عنوانها مش قريب كفاية من الـ query
-    // يمنع ظهور "اكسيس" مع "اكسيل" وما شابه
-    const mainTerm = normalizeArabic(searchTerms[0]?.toLowerCase() || "");
-    const hasStrongResults = scored.some(c => {
-      const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-      return titleNorm.split(/\s+/).some(w => similarityRatio(mainTerm, w) >= 85);
-    });
-
-    const finalScored = hasStrongResults
-      ? scored.filter(c => {
-          const titleNorm = normalizeArabic((c.title || "").toLowerCase());
-          const titleWords = titleNorm.split(/\s+/);
-          const bestSim = Math.max(...titleWords.map(w => similarityRatio(mainTerm, w)));
-          if (bestSim < 82) {
-            console.log(`🚫 Filtered out low-sim title: "${c.title}" (sim=${bestSim} for "${mainTerm}")`);
-            return false;
-          }
-          return true;
-        })
-      : scored;
-
-    finalScored.slice(0, 5).forEach((c, i) => {
+    scored.slice(0, 5).forEach((c, i) => {
       console.log(
         `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
           c.domain ? ` (${c.domain})` : ""
@@ -1114,7 +1080,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
       );
     });
 
-    const result = finalScored.slice(0, 15);
+    const result = scored.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
