@@ -1429,7 +1429,7 @@ var sysPrompt=id==="updates"?
 fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msgMap[id],session_id:getSid(),course_name:page.course_name,lecture_title:page.lecture_title,system_prompt:sysPrompt}),signal:currentAbortController?currentAbortController.signal:undefined})
 .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(data){
-if(streamGen!==myToolGen){return;}
+if(streamGen!==myToolGen){stopSending();return;}
 hideTyp();
 var reply=data.reply||"";
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
@@ -1574,7 +1574,7 @@ addGNext();
 }
 
 function stopSending(){
-typewriterActive++;
+typewriterActive+=1000;
 streamGen++;
 if(currentAbortController){currentAbortController.abort();currentAbortController=null;}
 hideTyp();
