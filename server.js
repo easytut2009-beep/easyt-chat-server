@@ -4940,6 +4940,81 @@ var _dipW = '(?:دبلوم|ديبلوم|ديبوم)';
 
         var _dcIsStartQ = (_classified.intent === 'DIPLOMA_START');
 
+        // 🆕 هل السؤال استفسار محدد عن موضوع معين؟
+        var _dcIsSpecificQ = /هل|في أي|فين|يوجد|بيشرح|بيتكلم|موجود|يدرس|يعلم|فيها|بها|يتضمن|يغطي|يغطى/i.test(message);
+        var _dcSearchTerms = (analysis.search_terms || []).filter(function(t) { return t && t.length > 2; });
+
+        // 🆕 لو سؤال محدد وعنده search_terms → ابحث في chunks كورسات الدبلومة
+        if (_dcIsSpecificQ && _dcSearchTerms.length > 0) {
+          console.log('🔍 DIPLOMA specific Q — searching chunks in diploma courses: [' + _dcSearchTerms.join(', ') + ']');
+          
+          // ابحث في كل كورسات الدبلومة
+          var _dcChunkResults = [];
+          for (var _dci = 0; _dci < _dcCourses.length; _dci++) {
+            try {
+              var _dcc = _dcCourses[_dci];
+              var _dccChunks = await searchChunksByText(_dcSearchTerms, _dcc.id, null, 5);
+              if (_dccChunks && _dccChunks.length > 0) {
+                _dcChunkResults.push({
+                  course: _dcc,
+                  chunks: _dccChunks
+                });
+              }
+            } catch(_dcce) { console.error('Chunk search error for course:', _dcce.message); }
+          }
+
+          if (_dcChunkResults.length > 0) {
+            // لقى المحتوى — يرد بدقة
+            var _dcFoundReply = '✅ أيوه! دبلومة <strong>"' + escapeHtml(_dcDiploma.title) + '"</strong> بتغطي الموضوع ده 🎯<br><br>';
+            _dcChunkResults.forEach(function(res) {
+              _dcFoundReply += '📘 <strong>' + escapeHtml(res.course.title) + '</strong><br>';
+              res.chunks.slice(0, 2).forEach(function(chunk) {
+                if (chunk.lesson_title) {
+                  var ts = chunk.timestamp_start ? ' <span style="color:#888;font-size:12px">⏱️ ' + chunk.timestamp_start + '</span>' : '';
+                  _dcFoundReply += '&nbsp;&nbsp;• درس: "' + escapeHtml(chunk.lesson_title) + '"' + ts + '<br>';
+                }
+              });
+              if (res.course.link) {
+                _dcFoundReply += '&nbsp;&nbsp;<a href="' + res.course.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none;font-size:13px">← شوف الكورس</a><br>';
+              }
+              _dcFoundReply += '<br>';
+            });
+            if (_dcDiploma.link) {
+              _dcFoundReply += '<a href="' + _dcDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة كاملة ←</a>';
+            }
+            _dcFoundReply = finalizeReply(_dcFoundReply);
+            updateSessionMemory(sessionId, {
+              lastShownCourseIds: _dcCourses.map(function(c) { return String(c.id); }),
+              lastShownDiplomaIds: [String(_dcDiploma.id)],
+              topics: [_dcDiploma.title],
+              lastSearchTopic: _dcDiploma.title,
+            });
+            return { reply: _dcFoundReply, intent: "DIPLOMA_CONTENT", suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "عايز كورس 📘"] };
+          } else {
+            // ملقاش في chunks — جرب في syllabus/keywords
+            var _dcSyllabusHit = _dcCourses.filter(function(c) {
+              var hay = normalizeArabic(((c.syllabus||'') + ' ' + (c.keywords||'') + ' ' + (c.description||'')).toLowerCase());
+              return _dcSearchTerms.some(function(t) { return hay.includes(normalizeArabic(t.toLowerCase())); });
+            });
+            if (_dcSyllabusHit.length > 0) {
+              var _dcSylReply = '✅ نعم! هتلاقي الموضوع ده في دبلومة <strong>"' + escapeHtml(_dcDiploma.title) + '"</strong> 👇<br><br>';
+              _dcSylReply += '<strong>' + escapeHtml(_dcSyllabusHit[0].title) + '</strong><br>';
+              if (_dcSyllabusHit[0].link) _dcSylReply += '<a href="' + _dcSyllabusHit[0].link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none;font-size:13px">← شوف الكورس</a><br>';
+              if (_dcDiploma.link) _dcSylReply += '<br><a href="' + _dcDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة ←</a>';
+              _dcSylReply = finalizeReply(_dcSylReply);
+              updateSessionMemory(sessionId, { lastShownDiplomaIds: [String(_dcDiploma.id)], topics: [_dcDiploma.title] });
+              return { reply: _dcSylReply, intent: "DIPLOMA_CONTENT", suggestions: ["ازاي ادفع؟ 💳", "🎓 الدبلومات", "عايز كورس 📘"] };
+            } else {
+              // مش موجود
+              var _dcNotFoundReply = '🔍 راجعت محتوى دبلومة <strong>"' + escapeHtml(_dcDiploma.title) + '"</strong> ومش لاقي غطاء مباشر للموضوع ده.<br><br>';
+              _dcNotFoundReply += 'لكن الدبلومة فيها ' + _dcCourses.length + ' كورس — ممكن تلاقيه ضمنياً 👇<br>';
+              if (_dcDiploma.link) _dcNotFoundReply += '<br><a href="' + _dcDiploma.link + '" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 شوف تفاصيل الدبلومة كاملة ←</a>';
+              _dcNotFoundReply = finalizeReply(_dcNotFoundReply);
+              return { reply: _dcNotFoundReply, intent: "DIPLOMA_CONTENT", suggestions: ["عايز كورس 📘", "🎓 الدبلومات", "📂 الأقسام"] };
+            }
+          }
+        }
+
         var _dcReply = '';
         if (_dcIsStartQ) {
           _dcReply = '📋 <strong>ترتيب دراسة دبلومة "' + escapeHtml(_dcDiploma.title) + '":</strong><br>';
