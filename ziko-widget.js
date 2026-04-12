@@ -925,7 +925,10 @@ if($send&&!$send.classList.contains("zg-stop")){$send.classList.add("zg-stop");$
 var myGenS=++typewriterActive;
 var si=0;
 function addSumNext(){
-if(typewriterActive!==myGenS)return;
+if(typewriterActive!==myGenS){
+  while(si<sEls.length){sumDiv.appendChild(sEls[si].cloneNode(true));si++;}
+  scrollBot();stopSending();return;
+}
 if(si>=sEls.length){scrollBot();return;}
 sumDiv.appendChild(sEls[si].cloneNode(true));
 scrollBot();si++;setTimeout(addSumNext,150);
@@ -1512,7 +1515,10 @@ if($send&&!$send.classList.contains("zg-stop")){$send.classList.add("zg-stop");$
 var myGenI=++typewriterActive;
 var di=0;
 function addNext(){
-if(typewriterActive!==myGenI)return;
+if(typewriterActive!==myGenI){
+  while(di<children.length){div.appendChild(children[di].cloneNode(true));di++;}
+  scrollBot();return;
+}
 if(di>=children.length)return;
 div.appendChild(children[di].cloneNode(true));
 scrollBot();di++;setTimeout(addNext,200);
@@ -1565,7 +1571,10 @@ if($send&&!$send.classList.contains("zg-stop")){$send.classList.add("zg-stop");$
 var myGenG=++typewriterActive;
 var gi=0;
 function addGNext(){
-if(typewriterActive!==myGenG)return;
+if(typewriterActive!==myGenG){
+  while(gi<gItems.length){div.appendChild(gItems[gi].cloneNode(true));gi++;}
+  scrollBot();return;
+}
 if(gi>=gItems.length){scrollBot();return;}
 div.appendChild(gItems[gi].cloneNode(true));
 scrollBot();gi++;setTimeout(addGNext,150);
