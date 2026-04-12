@@ -139,7 +139,7 @@ async function analyzeIntent(message, history = []) {
     return JSON.parse(raw);
   } catch (e) {
     console.error("❌ analyzeIntent error:", e.message);
-    return { type: "search", keywords: prepareSearchTerms(message), is_ambiguous: false };
+    return { type: "search", keywords: prepareSearchTerms(message.split(/\s+/)), is_ambiguous: false };
   }
 }
 
@@ -324,7 +324,7 @@ async function smartChat(message, sessionId) {
     // المستخدم اختار من الـ options — ابحث مباشرة
     intent = {
       type: "search",
-      keywords: prepareSearchTerms(message),
+      keywords: prepareSearchTerms(message.split(/\s+/)),
       is_ambiguous: false,
     };
     console.log(`🔄 Was clarify → forcing search for: "${message}"`);
@@ -403,12 +403,12 @@ async function smartChat(message, sessionId) {
   else if (intent.type === "search") {
     let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
-      : prepareSearchTerms(message);
+      : prepareSearchTerms(message.split(/\s+/));
 
     // نشيل كلمات زي "كورس" و"دورة" من الـ keywords عشان ما تخربش البحث
     const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma"]);
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
-    if (keywords.length === 0) keywords = prepareSearchTerms(message);
+    if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/));
 
     console.log("🔍 Final search keywords:", keywords);
     const results = await performSearch(keywords, []);
