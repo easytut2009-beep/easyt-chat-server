@@ -532,6 +532,28 @@ const MAX_CLIENT_PROMPT_CHARS = 500;
 
 }
 
+// ─── botInstructionsCache ───
+let _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
+
+// ─── logGuide ───
+async function logGuide(sessionId, role, message, courseName, lectureTitle, remaining, extra = {}) {
+  if (!supabase) return;
+  try {
+    await supabase.from("guide_logs").insert({
+      session_id: sessionId || "unknown",
+      role,
+      message: (message || "").substring(0, 10000),
+      course_name: courseName || null,
+      lecture_title: lectureTitle || null,
+      remaining_messages: remaining != null ? remaining : null,
+      metadata: extra,
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("logGuide error:", e.message);
+  }
+}
+
 async function getGuideRemaining(sessionId) {
   if (!supabase) return GUIDE_DAILY_LIMIT;
   try {
