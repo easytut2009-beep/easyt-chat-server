@@ -4,6 +4,15 @@
 
 "use strict";
 
+/* ═══ Clients (initialized from server.js) ═══ */
+let supabase = null;
+let openai = null;
+
+function initShared(clients) {
+  supabase = clients.supabase;
+  openai = clients.openai;
+}
+
 /* ═══ Constants ═══ */
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
@@ -1205,4 +1214,5 @@ module.exports = {
   COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS,
   CATEGORIES, WHATSAPP_SUPPORT_LINK,
   BASIC_STOP_WORDS, PAYMENTS_URL,
+  initShared,
 };
