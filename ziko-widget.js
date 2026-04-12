@@ -1440,9 +1440,9 @@ else if(id==="glossary"){renderGlossary(reply);if($send){$send.classList.remove(
 else{typewriterMsg(reply,"bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});}
 })
 .catch(function(e){
-if(e&&e.name==="AbortError"){hideTyp();sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}return;}
+if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}
 if(streamGen!==myToolGen)return;
-hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");sending=false;if($send){$send.classList.remove('zg-stop');$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}});
+hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");stopSending();});
 }
 
 function renderInfographic(text){
