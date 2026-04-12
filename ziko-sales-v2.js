@@ -435,8 +435,6 @@ async function smartChat(message, sessionId) {
       keywords = specificKeywords;
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
-
-    console.log("🔍 Final search keywords:", keywords);
     const results = await performSearch(keywords, []);
     reply = await formatResults(results, keywords.join(" "));
     session.lastTopic = keywords.join(" ");
