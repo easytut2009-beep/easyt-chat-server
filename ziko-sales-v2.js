@@ -336,13 +336,15 @@ async function smartChat(message, sessionId) {
   // تحليل النية
   let intent;
   if (wasAskingClarify) {
-    // المستخدم اختار من الـ options — ابحث مباشرة بدون GPT
-    intent = {
-      type: "search",
-      keywords: prepareSearchTerms(message.split(/\s+/)),
-      is_ambiguous: false,
-    };
-    console.log(`🔄 Was clarify → forcing search for: "${message}"`);
+    // المستخدم اختار من الـ options — نستخدم GPT عشان يحول الاختيار لـ keywords صح
+    intent = await analyzeIntent(message, session.history.slice(-4));
+    // نضمن إن النوع search
+    intent.type = "search";
+    intent.is_ambiguous = false;
+    if (!intent.keywords || intent.keywords.length === 0) {
+      intent.keywords = prepareSearchTerms(message.split(/\s+/));
+    }
+    console.log(`🔄 Was clarify → search with GPT keywords: ${intent.keywords?.join(", ")}`);
   } else {
     intent = await analyzeIntent(message, session.history.slice(-4));
     // لو GPT أصر على clarify تاني — اجبره على search
