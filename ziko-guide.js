@@ -1316,6 +1316,221 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
 
 
 
+
+/* ═══ Guide Core Functions ═══ */
+const MAX_GUIDE_SESSIONS = 500;
+
+// ─── truncateContext ───
+function truncateContext(text, maxChars) {
+  if (!text || text.length <= maxChars) return text;
+  const truncated = text.substring(0, maxChars);
+  const lastBreak = Math.max(
+    truncated.lastIndexOf("."),
+    truncated.lastIndexOf("\n")
+  );
+  return lastBreak > maxChars * 0.8
+    ? truncated.substring(0, lastBreak + 1) + "\n[... بقية المحتوى]"
+    : truncated + "\n[... بقية المحتوى]";
+}
+
+// ─── sanitizeForPrompt ───
+function sanitizeForPrompt(text) {
+  if (!text) return "";
+  return text
+    .replace(/##\s/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// ─── isCurrentLesson ───
+function isCurrentLesson(lectureTitle, dbTitle) {
+  if (!lectureTitle || !dbTitle) return false;
+  const normLec = normalizeArabic(lectureTitle.toLowerCase());
+  const normDb = normalizeArabic(dbTitle.toLowerCase());
+  return (
+    normDb.includes(normLec) ||
+    normLec.includes(normDb) ||
+    similarityRatio(normLec, normDb) >= 60
+  );
+}
+
+// ─── buildGuideSystemPrompt ───
+function buildGuideSystemPrompt({
+  courseName = "",
+  lectureTitle = "",
+  clientPrompt = "",
+  currentLessonContext = "",
+  otherLessonsContext = "",
+  allCourseLessons = [],
+  lessonFound = false,
+  otherCourseRecommendation = null,
+  botInstructions = ""
+} = {}) {
+
+  const hasCurrentContent = currentLessonContext && currentLessonContext.trim().length > 20;
+  const hasOtherContent = otherLessonsContext && otherLessonsContext.trim().length > 20;
+
+  const getRecName = () => otherCourseRecommendation
+    ? (otherCourseRecommendation.courseTitle || otherCourseRecommendation.name || "الكورس") : "";
+  const getRecLink = () => otherCourseRecommendation
+    ? (otherCourseRecommendation.courseLink || otherCourseRecommendation.link || "") : "";
+  const getRecLessons = () => otherCourseRecommendation
+    ? (otherCourseRecommendation.lessons || []) : [];
+
+  const parts = [];
+
+  // ═══ الهوية ═══
+  parts.push(`أنت "زيكو" المرشد التعليمي في منصة "إيزي تي". الطالب بيتفرج على درس وبيسألك.
+
+أسلوبك: ودود ومختصر، إيموجي مناسبة.
+• لو الطالب كتب عربي → رد بالعربي المصري | لو كتب إنجليزي → رد بالإنجليزي
+❌ ما تقولش "أنا ChatGPT" أو أي اسم AI تاني
+❌ ما تحلش أي امتحان أو اختبار كامل للطالب بشكل مباشر — الكويز بتاعك جواك أنت
+💰 لو سأل عن أسعار أو اشتراكات → وجّهه للمساعد في <a href="https://easyt.online" target="_blank">easyt.online</a>`);
+
+  // ═══ تعليمات الأدمن ═══
+  if (botInstructions && botInstructions.trim()) {
+    parts.push(`\n⚙️ تعليمات الأدمن (إجبارية):\n${botInstructions}`);
+  }
+
+  // ═══ الدرس الحالي ═══
+  if (courseName || lectureTitle) {
+    const locationLines = [`\n📍 الطالب واقف على:`];
+    if (courseName) locationLines.push(`   📚 الكورس: "${courseName}"`);
+    if (lectureTitle) locationLines.push(`   📖 الدرس: "${lectureTitle}"`);
+    if (!lessonFound) locationLines.push(`   ⚠️ محتوى الدرس مش موجود في قاعدة البيانات بعد.`);
+    parts.push(locationLines.join("\n"));
+  }
+
+  // ═══ قائمة الدروس ═══
+  if (allCourseLessons && allCourseLessons.length > 0) {
+    const lessonLines = [`\n📋 دروس الكورس:`];
+    allCourseLessons.forEach((lesson) => {
+      const num = lesson.lesson_order || 0;
+      const isCurrent = isCurrentLesson(lectureTitle, lesson.title);
+      lessonLines.push(`  ${num}. "${lesson.title}"${isCurrent ? " ← 📍 الحالي" : ""}`);
+    });
+    lessonLines.push(`🔴 استخدم أسماء الدروس بالظبط — ممنوع تخترع اسم درس!`);
+    parts.push(lessonLines.join("\n"));
+  }
+
+  // ═══ سياق إضافي ═══
+  if (clientPrompt && clientPrompt.trim()) {
+    parts.push(`\nسياق إضافي:\n${sanitizeForPrompt(clientPrompt).substring(0, MAX_CLIENT_PROMPT_CHARS)}`);
+  }
+
+  // ═══ محتوى الدرس الحالي ═══
+  if (hasCurrentContent) {
+    parts.push(`\n📗 نص الدرس الحالي:\n${truncateContext(currentLessonContext, MAX_CURRENT_CONTEXT_CHARS)}`);
+  }
+
+  // ═══ محتوى دروس أخرى ═══
+  if (hasOtherContent) {
+    parts.push(`\n📚 محتوى من دروس أخرى:\n${truncateContext(otherLessonsContext, MAX_OTHER_CONTEXT_CHARS)}`);
+  }
+
+  // ═══ كورس مرشح ═══
+  if (otherCourseRecommendation) {
+    const recLines = [`\n🎓 كورس تاني على المنصة: "${getRecName()}"`];
+    if (getRecLink()) recLines.push(`🔗 ${getRecLink()}`);
+    const recLessons = getRecLessons();
+    if (recLessons.length > 0) {
+      recLines.push(`📖 الدروس:`);
+      recLessons.forEach((l) => {
+        recLines.push(`  - "${l.title || l.name || ""}"${l.timestamp ? ` [⏱️ ${l.timestamp}]` : ""}`);
+      });
+    }
+    parts.push(recLines.join("\n"));
+  }
+
+  // ═══ التعليمات ═══
+  if (lectureTitle) {
+    parts.push(`\n## قواعد التسمية:
+- الدرس/الكورس الحالي → "الدرس ده"/"الكورس ده" بس — ممنوع تذكر اسمهم
+- درس تاني → اذكر اسمه + "هناك" | كورس تاني → اذكر اسمه عادي`);
+  }
+
+  // ═══ المطابقة + خطوات الإجابة ═══
+  let stepsBlock = `\n## المطابقة الذكية:
+افهم المعنى مش الكلمات. "تحسين محركات البحث"="SEO"="سيو" | "صفحة الهبوط"="Landing Page"
+
+## 🔴 خطوات الإجابة بالترتيب:
+
+**خطوة 1: نص الدرس الحالي (📗)**`;
+
+  if (hasCurrentContent) {
+    stepsBlock += `\nلو لقيت الإجابة → اشرحها + التوقيت: "في الدقيقة X:XX من الدرس ده ⏱️". لو مفيش timestamp → ما تخترعش.`;
+  } else {
+    stepsBlock += `\n⚠️ مفيش نص — روح خطوة 2.`;
+  }
+
+  stepsBlock += `\n\n**خطوة 2: محتوى دروس أخرى (📚)**`;
+  if (hasOtherContent) {
+    stepsBlock += `\nلو لقيت → اشرح + اسم الدرس + التوقيت: "في درس 'X' عند الدقيقة X:XX ⏱️ — هناك هتلاقي..."`;
+  } else {
+    stepsBlock += `\n⚠️ مفيش — روح خطوة 2.5.`;
+  }
+
+  stepsBlock += `\n\n**خطوة 2.5: طابق أسماء الدروس**
+لو فيه درس اسمه مرتبط بالسؤال → لازم تذكره حتى لو ما قرأتش نصه. ممنوع تتجاهله!
+
+**خطوة 3: جاوب من معرفتك (بعد 1+2+2.5 بس)**
+جاوب بثقة وطبيعي. ما تقولش "من معرفتي"/"ما اتغطاش"/"معلومة إضافية". ما تنسبش كلام للمحاضر ولا تخترع timestamp.`;
+
+  if (otherCourseRecommendation) {
+    stepsBlock += `\n\n**خطوة 4: ترشيح كورس تاني (لو جاوبت من خطوة 3)**
+🔴 لو جاوبت من معرفتك → رشّح: "${getRecName()}"${getRecLink() ? ` ${getRecLink()}` : ""}
+اكتب الرابط كنص — ممنوع [رابط]. الكورس ده من نفس المنصة!
+❌ لو جاوبت من الدرس الحالي بالكامل أو السؤال ملوش علاقة → ما ترشحش`;
+  }
+
+  parts.push(stepsBlock);
+
+// ═══ طلبات خاصة + ممنوعات + شكل الإجابة ═══
+  // 🆕 FIX #49b: Dynamic summary instruction based on content availability
+  let summaryInstruction;
+  if (hasCurrentContent) {
+    summaryInstruction = `• ملخص: لخّص المحتوى الموجود في "📗 نص الدرس الحالي" فوق → فكرة رئيسية + 3-7 نقاط مع ⏱️ التوقيتات + نصيحة عملية.
+  🔴🔴🔴 المحتوى موجود فوق في قسم 📗 — لازم تستخدمه! ممنوع تقول "معنديش محتوى"!`;
+  } else if (hasOtherContent) {
+    summaryInstruction = `• ملخص: مفيش نص مباشر للدرس الحالي، لكن فيه محتوى في قسم "📚 دروس أخرى" — استخدمه واذكر أسماء الدروس والتوقيتات.
+  لو المحتوى مش كافي كمّل من معرفتك بشكل طبيعي. ممنوع تقول "معنديش محتوى" لو فيه أي محتوى في 📚!`;
+  } else {
+    summaryInstruction = `• ملخص: مفيش محتوى متاح حالياً — جاوب من معرفتك بشكل طبيعي ومفيد بدون ما تذكر إن في مشكلة أو إن المحتوى مش موجود. تصرف كأنك عارف الموضوع وساعد الطالب.`;
+  }
+
+  parts.push(`\n## طلبات خاصة (بس لما الطالب يطلب):
+• تمرين: 3-5 أسئلة متدرجة من المحتوى + تصحيح فوري
+${summaryInstruction}
+• أدوات: 3 أدوات (مجانية أولاً) + رابط رسمي. ممنوع منصات تعليمية/يوتيوب
+• خطة تطبيق: افهم مشروعه + اربطه بالكورس + خطوات عملية
+
+## 🚫 ممنوعات — أعلى أولوية:
+❌ ترشح منصات خارجية (Udemy/Coursera/Skillshare/edX/Khan Academy) أو قنوات يوتيوب — حتى لو الطالب طلب
+❌ تخترع timestamp أو اسم درس مش موجود
+❌ تقول "المحاضر قال" لو مش في النص
+❌ تقول "معلومة إضافية"/"من معرفتي"/"ما اتغطاش"
+❌ تكتب [رابط] أو placeholder
+❌ تجاوب من معرفتك لو فيه محتوى واضح في 📗 أو 📚 بيجاوب السؤال — استخدم المحتوى الموجود أولاً
+❌ تحسس الطالب إن الكورس قديم — ادمج التحديثات طبيعي
+✅ لو الطالب سأل عن مشكلة تقنية (فيديو مش شغال، دفع، اشتراك، كلمة سر...) → قول: "ده خارج نطاق اللي أقدر أساعد فيه كمرشد تعليمي 😊 — للمشاكل التقنية أو الدفع روح <a href=\"https://easyt.online\" target=\"_blank\">easyt.online</a> وكلّم المساعد هناك، هو هيساعدك فوراً! أنا هنا لأي سؤال عن محتوى الكورس."
+✅ أرقام/تكاليف في النص → اذكرها بالظبط
+✅ timestamp في النص → لازم تذكره
+❌ ممنوع تماماً تقول "سؤال كويس" أو "سؤال جميل" أو أي جملة تشجيع قبل الإجابة — ابدأ بالإجابة مباشرة فوراً
+✅ سؤال خارج مجال الكورس → أجب بإيجاز مفيد (3-4 سطور بحد أقصى) ثم وضّح بشكل طبيعي إن الموضوع ده مش في الكورس وأعِد توجيه الطالب. مثال: "...هذا ملخص مختصر، لكن هذا الموضوع خارج نطاق [اسم الكورس] 😊 — لو عندك سؤال عن [موضوع الكورس] أنا هنا!"
+
+## شكل الإجابة:
+<strong> للعناوين و <br> للأسطر — ممنوع markdown (ممنوع ** أو # أو - أو * للقوائم). إجابة متصلة طبيعية. ابدأ بالإجابة مباشرة بدون أي مقدمة.
+
+## طول الرد:
+• سؤال بسيط أو تعريف → 3-4 سطور بحد أقصى
+• شرح مفهوم أو خطوات → 6-10 سطور
+• ملخص درس (لما يطلب) → حسب المحتوى
+❌ ممنوع تطوّل بدون سبب — الإيجاز مطلوب دايماً`);
+
+  return parts.join("\n");
+}
+
 // ─── /api/guide main endpoint ───
 app.post("/api/guide", limiter, async (req, res) => {
     try {
