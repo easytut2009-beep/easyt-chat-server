@@ -346,7 +346,7 @@ async function smartChat(message, sessionId) {
     }
     console.log(`🔄 Was clarify → search with GPT keywords: ${intent.keywords?.join(", ")}`);
   } else {
-    intent = await analyzeIntent(message, session.history.slice(-4));
+    intent = await analyzeIntent(message, session.history.slice(-2));
     // لو GPT أصر على clarify تاني — اجبره على search
     if (intent.type === "clarify" || intent.is_ambiguous) {
       const prevClarify = session.history.some(h => h.role === 'assistant' && (
@@ -452,6 +452,11 @@ async function smartChat(message, sessionId) {
     reply = await formatResults(results, keywords.join(" "));
     session.lastTopic = keywords.join(" ");
     session.lastResults = results;
+
+    // بعد البحث الناجح — امسح الـ history عشان المحادثة الجاية تبدأ نضيفة
+    if (results.courses.length > 0 || results.diplomas.length > 0) {
+      session.history = [];
+    }
 
     // اقتراحات بعد النتايج
     if (results.courses.length > 0 || results.diplomas.length > 0) {
