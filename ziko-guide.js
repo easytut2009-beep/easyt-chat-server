@@ -1314,4 +1314,572 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
   }
 }
 
+
+
+// ─── /api/guide main endpoint ───
+app.post("/api/guide", limiter, async (req, res) => {
+    try {
+      const {
+        message,
+        session_id,
+        course_name,
+        lecture_title,
+        system_prompt,
+      } = req.body;
+
+      if (!message || !session_id) {
+        return res
+          .status(400)
+          .json({ error: "Missing message or session_id" });
+      }
+
+      const remaining = await getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        return res.json({
+          reply:
+            "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nهتتجدد تلقائياً الساعة 12 منتصف الليل بتوقيتك 💪",
+          remaining_messages: 0,
+        });
+      }
+
+      await consumeGuideMsg(session_id);
+
+  // 🆕 تحميل تعليمات المرشد التعليمي
+      const guideInstructions = await loadBotInstructions("guide");
+
+
+// ═══ تسجيل رسالة المستخدم في guide_logs ═══
+      await logGuide(session_id, "user", message, course_name, lecture_title, remaining - 1, {
+        version: "10.9",
+      });
+
+
+// Memory protection: limit concurrent guide sessions
+      if (Object.keys(guideConversations).length > MAX_GUIDE_SESSIONS) {
+        const sorted = Object.entries(guideConversations)
+          .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
+        sorted.slice(0, 100).forEach(([sid]) => delete guideConversations[sid]);
+        console.log(`🧹 Guide cleanup: removed 100 oldest sessions`);
+      }
+
+let currentLessonContext = "";
+      let otherLessonsContext = "";
+      let allCourseLessons = [];
+      let lessonMatch = null;
+      let otherCourseRecommendation = null;  // 🆕 FIX #55
+      let ragStats = { currentLesson: 0, semantic: 0, text: 0, otherLessons: 0, total: 0 };
+
+      if (course_name || lecture_title) {
+        try {
+          console.log("═══════════════════════════════════════");
+          console.log("🔍 GUIDE DEBUG INPUT:");
+          console.log("   course_name:", course_name);
+          console.log("   lecture_title:", lecture_title);
+          console.log("   message:", message.substring(0, 80));
+          console.log("═══════════════════════════════════════");
+
+          // Step 1: Find Course
+          const courseMatch = await findCourseByName(course_name || lecture_title);
+let courseId = courseMatch ? courseMatch.id : null;
+          console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
+
+          // Step 1.5: Get ALL lessons (sorted by lesson_order)
+          if (courseId) {
+            const { data: courseLessons } = await supabase
+              .from("lessons")
+              .select("id, title, lesson_order")
+              .eq("course_id", courseId)
+              .order("lesson_order", { ascending: true });
+            allCourseLessons = courseLessons || [];
+            console.log(`📋 Found ${allCourseLessons.length} lessons in course`);
+            allCourseLessons.forEach((l, i) => {
+              console.log(`   ${i + 1}. [order=${l.lesson_order}] "${l.title}"`);
+            });
+          }
+
+          // Step 2: Find Current Lesson
+          if (lecture_title) {
+            lessonMatch = await findLessonByTitle(lecture_title, courseId);
+            console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : "❌ NOT FOUND"}`);
+
+            // Extra fallback using all course lessons
+            if (!lessonMatch && allCourseLessons.length > 0) {
+              const normSearch = normalizeArabic(lecture_title.toLowerCase());
+              let bestL = null, bestS = 0;
+              for (const cl of allCourseLessons) {
+                const normDb = normalizeArabic((cl.title || "").toLowerCase());
+                let s = 0;
+                if (normDb.includes(normSearch) || normSearch.includes(normDb)) s = 90;
+                else {
+                  const words = normSearch.split(/\s+/).filter(w => w.length > 2);
+                  const matched = words.filter(w => normDb.includes(w));
+                  s = words.length > 0 ? Math.round((matched.length / words.length) * 80) : 0;
+                }
+                if (s > bestS) { bestS = s; bestL = cl; }
+              }
+              if (bestL && bestS >= 25) {
+                lessonMatch = bestL;
+                console.log(`📖 Fallback match → "${bestL.title}" (score=${bestS}%)`);
+              }
+            }
+          }
+
+          // Step 3: Get ALL chunks of current lesson
+          if (lessonMatch) {
+            const currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
+            ragStats.currentLesson = currentChunks.length;
+            if (currentChunks.length > 0) {
+              currentLessonContext = currentChunks.map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n\n");
+            }
+          } else {
+            console.log(`⚠️ No lesson matched — currentLessonContext will be empty`);
+          }
+
+// Step 4: Search OTHER lessons + OTHER COURSES (🆕 FIX #55)
+          const currentLessonId = lessonMatch ? lessonMatch.id : null;
+          const otherChunksMap = new Map();
+          const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
+
+          
+const searchQuery = message + (lecture_title ? " " + lecture_title : "");
+
+// 🆕 FIX #58: Smart Topic Extraction before searching other courses
+const recentMsgs = (guideConversations[session_id]?.messages || [])
+    .filter(m => m.role !== 'system')
+    .slice(-4);
+const smartTopic = await extractSearchTopic(message, course_name || "", recentMsgs);
+
+let otherCourseSearchText = message; // default: raw message
+if (smartTopic && smartTopic !== "CURRENT_COURSE" && smartTopic !== "NONE") {
+    otherCourseSearchText = smartTopic;
+    console.log(`🧠 FIX #58: Using smart topic "${smartTopic}" instead of raw message`);
+} else if (smartTopic === "CURRENT_COURSE" || smartTopic === "NONE") {
+    otherCourseSearchText = null; // Don't search other courses
+    console.log(`🧠 FIX #58: Topic is "${smartTopic}" — skipping other course search`);
+}
+
+// 🆕 FIX #55+#58: Run both searches in parallel (with smart topic)
+const [semanticChunks, _otherCourseRec] = await Promise.all([
+    getRelevantChunks(searchQuery, courseId, 8),
+    otherCourseSearchText 
+        ? searchOtherCoursesForGuide(otherCourseSearchText, courseId)
+        : Promise.resolve(null),
+]);
+          otherCourseRecommendation = _otherCourseRec;
+          
+          ragStats.semantic = semanticChunks.length;
+
+          for (const sc of semanticChunks) {
+            if (currentLessonId && sc.lesson_id === currentLessonId) continue;
+            const lessonName = lessonTitleMap.get(sc.lesson_id) || sc.lesson_title || "درس آخر";
+            if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
+            otherChunksMap.get(lessonName).push(sc);
+          }
+
+          // Text search
+          const textTerms = message.split(/\s+/).filter((w) => w.length > 2 && !BASIC_STOP_WORDS.has(w.toLowerCase()));
+          if (textTerms.length > 0) {
+            const textChunks = await searchChunksByText(textTerms, courseId, null, 10);
+            ragStats.text = textChunks.length;
+            for (const tc of textChunks) {
+              if (currentLessonId && tc.lesson_id === currentLessonId) continue;
+              const lessonName = lessonTitleMap.get(tc.lesson_id) || tc.lesson_title || "درس آخر";
+              if (!otherChunksMap.has(lessonName)) otherChunksMap.set(lessonName, []);
+              const existing = otherChunksMap.get(lessonName);
+              if (!existing.find((e) => e.id === tc.id)) existing.push(tc);
+            }
+          }
+
+          // Build other lessons context
+          if (otherChunksMap.size > 0) {
+            const parts = [];
+            for (const [lessonName, chunks] of otherChunksMap) {
+              ragStats.otherLessons += chunks.length;
+              const chunkTexts = chunks.slice(0, 4).map((c) => {
+                const ts = c.timestamp_start ? `[⏱️ ${c.timestamp_start}]` : "";
+                return `  ${ts} ${(c.content || "").substring(0, 1200)}`;
+              }).join("\n");
+              parts.push(`📎 درس: "${lessonName}"\n${chunkTexts}`);
+            }
+            otherLessonsContext = parts.join("\n\n---\n\n");
+          }
+
+          ragStats.total = ragStats.currentLesson + ragStats.otherLessons;
+          if (currentLessonContext.length > 40000) currentLessonContext = currentLessonContext.substring(0, 40000) + "\n\n[... بقية محتوى الدرس]";
+          if (otherLessonsContext.length > 10000) otherLessonsContext = otherLessonsContext.substring(0, 10000) + "\n\n[... بقية المحتوى]";
+
+          console.log(`📚 Guide RAG: current=${ragStats.currentLesson} | semantic=${ragStats.semantic} | text=${ragStats.text} | other=${ragStats.otherLessons} | total=${ragStats.total}`);
+
+
+console.log("═══════════════════════════════════════");
+          console.log("📖 CURRENT LESSON CONTEXT LENGTH:", currentLessonContext.length, "chars");
+          console.log("📖 CURRENT LESSON PREVIEW:", currentLessonContext.substring(0, 200));
+          console.log("📚 OTHER LESSONS CONTEXT LENGTH:", otherLessonsContext.length, "chars");
+          console.log("═══════════════════════════════════════");
+
+        } catch (ragErr) {
+          console.error("═══════════════════════════════════════");
+          console.error("❌ GUIDE RAG ERROR (CRITICAL):");
+          console.error("   Error:", ragErr.message);
+          console.error("   Stack:", ragErr.stack?.substring(0, 300));
+          console.error("   course_name:", course_name);
+          console.error("   lecture_title:", lecture_title);
+          console.error("═══════════════════════════════════════");
+          currentLessonContext = "[❌ حصل خطأ تقني في تحميل محتوى الدرس — جاوب بحذر]";
+        }
+
+      }
+
+
+// 🆕 FIX #51: Debug logging (CORRECTED variable names)
+      console.log(`\n═══════ FIX #51 DEBUG ═══════`);
+      console.log(`📍 lecture_title: "${lecture_title}"`);
+      console.log(`📍 course_name: "${course_name}"`);
+      console.log(`📍 lessonMatch: ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : 'NULL'}`);
+      console.log(`📍 currentLessonContext length: ${currentLessonContext ? currentLessonContext.length : 0}`);
+      console.log(`📍 currentLessonContext first 300 chars: "${currentLessonContext ? currentLessonContext.substring(0, 300) : 'EMPTY'}"`);
+      console.log(`📍 otherLessonsContext length: ${otherLessonsContext ? otherLessonsContext.length : 0}`);
+      if (otherLessonsContext) {
+        console.log(`📍 otherLessonsContext first 300 chars: "${otherLessonsContext.substring(0, 300)}"`);
+      }
+      console.log(`═══════════════════════════\n`);
+
+
+ // Build System Prompt
+const finalSystemPrompt = buildGuideSystemPrompt({
+    courseName: course_name || "",
+    lectureTitle: lecture_title || "",
+    clientPrompt: system_prompt || "",
+    currentLessonContext,
+    otherLessonsContext,
+    allCourseLessons,
+    lessonFound: !!lessonMatch,
+    otherCourseRecommendation,
+    botInstructions: guideInstructions,
+});
+
+// ═══ Conversation Management ═══
+      // 🆕 FIX #49: Clear history when lesson changes
+      if (!guideConversations[session_id]) {
+        guideConversations[session_id] = {
+          messages: [{ role: "system", content: finalSystemPrompt }],
+          lastActivity: Date.now(),
+          lastLecture: lecture_title || "",
+          lastCourse: course_name || "",
+        };
+      }
+
+      const conv = guideConversations[session_id];
+      
+      // 🆕 FIX #49: Detect lesson change → clear history
+      const lectureChanged = lecture_title && conv.lastLecture && conv.lastLecture !== lecture_title;
+      const courseChanged = course_name && conv.lastCourse && conv.lastCourse !== course_name;
+      
+      if (lectureChanged || courseChanged) {
+        console.log(`🔄 FIX #49: Context changed!`);
+        if (lectureChanged) console.log(`   Lecture: "${conv.lastLecture}" → "${lecture_title}"`);
+        if (courseChanged) console.log(`   Course: "${conv.lastCourse}" → "${course_name}"`);
+        console.log(`   → Clearing conversation history (${conv.messages.length - 1} old messages)`);
+        conv.messages = [{ role: "system", content: finalSystemPrompt }];
+      }
+      
+      conv.lastLecture = lecture_title || conv.lastLecture;
+      conv.lastCourse = course_name || conv.lastCourse;
+      
+      // Always update system prompt (context may have changed)
+      conv.messages[0] = { role: "system", content: finalSystemPrompt };
+      conv.lastActivity = Date.now();
+      conv.messages.push({ role: "user", content: message });
+
+      // Trim history
+      if (conv.messages.length > GUIDE_MAX_HISTORY + 1) {
+        conv.messages = [
+          conv.messages[0],
+          ...conv.messages.slice(-GUIDE_MAX_HISTORY),
+        ];
+      }
+
+      // ═══ Call GPT ═══
+// ═══ Call GPT ═══
+const completion = await gptWithRetry(() => openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: conv.messages,
+        max_tokens: 1200,
+        temperature: 0.6,
+      }));
+
+      const reply = completion.choices[0].message.content;
+
+      // 🆕 FIX #54: Post-processing — detect bot saying "ما اتكلمش" about current lesson
+      let finalReply = reply;
+      if (lecture_title && finalReply) {
+        const normLecture = normalizeArabic((lecture_title || "").toLowerCase());
+        const replyNorm = normalizeArabic((finalReply || "").toLowerCase());
+        
+        const saysNotCovered = finalReply.includes('ما اتكلمش') || finalReply.includes('مااتكلمش');
+        
+        if (saysNotCovered && lessonMatch) {
+          const normMatchedTitle = normalizeArabic((lessonMatch.title || "").toLowerCase());
+          if (replyNorm.includes(normMatchedTitle)) {
+            console.log(`⚠️ FIX #54: Bot says "ما اتكلمش" but references current lesson "${lessonMatch.title}"!`);
+            finalReply = finalReply
+              .replace(/⚠️?\s*النقطة دي المحاضر ما اتكلمش عنها في الدرس الحالي[^.]*/g, 
+                '✅ المحاضر شرح النقطة دي في الدرس ده')
+              .replace(/لكن شرحها في درس\s*["']?[^"']*["']?\s*عند الدقيقة/g, 
+                'عند الدقيقة');
+          }
+        }
+      }
+
+
+// 🆕 FIX #56: Force recommendation if bot answered from knowledge but forgot
+      if (otherCourseRecommendation && finalReply) {
+        const replyLower = (finalReply || '').toLowerCase();
+        const hasKnowledgeAnswer = finalReply.includes('معلومة إضافية') || finalReply.includes('🧠');
+        const alreadyMentionsCourse = replyLower.includes(
+          otherCourseRecommendation.courseTitle.toLowerCase().substring(0, 15)
+        );
+        
+        if (hasKnowledgeAnswer && !alreadyMentionsCourse) {
+          console.log(`⚠️ FIX #56: Bot forgot to recommend "${otherCourseRecommendation.courseTitle}" — appending!`);
+          
+          let recText = `\n\n📚 بالمناسبة! الموضوع ده متشرح بالتفصيل في كورس "${otherCourseRecommendation.courseTitle}" على المنصة!`;
+          recText += `\n🔗 ${otherCourseRecommendation.courseLink}`;
+          
+          if (otherCourseRecommendation.lessons && otherCourseRecommendation.lessons.length > 0) {
+            recText += `\n📖 الدروس المرتبطة:`;
+            for (const l of otherCourseRecommendation.lessons) {
+              recText += `\n  - "${l.title}"${l.timestamp ? ` ⏱️ ${l.timestamp}` : ''}`;
+            }
+          }
+          
+          finalReply += recText;
+        }
+      }
+
+
+
+      // Add to conversation history AFTER post-processing
+      conv.messages.push({ role: "assistant", content: finalReply });
+
+      const newRemaining = await getGuideRemaining(session_id);
+
+console.log(
+        `🎓 Guide v2.1 | Session: ${session_id.slice(0, 12)}... | Course: ${course_name || "N/A"} | Lecture: ${
+          lecture_title || "N/A"
+        } | RAG: ${ragStats.total > 0 ? `YES (${ragStats.total} chunks)` : "NO"
+        } | OtherCourse: ${otherCourseRecommendation ? otherCourseRecommendation.courseTitle : "NONE"
+        } | Remaining: ${newRemaining}`
+      );
+
+// 🆕 FIX #60: Make links clickable in guide replies
+      finalReply = markdownToHtml(finalReply);
+      finalReply = finalizeReply(finalReply);
+
+// 🆕 Generate smart suggestions — SPECIFIC, NEVER GENERIC
+let suggestions = [];
+if (newRemaining > 0) {
+    try {
+        const cleanReplyText = finalReply.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        const replyLast800 = cleanReplyText.substring(Math.max(0, cleanReplyText.length - 800));
+        
+        const suggResp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: `مهمتك: تطلع 3 أسئلة محددة جداً الطالب ممكن يسألها بعد الرد ده.
+
+🔴🔴🔴 القاعدة الوحيدة: كل اقتراح لازم يحتوي على كلمة أو مصطلح تقني من الرد نفسه!
+
+مثال — لو الرد كان عن "السيلز فانل وصفحة الهبوط":
+✅ "إيه أحسن أداة لبناء سيلز فانل؟"
+✅ "صفحة الهبوط محتاجة إيه بالظبط؟"
+✅ "الفرق بين السيلز فانل والويب سايت؟"
+
+مثال — لو الرد كان عن "التسويق بالإيميل":
+✅ "إيه أحسن وقت لإرسال الإيميلات؟"
+✅ "إزاي أكتب subject line قوي؟"
+✅ "معدل الفتح الطبيعي كام في المية؟"
+
+مثال — لو الرد كان عن "إنشاء متجر إلكتروني":
+✅ "إيه أحسن بوابة دفع في مصر؟"
+✅ "الشحن بتاع المتجر بيشتغل إزاي؟"
+✅ "إزاي أختار المنتجات المربحة؟"
+
+ارجع JSON: {"suggestions": ["...", "...", "..."], "keywords_used": ["كلمة1", "كلمة2", "كلمة3"]}`
+                },
+                {
+                    role: "user",
+                    content: `سؤال الطالب: "${message.substring(0, 300)}"
+
+رد المرشد: "${replyLast800}"`
+                }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 350,
+            temperature: 0.5,
+        });
+
+        let suggRaw = suggResp.choices[0].message.content || "";
+        suggRaw = suggRaw.replace(/```json|```/g, "").trim();
+        const suggResult = JSON.parse(suggRaw);
+        if (suggResult.suggestions && Array.isArray(suggResult.suggestions)) {
+            const banned = [
+                'وضحلي أكتر', 'وضّحلي أكتر', 'وضحلي اكتر',
+                'اديني مثال', 'اديني مثال عملي',
+                'اشرحلي أكتر', 'اشرحلي اكتر',
+                'مش فاهم', 'مش فاهمه',
+                'لخصلي الدرس', 'لخّصلي الدرس',
+                'وبعدين أعمل', 'وبعدين اعمل',
+                'عندي سؤال', 'سؤال تاني',
+                'اشرحلي بمثال', 'ممكن توضح',
+                'إيه الخطوة الجاية', 'ايه الخطوه الجايه',
+            ];
+            
+            suggestions = suggResult.suggestions
+                .filter(s => {
+                    const sNorm = s.replace(/[؟?!\.،,]/g, '').trim();
+                    return !banned.some(b => {
+                        const bNorm = b.replace(/[؟?!\.،,]/g, '').trim();
+                        return sNorm.includes(bNorm) || bNorm.includes(sNorm);
+                    });
+                })
+                .filter(s => s.length >= 8 && s.length <= 60)
+                .slice(0, 3);
+        }
+    } catch (suggErr) {
+        console.error("⚠️ Suggestions error:", suggErr.message);
+    }
+    
+    // If still empty — extract keywords from reply and build suggestions
+    if (suggestions.length === 0) {
+        try {
+            const words = finalReply
+                .replace(/<[^>]*>/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 4)
+                .filter(w => !/^(عشان|علشان|ممكن|لازم|محتاج|الطالب|المحاضر|الدرس|الكورس|بتاع|كمان|دلوقتي|هتلاقي|بالتفصيل)$/i.test(w));
+            
+            const unique = [...new Set(words)].slice(0, 3);
+            if (unique.length >= 1) {
+                suggestions = unique.map(w => `إيه التفاصيل عن ${w}؟`).slice(0, 3);
+            }
+        } catch (e) {}
+    }
+}
+
+// ═══ تسجيل رد المرشد في guide_logs ═══
+      await logGuide(session_id, "assistant", finalReply, course_name, lecture_title, newRemaining, {
+        version: "10.9",
+        rag_stats: ragStats,
+        lesson_found: !!lessonMatch,
+        other_course: otherCourseRecommendation ? otherCourseRecommendation.courseTitle : null,
+        suggestions_count: suggestions.length,
+      });
+
+res.json({
+    reply: finalReply,
+    remaining_messages: newRemaining,
+    suggestions: suggestions,
+});
+
+} catch (error) {
+      console.error("❌ Guide Error:", error.message);
+
+      // ═══ تسجيل الخطأ في guide_logs ═══
+      const errSessionId = req.body?.session_id || "unknown";
+      await logGuide(errSessionId, "assistant", "❌ ERROR: " + error.message, req.body?.course_name, req.body?.lecture_title, null, {
+        version: "10.9",
+        error: true,
+        error_message: error.message,
+      });
+
+res.status(500).json({
+        reply: "عذراً حصل مشكلة تقنية. حاول تاني كمان شوية 🙏",
+        remaining_messages: await getGuideRemaining(errSessionId),
+        error: true,
+      });
+    }
+  });
+
+// ─── /api/guide/stream endpoint ───
+  app.post("/api/guide/stream", limiter, async (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    try {
+      const { message, session_id, course_name, lecture_title, system_prompt } = req.body;
+      if (!message || !session_id) {
+        send({ error: "Missing params" }); return res.end();
+      }
+
+      const remaining = await getGuideRemaining(session_id);
+      if (remaining <= 0) {
+        send({ delta: "⚠️ خلصت رسائلك النهارده (15 رسالة يومياً).\nهتتجدد تلقائياً الساعة 12 منتصف الليل بتوقيتك 💪", done: true, remaining_messages: 0 });
+        return res.end();
+      }
+
+      await consumeGuideMsg(session_id);
+
+      // Build context same as /api/guide
+      const guideInstructions = await loadBotInstructions("guide");
+      const guideConv = guideConversations[session_id] || { messages: [] };
+      guideConversations[session_id] = guideConv;
+
+      // Simple system prompt for stream
+      const sysPrompt = system_prompt && system_prompt.startsWith("UPDATES_MODE")
+        ? system_prompt
+        : buildGuideSystemPrompt({
+            courseName: course_name || "",
+            lectureTitle: lecture_title || "",
+            currentContext: "",
+            otherContext: "",
+            botInstructions: guideInstructions,
+            level: "طالب",
+          });
+
+      const messages = [
+        { role: "system", content: sysPrompt },
+        ...guideConv.messages.slice(-10),
+        { role: "user", content: message }
+      ];
+
+      guideConv.messages.push({ role: "user", content: message });
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+      });
+
+      let fullText = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        if (delta) {
+          fullText += delta;
+          send({ delta });
+        }
+      }
+
+      guideConv.messages.push({ role: "assistant", content: fullText });
+      const newRemaining = await getGuideRemaining(session_id);
+      send({ done: true, remaining_messages: newRemaining, suggestions: [] });
+      res.end();
+
+    } catch (e) {
+      console.error("❌ Stream error:", e.message);
+      send({ error: e.message });
+      res.end();
+    }
+  });
+
 }; // end module.exports
