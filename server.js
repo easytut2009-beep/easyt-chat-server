@@ -6,6 +6,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
+const path = require("path");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
