@@ -370,6 +370,9 @@ if (updates.clarifyCount !== undefined) {
 
 }
 
+// ─── botInstructionsCache ───
+let _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
+
 // ─── loadBotInstructions ───
 async function loadBotInstructions(target = "sales") {
   const cacheKey = target;
