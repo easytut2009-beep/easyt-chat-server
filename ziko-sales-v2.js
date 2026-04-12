@@ -308,8 +308,29 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
 
+  // لو الرسالة السابقة كانت clarify (توضيح) — الرسالة الحالية هي search مباشرة
+  const lastBotMsg = session.history.slice(-2).find(h => h.role === 'assistant');
+  const wasAskingClarify = lastBotMsg && (
+    lastBotMsg.content.includes('إيه بالظبط') ||
+    lastBotMsg.content.includes('ايه بالظبط') ||
+    lastBotMsg.content.includes('بالضبط') ||
+    lastBotMsg.content.includes('في إيه') ||
+    lastBotMsg.content.includes('في ايه')
+  );
+
   // تحليل النية
-  const intent = await analyzeIntent(message, session.history.slice(-4));
+  let intent;
+  if (wasAskingClarify) {
+    // المستخدم اختار من الـ options — ابحث مباشرة
+    intent = {
+      type: "search",
+      keywords: prepareSearchTerms(message),
+      is_ambiguous: false,
+    };
+    console.log(`🔄 Was clarify → forcing search for: "${message}"`);
+  } else {
+    intent = await analyzeIntent(message, session.history.slice(-4));
+  }
   console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
 
   let reply = "";
