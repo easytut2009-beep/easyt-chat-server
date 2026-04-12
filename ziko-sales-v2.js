@@ -103,37 +103,33 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
   "direct_reply": "رد مباشر لو مش بحث"
 }
 
-قواعد:
+قواعد النوع:
 - type=search: لو بيدور على كورس أو دبلومة أو موضوع
-- type=clarify: لو الموضوع واسع وفيه أكتر من اتجاه (زي "تصميم" بدون تحديد)
+- type=clarify: لو الموضوع واسع جداً ومحتاج توضيح (مرة واحدة بس في المحادثة)
 - type=info: لو سؤال عام عن المنصة أو الأسعار
 - type=subscription: لو سؤال عن اشتراك أو دفع
 - type=support: لو مشكلة تقنية
 - type=greeting: لو تحية أو كلام عام
-- type=diplomas_list: لو طلب قائمة الدبلومات
-- type=courses_list: لو طلب قائمة الكورسات
-- keywords: كلمات البحث بالعربي والإنجليزي لو ممكن (2-4 كلمات بس) — لا تضيف كلمات زي "كورس" أو "دورة" أو "دبلومة" — الموضوع بس (مثال: "اكسيل" مش "كورس اكسيل")
-- is_ambiguous: true لو الموضوع محتاج توضيح (زي "تصميم" أو "برمجة" بدون تفاصيل)
-- لو is_ambiguous=true: ضيف clarify_question وclarify_options (2-4 خيارات)
-- لو type مش search: ضيف direct_reply بالعامية المصرية
-- 🚨 قاعدة مهمة: لو في المحادثة السابقة سبق وسألنا المستخدم سؤال توضيح (clarify) — لازم دلوقتي type=search مهما كان الجواب، ابحث بالكلمات الموجودة ولا تسأل تاني
-${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — الآن type=search إلزامي، لا clarify" : ""}
+- 🚨 لو في المحادثة سبق وسألنا توضيح — type=search إلزامي ولا تسأل تاني
+${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — الآن type=search إلزامي" : ""}
 
-قواعد مهمة للـ keywords:
-- "كورس اكسيل" → keywords: ["اكسيل", "excel"] — مش "كورس اكسيل"
-- "ابني عايز يتعلم برمجة" → keywords: ["برمجة"] — مش "برمجة تعليم"
-- "أوتوكاد" → keywords: ["أوتوكاد", "autocad"]
-- "تعليم سباحة" → type: "info" مش search — المنصة تعليمية أكاديمية مش رياضية
-- الـ keywords = اسم الموضوع/البرنامج بس بدون أفعال أو كلمات زيادة
+قواعد الـ keywords — مهمة جداً:
+- الهدف: توليد كلمات البحث الأذكى اللي هتلاقي الكورس المناسب في DB
+- لو الموضوع مهنة أو هدف → حوّله للبرامج والأدوات المستخدمة فيه
+- لو الموضوع برنامج محدد → حطه بالعربي والإنجليزي
+- لا تضيف كلمات زي "كورس" أو "دورة" أو "تعلم"
 
-أمثلة:
-"عايز اكسيل" → {"type":"search","keywords":["اكسيل","excel"],"is_ambiguous":false}
-"ابني عايز يتعلم برمجة" → {"type":"search","keywords":["برمجة"],"is_ambiguous":false}
-"أوتوكاد" → {"type":"search","keywords":["أوتوكاد","autocad"],"is_ambiguous":false}
-"تعليم سباحة" → {"type":"info","direct_reply":"مش عندنا كورسات سباحة، إحنا منصة تعليمية أكاديمية 😊 بتدور على حاجة تانية؟","is_ambiguous":false}
-"عايز تصميم" → {"type":"clarify","is_ambiguous":true,"clarify_question":"تصميم إيه بالظبط؟","clarify_options":["🎨 جرافيك وصور","🖥️ مواقع وتطبيقات","🏠 ديكور داخلي","📱 سوشيال ميديا"]}
-"سعر الاشتراك" → {"type":"subscription","direct_reply":""}
-"أهلاً" → {"type":"greeting","direct_reply":"أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في منصة إيزي تي. بتدور على إيه النهارده؟"}`;
+أمثلة ذكية للـ keywords:
+"تصميم أثاث" → keywords: ["3ds max", "اوتوكاد", "blender", "تصميم داخلي"] — لأن دي البرامج المستخدمة
+"تصميم مواقع" → keywords: ["html", "css", "wordpress", "web design"]
+"محاسبة" → keywords: ["محاسبة", "اكسيل", "quickbooks", "peachtree"]
+"تسويق" → keywords: ["تسويق رقمي", "سوشيال ميديا", "facebook ads", "seo"]
+"نجار عايز يتعلم" → keywords: ["3ds max", "اوتوكاد", "blender", "تصميم أثاث"]
+"كورس اكسيل" → keywords: ["اكسيل", "excel"]
+"أوتوكاد" → keywords: ["أوتوكاد", "autocad"]
+"عايز تصميم" → type=clarify: "تصميم إيه بالظبط؟" مع options
+"سعر الاشتراك" → type=subscription
+"أهلاً" → type=greeting`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
