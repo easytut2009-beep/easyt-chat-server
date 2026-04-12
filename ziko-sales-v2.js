@@ -691,6 +691,12 @@ async function smartChat(message, sessionId) {
             match_count: 5,
           });
           if (semCourses && semCourses.length > 0) {
+            // تحقق إن الـ similarity كافية — لو منخفضة جداً يعني مفيش علاقة حقيقية
+            const bestSimilarity = Math.max(...semCourses.map(s => s.similarity || 0));
+            if (bestSimilarity < 0.75) {
+              console.log(`⚠️ Semantic similarity too low (${bestSimilarity}) — not showing results`);
+              // مش هنعرض حاجة — هنسيب الـ noResults يعرض رسالة "مش في المنصة"
+            } else {
             const { data: courseData } = await supabase
               .from("courses")
               .select(COURSE_SELECT_COLS)
@@ -712,6 +718,7 @@ async function smartChat(message, sessionId) {
               session.clarifyCount = 0;
               suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
             }
+            } // end else (similarity OK)
           }
         }
       } catch (e) { console.error("semantic fallback error:", e.message); }
