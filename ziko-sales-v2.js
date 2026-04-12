@@ -261,15 +261,33 @@ async function performSearch(keywords, instructors) {
     }
   } catch (e) { console.error("course search error:", e.message); }
 
-  // 3. لو مفيش كورسات — بحث في الدروس
-  if (results.courses.length === 0) {
-    try {
-      const lessonResults = await searchLessonsInCourses(keywords);
-      if (lessonResults && lessonResults.length > 0) {
+  // 3. بحث في الدروس دايماً — لو في كورسات من keywords وكمان لو مفيش كورسات
+  try {
+    const lessonResults = await searchLessonsInCourses(keywords);
+    if (lessonResults && lessonResults.length > 0) {
+      if (results.courses.length === 0) {
+        // مفيش كورسات — اعرض الكورسات من الدروس
         results.lessons = lessonResults.slice(0, MAX_COURSES_DISPLAY);
+      } else {
+        // في كورسات بالفعل — ضيف الكورسات الجديدة اللي فيها دروس matching
+        const existingIds = new Set(results.courses.map(c => c.id));
+        const newFromLessons = lessonResults.filter(c => !existingIds.has(c.id));
+        if (newFromLessons.length > 0) {
+          const withDiploma = await injectDiplomaInfo(newFromLessons).catch(() => newFromLessons);
+          withDiploma.forEach(c => { c._foundInContent = true; });
+          results.courses = [...results.courses, ...withDiploma].slice(0, MAX_COURSES_DISPLAY);
+          console.log(`📖 Added ${newFromLessons.length} courses from lesson search`);
+        }
+        // حقن الدروس في الكورسات الموجودة
+        const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
+        results.courses.forEach(c => {
+          if (lessonMap.has(c.id) && !c.matchedLessons) {
+            c.matchedLessons = lessonMap.get(c.id);
+          }
+        });
       }
-    } catch (e) { console.error("lesson search error:", e.message); }
-  }
+    }
+  } catch (e) { console.error("lesson search error:", e.message); }
 
   // 4. لو مفيش دروس — بحث في الـ chunks
   if (results.courses.length === 0 && results.lessons.length === 0) {
