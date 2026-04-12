@@ -2142,4 +2142,63 @@ res.status(500).json({
     }
   });
 
+
+// ─── pdf-resources endpoint ───
+  app.post("/api/guide/pdf-resources", limiter, async (req, res) => {
+    try {
+      const { session_id, course_name, lecture_title } = req.body;
+      if (!session_id) return res.status(400).json({ error: "Missing session_id" });
+
+      const remaining = await getGuideRemaining(session_id);
+      if (remaining <= 0) return res.json({ error: "limit_reached" });
+
+      const topic = lecture_title || course_name || "الدرس الحالي";
+      const SYS_PLAIN = "أنت مرشد تعليمي محترف. أجب بنص عادي واضح بدون HTML أو markdown أو **. ابدأ مباشرة بالمحتوى.";
+      const SYS_JSON = "أنت مرشد تعليمي. رد بـ JSON نقي فقط بدون أي كلام قبله أو بعده.";
+
+      const call = (system, user, json) => openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        temperature: 0.7,
+        ...(json ? { response_format: { type: "json_object" } } : {})
+      }).then(r => r.choices[0].message.content || "");
+
+      const [summary, glossaryRaw, mistakes, exercise, analyticalRaw, questionsRaw] = await Promise.all([
+        call(SYS_PLAIN, `اكتب ملخصاً شاملاً ومنظماً لموضوع "${topic}" في 6-8 نقاط رئيسية واضحة. ابدأ كل نقطة بـ • `, false),
+        call(SYS_JSON, `استخرج 7 مصطلحات تقنية من موضوع "${topic}" بالعربي والإنجليزي. JSON: {"terms":[{"term":"العربي","en":"English","def":"تعريف مختصر"}]}`, true),
+        call(SYS_PLAIN, `اذكر 5 أخطاء شائعة يقع فيها الطلاب في موضوع "${topic}" مع تصحيح كل خطأ. ابدأ كل خطأ بـ ❌ والتصحيح بـ ✅`, false),
+        call(SYS_PLAIN, `اكتب تمريناً عملياً واضحاً لموضوع "${topic}" مع خطوات التنفيذ مرقمة.`, false),
+        call(SYS_JSON, `اكتب 3 أسئلة تحليلية مقالية على موضوع "${topic}" مع إجابة نموذجية لكل سؤال. JSON: {"qa":[{"q":"السؤال","a":"الإجابة النموذجية"}]}`, true),
+        call(SYS_JSON, `أنشئ 10 أسئلة اختيار من متعدد على موضوع "${topic}". JSON: {"questions":[{"q":"السؤال","opts":["أ","ب","ج","د"],"correct":0,"explanation":"شرح"}]}`, true)
+      ]);
+
+      const parseJ = (raw, key) => {
+        try {
+          const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
+          if (s > -1 && e > -1) { const o = JSON.parse(raw.substring(s, e + 1)); return o[key] || []; }
+        } catch(x) {}
+        return [];
+      };
+
+      await consumeGuideMsg(session_id);
+
+      res.json({
+        topic,
+        course_name,
+        lecture_title,
+        summary,
+        glossary: parseJ(glossaryRaw, "terms"),
+        mistakes,
+        exercise,
+        analytical: parseJ(analyticalRaw, "qa"),
+        questions: parseJ(questionsRaw, "questions"),
+        remaining_messages: await getGuideRemaining(session_id)
+      });
+
+    } catch (e) {
+      console.error("❌ pdf-resources error:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
 }; // end module.exports
