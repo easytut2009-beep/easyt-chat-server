@@ -106,7 +106,7 @@ async function analyzeIntent(message, history = []) {
 - type=greeting: لو تحية أو كلام عام
 - type=diplomas_list: لو طلب قائمة الدبلومات
 - type=courses_list: لو طلب قائمة الكورسات
-- keywords: كلمات البحث بالعربي والإنجليزي لو ممكن (مش كتير — 2-4 كلمات بس)
+- keywords: كلمات البحث بالعربي والإنجليزي لو ممكن (2-4 كلمات بس) — لا تضيف كلمات زي "كورس" أو "دورة" أو "دبلومة" — الموضوع بس (مثال: "اكسيل" مش "كورس اكسيل")
 - is_ambiguous: true لو الموضوع محتاج توضيح (زي "تصميم" أو "برمجة" بدون تفاصيل)
 - لو is_ambiguous=true: ضيف clarify_question وclarify_options (2-4 خيارات)
 - لو type مش search: ضيف direct_reply بالعامية المصرية
@@ -360,10 +360,16 @@ async function smartChat(message, sessionId) {
 
   // ── Search ──
   else if (intent.type === "search") {
-    const keywords = intent.keywords && intent.keywords.length > 0
+    let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
       : prepareSearchTerms(message);
 
+    // نشيل كلمات زي "كورس" و"دورة" من الـ keywords عشان ما تخربش البحث
+    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma"]);
+    keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
+    if (keywords.length === 0) keywords = prepareSearchTerms(message);
+
+    console.log("🔍 Final search keywords:", keywords);
     const results = await performSearch(keywords, []);
     reply = await formatResults(results, keywords.join(" "));
     session.lastTopic = keywords.join(" ");
