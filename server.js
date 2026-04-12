@@ -3096,7 +3096,7 @@ const resp = await gptWithRetry(() => openai.chat.completions.create({
         { role: "user", content: message },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.3,
+      temperature: 0.45,
       max_tokens: 1000,
     }));
 
