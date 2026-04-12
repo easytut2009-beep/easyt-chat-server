@@ -12,7 +12,7 @@ const {
   escapeHtml, formatCourseCard, logChat, loadBotInstructions, highlightTerms,
   getInstructors, injectDiplomaInfo, getCachedSearch, setCachedSearch,
   COURSE_SELECT_COLS, COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL,
-  BASIC_STOP_WORDS,
+  BASIC_STOP_WORDS, gptWithRetry,
 } = require("./shared");
 
 async function getAllLessonChunks(lessonId, limit = 50) {
