@@ -531,6 +531,9 @@ async function loadAllDiplomas() {
   }
 }
 
+let _diplomaCourseMapCache = { data: null, ts: 0 };
+const DIPLOMA_COURSE_MAP_TTL = 10 * 60 * 1000;
+
 // ─── loadDiplomaCourseMap ───
 async function loadDiplomaCourseMap() {
   if (_diplomaCourseMapCache.data && Date.now() - _diplomaCourseMapCache.ts < DIPLOMA_COURSE_MAP_TTL) {
