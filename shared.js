@@ -577,7 +577,7 @@ async function loadDiplomaCourseMap() {
 
 // ─── injectDiplomaInfo ───
 async function injectDiplomaInfo(courses) {
-  if (!courses || courses.length === 0) return;
+  if (!courses || courses.length === 0) return courses || [];
   try {
     var map = await loadDiplomaCourseMap();
     var courseToD = map.courseToD;
@@ -591,6 +591,7 @@ async function injectDiplomaInfo(courses) {
   } catch (e) {
     console.error("injectDiplomaInfo error:", e.message);
   }
+  return courses;
 }
 
 // ─── getDiplomaWithCourses ───
