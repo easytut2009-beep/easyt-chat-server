@@ -2,28 +2,10 @@
    server.js — Entry Point
    ══════════════════════════════════════════════════════════ */
 
-/* ══════════════════════════════════════════════════════════
-   🤖 Ziko Chatbot v10.9 — Guide Bot RAG Overhaul
-   
-   🔧 ALL PREVIOUS FIXES (v10.2 → v10.8) INCLUDED
-   
-   🆕 NEW in v10.9 — Guide Bot RAG Overhaul:
-   ✅ FIX #40: getAllLessonChunks() — gets ALL chunks for current lesson
-   ✅ FIX #41: searchChunksByText() now filters by courseId via lesson IDs
-   ✅ FIX #42: Increased chunk limits (lesson=50, semantic=8, text=10)
-   ✅ FIX #43: Chunk content limit 600→1200 chars
-   ✅ FIX #44: Improved findLessonByTitle with partial word matching
-   ✅ FIX #45: System prompt — strict content-first, anti-hallucination
-   ✅ FIX #46: Cross-lesson reference detection (other lessons in same course)
-   ✅ FIX #47: Timestamps mandatory in Guide responses
-   ✅ FIX #48: Context split: current lesson vs other lessons
-   ══════════════════════════════════════════════════════════ */
-
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
-const path = require("path");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
@@ -31,23 +13,7 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ═══════════════════════════════════
-   SECTION 1: Environment Validation
-   ═══════════════════════════════════ */
-const REQUIRED_ENV = {
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-};
-
-const missingEnv = Object.entries(REQUIRED_ENV)
-  .filter(([, val]) => !val)
-  .map(([key]) => key);
-
-if (missingEnv.length > 0) {
-  console.error(`\n❌ CRITICAL: Missing env vars: ${missingEnv.join(", ")}\n`);
-}
-
+/* ═══ OpenAI + Supabase ═══ */
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
@@ -57,54 +23,32 @@ const supabase =
     ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
     : null;
 
-/* ═══════════════════════════════════
-   SECTION 2: Supabase Connection Test
-   ═══════════════════════════════════ */
 let supabaseConnected = false;
 
 async function testSupabaseConnection() {
-  if (!supabase) {
-    console.error("❌ Supabase client not initialized");
-    return false;
-  }
+  if (!supabase) { console.error("❌ Supabase not initialized"); return false; }
   try {
-    const { data, error } = await supabase
-      .from("courses")
-      .select("id")
-      .limit(1);
-    if (error) {
-      console.error("❌ Supabase test FAILED:", error.message);
-      return false;
-    }
-    console.log("✅ Supabase connection OK");
+    const { error } = await supabase.from("courses").select("id").limit(1);
+    if (error) { console.error("❌ Supabase:", error.message); return false; }
+    console.log("✅ Supabase OK");
     return true;
-  } catch (e) {
-    console.error("❌ Supabase test EXCEPTION:", e.message);
-    return false;
-  }
+  } catch (e) { console.error("❌ Supabase:", e.message); return false; }
 }
 
-/* ═══════════════════════════════════
-   SECTION 3: Admin Auth
-   ═══════════════════════════════════ */
+/* ═══ Admin Auth ═══ */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "EasyT_Admin_2024";
 const adminTokens = new Map();
 const ADMIN_TOKEN_TTL = 24 * 60 * 60 * 1000;
 
 function generateAdminToken() {
   const token = crypto.randomBytes(32).toString("hex");
-  adminTokens.set(token, {
-    created: Date.now(),
-    lastUsed: Date.now(),
-  });
+  adminTokens.set(token, { created: Date.now(), lastUsed: Date.now() });
   return token;
 }
 
 function adminAuth(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token || !adminTokens.has(token)) {
-    return res.status(401).json({ error: "غير مصرح" });
-  }
+  if (!token || !adminTokens.has(token)) return res.status(401).json({ error: "غير مصرح" });
   const td = adminTokens.get(token);
   if (Date.now() - td.created > ADMIN_TOKEN_TTL) {
     adminTokens.delete(token);
@@ -121,24 +65,21 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-/* ═══════════════════════════════════
-   SECTION 4: Middleware
-   ═══════════════════════════════════ */
-app.use(
-  cors({
-    origin: [
-      "https://easyt.online",
-      "https://www.easyt.online",
-      process.env.ALLOWED_ORIGIN,
-    ].filter(Boolean),
-   methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
-    credentials: true,
-  })
-);
+const adminLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5 });
+
+/* ═══ Middleware ═══ */
+app.use(cors({
+  origin: [
+    "https://easyt.online",
+    "https://www.easyt.online",
+    process.env.ALLOWED_ORIGIN,
+  ].filter(Boolean),
+  methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
+  credentials: true,
+}));
 
 app.use(express.json({ limit: "50mb" }));
-
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 const limiter = rateLimit({
   windowMs: 60000,
@@ -146,14 +87,12 @@ const limiter = rateLimit({
   message: { reply: "استنى شوية وحاول تاني 🙏" },
 });
 
-/* ═══════════════════════════════════
-
-/* ═══ Shared + Routes ═══ */
-const shared = require("./shared");
+/* ═══ Routes ═══ */
 const registerGuideRoutes = require("./ziko-guide");
 const registerSalesRoutes = require("./ziko-sales");
 
-/* ═══ chat-image endpoint ═══ */
+
+/* ═══ Chat Image + Admin + Static Endpoints ═══ */
 app.post("/chat-image", limiter, async (req, res) => {
   try {
     const { message, session_id, image_base64, image_type } = req.body;
@@ -271,53 +210,12 @@ ${botInstructions ? `\n═══ تعليمات الأدمن ═══\n${botIns
 /* ══════════════════════════════════════════════════════════
    SECTION 12: /chat Endpoint
    ══════════════════════════════════════════════════════════ */
-app.post("/chat", limiter, async (req, res) => {
-  try {
-    const { message, session_id } = req.body;
-    if (
-      !message ||
-      typeof message !== "string" ||
-      message.trim().length === 0
-    ) {
-      return res.json({ reply: "اكتبلي سؤالك وأنا هساعدك 😊" });
-    }
-
-    const cleanMessage = message.trim().slice(0, 500);
-    const sessionId = session_id || "anon_" + Date.now();
-
-    console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
-    await logChat(sessionId, "user", cleanMessage, null);
-
-    if (!openai) {
-      const fallback =
-        "عذراً، خدمة الذكاء الاصطناعي مش متاحة حالياً 🙏";
-      await logChat(sessionId, "bot", fallback, "ERROR");
-      return res.json({ reply: fallback });
-    }
-
-const { reply, intent, suggestions } = await smartChat(cleanMessage, sessionId);
-
-    await logChat(sessionId, "bot", reply, intent, { version: "10.9" });
-
-    return res.json({ reply, suggestions: suggestions || [] });
-  } catch (error) {
-    console.error("❌ Chat error:", error);
-    return res.json({
-      reply: "عذراً، حصل مشكلة تقنية 😅 حاول تاني كمان شوية 🙏",
-    });
-  }
-});
 
 /* ══════════════════════════════════════════════════════════
    SECTION 13: Admin Endpoints
    ══════════════════════════════════════════════════════════ */
 
-// === Admin Login ===
-const adminLoginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { success: false, error: "محاولات كتير — استنى 15 دقيقة" },
-});
+
 
 
 /* ═══ Admin Endpoints ═══ */
@@ -2178,12 +2076,13 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
    ══════════════════════════════════════════════════════════ */
 
 /* ═══ Register Routes ═══ */
+/* ═══ Start Server ═══ */
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
-  const ctx = { openai, supabase, limiter, supabaseConnected };
+  const ctx = { openai, supabase, limiter, supabaseConnected, adminAuth, adminLoginLimiter };
   registerGuideRoutes(app, ctx);
-  registerSalesRoutes(app, { openai, supabase, limiter });
+  registerSalesRoutes(app, { openai, supabase, limiter, adminAuth, adminLoginLimiter });
 
   app.listen(PORT, () => {
     console.log(`\n✅ Ziko Server running on port ${PORT}`);
