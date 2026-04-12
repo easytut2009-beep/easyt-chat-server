@@ -14,6 +14,8 @@ function initShared(clients) {
 }
 
 /* ═══ Constants ═══ */
+const CACHE_TTL = 10 * 60 * 1000;
+const sessionMemory = new Map();
 const ALL_COURSES_URL = "https://easyt.online/courses";
 const ALL_DIPLOMAS_URL = "https://easyt.online/p/easyt-diplomas";
 const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
