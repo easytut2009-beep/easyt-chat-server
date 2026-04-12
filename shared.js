@@ -667,13 +667,14 @@ function expandArabicVariants(terms) {
   const variants = new Set();
   for (const term of terms) {
     variants.add(term);
+
     // إ ↔ ا ↔ أ ↔ آ
     const normalized = term
       .replace(/[إأآٱ]/g, 'ا')
       .replace(/ة$/g, 'ه')
       .replace(/ى$/g, 'ي');
     variants.add(normalized);
-    
+
     // Add hamza variants
     if (term.startsWith('ا')) {
       variants.add('إ' + term.slice(1));
@@ -682,17 +683,17 @@ function expandArabicVariants(terms) {
     if (term.startsWith('إ') || term.startsWith('أ')) {
       variants.add('ا' + term.slice(1));
     }
-    
+
     // ة ↔ ه
     if (term.endsWith('ة')) variants.add(term.slice(0, -1) + 'ه');
     if (term.endsWith('ه')) variants.add(term.slice(0, -1) + 'ة');
     if (normalized.endsWith('ه')) variants.add(normalized.slice(0, -1) + 'ة');
-    
-    // ى ↔ ي  
+
+    // ى ↔ ي
     if (term.endsWith('ى')) variants.add(term.slice(0, -1) + 'ي');
     if (term.endsWith('ي')) variants.add(term.slice(0, -1) + 'ى');
   }
-return [...variants].filter(v => v.length > 1).slice(0, 20);
+  return [...variants].filter(v => v.length > 1).slice(0, 20);
 }
 
 // ─── loadAllCorrections ───
