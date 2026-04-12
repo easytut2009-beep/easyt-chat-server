@@ -203,7 +203,7 @@ _s.textContent=''
 +'#zg-quiz-close svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}'
 +'#zg-quiz-body{flex:1;overflow-y:auto;padding:16px 14px 20px;display:flex;flex-direction:column;align-items:stretch;gap:0;min-height:0}'
 +'.zg-quiz-count-wrap{display:flex;flex-direction:column;flex:1;justify-content:space-evenly}'
-+'.zg-q-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;flex-shrink:0}'
++'.zg-q-card{background:#fff;border-radius:14px;padding:16px 20px;margin-bottom:14px;flex-shrink:0}'
 /* Count screen */
 +'.zg-count-title{font-size:20px;font-weight:700;color:#0F5132;text-align:center;margin-bottom:8px;width:100%}'
 +'.zg-count-sub{font-size:13px;color:#6b7280;text-align:center;margin-bottom:32px;width:100%}'
@@ -231,11 +231,11 @@ _s.textContent=''
 +'.zg-q-opt.zg-opt-wrong{border-color:#dc2626 !important;background:#fee2e2 !important}'
 +'.zg-q-opt.zg-opt-wrong .zg-q-opt-letter{background:#dc2626;color:#fff}'
 /* Feedback */
-+'.zg-q-feedback{margin-top:14px;margin-bottom:4px;padding:14px 16px;border-radius:12px;font-size:13px;line-height:1.7;direction:rtl;text-align:right}'
++'.zg-q-feedback{margin-top:14px;margin-bottom:4px;padding:14px 20px;border-radius:12px;font-size:13px;line-height:1.7;direction:rtl;text-align:right}'
 +'.zg-q-feedback.zg-fb-correct{background:#d1e7dd;color:#0a4a2a;border:1px solid #a3cfbb}'
 +'.zg-q-feedback.zg-fb-wrong{background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5}'
 /* Next button */
-+'.zg-next-btn{width:100%;margin-top:14px;background:#198754 !important;color:#fff !important;border:none !important;border-radius:12px;padding:16px 12px !important;font-size:15px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block !important;box-sizing:border-box;letter-spacing:0.3px}'
++'.zg-next-btn{width:100%;margin-top:20px;margin-bottom:20px;background:#198754 !important;color:#fff !important;border:none !important;border-radius:12px;padding:16px 12px !important;font-size:15px;font-weight:700;cursor:pointer;font-family:Tahoma,Geneva,sans-serif;display:block !important;box-sizing:border-box;letter-spacing:0.3px}'
 /* Quiz result screen */
 +'.zg-result-circle-wrap{display:flex;justify-content:center;margin-bottom:20px;margin-top:8px}'
 +'.zg-result-circle{width:110px;height:110px;border-radius:50%;border:6px solid #198754;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f0faf5}'
