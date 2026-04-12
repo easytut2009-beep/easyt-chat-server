@@ -233,9 +233,23 @@ async function performSearch(keywords, instructors) {
         );
 
         if (hasKeywordsMatch) {
-          // في keywords match — نعرضهم
+          // في keywords match — نعرضهم + ندور على الدروس اللي فيها الـ keyword
           const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
           withDiploma.forEach(c => { c._foundInContent = true; });
+
+          // دور على الدروس داخل الكورسات دي اللي فيها الـ keyword في عنوان الدرس
+          try {
+            const lessonResults = await searchLessonsInCourses(keywords);
+            if (lessonResults && lessonResults.length > 0) {
+              const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
+              withDiploma.forEach(c => {
+                if (lessonMap.has(c.id) && lessonMap.get(c.id)?.length > 0) {
+                  c.matchedLessons = lessonMap.get(c.id);
+                }
+              });
+            }
+          } catch (e) { }
+
           results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
           console.log(`📄 Found ${results.courses.length} courses via keywords`);
         } else {
@@ -538,7 +552,7 @@ async function smartChat(message, sessionId) {
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/));
 
     // نشيل الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع"]);
+    const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع", "work", "flow", "وورك", "فلو"]);
     const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
     if (specificKeywords.length > 0) {
       keywords = specificKeywords;
