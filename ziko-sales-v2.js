@@ -144,8 +144,56 @@ async function analyzeIntent(message, history = []) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Search Engine — بحث تدريجي
+// Program Name Aliases — توحيد أسماء البرامج
 // ══════════════════════════════════════════════════════════
+const PROGRAM_ALIASES = {
+  // Excel
+  "اكسيل": ["اكسيل", "إكسيل", "excel", "microsoft excel", "ms excel"],
+  "إكسيل": ["اكسيل", "إكسيل", "excel", "microsoft excel"],
+  "excel":  ["اكسيل", "إكسيل", "excel", "microsoft excel"],
+  // AutoCAD
+  "أوتوكاد": ["أوتوكاد", "اوتوكاد", "autocad", "auto cad"],
+  "اوتوكاد": ["أوتوكاد", "اوتوكاد", "autocad"],
+  "autocad": ["أوتوكاد", "اوتوكاد", "autocad"],
+  // Photoshop
+  "فوتوشوب": ["فوتوشوب", "فوتو شوب", "photoshop", "ps"],
+  "photoshop": ["فوتوشوب", "photoshop"],
+  // Illustrator
+  "اليستريتور": ["اليستريتور", "illustrator", "ai"],
+  "illustrator": ["اليستريتور", "illustrator"],
+  // Word
+  "وورد": ["وورد", "word", "microsoft word"],
+  "word": ["وورد", "word", "microsoft word"],
+  // PowerPoint
+  "بوربوينت": ["بوربوينت", "powerpoint", "ppt"],
+  "powerpoint": ["بوربوينت", "powerpoint"],
+  // After Effects
+  "افتر ايفكت": ["افتر ايفكت", "after effects", "after effect", "ae"],
+  "after effects": ["افتر ايفكت", "after effects"],
+  // Premiere
+  "بريمير": ["بريمير", "premiere", "premiere pro"],
+  "premiere": ["بريمير", "premiere", "premiere pro"],
+  // Python
+  "بايثون": ["بايثون", "python"],
+  "python": ["بايثون", "python"],
+  // JavaScript
+  "جافاسكريبت": ["جافاسكريبت", "javascript", "js"],
+  "javascript": ["جافاسكريبت", "javascript"],
+};
+
+function expandWithAliases(keywords) {
+  const expanded = new Set();
+  for (const kw of keywords) {
+    expanded.add(kw);
+    const lower = kw.toLowerCase().trim();
+    if (PROGRAM_ALIASES[lower]) {
+      PROGRAM_ALIASES[lower].forEach(v => expanded.add(v));
+    }
+  }
+  return [...expanded];
+}
+
+
 async function performSearch(keywords, instructors) {
   const results = {
     diplomas: [],
@@ -410,10 +458,13 @@ async function smartChat(message, sessionId) {
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message);
 
-    console.log("🔍 Final search keywords:", keywords);
-    const results = await performSearch(keywords, []);
+    // توسيع الـ keywords بـ aliases (اكسيل → إكسيل، excel، ...)
+    const finalKeywords = expandWithAliases(keywords);
+
+    console.log("🔍 Final search keywords:", finalKeywords);
+    const results = await performSearch(finalKeywords, []);
     reply = await formatResults(results, keywords.join(" "));
-    session.lastTopic = keywords.join(" ");
+    session.lastTopic = finalKeywords.join(" ");
     session.lastResults = results;
 
     // اقتراحات بعد النتايج
