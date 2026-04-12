@@ -290,7 +290,7 @@ async function performSearch(keywords, instructors) {
     }
   } catch (e) { console.error("lesson search error:", e.message); }
 
-  // 4. بحث في الـ chunks لو مفيش نتايج أو noDirectCourse
+  // 4. بحث في الـ chunks لو مفيش نتايج
   if (results.courses.length === 0 && results.lessons.length === 0) {
     try {
       if (supabase && openai) {
@@ -306,11 +306,43 @@ async function performSearch(keywords, instructors) {
         });
         if (chunks && chunks.length > 0) {
           results.chunks = chunks;
-          results.noDirectCourse = false; // في نتايج من الـ chunks
+          results.noDirectCourse = false;
           console.log(`📦 Found ${chunks.length} chunks`);
         }
       }
     } catch (e) { console.error("chunk search error:", e.message); }
+  }
+
+  // 5. Semantic fallback على الكورسات — لو لسه مفيش نتايج
+  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
+    try {
+      if (supabase && openai) {
+        const embResp = await openai.embeddings.create({
+          model: COURSE_EMBEDDING_MODEL,
+          input: keywords.join(" "),
+        });
+        const embedding = embResp.data[0].embedding;
+        const { data: semCourses } = await supabase.rpc("match_courses", {
+          query_embedding: embedding,
+          match_threshold: 0.72,
+          match_count: 5,
+        });
+        if (semCourses && semCourses.length > 0) {
+          // نجيب بيانات الكورسات
+          const { data: courseData } = await supabase
+            .from("courses")
+            .select(COURSE_SELECT_COLS)
+            .in("id", semCourses.map(s => s.id));
+          if (courseData && courseData.length > 0) {
+            const withDiploma = await injectDiplomaInfo(courseData).catch(() => courseData);
+            withDiploma.forEach(c => { c._semanticFallback = true; });
+            results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+            results.noDirectCourse = false;
+            console.log(`🔮 Semantic fallback: ${results.courses.length} courses`);
+          }
+        }
+      }
+    } catch (e) { console.error("semantic fallback error:", e.message); }
   }
 
   return results;
@@ -339,8 +371,11 @@ async function formatResults(results, query) {
   if (results.courses.length > 0) {
     found = true;
     const foundInContent = results.courses.some(c => c._foundInContent);
+    const semanticFallback = results.courses.some(c => c._semanticFallback);
     if (results.diplomas.length > 0) {
       html += `📘 <strong>كورسات مرتبطة:</strong><br><br>`;
+    } else if (semanticFallback) {
+      html += `📘 <strong>مفيش كورس مباشر عن "${shortQuery}" — بس دي أقرب الكورسات للموضوع ده:</strong><br><br>`;
     } else if (foundInContent) {
       html += `📘 <strong>الكورسات دي بتتكلم عن "${shortQuery}":</strong><br><br>`;
     } else {
