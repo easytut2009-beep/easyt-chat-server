@@ -2539,6 +2539,8 @@ ${categoriesList}
 
 2️⃣ **CLARIFY** = نية تعلم بدون موضوع واضح ("عايز اتعلم", "عندي عيادة", "انا لسه متخرج")
    🔴 لو المستخدم ذكر بيزنس/مكان جديد (عيادة، مطعم، شركة، دار نشر) → CLARIFY فوراً، متستخدمش الذاكرة القديمة
+   🔴 لو المستخدم ذكر مهنة يدوية أو حرفة (نجار، حداد، سباك، كهربائي، خياط، طباخ...) + طلب تعلم عام → CLARIFY واسأله: "تصميم إيه بالظبط يفيدك في شغلك؟" مع أمثلة محددة
+   🔴 لو طلب "تصميم" بشكل عام بدون تحديد نوعه (جرافيك؟ معماري؟ داخلي؟ AutoCAD؟) + ذكر مهنة → CLARIFY فوراً
 
 3️⃣ **SUBSCRIPTION** = أي ذكر لـ (فلوس/دفع/اشتراك/سعر/خصم/عرض/كوبون/فيزا/كاش)
    🔴 الأسعار الثابتة: شهري 25$ / سنوي 59$
@@ -2579,6 +2581,8 @@ ${categoriesList}
 • "في وكلاء الكم" = SUPPORT (بيسأل عن وكلاء, مش quantum)
 • "المنهج" + صف دراسي = خارج تخصص المنصة → جاوب بـ "المنصة متخصصة في الدورات المهنية"
 • "عرض" في سياق الخصومات = SUBSCRIPTION (مش تطبيق)
+• مهنة يدوية (نجار/طبيب/محامي/مهندس/...) + طلب تعلم عام = CLARIFY دايماً — اسأل عن النوع المحدد
+• "تصميم" بدون تحديد نوع + مهنة = CLARIFY — اسأل: جرافيك؟ AutoCAD؟ داخلي؟ معماري؟
 
 ═══ 🚫 ممنوعات - أعلى أولوية 🚫 ═══
 
@@ -2598,6 +2602,9 @@ ${categoriesList}
 • "كورس SEO في دبلومة ايه" → {"action":"COURSE_IN_DIPLOMA", "search_terms":["SEO"]}
 • "مين بيشرح فوتوشوب" → {"action":"SEARCH", "search_terms":["فوتوشوب","photoshop"]}
 • "لخصلي الدرس" → {"action":"CHAT", "response_message":"التلخيص والشرح ده شغل المرشد التعليمي 🤖"}
+• "انا نجار وعايز اتعلم تصميم" → {"action":"CLARIFY", "search_terms":[], "response_message":"تصميم إيه بالظبط يفيدك في شغلك كنجار؟ 😊\nمثلاً:\n• AutoCAD أو SketchUp للرسم الهندسي والأثاث؟\n• تصميم داخلي؟\n• جرافيك للتسويق لشغلتك؟"}
+• "انا طبيب وعايز اتعلم تسويق" → {"action":"CLARIFY", "search_terms":[], "response_message":"تسويق إيه بالظبط؟ 😊 تسويق للعيادة؟ سوشيال ميديا؟ إعلانات؟"}
+• "انا محاسب وعايز اتعلم برمجة" → {"action":"CLARIFY", "search_terms":[], "response_message":"برمجة إيه؟ 😊 Excel/VBA للمحاسبة؟ Python لتحليل البيانات؟ مواقع ويب؟"}
 
 ═══ تصحيحات و FAQs (أعلى أولوية) ═══
 ${relevantCorrections?.length ? `📝 تصحيحات الأدمن (الزمها):\n${relevantCorrections.map(c => `- س: "${c.question}" → ج: "${c.reply}"`).join('\n')}\n🔴 لو تطابق → action="CHAT", response_message=الرد المصحح` : ''}
@@ -5241,6 +5248,13 @@ if (_dcEntries.length > 0) {
         /(ايه|إيه)?\s*(اللي|اللى)\s*فيها/.test(_fuDipNorm) ||
         /جواها/.test(_fuDipNorm)
       );
+
+      // 🆕 Safety: لو فيه موضوع جديد في الرسالة → مش follow-up
+      var _fuHasNewTopic = hasNewExplicitTopic(message);
+      if (_fuIsDiplomaFollowUp && _fuHasNewTopic) {
+        console.log('📚 FIX: Diploma follow-up CANCELLED — new topic detected: "' + _fuHasNewTopic + '"');
+        _fuIsDiplomaFollowUp = false;
+      }
 
       if (_fuIsDiplomaFollowUp) {
         console.log('📚 FIX: Follow-up diploma question: "' + message + '"');
