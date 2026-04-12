@@ -522,6 +522,7 @@ const GUIDE_DAILY_LIMIT = 999; // temp unlimited for testing
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
+}
 
 // ═══ Guide State ═══
 const guideConversations = {};
@@ -529,8 +530,6 @@ const GUIDE_MAX_HISTORY = 10;
 const MAX_CURRENT_CONTEXT_CHARS = 12000;
 const MAX_OTHER_CONTEXT_CHARS = 8000;
 const MAX_CLIENT_PROMPT_CHARS = 500;
-
-}
 
 // ─── botInstructionsCache ───
 let _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
