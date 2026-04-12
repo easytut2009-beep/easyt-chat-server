@@ -1809,7 +1809,10 @@ console.log("══════════════════════�
 
 
  // Build System Prompt
-const finalSystemPrompt = buildGuideSystemPrompt({
+// 🆕 UPDATES_MODE: تجاوز الـ guide prompt وابعت system_prompt مباشرة
+const finalSystemPrompt = (system_prompt && system_prompt.startsWith("UPDATES_MODE"))
+    ? system_prompt
+    : buildGuideSystemPrompt({
     courseName: course_name || "",
     lectureTitle: lecture_title || "",
     clientPrompt: system_prompt || "",
