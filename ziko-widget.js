@@ -934,7 +934,7 @@ addSumNext();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 })
-.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}hideTyp();addMsg("حصل خطأ!","bot");stopSending();});
+.catch(function(e){hideTyp();if(!sending||streamGen!==myGenSF){stopSending();return;}addMsg("حصل خطأ!","bot");stopSending();});
 }
 
 function openExercise(){
@@ -1099,7 +1099,7 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
 })
-.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}if(streamGen!==myGenM)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(e){hideTyp();if(streamGen!==myGenM){stopSending();return;}addMsg("حصل خطأ!","bot");stopSending();});
 }
 
 var analyticalState={questions:[],current:0};
@@ -1270,7 +1270,7 @@ if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRe
 sending=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 typewriterMsg(data.reply||"","bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});
 })
-.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}if(streamGen!==myGenR)return;hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}});
+.catch(function(e){hideTyp();if(streamGen!==myGenR){stopSending();return;}addMsg("حصل خطأ!","bot");stopSending();});
 });
 }
 
@@ -1440,10 +1440,7 @@ if(id==="infographic"){renderInfographic(reply);if($send){$send.classList.remove
 else if(id==="glossary"){renderGlossary(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
 else{typewriterMsg(reply,"bot",function(){if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}});}
 })
-.catch(function(e){
-if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}
-if(streamGen!==myToolGen)return;
-hideTyp();addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");stopSending();});
+.catch(function(e){hideTyp();if(streamGen!==myToolGen){stopSending();return;}addMsg("عذراً، حصل مشكلة. حاول تاني.","bot");stopSending();});
 }
 
 function renderInfographic(text){
