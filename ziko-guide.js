@@ -12,6 +12,7 @@ const {
   escapeHtml, formatCourseCard, logChat, loadBotInstructions, highlightTerms,
   getInstructors, injectDiplomaInfo, getCachedSearch, setCachedSearch,
   COURSE_SELECT_COLS, COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL,
+  BASIC_STOP_WORDS,
 } = require("./shared");
 
 async function getAllLessonChunks(lessonId, limit = 50) {
@@ -530,6 +531,29 @@ const GUIDE_MAX_HISTORY = 10;
 const MAX_CURRENT_CONTEXT_CHARS = 12000;
 const MAX_OTHER_CONTEXT_CHARS = 8000;
 const MAX_CLIENT_PROMPT_CHARS = 500;
+
+// ─── levenshteinDistance ───
+function levenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b[i - 1] === a[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
 
 // ─── botInstructionsCache ───
 let _botInstructionsCache = { sales: null, guide: null, ts_sales: 0, ts_guide: 0 };
