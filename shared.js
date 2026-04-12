@@ -991,18 +991,21 @@ const [ilikeResult, semanticResults] = await Promise.all([
     if (semanticResults.length > 0) {
       semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
 
-      const ilikeIds = new Set(allCourses.map((c) => c.id));
-      const semanticOnlyIds = [...semanticMap.keys()].filter(
-        (id) => !ilikeIds.has(id)
-      );
-
-      if (semanticOnlyIds.length > 0) {
-        const { data: semCourses } = await supabase
-          .from("courses")
-          .select(COURSE_SELECT_COLS)
-          .in("id", semanticOnlyIds);
-        if (semCourses) allCourses = [...allCourses, ...semCourses];
+      // الـ semantic يضيف كورسات جديدة بس لو Phase 1 مفيش نتايج
+      if (allCourses.length === 0) {
+        const ilikeIds = new Set(allCourses.map((c) => c.id));
+        const semanticOnlyIds = [...semanticMap.keys()].filter(
+          (id) => !ilikeIds.has(id)
+        );
+        if (semanticOnlyIds.length > 0) {
+          const { data: semCourses } = await supabase
+            .from("courses")
+            .select(COURSE_SELECT_COLS)
+            .in("id", semanticOnlyIds);
+          if (semCourses) allCourses = [...allCourses, ...semCourses];
+        }
       }
+      // لو في نتايج من Phase 1 — الـ semantic بيستخدم للـ scoring بس (مش إضافة كورسات جديدة)
     }
 
     if (allCourses.length === 0) {
