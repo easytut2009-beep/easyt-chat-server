@@ -290,7 +290,7 @@ async function performSearch(keywords, instructors) {
     }
   } catch (e) { console.error("lesson search error:", e.message); }
 
-  // 4. لو مفيش دروس — بحث في الـ chunks
+  // 4. بحث في الـ chunks لو مفيش نتايج أو noDirectCourse
   if (results.courses.length === 0 && results.lessons.length === 0) {
     try {
       if (supabase && openai) {
@@ -301,11 +301,13 @@ async function performSearch(keywords, instructors) {
         const embedding = embResp.data[0].embedding;
         const { data: chunks } = await supabase.rpc("match_lesson_chunks", {
           query_embedding: embedding,
-          match_threshold: 0.75,
+          match_threshold: 0.72,
           match_count: 5,
         });
         if (chunks && chunks.length > 0) {
           results.chunks = chunks;
+          results.noDirectCourse = false; // في نتايج من الـ chunks
+          console.log(`📦 Found ${chunks.length} chunks`);
         }
       }
     } catch (e) { console.error("chunk search error:", e.message); }
@@ -396,17 +398,37 @@ async function formatResults(results, query) {
   // chunks
   if (results.chunks.length > 0) {
     found = true;
-    const c = results.chunks[0];
-    html += `📖 <strong>لقيت محتوى مرتبط في:</strong><br><br>`;
-    html += `<div style="border:1px solid #eee;border-radius:10px;margin:6px 0;padding:10px;background:#fff">`;
-    html += `<div style="font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:4px">📘 ${escapeHtml(c.course_title || "")}</div>`;
-    html += `<div style="font-size:12px;color:#555;margin-bottom:4px">📖 ${escapeHtml(c.lesson_title || "")}</div>`;
-    if (c.content) {
-      const snippet = c.content.substring(0, 200).trim() + "...";
-      html += `<div style="font-size:11px;color:#777;margin-bottom:6px;font-style:italic">"${escapeHtml(snippet)}"</div>`;
-    }
-    if (c.course_link) html += `<a href="${c.course_link}" target="_blank" style="color:#e63946;font-size:12px;font-weight:700;text-decoration:none">🔗 اشترك للوصول ←</a>`;
-    html += `</div>`;
+    html += `📖 <strong>لقيت "${shortQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
+
+    // نجمع الـ chunks حسب الكورس
+    const courseMap = new Map();
+    results.chunks.forEach(c => {
+      const key = c.course_title || c.course_id;
+      if (!courseMap.has(key)) {
+        courseMap.set(key, { course: c, lessons: [] });
+      }
+      if (c.lesson_title && !courseMap.get(key).lessons.includes(c.lesson_title)) {
+        courseMap.get(key).lessons.push(c.lesson_title);
+      }
+    });
+
+    courseMap.forEach(({ course, lessons }) => {
+      html += `<div style="border:1px solid #eee;border-radius:10px;margin:6px 0;padding:10px;background:#fff">`;
+      html += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${escapeHtml(course.course_title || "")}</div>`;
+      if (lessons.length > 0) {
+        html += `<div style="background:#fffde7;border-radius:8px;padding:8px;margin-bottom:6px">`;
+        html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:4px">📖 الدروس المرتبطة:</div>`;
+        lessons.slice(0, 3).forEach(l => {
+          html += `<div style="font-size:12px;color:#333;padding:2px 0">• ${escapeHtml(l)}</div>`;
+        });
+        html += `</div>`;
+      }
+      if (course.course_link) {
+        html += `<a href="${course.course_link}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+      }
+      html += `</div>`;
+    });
+
     return html;
   }
 
