@@ -428,6 +428,14 @@ async function smartChat(message, sessionId) {
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/));
 
+    // لو في كلمات محددة (برامج/أدوات) — نشيل الكلمات العامة جداً اللي بتجيب نتايج غلط
+    const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع"]);
+    const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
+    if (specificKeywords.length > 0) {
+      keywords = specificKeywords;
+      console.log("🎯 Removed generic words, specific keywords:", keywords);
+    }
+
     console.log("🔍 Final search keywords:", keywords);
     const results = await performSearch(keywords, []);
     reply = await formatResults(results, keywords.join(" "));
