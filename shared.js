@@ -637,6 +637,8 @@ async function getDiplomaWithCourses(diplomaIdOrTitle) {
   }
 }
 
+const searchCache = new Map();
+
 // ─── getCachedSearch ───
 function getCachedSearch(key) {
   const cached = searchCache.get(key);
