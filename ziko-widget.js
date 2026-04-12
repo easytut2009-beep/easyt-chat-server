@@ -934,7 +934,7 @@ addSumNext();
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
 sending=false;if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="";}
 })
-.catch(function(){hideTyp();addMsg("حصل خطأ!","bot");sending=false;if($send)$send.disabled=false;if($toolsWrap){$toolsWrap.style.opacity="";$toolsWrap.style.pointerEvents="\";";}});
+.catch(function(e){if(e&&e.name==="AbortError"){hideTyp();stopSending();return;}hideTyp();addMsg("حصل خطأ!","bot");stopSending();});
 }
 
 function openExercise(){
@@ -1434,6 +1434,7 @@ hideTyp();
 var reply=data.reply||"";
 if(typeof data.remaining_messages==="number"){rem=data.remaining_messages;saveRem(rem);updCtr();}
 else{rem=Math.max(0,rem-1);saveRem(rem);updCtr();}
+if(streamGen!==myToolGen){stopSending();return;}
 sending=false;if($toolsWrap){$toolsWrap.style.opacity='';$toolsWrap.style.pointerEvents='';}
 if(id==="infographic"){renderInfographic(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
 else if(id==="glossary"){renderGlossary(reply);if($send){$send.classList.remove("zg-stop");$send.innerHTML=IC.send;$send.disabled=false;}}
