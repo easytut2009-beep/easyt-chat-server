@@ -1372,7 +1372,7 @@ const embResp = await openai.embeddings.create({
       let score = 0;
       for (const lesson of matched) {
         const titleNorm = normalizeArabic((lesson.title || "").toLowerCase());
-        for (const term of finalTerms) {
+        for (const term of allTerms) {
           const nt = normalizeArabic(term.toLowerCase());
           if (nt.length <= 1) continue;
           if (titleNorm.includes(nt)) score += 100;
