@@ -942,8 +942,8 @@ const [ilikeResult, semanticResults] = await Promise.all([
     let allCourses = error ? [] : (courses || []);
     console.log(`🔍 Phase 1 got ${allCourses.length} results`);
 
-// 🔧 Phase 2: لو أقل من 3 نتايج — وسع للـ syllabus وfull_content
-    if (allCourses.length < 3 && limitedTerms.length <= 4) {
+// 🔧 Phase 2: لو مفيش نتايج خالص — وسع للـ syllabus وfull_content
+    if (allCourses.length === 0) {
       console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
       const deepCols = [
         "title", "description", "subtitle",
