@@ -1054,6 +1054,23 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
     let filtered = allCourses;
 
+    // ── فلتر ذكي — نسبة الارتباط بين الـ query والكورس ──
+    if (allTerms.length > 0 && allCourses.length > 3) {
+      const qTerms = allTerms.map(t => normalizeArabic(t.toLowerCase())).filter(t => t.length > 2);
+      const relevant = allCourses.filter(c => {
+        const titleWords = normalizeArabic((c.title || "").toLowerCase()).split(/\s+/).filter(w => w.length > 2);
+        // كام كلمة من العنوان موجودة في الـ query؟
+        const titleMatches = titleWords.filter(tw =>
+          qTerms.some(qt => tw.includes(qt) || qt.includes(tw))
+        ).length;
+        // نسبة الكلمات المتطابقة من العنوان
+        const matchRatio = titleWords.length > 0 ? titleMatches / titleWords.length : 0;
+        // لو مفيش كلمة واحدة متطابقة خالص — شيله
+        return titleMatches > 0 || matchRatio === 0;
+      });
+      if (relevant.length >= 2) filtered = relevant;
+    }
+
     if (excludeTerms.length > 0) {
       filtered = allCourses.filter((c) => {
         const tn = normalizeArabic((c.title || "").toLowerCase());
@@ -1151,6 +1168,22 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
         titleNorm.includes(normalizeArabic(t.toLowerCase()))
       ).length;
       if (titleHits >= 2) score += 40;
+
+      // ── Penalty: لو العنوان فيه كلمات كتير مش في الـ query → ده كورس مش مناسب ──
+      if (score > 0 && finalTerms.length > 0) {
+        const titleWordsList = titleNorm.split(/\s+/).filter(w => w.length > 2);
+        const qNorms = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
+        const unmatchedTitleWords = titleWordsList.filter(tw =>
+          !qNorms.some(qt => tw.includes(qt) || qt.includes(tw))
+        );
+        // لو أكتر من نص كلمات العنوان مش في الـ query → penalty
+        if (titleWordsList.length > 0) {
+          const unmatchRatio = unmatchedTitleWords.length / titleWordsList.length;
+          if (unmatchRatio > 0.7 && titleWordsList.length > 3) {
+            score = Math.round(score * 0.4);
+          }
+        }
+      }
 
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
 
