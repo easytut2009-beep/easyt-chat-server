@@ -326,7 +326,24 @@ async function performSearch(keywords, instructors) {
               break;
             }
           }
-          if (!tc) console.log("📝 Text chunks found: 0");
+          if (!tc) {
+            console.log("📝 Text chunks found: 0");
+            // fallback: جرب كلمات أقصر من الـ keywords الأصلية
+            const shortKws = chunkKeywords.filter(k => k.length > 2 && k.length < 8);
+            for (const kw of shortKws) {
+              const result = await supabase
+                .from("chunks")
+                .select("lesson_id, content")
+                .ilike("content", `%${kw}%`)
+                .limit(15);
+              if (!result.error && result.data && result.data.length > 0) {
+                tc = result.data;
+                matchedKeyword = kw;
+                console.log(`📝 Text chunks fallback found: ${tc.length} (keyword: "${kw}")`);
+                break;
+              }
+            }
+          }
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
