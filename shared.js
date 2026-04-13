@@ -1225,9 +1225,9 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
-    // ── فلتر: شيل الكورسات اللي score أقل من threshold لو في كورسات أعلى ──
+    // ── فلتر: شيل الكورسات اللي score أقل من 50 لو في كورسات أعلى ──
     const maxScore = finalScored.length > 0 ? finalScored[0].relevanceScore : 0;
-    const threshold = maxScore > 300 ? maxScore * 0.3 : maxScore > 100 ? maxScore * 0.2 : 0;
+    const threshold = maxScore > 200 ? 50 : 0;
     const goodScored = finalScored.filter(c => c.relevanceScore >= threshold);
     const finalFiltered = goodScored.length >= 2 ? goodScored : finalScored;
 
