@@ -548,6 +548,54 @@ async function formatResults(results, query, session = null) {
 // Main Chat Handler
 // ══════════════════════════════════════════════════════════
 
+
+// ══════════════════════════════════════════════════════════
+// FAQ Matcher — بيدور على إجابة جاهزة قبل GPT
+// ══════════════════════════════════════════════════════════
+function normQ(text) {
+  return text
+    .replace(/[أإآا]/g, 'ا')
+    .replace(/[ةه]/g, 'ه')
+    .replace(/[يى]/g, 'ي')
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+function faqSimilarity(q1, q2) {
+  const a = normQ(q1);
+  const b = normQ(q2);
+  if (a === b) return 1;
+  // word overlap score
+  const wa = new Set(a.split(' ').filter(w => w.length > 2));
+  const wb = new Set(b.split(' ').filter(w => w.length > 2));
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let common = 0;
+  wa.forEach(w => { if (wb.has(w)) common++; });
+  return common / Math.max(wa.size, wb.size);
+}
+
+async function findFAQAnswer(message, threshold = 0.55) {
+  try {
+    const faqs = await loadAllFAQs();
+    if (!faqs || faqs.length === 0) return null;
+    let best = null, bestScore = 0;
+    for (const faq of faqs) {
+      const score = faqSimilarity(message, faq.question);
+      if (score > bestScore) { bestScore = score; best = faq; }
+    }
+    if (bestScore >= threshold && best) {
+      console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)})`);
+      return markdownToHtml(best.answer);
+    }
+    return null;
+  } catch(e) {
+    console.error("FAQ match error:", e.message);
+    return null;
+  }
+}
+
 // ══════════════════════════════════════════════════════════
 // دالة موحدة — GPT بيرد على كل الأسئلة بناءً على التعليمات
 // ══════════════════════════════════════════════════════════
@@ -609,6 +657,13 @@ async function smartChat(message, sessionId) {
   // حفظ في الـ history
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
+
+  // ── FAQ Check — قبل أي حاجة ──
+  const faqAnswer = await findFAQAnswer(message);
+  if (faqAnswer) {
+    session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
+    return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
+  }
 
   // لو الرسالة السابقة كانت clarify (توضيح) — الرسالة الحالية هي search مباشرة
   const lastBotMsg = session.history.slice(-2).find(h => h.role === 'assistant');
