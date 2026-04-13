@@ -1235,7 +1235,15 @@ app.post("/chat", limiter, async (req, res) => {
     return res.status(400).json({ error: "Missing message or session_id" });
   }
   try {
+    // سجل رسالة اليوزر
+    logChat(session_id, "user", message.trim(), "sales").catch(() => {});
+
     const result = await smartChat(message.trim(), session_id);
+
+    // سجل رد البوت
+    const replyText = (result.reply || "").replace(/<[^>]+>/g, " ").trim();
+    logChat(session_id, "bot", replyText, "sales").catch(() => {});
+
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
