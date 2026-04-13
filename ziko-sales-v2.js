@@ -178,7 +178,7 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 // ══════════════════════════════════════════════════════════
 // Search Engine — بحث تدريجي
 // ══════════════════════════════════════════════════════════
-async function performSearch(keywords, instructors) {
+async function performSearch(keywords, instructors, originalMessage = null) {
   const results = {
     diplomas: [],
     courses: [],
@@ -300,50 +300,54 @@ async function performSearch(keywords, instructors) {
         let semChunks = [];
         console.log("📦 Semantic chunks: skipped (using text search only)");
 
-        // Text search في الـ chunks — بيجيب الـ content + lesson_id
-        const chunkKeywords = keywords.filter(k => k.length > 2).slice(0, 4);
-
+        // Text search في الـ chunks — بيبحث بالرسالة الأصلية مصححة إملائياً
         let textChunkCourses = [];
-        let textChunkLessonsMap = new Map(); // course_id → Map(lesson_id → {title, content})
+        let textChunkLessonsMap = new Map();
 
-        if (chunkKeywords.length > 0) {
+        // استخرج عبارات البحث من الرسالة الأصلية (مصححة) + keywords كـ fallback
+        let chunkSearchTerms = [];
+        if (originalMessage) {
+          // تصحيح إملائي بسيط عبر GPT
+          try {
+            const corrResp = await gptWithRetry(() => openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: `صحح الأخطاء الإملائية فقط في هذه الجملة وأرجعها كما هي بدون أي إضافة: "${originalMessage}"` }],
+              max_tokens: 60,
+              temperature: 0,
+            }));
+            const corrected = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
+            chunkSearchTerms = [corrected, originalMessage]; // نجرب المصحح أولاً ثم الأصلي
+            console.log(`📝 Chunk search terms: "${corrected}"`);
+          } catch(e) {
+            chunkSearchTerms = [originalMessage];
+          }
+        }
+        // أضف keywords كـ fallback
+        keywords.filter(k => k.length > 2 && k.length < 10).forEach(k => {
+          if (!chunkSearchTerms.includes(k)) chunkSearchTerms.push(k);
+        });
+
+        {
           let tc = null;
           let matchedKeyword = null;
-          for (const kw of chunkKeywords) {
+          for (const term of chunkSearchTerms) {
             const result = await supabase
               .from("chunks")
               .select("lesson_id, content")
-              .ilike("content", `%${kw}%`)
+              .ilike("content", `%${term}%`)
               .limit(15);
             if (result.error) {
-              console.error(`❌ Text chunks error for "${kw}":`, result.error.message);
+              console.error(`❌ Text chunks error for "${term}":`, result.error.message);
               continue;
             }
             if (result.data && result.data.length > 0) {
               tc = result.data;
-              matchedKeyword = kw;
-              console.log(`📝 Text chunks found: ${tc.length} (keyword: "${kw}")`);
+              matchedKeyword = term;
+              console.log(`📝 Text chunks found: ${tc.length} (term: "${term}")`);
               break;
             }
           }
-          if (!tc) {
-            console.log("📝 Text chunks found: 0");
-            // fallback: جرب كلمات أقصر من الـ keywords الأصلية
-            const shortKws = chunkKeywords.filter(k => k.length > 2 && k.length < 8);
-            for (const kw of shortKws) {
-              const result = await supabase
-                .from("chunks")
-                .select("lesson_id, content")
-                .ilike("content", `%${kw}%`)
-                .limit(15);
-              if (!result.error && result.data && result.data.length > 0) {
-                tc = result.data;
-                matchedKeyword = kw;
-                console.log(`📝 Text chunks fallback found: ${tc.length} (keyword: "${kw}")`);
-                break;
-              }
-            }
-          }
+          if (!tc) console.log("📝 Text chunks found: 0");
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
@@ -788,7 +792,7 @@ async function smartChat(message, sessionId) {
       console.log("👧 Kids mode — added scratch/أطفال keywords");
     }
 
-    const results = await performSearch(keywords, [], audience);
+    const results = await performSearch(keywords, [], audience, message);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
 
     reply = await formatResults(results, displayTopic, session);
