@@ -312,14 +312,20 @@ async function performSearch(keywords, instructors, originalMessage = null) {
             const corrResp = await gptWithRetry(() => openai.chat.completions.create({
               model: "gpt-4o-mini",
               messages: [{ role: "user", content: `من هذه الرسالة: "${originalMessage}"
-استخرج الموضوع أو الكلمة الرئيسية التي يبحث عنها المستخدم، وصحح أخطاءها الإملائية فقط.
-أرجع الموضوع فقط بدون أي كلام إضافي. مثال: "الحشود العسكرية" أو "تصميم الشعارات"` }],
+استخرج الموضوع أو الكلمة الرئيسية التي يبحث عنها المستخدم فقط، وصحح أخطاءها الإملائية.
+قواعد مهمة:
+- لو الكلام بالعربي → أرجع بالعربي فقط
+- لو الكلام بالإنجليزي → أرجع بالإنجليزي فقط
+- لو الكلام مختلط → أرجع بالاتنين مفصولين بفاصلة
+- بدون ترجمة، بدون أي كلام إضافي
+أمثلة: "الحشود العسكرية" / "photoshop" / "الحشود العسكرية, military crowds"` }],
               max_tokens: 30,
               temperature: 0,
             }));
-            const topic = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
-            chunkSearchTerms = [topic];
-            console.log(`📝 Chunk topic extracted: "${topic}"`);
+            const topicRaw = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
+            // لو في فاصلة → ابحث بكل جزء
+            chunkSearchTerms = topicRaw.split(/،|,/).map(t => t.trim()).filter(t => t.length > 1);
+            console.log(`📝 Chunk topic extracted: ${JSON.stringify(chunkSearchTerms)}`);
           } catch(e) {
             chunkSearchTerms = [];
           }
