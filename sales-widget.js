@@ -2436,31 +2436,8 @@ function cleanupUI() {
 
 }
 
-// expose للـ GTM — GTM هو اللي بيستدعي initZiko
+// expose للـ GTM
 window.initZiko = initZiko;
-
-// ── مراقبة التنقل بين الصفحات ──
-function zikoCheckVisibility() {
-  var url = window.location.href;
-  var allowed = /(easyt\.online\/$|easyt\.online\/p\/|easyt\.online\/#)/.test(url);
-  var toggle = document.getElementById('ziko-toggle');
-  var chatBox = document.getElementById('ziko-chat-box');
-  if (toggle) toggle.style.display = allowed ? '' : 'none';
-  if (chatBox && !allowed) {
-    chatBox.style.display = 'none';
-    chatBox.classList.remove('ziko-visible');
-  }
-}
-
-var _zikoLastUrl = window.location.href;
-setInterval(function() {
-  if (window.location.href !== _zikoLastUrl) {
-    _zikoLastUrl = window.location.href;
-    setTimeout(zikoCheckVisibility, 300);
-  }
-}, 500);
-
-zikoCheckVisibility();
 
 })();
 </script>
