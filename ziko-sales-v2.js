@@ -307,19 +307,21 @@ async function performSearch(keywords, instructors, originalMessage = null) {
         // استخرج عبارات البحث من الرسالة الأصلية (مصححة) + keywords كـ fallback
         let chunkSearchTerms = [];
         if (originalMessage) {
-          // تصحيح إملائي بسيط عبر GPT
+          // استخرج الموضوع الأساسي من الرسالة (مصحح إملائياً) للبحث في الـ chunks
           try {
             const corrResp = await gptWithRetry(() => openai.chat.completions.create({
               model: "gpt-4o-mini",
-              messages: [{ role: "user", content: `صحح الأخطاء الإملائية فقط في هذه الجملة وأرجعها كما هي بدون أي إضافة: "${originalMessage}"` }],
-              max_tokens: 60,
+              messages: [{ role: "user", content: `من هذه الرسالة: "${originalMessage}"
+استخرج الموضوع أو الكلمة الرئيسية التي يبحث عنها المستخدم، وصحح أخطاءها الإملائية فقط.
+أرجع الموضوع فقط بدون أي كلام إضافي. مثال: "الحشود العسكرية" أو "تصميم الشعارات"` }],
+              max_tokens: 30,
               temperature: 0,
             }));
-            const corrected = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
-            chunkSearchTerms = [corrected, originalMessage]; // نجرب المصحح أولاً ثم الأصلي
-            console.log(`📝 Chunk search terms: "${corrected}"`);
+            const topic = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
+            chunkSearchTerms = [topic];
+            console.log(`📝 Chunk topic extracted: "${topic}"`);
           } catch(e) {
-            chunkSearchTerms = [originalMessage];
+            chunkSearchTerms = [];
           }
         }
         // أضف keywords كـ fallback
