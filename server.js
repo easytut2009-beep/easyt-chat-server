@@ -1091,6 +1091,21 @@ app.get("/admin/faq", adminAuth, async (req, res) => {
   }
 });
 
+app.get("/admin/faq/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("faq")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    if (error) throw error;
+    res.json({ success: true, item: data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.post("/admin/faq", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
@@ -1151,6 +1166,21 @@ app.get("/admin/site-pages", adminAuth, async (req, res) => {
     res.json({ success: true, pages: data || [] });
   } catch (e) {
     res.json({ success: true, pages: [] });
+  }
+});
+
+app.get("/admin/site-pages/:id", adminAuth, async (req, res) => {
+  if (!supabase) return res.status(500).json({ success: false });
+  try {
+    const { data, error } = await supabase
+      .from("site_pages")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    if (error) throw error;
+    res.json({ success: true, item: data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
