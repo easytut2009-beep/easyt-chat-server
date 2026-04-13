@@ -1054,20 +1054,30 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
     let filtered = allCourses;
 
-    // ── فلتر ذكي — نسبة الارتباط بين الـ query والكورس ──
+    // ── فلتر ذكي — شيل الكورسات اللي في domain مختلف ──
     if (allTerms.length > 0 && allCourses.length > 3) {
       const qTerms = allTerms.map(t => normalizeArabic(t.toLowerCase())).filter(t => t.length > 2);
+
+      // كلمات بتدل على domain معين — لو في الكورس ومش في الـ query → مش مناسب
+      const domainSignals = [
+        { words: ["بيانات", "tableau", "data", "ذكاء", "machine", "تحليل"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل","ذكاء"] },
+        { words: ["مراقبة", "امن", "اختراق", "hacking", "security", "حماية"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
+        { words: ["طبخ", "اكل", "وصفة"], exclude_if_query_lacks: ["طبخ","اكل"] },
+      ];
+
       const relevant = allCourses.filter(c => {
-        const titleWords = normalizeArabic((c.title || "").toLowerCase()).split(/\s+/).filter(w => w.length > 2);
-        // كام كلمة من العنوان موجودة في الـ query؟
-        const titleMatches = titleWords.filter(tw =>
-          qTerms.some(qt => tw.includes(qt) || qt.includes(tw))
-        ).length;
-        // نسبة الكلمات المتطابقة من العنوان
-        const matchRatio = titleWords.length > 0 ? titleMatches / titleWords.length : 0;
-        // لو مفيش كلمة واحدة متطابقة خالص — شيله
-        return titleMatches > 0 || matchRatio === 0;
+        const titleNormC = normalizeArabic((c.title || "").toLowerCase());
+        for (const signal of domainSignals) {
+          const courseHasSignal = signal.words.some(w => titleNormC.includes(w));
+          if (!courseHasSignal) continue;
+          const queryHasSignal = signal.exclude_if_query_lacks.some(w =>
+            qTerms.some(qt => qt.includes(w) || w.includes(qt))
+          );
+          if (!queryHasSignal) return false; // الكورس في domain مختلف عن الـ query
+        }
+        return true;
       });
+
       if (relevant.length >= 2) filtered = relevant;
     }
 
