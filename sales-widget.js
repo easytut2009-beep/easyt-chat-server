@@ -1131,10 +1131,18 @@ line-height: 1.6;
 
 #ziko-chat-box {
 
-width: 100vw; height: 100vh; max-height: 100vh;
+width: 100vw; 
+height: 100%;
+height: -webkit-fill-available;
+max-height: 100%;
+position: fixed;
+top: 0; left: 0; bottom: 0; right: 0;
+border-radius: 0;
 
-bottom: 0; left: 0; border-radius: 0;
+}
 
+#ziko-header {
+padding-top: max(10px, env(safe-area-inset-top, 10px));
 }
 
 #ziko-toggle { bottom: 15px; left: 15px; width: 60px; height: 60px; }
