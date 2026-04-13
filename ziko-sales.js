@@ -1007,34 +1007,37 @@ async function smartChat(message, sessionId) {
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
-    // لو GPT مديش options — نعمل fallback بناءً على الرسالة
-    let clarifyOptions = intent.clarify_options || [];
-    let clarifyQuestion = intent.clarify_question || "";
+    // الـ options دايماً من عندنا — مش من GPT عشان بيرد بالفصحى
+    const msgLower = message.toLowerCase();
+    let clarifyQuestion, clarifyOptions;
 
-    if (!clarifyOptions || clarifyOptions.length === 0) {
-      const msgLower = message.toLowerCase();
-      if (/بيت|منزل|بيتي/.test(msgLower)) {
-        clarifyQuestion = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
-        clarifyOptions = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
-      } else if (/شركة|فريق|موظفين/.test(msgLower)) {
-        clarifyQuestion = "عايز تطور فريقك في إيه؟ 😊";
-        clarifyOptions = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
-      } else if (/فلوس|دخل|ربح/.test(msgLower)) {
-        clarifyQuestion = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
-        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
-      } else if (/فريلانس|مستقل/.test(msgLower)) {
-        clarifyQuestion = "عايز تشتغل فريلانس في إيه؟ 😊";
-        clarifyOptions = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
-      } else if (/مجال|اغير/.test(msgLower)) {
-        clarifyQuestion = "عايز تنتقل لأنهي مجال؟ 😊";
-        clarifyOptions = ["🎨 تصميم وإبداع", "💻 برمجة وتقنية", "📱 تسويق رقمي", "💼 إدارة أعمال"];
-      } else if (/طالب/.test(msgLower)) {
-        clarifyQuestion = "إيه المجال اللي مهتم تتعلمه؟ 😊";
-        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 سوشيال ميديا", "📊 إكسيل وأوفيس"];
-      } else {
-        clarifyQuestion = clarifyQuestion || "عايز تتعلم إيه بالظبط؟ 😊";
-        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
-      }
+    if (/بيت|منزل|بيتي/.test(msgLower)) {
+      clarifyQuestion = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
+      clarifyOptions = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
+    } else if (/شركة|فريق|موظفين/.test(msgLower)) {
+      clarifyQuestion = "عايز تطور فريقك في إيه؟ 😊";
+      clarifyOptions = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
+    } else if (/فلوس|دخل|ربح/.test(msgLower)) {
+      clarifyQuestion = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
+      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
+    } else if (/فريلانس|مستقل/.test(msgLower)) {
+      clarifyQuestion = "عايز تشتغل فريلانس في إيه؟ 😊";
+      clarifyOptions = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
+    } else if (/مجال|اغير|اغيير/.test(msgLower)) {
+      clarifyQuestion = "عايز تنتقل لأنهي مجال؟ 😊";
+      clarifyOptions = ["🎨 تصميم وإبداع", "💻 برمجة وتقنية", "📱 تسويق رقمي", "💼 إدارة أعمال"];
+    } else if (/طالب|طالبة/.test(msgLower)) {
+      clarifyQuestion = "إيه المجال اللي مهتم تتعلمه؟ 😊";
+      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 سوشيال ميديا", "📊 إكسيل وأوفيس"];
+    } else if (/محاسب|مالي|اقتصاد/.test(msgLower)) {
+      clarifyQuestion = "عايز تتعلم إيه في المحاسبة؟ 😊";
+      clarifyOptions = ["📊 إكسيل محاسبي", "💰 قوائم مالية", "🧾 محاسبة متقدمة", "📈 تحليل بيانات"];
+    } else if (/مهندس|هندسة/.test(msgLower)) {
+      clarifyQuestion = "عايز تتطور في إيه؟ 😊";
+      clarifyOptions = ["📐 اوتوكاد وتصميم", "💻 برمجة", "📊 إدارة مشاريع", "🤖 ذكاء اصطناعي"];
+    } else {
+      clarifyQuestion = "عايز تتعلم إيه بالظبط؟ 😊";
+      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
     }
 
     reply = clarifyQuestion;
@@ -1044,6 +1047,15 @@ async function smartChat(message, sessionId) {
 
   // ── Search ──
   else if (intent.type === "search") {
+    // كلمات مش من نطاق المنصة — مش هنبحث عنها
+    const outOfScopeWords = ["لابتوب","laptop","نتفليكس","netflix","موبايل","تليفون","ايفون","iphone","سامسونج","سيارة","عقار","وظيفة","job","مطعم","اكل","طبخ","رياضة","كرة"];
+    const msgWords = message.toLowerCase().split(/\s+/);
+    const isOutOfScope = outOfScopeWords.some(w => msgWords.some(m => m.includes(w)));
+    if (isOutOfScope) {
+      reply = `أنا متخصص في الكورسات التعليمية على إيزي تي 😊<br>لو عايز تتعلم مهارة معينة، قولي وأساعدك!`;
+      suggestions = ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
+      // skip to end
+    } else {
     let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
       : prepareSearchTerms(message.split(/\s+/));
@@ -1132,6 +1144,7 @@ async function smartChat(message, sessionId) {
     } else {
       suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓", "اشتراك ✨"];
     }
+    } // end of else (not outOfScope)
   }
 
   // ── Info / General ──
