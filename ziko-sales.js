@@ -761,52 +761,42 @@ async function smartChat(message, sessionId) {
     const instructorName = intent.instructor_name || intent.keywords?.[0] || "";
     try {
       const instructors = await getInstructors().catch(() => []);
-      const normSearch = normalizeArabic(instructorName.toLowerCase().trim());
-      // شيل الألقاب من البحث — م/ د/ أ/ مهندس إلخ
-      const cleanSearch = normSearch
-        .replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر|miss|mr|dr)\s*[\/\.\-]\s*/gi, "")
-        .replace(/^(مهندس|دكتور|استاذ|مستر)\s+/gi, "")
-        .trim();
 
-      // دور على المحاضر بالاسم
-      let bestInstructor = null;
+      // Step 1: دور في instructors بالاسم
+      const normSearch = normalizeArabic(
+        instructorName.replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر)\s*[\/\.\-]\s*/gi, "").trim().toLowerCase()
+      );
+
+      let foundInstructor = null;
       let bestScore = 0;
       for (const inst of instructors) {
-        const rawName = (inst.name || "");
-        // normalize أولاً عشان الهمزات تتوحد، بعدين شيل اللقب
-        const normName = normalizeArabic(rawName.toLowerCase());
-        const cleanName = normName
-          .replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر|miss|mr|dr)\s*[\/\.\-]\s*/gi, "")
-          .replace(/^(مهندس|دكتور|استاذ|مستر)\s+/gi, "")
-          .trim();
-
+        const normName = normalizeArabic(
+          (inst.name || "").replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر)\s*[\/\.\-]\s*/gi, "").trim().toLowerCase()
+        );
         let score = 0;
-        if (cleanName === cleanSearch) score = 100;
-        else if (cleanName.includes(cleanSearch) || cleanSearch.includes(cleanName)) score = 90;
-        else if (normName.includes(cleanSearch) || cleanSearch.includes(normName)) score = 85;
+        if (normName === normSearch) score = 100;
+        else if (normName.includes(normSearch) || normSearch.includes(normName)) score = 90;
         else {
-          // word-by-word matching
-          const searchWords = cleanSearch.split(/\s+/).filter(w => w.length > 1);
-          const nameWords = cleanName.split(/\s+/).filter(w => w.length > 1);
-          const matched = searchWords.filter(sw => nameWords.some(nw => nw.includes(sw) || sw.includes(nw)));
-          if (searchWords.length > 0 && matched.length > 0) {
-            score = Math.round((matched.length / searchWords.length) * 80);
-          }
-          if (score < 40) score = Math.max(score, similarityRatio(cleanSearch, cleanName));
+          const sw = normSearch.split(/\s+/).filter(w => w.length > 1);
+          const nw = normName.split(/\s+/).filter(w => w.length > 1);
+          const matched = sw.filter(s => nw.some(n => n.includes(s) || s.includes(n)));
+          if (sw.length > 0 && matched.length > 0) score = Math.round((matched.length / sw.length) * 85);
+          if (score < 40) score = Math.max(score, similarityRatio(normSearch, normName));
         }
-        if (score > bestScore && score >= 35) { bestScore = score; bestInstructor = inst; }
+        if (score > bestScore && score >= 35) { bestScore = score; foundInstructor = inst; }
       }
-      console.log(`👨‍🏫 Instructor search: "${instructorName}" → "${bestInstructor?.name}" (score=${bestScore})`);
+      console.log(`👨‍🏫 Instructor match: "${instructorName}" → "${foundInstructor?.name}" (score=${bestScore})`);
 
-      if (bestInstructor) {
+      if (foundInstructor) {
+        // Step 2: جيب الكورسات بـ instructor_id
         const { data: courses } = await supabase
           .from("courses")
           .select(COURSE_SELECT_COLS)
-          .eq("instructor_id", bestInstructor.id)
-          .order("title", { ascending: true });
+          .eq("instructor_id", foundInstructor.id)
+          .limit(30);
 
         if (courses && courses.length > 0) {
-          reply = `👨‍🏫 <strong>كورسات ${escapeHtml(bestInstructor.name)}:</strong><br><br>`;
+          reply = `👨‍🏫 <strong>كورسات ${escapeHtml(foundInstructor.name)}:</strong><br><br>`;
           const withDiploma = await injectDiplomaInfo(courses).catch(() => courses);
           withDiploma.slice(0, 5).forEach((c, i) => {
             reply += formatCourseCard(c, instructors, i + 1);
@@ -814,16 +804,18 @@ async function smartChat(message, sessionId) {
           if (courses.length > 5) {
             reply += `<br><span style="font-size:12px;color:#666">و${courses.length - 5} كورس تاني...</span>`;
           }
-          if (bestInstructor.link) {
-            reply += `<br><a href="${bestInstructor.link}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 اضغط هنا لمعرفة كل كورسات ${escapeHtml(bestInstructor.name)} ←</a>`;
+          // رابط المحاضر من courses_link
+          const instLink = foundInstructor.courses_link || foundInstructor.link;
+          if (instLink) {
+            reply += `<br><a href="${instLink}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 اضغط هنا لمعرفة كل كورسات ${escapeHtml(foundInstructor.name)} ←</a>`;
           }
           suggestions = ["أسعار الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
         } else {
-          reply = `مش لاقي كورسات للمحاضر "${escapeHtml(bestInstructor.name)}" دلوقتي 😅`;
+          reply = `مش لاقي كورسات للمحاضر "${escapeHtml(foundInstructor.name)}" دلوقتي 😅`;
           suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
         }
       } else {
-        reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br>تقدر تتصفح كل الكورسات وتشوف المحاضرين:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a>`;
+        reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br>تقدر تتصفح كل الكورسات:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a>`;
         suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
       }
     } catch(e) {
