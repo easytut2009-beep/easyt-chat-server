@@ -111,9 +111,10 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 - type=search: لو بيدور على كورس أو برنامج محدد أو مصطلح تقني (workflow, excel, python, إلخ) أو لو قال "شرح عن" أو "كورس في" أو "عايز أتعلم X"
 - type=clarify: لو ذكر مهنة أو هدف عام بدون تحديد ماذا يريد تعلمه — اسأل سؤال واحد ذكي
 - 🚨 لو الرسالة فيها اسم برنامج أو مصطلح تقني واضح → type=search فوراً بدون clarify
-- 🚨 لو الرسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، تويتر، لينكدإن، سناب) → type=search فوراً
-- 🚨 لو الرسالة فيها اسم برنامج (فوتوشوب، اكسيل، وورد، بريمير، افتر افكتس، اوتوكاد) → type=search فوراً
-- 🚨 لو الرسالة فيها كلمة "اعلان" أو "ads" أو "تسويق" مع اسم منصة → type=search فوراً بدون clarify
+- لو الرسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، سناب، لينكدإن) → type=search فوراً بدون clarify
+- لو الرسالة فيها اسم برنامج (فوتوشوب، اكسيل، وورد، بريمير، اوتوكاد، بلندر) → type=search فوراً بدون clarify
+- 🚨 لو الرسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، سناب، لينكدإن، تويتر) → type=search فوراً بدون clarify
+- 🚨 لو الرسالة فيها اسم برنامج (فوتوشوب، اكسيل، وورد، بريمير، افتر افكتس، اوتوكاد، بلندر) → type=search فوراً بدون clarify
 - type=info: لو سؤال عام عن المنصة أو الأسعار
 - type=subscription: لو سؤال عن اشتراك أو دفع
 - type=support: لو مشكلة تقنية
@@ -181,7 +182,7 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 // ══════════════════════════════════════════════════════════
 // Search Engine — بحث تدريجي
 // ══════════════════════════════════════════════════════════
-async function performSearch(keywords, instructors, audience = null, originalMessage = null) {
+async function performSearch(keywords, instructors) {
   const results = {
     diplomas: [],
     courses: [],
@@ -294,80 +295,38 @@ async function performSearch(keywords, instructors, audience = null, originalMes
     }
   } catch (e) { console.error("lesson search error:", e.message); }
 
-  // 4. بحث في الـ chunks — دايماً لو مفيش كورسات مباشرة
-  if (results.courses.length === 0) {
+  // 4. بحث في الـ chunks لو مفيش نتايج — semantic + text search
+  if (results.courses.length === 0 && results.lessons.length === 0) {
     console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
       if (supabase && openai) {
-        // Semantic search في الـ chunks — disabled مؤقتاً بسبب timeout
+        // Semantic search disabled مؤقتاً
         let semChunks = [];
-        console.log("📦 Semantic chunks: skipped (using text search only)");
+        console.log("📦 Semantic chunks: skipped");
 
-        // Text search في الـ chunks — بيبحث بالرسالة الأصلية مصححة إملائياً
+        // Text search في الـ chunks
+        const chunkTextFilters = keywords
+          .filter(k => k.length > 2)
+          .slice(0, 4)
+          .map(k => `content.ilike.%${k}%`)
+          .join(",");
+
         let textChunkCourses = [];
-        let textChunkLessonsMap = new Map();
-
-        // استخرج عبارات البحث من الرسالة الأصلية (مصححة) + keywords كـ fallback
-        let chunkSearchTerms = [];
-        console.log(`📝 originalMessage for chunks: "${originalMessage}"`);
-        if (originalMessage) {
-          // استخرج الموضوع الأساسي من الرسالة (مصحح إملائياً) للبحث في الـ chunks
-          try {
-            const corrResp = await gptWithRetry(() => openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: [{ role: "user", content: `من هذه الرسالة: "${originalMessage}"
-استخرج الموضوع أو الكلمة الرئيسية التي يبحث عنها المستخدم فقط، وصحح أخطاءها الإملائية.
-قواعد مهمة:
-- لو الكلام بالعربي → أرجع بالعربي فقط
-- لو الكلام بالإنجليزي → أرجع بالإنجليزي فقط
-- لو الكلام مختلط → أرجع بالاتنين مفصولين بفاصلة
-- بدون ترجمة، بدون أي كلام إضافي
-أمثلة: "الحشود العسكرية" / "photoshop" / "الحشود العسكرية, military crowds"` }],
-              max_tokens: 30,
-              temperature: 0,
-            }));
-            const topicRaw = corrResp.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
-            // لو في فاصلة → ابحث بكل جزء
-            chunkSearchTerms = topicRaw.split(/،|,/).map(t => t.trim()).filter(t => t.length > 1);
-            console.log(`📝 Chunk topic extracted: ${JSON.stringify(chunkSearchTerms)}`);
-            results._correctedTopic = chunkSearchTerms[0] || null;
-          } catch(e) {
-            chunkSearchTerms = [];
-          }
-        }
-        // أضف keywords كـ fallback
-        keywords.filter(k => k.length > 2 && k.length < 10).forEach(k => {
-          if (!chunkSearchTerms.includes(k)) chunkSearchTerms.push(k);
-        });
-
-        {
-          let tc = null;
-          let matchedKeyword = null;
-          for (const term of chunkSearchTerms) {
-            const result = await supabase
-              .from("chunks")
-              .select("lesson_id, content")
-              .ilike("content", `%${term}%`)
-              .limit(15);
-            if (result.error) {
-              console.error(`❌ Text chunks error for "${term}":`, result.error.message);
-              continue;
-            }
-            if (result.data && result.data.length > 0) {
-              tc = result.data;
-              matchedKeyword = term;
-              console.log(`📝 Text chunks found: ${tc.length} (term: "${term}")`);
-              break;
-            }
-          }
-          if (!tc) console.log("📝 Text chunks found: 0");
+        if (chunkTextFilters) {
+          const { data: tc, error: tcError } = await supabase
+            .from("chunks")
+            .select("lesson_id")
+            .or(chunkTextFilters)
+            .limit(10);
+          if (tcError) console.error("❌ Text chunks error:", tcError.message);
+          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
-            // جيب الدروس مع العنوان والـ course_id
+            // جيب الكورسات من الـ lesson_ids
             const { data: lessonData } = await supabase
               .from("lessons")
-              .select("id, title, course_id")
+              .select("course_id")
               .in("id", lessonIds);
             if (lessonData && lessonData.length > 0) {
               const courseIds = [...new Set(lessonData.map(l => l.course_id))];
@@ -377,36 +336,15 @@ async function performSearch(keywords, instructors, audience = null, originalMes
                 .in("id", courseIds);
               textChunkCourses = courseData || [];
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
-              // بناء map: course_id → lessons مع الـ chunks
-              const lessonMap = new Map(lessonData.map(l => [l.id, l]));
-              const chunksByCourse = new Map();
-              tc.forEach(chunk => {
-                const lesson = lessonMap.get(chunk.lesson_id);
-                if (!lesson) return;
-                const cid = lesson.course_id;
-                if (!chunksByCourse.has(cid)) chunksByCourse.set(cid, new Map());
-                if (!chunksByCourse.get(cid).has(chunk.lesson_id)) {
-                  chunksByCourse.get(cid).set(chunk.lesson_id, { title: lesson.title, content: chunk.content });
-                }
-              });
-              textChunkLessonsMap = chunksByCourse;
-              console.log(`📝 TextChunkLessonsMap keys: ${[...chunksByCourse.keys()].join(", ")}`);
-              console.log(`📝 TextChunkCourses ids: ${textChunkCourses.map(c=>c.id).join(", ")}`);
             }
           }
         }
-
 
         // دمج النتايج
         const allChunks = semChunks || [];
         if (allChunks.length > 0 || textChunkCourses.length > 0) {
           results.chunks = allChunks;
           results._textChunkCourses = textChunkCourses;
-          results._textChunkLessonsMap = textChunkLessonsMap;
-          // لو لقينا chunks — امسح الـ lessons عشان يعرض الـ chunks بدلها
-          if (textChunkCourses.length > 0 || allChunks.length > 0) {
-            results.lessons = [];
-          }
           results.noDirectCourse = false;
           console.log(`📦 Found ${allChunks.length} semantic chunks + ${textChunkCourses.length} text chunk courses`);
         }
@@ -414,8 +352,8 @@ async function performSearch(keywords, instructors, audience = null, originalMes
     } catch (e) { console.error("chunk search error:", e.message); }
   }
 
-  // 5. Semantic fallback على الكورسات — بس لو مفيش أي نتيجة خالص
-  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0 && (!results._textChunkCourses || results._textChunkCourses.length === 0)) {
+  // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
+  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
     try {
       if (supabase && openai) {
         const embResp = await openai.embeddings.create({
@@ -455,7 +393,6 @@ async function formatResults(results, query, session = null) {
   const instructors = await getInstructors().catch(() => []);
   let html = "";
   let found = false;
-  console.log(`🎨 formatResults: courses=${results.courses.length}, lessons=${results.lessons.length}, chunks=${results.chunks.length}, textChunkCourses=${results._textChunkCourses?.length||0}`);
 
   // اختصر الـ query للعنوان (أول كلمتين بس)
   const shortQuery = query.split(/\s+/).slice(0, 2).join(" ");
@@ -534,87 +471,48 @@ async function formatResults(results, query, session = null) {
   // chunks
   if (results.chunks.length > 0 || (results._textChunkCourses && results._textChunkCourses.length > 0)) {
     found = true;
-    // استخدم الـ topic المصحح في العنوان والتظليل
-    const chunkDisplayQuery = results._correctedTopic || shortQuery;
-    html += `📖 <strong>لقيت "${chunkDisplayQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
-
-    // دالة تظليل الكلمة بالأصفر
-    function highlightChunkQuery(text, q) {
-      if (!text || !q) return escapeHtml(text || "");
-      const escaped = escapeHtml(text);
-      const terms = q.split(/\s+/).filter(t => t.length > 1);
-      let result = escaped;
-      terms.forEach(term => {
-        const re = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        result = result.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
-      });
-      return result;
-    }
+    html += `📖 <strong>لقيت "${shortQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
 
     const courseMap = new Map();
 
-    // من الـ semantic chunks — نجمع الدروس مع الـ chunks لكل كورس
+    // من الـ semantic chunks
     results.chunks.forEach(c => {
-      const courseId = c.course_id || "unknown";
-      if (!courseMap.has(courseId)) {
-        courseMap.set(courseId, { _courseData: c._courseData || null, lessons: new Map() });
-      }
-      if (c.lesson_id) {
-        const entry = courseMap.get(courseId);
-        if (!entry.lessons.has(c.lesson_id)) {
-          entry.lessons.set(c.lesson_id, { title: c.lesson_title || "", chunks: [] });
-        }
-        if (c.content) entry.lessons.get(c.lesson_id).chunks.push(c.content);
+      const key = c.course_title || c.course_id;
+      if (!courseMap.has(key)) courseMap.set(key, { course: c, lessons: [] });
+      if (c.lesson_title && !courseMap.get(key).lessons.includes(c.lesson_title)) {
+        courseMap.get(key).lessons.push(c.lesson_title);
       }
     });
 
     // من الـ text chunk courses
     if (results._textChunkCourses) {
       results._textChunkCourses.forEach(c => {
-        if (!courseMap.has(c.id)) {
-          const lessonsForCourse = results._textChunkLessonsMap?.get(c.id) || new Map();
-          courseMap.set(c.id, { _courseData: c, lessons: lessonsForCourse });
+        if (!courseMap.has(c.title)) {
+          courseMap.set(c.title, { course: { course_title: c.title, course_link: c.link }, lessons: [], _fullCourse: c });
         }
       });
     }
 
     let idx = 1;
-    // إعادة صياغة الـ chunks عبر GPT عشان تبقى مفهومة
-    async function rephraseChunk(rawText) {
-      if (!rawText || rawText.length < 20) return rawText;
-      try {
-        const r = await gptWithRetry(() => openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: `أعد صياغة هذا النص بشكل واضح ومفهوم بالعربي في جملة أو جملتين فقط، مع الحفاظ على المعنى الأساسي. النص: "${rawText.substring(0, 300)}"` }],
-          max_tokens: 100,
-          temperature: 0.3,
-        }));
-        return r.choices[0].message.content.trim();
-      } catch(e) { return rawText; }
-    }
-
-    for (const [courseId, { _courseData, lessons }] of courseMap) {
-      if (_courseData) {
-        html += formatCourseCard(_courseData, instructors, idx++);
-        if (lessons.size > 0) {
-          html += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
-          html += `<strong>📖 الدروس المرتبطة:</strong><br>`;
-          // (chunkDisplayQuery used for highlighting below)
-          for (const [lessonId, lesson] of [...lessons.entries()].slice(0, 3)) {
-            const lessonTitle = lesson.title || "";
-            const rawContent = lesson.chunks?.[0] || lesson.content || "";
-            html += `• ${escapeHtml(lessonTitle)}<br>`;
-            if (rawContent) {
-              const rephrased = await rephraseChunk(rawContent);
-              html += `<span style="font-size:11px;color:#555;line-height:1.6;display:block;margin:2px 0 6px 10px">${highlightChunkQuery(rephrased, chunkDisplayQuery)}</span>`;
-            }
-          }
+    courseMap.forEach(({ course, lessons, _fullCourse }) => {
+      if (_fullCourse) {
+        // كارت كامل من الـ text chunks
+        html += formatCourseCard(_fullCourse, instructors, idx++);
+      } else {
+        html += `<div style="border:1px solid #eee;border-radius:10px;margin:6px 0;padding:10px;background:#fff">`;
+        html += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${idx++}. ${escapeHtml(course.course_title || "")}</div>`;
+        if (lessons.length > 0) {
+          html += `<div style="background:#fffde7;border-radius:8px;padding:8px;margin-bottom:6px">`;
+          lessons.slice(0, 3).forEach(l => {
+            html += `<div style="font-size:12px;color:#333;padding:2px 0">• ${escapeHtml(l)}</div>`;
+          });
           html += `</div>`;
         }
+        if (course.course_link) html += `<a href="${course.course_link}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+        html += `</div>`;
       }
-    }
+    });
 
-    html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
   }
 
@@ -666,23 +564,6 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
 
-  // لو اليوزر عايز كورسات تانية — ابحث بنفس الـ topic
-  const isMoreRequest = /تان[يى]|أكتر|اكتر|غير[هك]|ثاني|more|other/.test(message);
-  if (isMoreRequest && session.lastTopic) {
-    console.log(`🔄 More request → reusing lastTopic: "${session.lastTopic}"`);
-    const moreKeywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
-    const moreResults = await performSearch(moreKeywords, [], session.audience, session.lastTopic);
-    // شيل أول 5 نتايج من الـ lastResults عشان يعرض تانية
-    if (moreResults.courses.length > 0) {
-      const prevIds = new Set((session.lastResults?.courses || []).map(c => c.id));
-      moreResults.courses = moreResults.courses.filter(c => !prevIds.has(c.id));
-    }
-    const moreReply = await formatResults(moreResults, session.lastTopic, session);
-    session.lastResults = moreResults;
-    const moreFinalReply = finalizeReply(moreReply);
-    return { reply: moreFinalReply, suggestions: ["كورسات تانية 📘", "سعر الاشتراك 💳", "الدبلومات 🎓"] };
-  }
-
   // لو الرسالة السابقة كانت clarify (توضيح) — الرسالة الحالية هي search مباشرة
   const lastBotMsg = session.history.slice(-2).find(h => h.role === 'assistant');
   const wasAskingClarify = lastBotMsg && (
@@ -709,24 +590,19 @@ async function smartChat(message, sessionId) {
     };
     console.log(`🔮 General request → search for: "${session.lastTopic}"`);
   } else if (wasAskingClarify || session.hadClarify) {
-    // المستخدم اختار من الـ options — نستخدم GPT عشان يحول الاختيار لـ keywords صح
     intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
-    // نضمن إن النوع search دايماً بعد clarify
     intent.type = "search";
     intent.is_ambiguous = false;
     if (!intent.keywords || intent.keywords.length === 0) {
       intent.keywords = prepareSearchTerms(message.split(/\s+/));
     }
-    // ✅ نضيف الـ keywords الأصلية (lastTopic) للـ keywords الجديدة عشان منخسرش السياق
+    // ✅ ادمج keywords الجديدة مع الـ lastTopic عشان منخسرش السياق
     if (session.lastTopic) {
-      const originalKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
-      const merged = [...new Set([...intent.keywords, ...originalKws])];
-      intent.keywords = merged;
-      console.log(`🔄 Post-clarify merged keywords: ${intent.keywords.join(", ")}`);
+      const origKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
+      intent.keywords = [...new Set([...intent.keywords, ...origKws])];
     }
-    // احتفظ بالـ audience لو GPT استخرجها
     if (intent.audience) session.audience = intent.audience;
-    console.log(`🔄 Post-clarify → search: ${intent.keywords?.join(", ")}`);
+    console.log(`🔄 Post-clarify merged keywords: ${intent.keywords?.join(", ")}`);
   } else {
     intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
     // لو GPT أصر على clarify تاني — اجبره على search
@@ -835,8 +711,16 @@ async function smartChat(message, sessionId) {
       keywords = specificKeywords;
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
-
-    // تحسين: لو الـ keywords مش فيها الـ lastTopic — ضيفه
+    // لو بعد clarify — أضف الـ lastTopic عشان متخسرش السياق الأصلي
+    if (session.lastTopic && session.hadClarify) {
+      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
+        .filter(k => !veryGenericWords.has(k.toLowerCase()));
+      topicKws.forEach(k => {
+        if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) keywords.push(k);
+      });
+      if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
+    }
+    // ✅ لو بعد clarify — أضف الـ lastTopic عشان متخسرش السياق الأصلي
     if (session.lastTopic && session.hadClarify) {
       const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
         .filter(k => !veryGenericWords.has(k.toLowerCase()));
@@ -848,12 +732,98 @@ async function smartChat(message, sessionId) {
       if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
 
-    // ✅ لو الـ keywords مش فيها الـ lastTopic الأصلي — ضيفه عشان منخسرش السياق
-    if (session.lastTopic && session.hadClarify) {
-      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
-        .filter(k => !veryGenericWords.has(k.toLowerCase()));
-      topicKws.forEach(k => {
-        if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) {
-          keywords.push(k);
-        }
-      });
+    // الـ audience — من intent أو من الـ session المحفوظة
+    const audience = intent.audience || session.audience || null;
+    if (audience) {
+      session.audience = audience; // احتفظ بيها في الـ session
+      console.log(`👥 Audience: ${audience}`);
+    }
+
+    // لو أطفال — أضف keywords مناسبة للأطفال
+    if (audience === "أطفال") {
+      keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
+      console.log("👧 Kids mode — added scratch/أطفال keywords");
+    }
+
+    const results = await performSearch(keywords, [], audience);
+    const displayTopic = intent.keywords?.[0] || keywords[0] || message;
+
+    reply = await formatResults(results, displayTopic, session);
+    session.lastTopic = session.lastTopic || keywords.join(" ");
+    session.lastResults = results;
+
+    // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
+    if (results.courses.length > 0 || results.diplomas.length > 0) {
+      session.history = [];
+      session.hadClarify = false; // reset للمحادثة الجديدة
+      session.clarifyCount = 0;
+      // لا تمسح الـ audience — لو المستخدم سأل تاني نفس الـ audience
+    }
+
+    // اقتراحات بعد النتايج
+    if (results.courses.length > 0 || results.diplomas.length > 0) {
+      suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
+    } else {
+      suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓", "اشتراك ✨"];
+    }
+  }
+
+  // ── Info / General ──
+  else {
+    // GPT يرد من bot instructions
+    try {
+      const resp = await gptWithRetry(() => openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `أنت "زيكو" مساعد منصة إيزي تي التعليمية. ردودك قصيرة وودودة بالعامية المصرية.
+${botInstructions ? `\nتعليمات الأدمن:\n${botInstructions}` : ""}
+استخدم <br> للأسطر و<strong> للعناوين. لا تذكر أسعار إلا لو سُئلت.`
+          },
+          ...session.history.slice(-4),
+          { role: "user", content: message }
+        ],
+        max_tokens: 500,
+        temperature: 0.3,
+      }));
+      reply = finalizeReply(resp.choices[0].message.content || "");
+    } catch (e) {
+      reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
+    }
+    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
+  }
+
+  // حفظ الرد في الـ history
+  session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
+
+  reply = finalizeReply(reply);
+  return { reply, suggestions };
+}
+
+// ══════════════════════════════════════════════════════════
+// Routes
+// ══════════════════════════════════════════════════════════
+app.post("/chat", limiter, async (req, res) => {
+  const { message, session_id } = req.body;
+  if (!message || !session_id) {
+    return res.status(400).json({ error: "Missing message or session_id" });
+  }
+  try {
+    const result = await smartChat(message.trim(), session_id);
+    res.json(result);
+  } catch (e) {
+    console.error("❌ Chat error:", e.message);
+    res.json({
+      reply: "عذراً، حصل خطأ تقني! 😅 حاول تاني أو تواصل معنا.",
+      suggestions: ["تواصل معنا 💬"],
+    });
+  }
+});
+
+// Health check
+app.get("/chat/health", (req, res) => {
+  res.json({ status: "ok", sessions: sessions.size });
+});
+
+}; // end registerSalesRoutes
