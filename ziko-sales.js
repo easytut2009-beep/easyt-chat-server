@@ -763,16 +763,22 @@ async function smartChat(message, sessionId) {
       const instructors = await getInstructors().catch(() => []);
       const normSearch = normalizeArabic(instructorName.toLowerCase().trim());
       // شيل الألقاب من البحث — م/ د/ أ/ مهندس إلخ
-      const cleanSearch = normSearch.replace(/^(م|د|أ|ا|مهندس|دكتور|استاذ|مستر|miss|mr|dr)[\s\/\.]+/gi, "").trim();
+      const cleanSearch = normSearch
+        .replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر|miss|mr|dr)\s*[\/\.\-]\s*/gi, "")
+        .replace(/^(مهندس|دكتور|استاذ|مستر)\s+/gi, "")
+        .trim();
 
       // دور على المحاضر بالاسم
       let bestInstructor = null;
       let bestScore = 0;
       for (const inst of instructors) {
-        const rawName = (inst.name || "").toLowerCase();
-        const normName = normalizeArabic(rawName);
-        // شيل الألقاب من اسم المحاضر في الداتابيز
-        const cleanName = normName.replace(/^(م|د|أ|ا|مهندس|دكتور|استاذ|مستر|miss|mr|dr)[\s\/\.]+/gi, "").trim();
+        const rawName = (inst.name || "");
+        // normalize أولاً عشان الهمزات تتوحد، بعدين شيل اللقب
+        const normName = normalizeArabic(rawName.toLowerCase());
+        const cleanName = normName
+          .replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر|miss|mr|dr)\s*[\/\.\-]\s*/gi, "")
+          .replace(/^(مهندس|دكتور|استاذ|مستر)\s+/gi, "")
+          .trim();
 
         let score = 0;
         if (cleanName === cleanSearch) score = 100;
