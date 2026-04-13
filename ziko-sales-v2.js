@@ -314,7 +314,7 @@ async function performSearch(keywords, instructors) {
     } catch (e) { console.error("chunk search error:", e.message); }
   }
 
-  // 5. Semantic fallback على الكورسات — لو لسه مفيش نتايج
+  // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
   if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
     try {
       if (supabase && openai) {
@@ -325,11 +325,10 @@ async function performSearch(keywords, instructors) {
         const embedding = embResp.data[0].embedding;
         const { data: semCourses } = await supabase.rpc("match_courses", {
           query_embedding: embedding,
-          match_threshold: 0.72,
+          match_threshold: 0.80, // threshold عالي — بس لو في علاقة حقيقية
           match_count: 5,
         });
         if (semCourses && semCourses.length > 0) {
-          // نجيب بيانات الكورسات
           const { data: courseData } = await supabase
             .from("courses")
             .select(COURSE_SELECT_COLS)
