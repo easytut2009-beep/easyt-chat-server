@@ -2083,6 +2083,11 @@ app.get("/sales-widget.js", (req, res) => {
   res.sendFile(path.join(__dirname, "sales-widget.js"));
 });
 
+app.get("/guide-widget.js", (req, res) => {
+  res.setHeader("Content-Type", "application/javascript");
+  res.sendFile(path.join(__dirname, "guide-widget.js"));
+});
+
 /* ═══ Register Routes ═══ */
 /* ═══ Start Server ═══ */
 async function startServer() {
