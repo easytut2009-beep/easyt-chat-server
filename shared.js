@@ -1060,21 +1060,21 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
       // كلمات بتدل على domain معين — لو في الكورس ومش في الـ query → مش مناسب
       const domainSignals = [
-        { words: ["بيانات", "tableau", "data", "ذكاء اصطناعي", "machine learning"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
-        { words: ["مراقبه", "امن سيبراني", "اختراق", "hacking", "security"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
-        { words: ["android", "اندرويد", "flutter", "ios", "kotlin"], exclude_if_query_lacks: ["android","اندرويد","flutter","تطبيق","موبايل","kotlin"] },
-        { words: ["طبخ", "وصفة"], exclude_if_query_lacks: ["طبخ","اكل"] },
+        { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
+        { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
+        { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه", "game"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","يونيتي"] },
+        { words: ["طبخ", "وصفه"], exclude_if_query_lacks: ["طبخ","اكل"] },
       ];
 
       const relevant = allCourses.filter(c => {
         const titleNormC = normalizeArabic((c.title || "").toLowerCase());
         for (const signal of domainSignals) {
-          const courseHasSignal = signal.words.some(w => titleNormC.includes(w));
+          const courseHasSignal = signal.words.some(w => titleNormC.includes(normalizeArabic(w.toLowerCase())));
           if (!courseHasSignal) continue;
           const queryHasSignal = signal.exclude_if_query_lacks.some(w =>
-            qTerms.some(qt => qt.includes(w) || w.includes(qt))
+            qTerms.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt))
           );
-          if (!queryHasSignal) return false; // الكورس في domain مختلف عن الـ query
+          if (!queryHasSignal) return false;
         }
         return true;
       });
