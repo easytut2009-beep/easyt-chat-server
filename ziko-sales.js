@@ -739,6 +739,33 @@ async function smartChat(message, sessionId) {
   ];
   const isSupport = supportPatterns.some(p => p.test(message));
 
+  // ── Corrections Check — قبل FAQ ──
+  if (!isSupport) {
+    try {
+      const corrections = await loadAllCorrections();
+      if (corrections && corrections.length > 0) {
+        const msgNorm = normalizeArabic(message.toLowerCase());
+        const msgWords = msgNorm.split(/\s+/).filter(w => w.length > 2);
+        let bestCorrection = null;
+        let bestScore = 0;
+        for (const c of corrections) {
+          if (!c.original_question || !c.corrected_reply) continue;
+          const qNorm = normalizeArabic((c.original_question || "").toLowerCase());
+          const qWords = qNorm.split(/\s+/).filter(w => w.length > 2);
+          const common = msgWords.filter(w => qWords.includes(w));
+          const score = qWords.length > 0 ? common.length / qWords.length : 0;
+          if (score > bestScore && score >= 0.6) { bestScore = score; bestCorrection = c; }
+        }
+        if (bestCorrection) {
+          console.log(`✅ Correction match: "${bestCorrection.original_question}" (score=${bestScore.toFixed(2)})`);
+          const reply = finalizeReply(markdownToHtml(bestCorrection.corrected_reply));
+          session.history.push({ role: "assistant", content: bestCorrection.corrected_reply.substring(0, 200) });
+          return { reply, suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
+        }
+      }
+    } catch(e) { console.error("Corrections check error:", e.message); }
+  }
+
   // ── FAQ Check — بس لو مش support ──
   if (!isSupport) {
     const faqAnswer = await findFAQAnswer(message);
