@@ -98,13 +98,14 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list",
+  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses",
   "keywords": ["كلمة1", "كلمة2"],
   "is_ambiguous": false,
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
   "clarify_question": "السؤال لو type=clarify",
   "clarify_options": ["خيار1", "خيار2"],
-  "direct_reply": "رد مباشر لو مش search"
+  "direct_reply": "رد مباشر لو مش search",
+  "diploma_name": "اسم الدبلومة لو type=diploma_courses"
 }
 
 ══ قواعد تحديد النوع ══
@@ -120,6 +121,10 @@ type=support: مشكلة تقنية في الموقع أو الكورس
 
 type=diplomas_list: طلب قائمة الدبلومات
 مثال: "إيه الدبلومات الموجودة؟"
+
+type=diploma_courses: سؤال عن الكورسات الموجودة داخل دبلومة معينة
+مثال: "إيه الكورسات في دبلومة التسويق؟"، "دبلومة الجرافيك فيها إيه؟"، "محتوى دبلومة البرمجة"
+→ اكتب اسم الدبلومة في diploma_name
 
 type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
@@ -742,6 +747,35 @@ async function smartChat(message, sessionId) {
       reply = "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
     }
     suggestions = ["كورسات اكسيل 📊", "دبلومات 🎓", "أسعار الاشتراك 💳"];
+  }
+
+  // ── Diploma Courses ──
+  else if (intent.type === "diploma_courses") {
+    const diplomaName = intent.diploma_name || intent.keywords?.[0] || "";
+    try {
+      const { getDiplomaWithCourses } = require("./shared");
+      const result = await getDiplomaWithCourses(diplomaName);
+      if (result && result.diploma) {
+        const { diploma, courses } = result;
+        reply = `🎓 <strong>${escapeHtml(diploma.title)}</strong><br><br>`;
+        if (courses.length === 0) {
+          reply += "الدبلومة دي مش فيها كورسات مسجلة دلوقتي.";
+        } else {
+          reply += `📚 <strong>الكورسات الموجودة في الدبلومة (${courses.length} كورس):</strong><br><br>`;
+          const instructors = await getInstructors().catch(() => []);
+          courses.forEach((c, i) => { reply += formatCourseCard(c, instructors, i + 1); });
+          reply += `<br><a href="${diploma.link || ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة ←</a>`;
+        }
+        suggestions = ["سعر الدبلومة 💰", "الاشتراك السنوي ✨", "دبلومات أخرى 🎓"];
+      } else {
+        reply = `مش لاقي دبلومة باسم "${escapeHtml(diplomaName)}" 😅<br>تقدر تشوف كل الدبلومات من هنا:<br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 كل الدبلومات ←</a>`;
+        suggestions = ["كل الدبلومات 🎓", "أسعار الاشتراك 💳"];
+      }
+    } catch(e) {
+      console.error("diploma_courses handler error:", e.message);
+      reply = `عذراً، حصل مشكلة في جلب محتوى الدبلومة 😅`;
+      suggestions = ["الدبلومات 🎓"];
+    }
   }
 
   // ── Diplomas List ──
