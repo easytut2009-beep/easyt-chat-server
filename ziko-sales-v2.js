@@ -302,11 +302,13 @@ async function performSearch(keywords, instructors) {
           input: keywords.join(" "),
         });
         const embedding = embResp.data[0].embedding;
-        const { data: semChunks } = await supabase.rpc("match_lesson_chunks", {
+        const { data: semChunks, error: semError } = await supabase.rpc("match_lesson_chunks", {
           query_embedding: embedding,
           match_threshold: 0.65,
           match_count: 8,
         });
+        if (semError) console.error("❌ Semantic chunks error:", semError.message);
+        else console.log(`📦 Semantic chunks found: ${semChunks?.length || 0}`);
 
         // Text search في الـ chunks
         const chunkTextFilters = keywords
@@ -317,11 +319,13 @@ async function performSearch(keywords, instructors) {
 
         let textChunkCourses = [];
         if (chunkTextFilters) {
-          const { data: tc } = await supabase
+          const { data: tc, error: tcError } = await supabase
             .from("chunks")
             .select("lesson_id")
             .or(chunkTextFilters)
             .limit(10);
+          if (tcError) console.error("❌ Text chunks error:", tcError.message);
+          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
