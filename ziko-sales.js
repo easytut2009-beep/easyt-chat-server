@@ -633,6 +633,9 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
   const systemPrompt = `أنت "زيكو" المساعد الذكي لمنصة إيزي تي التعليمية العربية.
 ردودك بالعامية المصرية — قصيرة وواضحة وودودة.
 🚫 ممنوع تقول "سؤال حلو" أو "سؤال ممتاز" أو أي مديح للسؤال — ابدأ بالرد مباشرة.
+🚫 لو حد طلب ترجمة أو كتابة تقرير أو عمل اسايمنت أو حل واجب — رد بشكل ودود: "أنا متخصص في كورسات إيزي تي 😊 لو عايز تتعلم [الموضوع ده]، عندنا كورسات ممتازة!"
+🚫 لو حد قال "عندي امتحان" أو "عندي مشروع تخرج" أو "thesis" — اسأل عن الموضوع وقدم كورس مناسب.
+🚫 مش بتحول الناس للدعم إلا لو في مشكلة تقنية حقيقية في الموقع أو الكورس.
 استخدم <br> للأسطر الجديدة و<strong> للعناوين.
 🚨 مهم جداً: لما تذكر "تواصل مع الدعم" أو "الدعم الفني" — دايماً اكتب الرابط كـ HTML هكذا بالظبط:
 <a href="https://wa.me/201027007899" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">واتساب الدعم 💬</a>
@@ -1133,15 +1136,51 @@ async function smartChat(message, sessionId) {
 
   // ── Info / General ──
   else {
-    try {
-      reply = await askZiko(message, session, botInstructions);
-    } catch(e) {
-      reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
+    // لو الرسالة تبان ambiguous — اعرض options بدل ما تروح GPT
+    const msgLower = message.toLowerCase();
+    const isAmbiguous =
+      /^(عايز|عاوز|ابي|محتاج)\s+اتعلم\s*$/.test(message.trim()) ||
+      /بيت|منزل/.test(msgLower) && /اشتغل|اعمل|شغل/.test(msgLower) ||
+      /شركة|فريق|موظفين/.test(msgLower) && /اطور|تطوير|اتعلم/.test(msgLower) ||
+      /فلوس|دخل|ربح/.test(msgLower) && /اتعلم|مهارة/.test(msgLower) ||
+      /فريلانس|مستقل/.test(msgLower) && !intent.keywords?.length;
+
+    if (isAmbiguous) {
+      let q = "عايز تتعلم إيه بالظبط؟ 😊";
+      let opts = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
+
+      if (/بيت|منزل/.test(msgLower)) {
+        q = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
+        opts = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
+      } else if (/شركة|فريق/.test(msgLower)) {
+        q = "عايز تطور فريقك في إيه؟ 😊";
+        opts = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
+      } else if (/فلوس|دخل|ربح/.test(msgLower)) {
+        q = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
+        opts = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
+      } else if (/فريلانس/.test(msgLower)) {
+        q = "عايز تشتغل فريلانس في إيه؟ 😊";
+        opts = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
+      }
+
+      reply = q;
+      suggestions = opts;
+      options = opts;
+      session.hadClarify = true;
+    } else {
+      try {
+        reply = await askZiko(message, session, botInstructions);
+      } catch(e) {
+        reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
+      }
+      suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
     }
-    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
   // حفظ الرد في الـ history
   session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
+
+  // 🚫 شيل "سؤال حلو" نهائياً من أي رد
+  reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
 
   reply = finalizeReply(reply);
   return { reply, suggestions, options };
