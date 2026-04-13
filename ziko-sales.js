@@ -690,6 +690,16 @@ async function smartChat(message, sessionId) {
       is_ambiguous: false,
     };
     console.log(`🔮 General request → search for: "${session.lastTopic}"`);
+  } else if (isGeneralRequest && !session.lastTopic) {
+    // مفيش موضوع محفوظ — اسأل اليوزر يحدد أكتر
+    intent = {
+      type: "clarify",
+      keywords: [],
+      is_ambiguous: true,
+      clarify_question: "عايز تتعلم إيه بالظبط؟ 😊 قولي الموضوع أو المجال اللي بتدور عليه",
+      clarify_options: ["جرافيك وتصميم", "برمجة", "تسويق رقمي", "إكسيل وأوفيس", "ذكاء اصطناعي", "ربح من الإنترنت"],
+    };
+    console.log(`⚠️ General request but no lastTopic — asking clarify again`);
   } else if (wasAskingClarify || session.hadClarify) {
     intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
     intent.type = "search";
@@ -853,7 +863,11 @@ async function smartChat(message, sessionId) {
     }
 
     const results = await performSearch(keywords, [], audience);
-    const displayTopic = intent.keywords?.[0] || keywords[0] || message;
+
+    // العنوان — استخدم الـ lastTopic لو موجود، وإلا أول keyword مش عامة
+    const genericWords = new Set(["بصفة", "عامة", "عموما", "عموماً", "general", "تعلم", "اتعلم"]);
+    const cleanKeyword = keywords.find(k => !genericWords.has(k.toLowerCase())) || keywords[0] || message;
+    const displayTopic = session.lastTopic || intent.keywords?.find(k => !genericWords.has(k.toLowerCase())) || cleanKeyword;
 
     reply = await formatResults(results, displayTopic, session);
     session.lastTopic = session.lastTopic || keywords.join(" ");
