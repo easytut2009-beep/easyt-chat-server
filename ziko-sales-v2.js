@@ -311,6 +311,12 @@ async function performSearch(keywords, instructors) {
         if (semError) console.error("❌ Semantic chunks error:", semError.message);
         else console.log(`📦 Semantic chunks found: ${semChunks?.length || 0}`);
 
+        // فلترة الـ chunks بالـ threshold (الـ function مش بتفلتر دلوقتي)
+        if (semChunks && semChunks.length > 0) {
+          semChunks = semChunks.filter(c => c.similarity >= 0.65);
+          console.log(`📦 Semantic chunks after threshold filter: ${semChunks.length}`);
+        }
+
         // إثراء الـ semantic chunks ببيانات الدرس والكورس
         if (semChunks && semChunks.length > 0) {
           const semLessonIds = [...new Set(semChunks.map(c => c.lesson_id))];
@@ -519,14 +525,18 @@ async function formatResults(results, query, session = null) {
 
     const courseMap = new Map();
 
-    // من الـ semantic chunks — نجمع الدروس لكل كورس
+    // من الـ semantic chunks — نجمع الدروس مع الـ chunks لكل كورس
     results.chunks.forEach(c => {
-      const courseId = c.course_id || c.course_title || "unknown";
+      const courseId = c.course_id || "unknown";
       if (!courseMap.has(courseId)) {
         courseMap.set(courseId, { _courseData: c._courseData || null, lessons: new Map() });
       }
-      if (c.lesson_id && c.lesson_title) {
-        courseMap.get(courseId).lessons.set(c.lesson_id, c.lesson_title);
+      if (c.lesson_id) {
+        const entry = courseMap.get(courseId);
+        if (!entry.lessons.has(c.lesson_id)) {
+          entry.lessons.set(c.lesson_id, { title: c.lesson_title || "", chunks: [] });
+        }
+        if (c.content) entry.lessons.get(c.lesson_id).chunks.push(c.content);
       }
     });
 
@@ -546,9 +556,14 @@ async function formatResults(results, query, session = null) {
         if (lessons.size > 0) {
           html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
           html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس اللي فيها "${shortQuery}":</div>`;
-          [...lessons.values()].slice(0, 3).forEach(lessonTitle => {
-            html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #fff9c4">`;
-            html += `• ${highlightChunkQuery(lessonTitle, query)}`;
+          [...lessons.entries()].slice(0, 3).forEach(([lessonId, lesson]) => {
+            html += `<div style="font-size:12px;color:#1a1a2e;padding:6px 0;border-bottom:1px solid #fff9c4">`;
+            html += `<div style="font-weight:600;margin-bottom:3px">• ${escapeHtml(lesson.title)}</div>`;
+            // عرض أول chunk مع تظليل الكلمة
+            if (lesson.chunks.length > 0) {
+              const chunkText = lesson.chunks[0].substring(0, 200) + (lesson.chunks[0].length > 200 ? "..." : "");
+              html += `<div style="font-size:11px;color:#555;line-height:1.5;padding:4px 8px;background:#fff;border-radius:4px;border-right:3px solid #e63946">${highlightChunkQuery(chunkText, query)}</div>`;
+            }
             html += `</div>`;
           });
           html += `</div>`;
