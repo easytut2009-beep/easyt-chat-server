@@ -191,6 +191,11 @@ return Math.round(((max - levenshteinDistance(na, nb)) / max) * 100);
 // ─── finalizeReply ───
 function finalizeReply(html) {
   if (!html) return "";
+
+  // 🚫 شيل "سؤال حلو" و"سؤال ممتاز" من أي رد نهائياً
+  html = html.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "");
+  html = html.replace(/^\s*(<br\s*\/?>)+/, ""); // شيل br فاضية في الأول
+
   html = html.replace(/\n/g, "<br>");
   
   // 🆕 FIX: Regular numbered items (1. 2. 3.) each on its own line
