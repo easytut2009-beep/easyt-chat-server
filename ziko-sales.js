@@ -187,7 +187,11 @@ null: غير كده
 - تسويق → ["تسويق رقمي", "facebook ads", "سوشيال ميديا", "seo"]
 - محاسبة → ["محاسبة", "اكسيل", "quickbooks"]
 - تصميم مواقع → ["html", "css", "wordpress", "web design"]
-⚠️ لا كلمات جزئية وحدها زي "داخلي" أو "متقدم"`;
+- تصوير → ["تصوير", "photography", "كاميرا", "lightroom"]
+- برمجة أطفال → ["scratch", "أطفال", "kids"]
+- موشن جرافيك → ["موشن", "motion", "after effects", "افتر افكتس"]
+⚠️ لا كلمات جزئية وحدها زي "داخلي" أو "متقدم"
+🚫 ممنوع تحط في الـ keywords كلمات عامة زي: احترافي، شامل، كامل، دليل، مقدمة، اساسيات، عملي — دي بتوجد في عناوين كل الكورسات وبتشوش البحث`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
@@ -1088,7 +1092,13 @@ async function smartChat(message, sessionId) {
       : prepareSearchTerms(message.split(/\s+/));
 
     // نشيل كلمات زي "كورس" و"دورة" من الـ keywords
-    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي"]);
+    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي",
+      // كلمات شائعة في عناوين الكورسات بتشوش البحث
+      "احترافي", "احترافية", "احتراف", "الاحترافي", "الاحترافية",
+      "شامل", "شاملة", "كامل", "كاملة", "متكامل",
+      "مبسط", "تطبيقي", "عملي", "دليل", "اساسيات", "أساسيات",
+      "مقدمة", "مستوى", "متقدم", "advanced", "professional"
+    ]);
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
 
