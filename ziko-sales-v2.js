@@ -310,22 +310,31 @@ async function performSearch(keywords, instructors) {
         if (semError) console.error("❌ Semantic chunks error:", semError.message);
         else console.log(`📦 Semantic chunks found: ${semChunks?.length || 0}`);
 
-        // Text search في الـ chunks
-        const chunkTextFilters = keywords
-          .filter(k => k.length > 2)
-          .slice(0, 4)
-          .map(k => `content.ilike.%${k}%`)
-          .join(",");
+        // Text search في الـ chunks — كل keyword منفردة عشان نتجنب الـ timeout
+        const chunkKeywords = keywords.filter(k => k.length > 2).slice(0, 4);
 
         let textChunkCourses = [];
-        if (chunkTextFilters) {
-          const { data: tc, error: tcError } = await supabase
-            .from("chunks")
-            .select("lesson_id")
-            .or(chunkTextFilters)
-            .limit(10);
-          if (tcError) console.error("❌ Text chunks error:", tcError.message);
-          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
+        if (chunkKeywords.length > 0) {
+          let tc = null, tcError = null;
+          // نجرب كل keyword لوحدها — أول ما نلاقي نتيجة نوقف
+          for (const kw of chunkKeywords) {
+            const result = await supabase
+              .from("chunks")
+              .select("lesson_id")
+              .ilike("content", `%${kw}%`)
+              .limit(10);
+            if (result.error) {
+              tcError = result.error;
+              console.error(`❌ Text chunks error for "${kw}":`, result.error.message);
+              continue; // جرب الـ keyword الجاية
+            }
+            if (result.data && result.data.length > 0) {
+              tc = result.data;
+              console.log(`📝 Text chunks found: ${tc.length} (keyword: "${kw}")`);
+              break; // لقينا — وقفنا
+            }
+          }
+          if (!tc) console.log("📝 Text chunks found: 0");
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
