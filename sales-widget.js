@@ -741,6 +741,16 @@ box-shadow: 0 0 0 3px rgba(0,0,0,0.04);
 
 }
 
+#ziko-chat-box #ziko-input:focus {
+
+outline: none !important;
+
+box-shadow: none !important;
+
+border-color: #ccc !important;
+
+}
+
 #ziko-input::placeholder { color: #aaa; font-size: 12.5px; }
 
 #ziko-mic {
