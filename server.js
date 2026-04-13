@@ -2079,7 +2079,7 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
 
 /* ═══ Static Widget Files ═══ */
 app.get("/sales-widget.js", (req, res) => {
-  res.setHeader("Content-Type", "application/javascript");
+  res.setHeader("Content-Type", "text/html");
   res.sendFile(path.join(__dirname, "sales-widget.js"));
 });
 
