@@ -573,28 +573,41 @@ async function formatResults(results, query, session = null) {
     }
 
     let idx = 1;
-    courseMap.forEach(({ _courseData, lessons }) => {
+    // إعادة صياغة الـ chunks عبر GPT عشان تبقى مفهومة
+    async function rephraseChunk(rawText) {
+      if (!rawText || rawText.length < 20) return rawText;
+      try {
+        const r = await gptWithRetry(() => openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: `أعد صياغة هذا النص بشكل واضح ومفهوم بالعربي في جملة أو جملتين فقط، مع الحفاظ على المعنى الأساسي. النص: "${rawText.substring(0, 300)}"` }],
+          max_tokens: 100,
+          temperature: 0.3,
+        }));
+        return r.choices[0].message.content.trim();
+      } catch(e) { return rawText; }
+    }
+
+    for (const [courseId, { _courseData, lessons }] of courseMap) {
       if (_courseData) {
         html += formatCourseCard(_courseData, instructors, idx++);
         if (lessons.size > 0) {
           html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
           html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس اللي فيها "${shortQuery}":</div>`;
-          [...lessons.entries()].slice(0, 3).forEach(([lessonId, lesson]) => {
-            // lesson هنا ممكن يكون { title, chunks[] } أو { title, content }
+          for (const [lessonId, lesson] of [...lessons.entries()].slice(0, 3)) {
             const lessonTitle = lesson.title || "";
-            const chunkContent = lesson.chunks?.[0] || lesson.content || "";
+            const rawContent = lesson.chunks?.[0] || lesson.content || "";
             html += `<div style="font-size:12px;color:#1a1a2e;padding:6px 0;border-bottom:1px solid #fff9c4">`;
-            html += `<div style="font-weight:600;margin-bottom:3px">• ${escapeHtml(lessonTitle)}</div>`;
-            if (chunkContent) {
-              const chunkText = chunkContent.substring(0, 200) + (chunkContent.length > 200 ? "..." : "");
-              html += `<div style="font-size:11px;color:#555;line-height:1.5;padding:4px 8px;background:#fff;border-radius:4px;border-right:3px solid #e63946">${highlightChunkQuery(chunkText, query)}</div>`;
+            html += `<div style="font-weight:600;margin-bottom:4px">• ${escapeHtml(lessonTitle)}</div>`;
+            if (rawContent) {
+              const rephrased = await rephraseChunk(rawContent);
+              html += `<div style="font-size:11px;color:#444;line-height:1.6;padding:5px 10px;background:#fff;border-radius:6px;border-right:3px solid #e63946;margin-top:3px">${highlightChunkQuery(rephrased, query)}</div>`;
             }
             html += `</div>`;
-          });
+          }
           html += `</div>`;
         }
       }
-    });
+    }
 
     html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
