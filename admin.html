@@ -283,12 +283,10 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
     <a href="#" onclick="showTab('guideconversations')" id="nav-guideconversations">🎓 محادثات المرشد</a>
     <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات</a>
     <a href="#" onclick="showTab('botinstructions')" id="nav-botinstructions">🧠 تعليمات البوت</a>
-    <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
     <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
     <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
     <a href="#" onclick="showTab('instructors')" id="nav-instructors">👤 المحاضرين</a>
     <a href="#" onclick="showTab('faq')" id="nav-faq">❓ الأسئلة الشائعة</a>
-    <a href="#" onclick="showTab('sitepages')" id="nav-sitepages">📄 صفحات الموقع</a>
     <a href="#" onclick="doLogout()" style="color:#ef4444;border-top:2px solid #334155;margin-top:20px">🚪 خروج</a>
   </div>
 
@@ -360,17 +358,6 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
       <div id="botInstructionsList"></div>
     </div>
 
-    <div id="tab-customresponses" class="tab-content">
-      <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة</h2>
-      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT — ردود ثابتة بكلمات مفتاحية</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="customresponsesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
-        <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
-        <button class="btn btn-success btn-sm" onclick="openAddCustomResponseModal()">+ إضافة</button>
-      </div>
-      <div class="card" id="customResponsesList"></div>
-    </div>
-
     <div id="tab-courses" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">📚 الكورسات</h2>
       <div class="card">
@@ -408,14 +395,6 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
       <div class="card">
         <button class="btn btn-success btn-sm" onclick="openAddModal('faq')" style="margin-bottom:12px">+ إضافة</button>
         <div id="faq-table"></div>
-      </div>
-    </div>
-
-    <div id="tab-sitepages" class="tab-content">
-      <h2 style="margin:0 0 16px;font-size:20px">📄 صفحات الموقع</h2>
-      <div class="card">
-        <button class="btn btn-success btn-sm" onclick="openAddModal('site-pages')" style="margin-bottom:12px">+ إضافة</button>
-        <div id="site-pages-table"></div>
       </div>
     </div>
 
