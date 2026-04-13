@@ -1160,7 +1160,7 @@ alt="زيكو" />
 
 <div id="ziko-footer">
 
-<div class="ziko-powered">تم تطوير "زيكو" بمساعدة طلاب منصة إيزي تي</div>
+<div class="ziko-powered">Ziko V2.7 — Powered by easyT</div>
 
 </div>
 
