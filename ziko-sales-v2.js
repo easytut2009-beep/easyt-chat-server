@@ -178,7 +178,7 @@ ${hadClarifyBefore ? "- ⚠️ تم سؤال المستخدم من قبل — ا
 // ══════════════════════════════════════════════════════════
 // Search Engine — بحث تدريجي
 // ══════════════════════════════════════════════════════════
-async function performSearch(keywords, instructors, originalMessage = null) {
+async function performSearch(keywords, instructors, audience = null, originalMessage = null) {
   const results = {
     diplomas: [],
     courses: [],
@@ -801,6 +801,7 @@ async function smartChat(message, sessionId) {
       console.log("👧 Kids mode — added scratch/أطفال keywords");
     }
 
+    console.log(`🔍 Passing to performSearch originalMessage: "${message}"`);
     const results = await performSearch(keywords, [], audience, message);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
 
