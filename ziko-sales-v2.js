@@ -451,6 +451,7 @@ async function formatResults(results, query, session = null) {
   const instructors = await getInstructors().catch(() => []);
   let html = "";
   let found = false;
+  console.log(`🎨 formatResults: courses=${results.courses.length}, lessons=${results.lessons.length}, chunks=${results.chunks.length}, textChunkCourses=${results._textChunkCourses?.length||0}`);
 
   // اختصر الـ query للعنوان (أول كلمتين بس)
   const shortQuery = query.split(/\s+/).slice(0, 2).join(" ");
