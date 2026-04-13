@@ -600,7 +600,7 @@ async function formatResults(results, query, session = null) {
             html += `• ${highlightChunkQuery(lessonTitle, query)}`;
             if (rawContent) {
               const rephrased = await rephraseChunk(rawContent);
-              html += `<div style="font-size:11px;color:#555;line-height:1.6;padding:4px 8px;background:#fff8e1;border-radius:4px;margin-top:4px;border-right:2px solid #ffc107">${highlightChunkQuery(rephrased, query)}</div>`;
+              html += `<div style="font-size:11px;color:#555;line-height:1.6;margin-top:3px;padding-right:10px">${highlightChunkQuery(rephrased, query)}</div>`;
             }
             html += `</div>`;
           }
