@@ -373,9 +373,6 @@ async function performSearch(keywords, instructors, audience = null, originalMes
                 .in("id", courseIds);
               textChunkCourses = courseData || [];
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
-              console.log(`📝 TextChunkLessonsMap keys: ${[...chunksByCourse.keys()].join(", ")}`);
-              console.log(`📝 TextChunkCourses ids: ${textChunkCourses.map(c=>c.id).join(", ")}`);
-
               // بناء map: course_id → lessons مع الـ chunks
               const lessonMap = new Map(lessonData.map(l => [l.id, l]));
               const chunksByCourse = new Map();
@@ -389,6 +386,8 @@ async function performSearch(keywords, instructors, audience = null, originalMes
                 }
               });
               textChunkLessonsMap = chunksByCourse;
+              console.log(`📝 TextChunkLessonsMap keys: ${[...chunksByCourse.keys()].join(", ")}`);
+              console.log(`📝 TextChunkCourses ids: ${textChunkCourses.map(c=>c.id).join(", ")}`);
             }
           }
         }
