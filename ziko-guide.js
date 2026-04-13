@@ -519,7 +519,7 @@ const embResponse = await openai.embeddings.create({
 /* ══════════════════════════════════════════════════════════
    SECTION 17: Start Server + 🎓 Guide Bot v2.0
    ══════════════════════════════════════════════════════════ */
-const GUIDE_DAILY_LIMIT = 999; // temp unlimited for testing
+const GUIDE_DAILY_LIMIT = 15;
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
