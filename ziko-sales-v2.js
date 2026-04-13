@@ -591,18 +591,16 @@ async function formatResults(results, query, session = null) {
       if (_courseData) {
         html += formatCourseCard(_courseData, instructors, idx++);
         if (lessons.size > 0) {
-          html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
-          html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس اللي فيها "${shortQuery}":</div>`;
+          html += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
+          html += `<strong>📖 الدروس المرتبطة:</strong><br>`;
           for (const [lessonId, lesson] of [...lessons.entries()].slice(0, 3)) {
             const lessonTitle = lesson.title || "";
             const rawContent = lesson.chunks?.[0] || lesson.content || "";
-            html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #fff9c4">`;
-            html += `• ${highlightChunkQuery(lessonTitle, query)}`;
+            html += `• ${highlightChunkQuery(lessonTitle, query)}<br>`;
             if (rawContent) {
               const rephrased = await rephraseChunk(rawContent);
-              html += `<div style="font-size:11px;color:#555;line-height:1.6;margin-top:3px;padding-right:10px">${highlightChunkQuery(rephrased, query)}</div>`;
+              html += `<span style="font-size:11px;color:#555;line-height:1.6;display:block;margin:2px 0 6px 10px">${highlightChunkQuery(rephrased, query)}</span>`;
             }
-            html += `</div>`;
           }
           html += `</div>`;
         }
