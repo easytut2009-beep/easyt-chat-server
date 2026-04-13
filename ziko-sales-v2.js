@@ -390,7 +390,7 @@ async function performSearch(keywords, instructors) {
 // ══════════════════════════════════════════════════════════
 // Format Results — عرض النتايج
 // ══════════════════════════════════════════════════════════
-async function formatResults(results, query) {
+async function formatResults(results, query, session = null) {
   const instructors = await getInstructors().catch(() => []);
   let html = "";
   let found = false;
@@ -519,11 +519,13 @@ async function formatResults(results, query) {
 
   // مفيش نتايج
   if (!found) {
-    // reset الـ session عشان المحادثة الجاية تبدأ نضيفة
-    session.hadClarify = false;
-    session.clarifyCount = 0;
-    session.audience = null;
-    session.history = [];
+    // reset الـ session لو موجود
+    if (session) {
+      session.hadClarify = false;
+      session.clarifyCount = 0;
+      session.audience = null;
+      session.history = [];
+    }
 
     if (results.noDirectCourse) {
       html = `مش لاقي كورسات عن "${escapeHtml(shortQuery)}" في المنصة دلوقتي 😊<br><br>`;
@@ -725,7 +727,7 @@ async function smartChat(message, sessionId) {
     const results = await performSearch(keywords, [], audience);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
 
-    reply = await formatResults(results, displayTopic);
+    reply = await formatResults(results, displayTopic, session);
     session.lastTopic = session.lastTopic || keywords.join(" ");
     session.lastResults = results;
 
