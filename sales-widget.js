@@ -1145,6 +1145,18 @@ bottom: 0; left: 0; border-radius: 0;
 
 #ziko-drop-overlay { border-radius: 0; }
 
+#ziko-header { padding: 7px 10px; }
+
+#ziko-header-name { font-size: 12px; }
+
+#ziko-header-status { font-size: 9px; }
+
+#ziko-header-avatar { width: 26px; height: 26px; }
+
+#ziko-mode-label { font-size: 7px; }
+
+.ziko-mode-btn { padding: 3px 8px; font-size: 9px; }
+
 }
 
 </style>
