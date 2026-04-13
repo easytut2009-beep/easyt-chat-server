@@ -1165,10 +1165,16 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
+    // ── فلتر: شيل الكورسات اللي score أقل من 50 لو في كورسات أعلى ──
+    const maxScore = scored.length > 0 ? scored[0].relevanceScore : 0;
+    const threshold = maxScore > 200 ? 50 : 0;
+    const goodScored = scored.filter(c => c.relevanceScore >= threshold);
+    const finalScored = goodScored.length >= 3 ? goodScored : scored;
 
-    scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    scored.slice(0, 5).forEach((c, i) => {
+    finalScored.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    finalScored.slice(0, 5).forEach((c, i) => {
       console.log(
         `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
           c.domain ? ` (${c.domain})` : ""
@@ -1176,7 +1182,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
       );
     });
 
-    const result = scored.slice(0, 15);
+    const result = finalScored.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
