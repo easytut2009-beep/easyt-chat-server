@@ -762,18 +762,35 @@ async function smartChat(message, sessionId) {
     try {
       const instructors = await getInstructors().catch(() => []);
       const normSearch = normalizeArabic(instructorName.toLowerCase().trim());
+      // شيل الألقاب من البحث — م/ د/ أ/ مهندس إلخ
+      const cleanSearch = normSearch.replace(/^(م|د|أ|ا|مهندس|دكتور|استاذ|مستر|miss|mr|dr)[\s\/\.]+/gi, "").trim();
 
       // دور على المحاضر بالاسم
       let bestInstructor = null;
       let bestScore = 0;
       for (const inst of instructors) {
-        const normName = normalizeArabic((inst.name || "").toLowerCase());
+        const rawName = (inst.name || "").toLowerCase();
+        const normName = normalizeArabic(rawName);
+        // شيل الألقاب من اسم المحاضر في الداتابيز
+        const cleanName = normName.replace(/^(م|د|أ|ا|مهندس|دكتور|استاذ|مستر|miss|mr|dr)[\s\/\.]+/gi, "").trim();
+
         let score = 0;
-        if (normName === normSearch) score = 100;
-        else if (normName.includes(normSearch) || normSearch.includes(normName)) score = 85;
-        else score = similarityRatio(normSearch, normName);
-        if (score > bestScore && score >= 50) { bestScore = score; bestInstructor = inst; }
+        if (cleanName === cleanSearch) score = 100;
+        else if (cleanName.includes(cleanSearch) || cleanSearch.includes(cleanName)) score = 90;
+        else if (normName.includes(cleanSearch) || cleanSearch.includes(normName)) score = 85;
+        else {
+          // word-by-word matching
+          const searchWords = cleanSearch.split(/\s+/).filter(w => w.length > 1);
+          const nameWords = cleanName.split(/\s+/).filter(w => w.length > 1);
+          const matched = searchWords.filter(sw => nameWords.some(nw => nw.includes(sw) || sw.includes(nw)));
+          if (searchWords.length > 0 && matched.length > 0) {
+            score = Math.round((matched.length / searchWords.length) * 80);
+          }
+          if (score < 40) score = Math.max(score, similarityRatio(cleanSearch, cleanName));
+        }
+        if (score > bestScore && score >= 35) { bestScore = score; bestInstructor = inst; }
       }
+      console.log(`👨‍🏫 Instructor search: "${instructorName}" → "${bestInstructor?.name}" (score=${bestScore})`);
 
       if (bestInstructor) {
         const { data: courses } = await supabase
