@@ -1063,6 +1063,9 @@ const [ilikeResult, semanticResults] = await Promise.all([
         { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
         { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
         { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه", "game"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","يونيتي"] },
+        { words: ["langchain", "llm", "النماذج اللغوية", "الذكاءات المتعددة"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai","نماذج"] },
+        { words: ["الويب المظلم", "dark web", "اختراق المواقع"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
+        { words: ["عيادات", "طبي", "صيدلة", "مستشفى"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
         { words: ["طبخ", "وصفه"], exclude_if_query_lacks: ["طبخ","اكل"] },
       ];
 
@@ -1222,16 +1225,16 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
-    // ── فلتر: شيل الكورسات اللي score أقل من 50 لو في كورسات أعلى ──
-    const maxScore = scored.length > 0 ? scored[0].relevanceScore : 0;
-    const threshold = maxScore > 200 ? 50 : 0;
-    const goodScored = scored.filter(c => c.relevanceScore >= threshold);
-    const finalScored = goodScored.length >= 3 ? goodScored : scored;
+    // ── فلتر: شيل الكورسات اللي score أقل من threshold لو في كورسات أعلى ──
+    const maxScore = finalScored.length > 0 ? finalScored[0].relevanceScore : 0;
+    const threshold = maxScore > 300 ? maxScore * 0.3 : maxScore > 100 ? maxScore * 0.2 : 0;
+    const goodScored = finalScored.filter(c => c.relevanceScore >= threshold);
+    const finalFiltered = goodScored.length >= 2 ? goodScored : finalScored;
 
 
-    finalScored.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    finalFiltered.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    finalScored.slice(0, 5).forEach((c, i) => {
+    finalFiltered.slice(0, 5).forEach((c, i) => {
       console.log(
         `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
           c.domain ? ` (${c.domain})` : ""
@@ -1239,7 +1242,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
       );
     });
 
-    const result = finalScored.slice(0, 15);
+    const result = finalFiltered.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
