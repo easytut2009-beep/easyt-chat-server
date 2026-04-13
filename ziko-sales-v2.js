@@ -527,17 +527,18 @@ async function smartChat(message, sessionId) {
   // تحليل النية
   let intent;
 
-  // لو اليوزر اختار "بصفة عامة" من الـ options (رسالة قصيرة)
-  const isGeneralRequest = message.length < 30 && /بصفة عامة|عموما|عموماً|general/.test(message);
+  // لو اليوزر قال "بصفة عامة" في أي رسالة
+  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general/.test(message);
 
   if (isGeneralRequest && session.lastTopic) {
+    // يبحث بالموضوع الأصلي مش بـ "بصفة عامة"
+    const topicKeywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
     intent = {
       type: "search",
-      keywords: prepareSearchTerms(session.lastTopic.split(/\s+/)),
+      keywords: topicKeywords,
       is_ambiguous: false,
-      _semantic: true, // flag للـ semantic search
     };
-    console.log(`🔮 General request → semantic search for: "${session.lastTopic}"`);
+    console.log(`🔮 General request → search for: "${session.lastTopic}"`);
   } else if (wasAskingClarify || session.hadClarify) {
     // المستخدم اختار من الـ options — نستخدم GPT عشان يحول الاختيار لـ keywords صح
     intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
@@ -675,60 +676,7 @@ async function smartChat(message, sessionId) {
     const results = await performSearch(keywords, [], audience);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
 
-    // لو مالقيش حاجة وكان في clarify قبل — ادور بالـ semantic على الموضوع الأصلي
-    const noResults = results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0;
-    if (noResults && session.lastTopic && session.hadClarify) {
-      console.log(`🔮 No results after clarify — semantic fallback on: "${session.lastTopic}"`);
-      try {
-        if (supabase && openai) {
-          const embResp = await openai.embeddings.create({
-            model: COURSE_EMBEDDING_MODEL,
-            input: session.lastTopic,
-          });
-          const { data: semCourses } = await supabase.rpc("match_courses", {
-            query_embedding: embResp.data[0].embedding,
-            match_threshold: 0.70,
-            match_count: 5,
-          });
-          if (semCourses && semCourses.length > 0) {
-            // تحقق إن الـ similarity كافية — لو منخفضة جداً يعني مفيش علاقة حقيقية
-            const bestSimilarity = Math.max(...semCourses.map(s => s.similarity || 0));
-            if (bestSimilarity < 0.75) {
-              console.log(`⚠️ Semantic similarity too low (${bestSimilarity}) — not showing results`);
-              // مش هنعرض حاجة — هنسيب الـ noResults يعرض رسالة "مش في المنصة"
-            } else {
-            const { data: courseData } = await supabase
-              .from("courses")
-              .select(COURSE_SELECT_COLS)
-              .in("id", semCourses.map(s => s.id));
-            if (courseData && courseData.length > 0) {
-              const withDiploma = await injectDiplomaInfo(courseData).catch(() => courseData);
-              const originalTopic = session.lastTopic;
-              const specificTopic = displayTopic;
-              reply = `مالقتش حاجة محددة عن "<strong>${escapeHtml(specificTopic)}</strong>" 😊<br><br>`;
-              reply += `بس بصفة عامة في موضوع "<strong>${escapeHtml(originalTopic)}</strong>" لقيت الكورسات دي:<br><br>`;
-              const instructors = await getInstructors().catch(() => []);
-              withDiploma.forEach((c, i) => {
-                reply += formatCourseCard(c, instructors, i + 1);
-              });
-              reply += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
-              // reset session
-              session.history = [];
-              session.hadClarify = false;
-              session.clarifyCount = 0;
-              suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
-            }
-            } // end else (similarity OK)
-          }
-        }
-      } catch (e) { console.error("semantic fallback error:", e.message); }
-    }
-
-    // لو لسه مافيش reply — عرض النتايج العادية
-    if (!reply) {
-      reply = await formatResults(results, displayTopic);
-    }
-
+    reply = await formatResults(results, displayTopic);
     session.lastTopic = session.lastTopic || keywords.join(" ");
     session.lastResults = results;
 
