@@ -644,6 +644,19 @@ transition: opacity 0.35s ease, transform 0.35s ease, text-shadow 0.35s ease;
 
 .ztip-word.ztip-word-show { opacity: 1; transform: translateY(0); text-shadow: 0 0 8px rgba(22,163,74,0.1); }
 
+.ziko-feedback { display: flex; gap: 6px; margin-top: 6px; direction: rtl; }
+
+.ziko-feedback-btn {
+background: none; border: 1.5px solid #e0e0e0; border-radius: 50%;
+width: 26px; height: 26px; cursor: pointer; font-size: 13px;
+display: flex; align-items: center; justify-content: center;
+transition: all 0.2s; padding: 0; line-height: 1;
+}
+
+.ziko-feedback-btn:hover { background: #f0f0f0; border-color: #bbb; transform: scale(1.1); }
+.ziko-feedback-btn.ziko-fb-active { border-color: #d91c1c; background: #fff0f0; }
+.ziko-feedback-btn:disabled { cursor: default; opacity: 0.5; }
+
 .ziko-suggestions-inline { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 0 6px; direction: rtl; }
 
 .ziko-suggestion-btn {
@@ -1098,7 +1111,7 @@ alt="زيكو" />
 
 <div id="ziko-header-text">
 
-<span id="ziko-header-name">زيكو ( إصدار تجريبي )</span>
+<span id="ziko-header-name">زيكو</span>
 
 <span id="ziko-header-status">متصل الآن</span>
 
@@ -1521,6 +1534,8 @@ if (!chatBox || !toggleBtn) return;
 if (notify) notify.classList.remove("ziko-notify-visible");
 
 if (notifyAutoTimer) clearTimeout(notifyAutoTimer);
+
+lastActivity = Date.now();
 
 chatBox.style.display = "flex";
 
@@ -2021,6 +2036,9 @@ html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
 html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m, l, c) { return "<pre><code>" + escHtml(c.trim()) + "</code></pre>"; });
 
 html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+html = html.replace(/^[-•]\s+(.+)$/gm, '<span style="display:block;padding-right:8px;margin:2px 0">• $1</span>');
+
 html = html.replace(/\n/g, "<br>");
 return html;
 
@@ -2105,6 +2123,30 @@ a.setAttribute("rel", "noopener noreferrer");
 });
 }
 
+function showFeedback() {
+  if (!zikoMessages) return;
+  var fb = document.createElement("div");
+  fb.className = "ziko-feedback";
+  var thumbUp = document.createElement("button");
+  thumbUp.className = "ziko-feedback-btn";
+  thumbUp.textContent = "👍";
+  var thumbDown = document.createElement("button");
+  thumbDown.className = "ziko-feedback-btn";
+  thumbDown.textContent = "👎";
+  thumbUp.onclick = function() {
+    thumbUp.classList.add("ziko-fb-active");
+    thumbUp.disabled = true; thumbDown.disabled = true;
+  };
+  thumbDown.onclick = function() {
+    thumbDown.classList.add("ziko-fb-active");
+    thumbUp.disabled = true; thumbDown.disabled = true;
+  };
+  fb.appendChild(thumbUp);
+  fb.appendChild(thumbDown);
+  zikoMessages.appendChild(fb);
+  scrollBot();
+}
+
 function addMessage(text, type, callback) {
 if (!zikoMessages) return;
 var msg = document.createElement("div");
@@ -2118,11 +2160,15 @@ if (type === "bot") {
   if (text.length > 150 && nonEmptyChunks.length > 3) {
     zikoMessages.appendChild(msg);
     scrollBot();
-    streamBotMessage(msg, chunks, html, callback);
+    streamBotMessage(msg, chunks, html, function() {
+      showFeedback();
+      if (callback) callback();
+    });
   } else {
     msg.innerHTML = html;
     processLinks(msg);
     zikoMessages.appendChild(msg);
+    showFeedback();
     scrollBot();
     if (callback) callback();
   }
