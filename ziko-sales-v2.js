@@ -291,8 +291,8 @@ async function performSearch(keywords, instructors, audience = null, originalMes
     }
   } catch (e) { console.error("lesson search error:", e.message); }
 
-  // 4. بحث في الـ chunks لو مفيش نتايج — semantic + text search
-  if (results.courses.length === 0 && results.lessons.length === 0) {
+  // 4. بحث في الـ chunks — دايماً لو مفيش كورسات مباشرة
+  if (results.courses.length === 0) {
     console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
       if (supabase && openai) {
@@ -373,6 +373,8 @@ async function performSearch(keywords, instructors, audience = null, originalMes
                 .in("id", courseIds);
               textChunkCourses = courseData || [];
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
+              console.log(`📝 TextChunkLessonsMap keys: ${[...chunksByCourse.keys()].join(", ")}`);
+              console.log(`📝 TextChunkCourses ids: ${textChunkCourses.map(c=>c.id).join(", ")}`);
 
               // بناء map: course_id → lessons مع الـ chunks
               const lessonMap = new Map(lessonData.map(l => [l.id, l]));
@@ -398,6 +400,10 @@ async function performSearch(keywords, instructors, audience = null, originalMes
           results.chunks = allChunks;
           results._textChunkCourses = textChunkCourses;
           results._textChunkLessonsMap = textChunkLessonsMap;
+          // لو لقينا chunks — امسح الـ lessons عشان يعرض الـ chunks بدلها
+          if (textChunkCourses.length > 0 || allChunks.length > 0) {
+            results.lessons = [];
+          }
           results.noDirectCourse = false;
           console.log(`📦 Found ${allChunks.length} semantic chunks + ${textChunkCourses.length} text chunk courses`);
         }
