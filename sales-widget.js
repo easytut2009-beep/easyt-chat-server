@@ -2001,11 +2001,15 @@ hideTyping();
 
 if (data.session_id) { sessionId = data.session_id; try { localStorage.setItem("ziko_session", sessionId); } catch(e) {} }
 
-addMessage(data.reply, "bot", function() {
-
-showContextSuggestions(sentText || "صورة", data.reply);
-
-});
+if (data.options && data.options.length > 0) {
+  addMessage(data.reply, "bot", function() {
+    showSuggestions(data.options);
+  });
+} else {
+  addMessage(data.reply, "bot", function() {
+    showContextSuggestions(sentText || "صورة", data.reply);
+  });
+}
 
 } catch (err) {
 
