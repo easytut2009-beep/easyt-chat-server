@@ -305,7 +305,7 @@ async function performSearch(keywords, instructors) {
         const embedding = embResp.data[0].embedding;
         let { data: semChunks, error: semError } = await supabase.rpc("match_lesson_chunks", {
           query_embedding: embedding,
-          match_threshold: 0.65,
+          match_threshold: 0.45,
           match_count: 8,
         });
         if (semError) console.error("❌ Semantic chunks error:", semError.message);
@@ -313,7 +313,7 @@ async function performSearch(keywords, instructors) {
 
         // فلترة الـ chunks بالـ threshold (الـ function مش بتفلتر دلوقتي)
         if (semChunks && semChunks.length > 0) {
-          semChunks = semChunks.filter(c => c.similarity >= 0.65);
+          semChunks = semChunks.filter(c => c.similarity >= 0.45);
           console.log(`📦 Semantic chunks after threshold filter: ${semChunks.length}`);
         }
 
