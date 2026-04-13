@@ -1187,13 +1187,26 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
         const unmatchedTitleWords = titleWordsList.filter(tw =>
           !qNorms.some(qt => tw.includes(qt) || qt.includes(tw))
         );
-        // لو أكتر من نص كلمات العنوان مش في الـ query → penalty
         if (titleWordsList.length > 0) {
           const unmatchRatio = unmatchedTitleWords.length / titleWordsList.length;
           if (unmatchRatio > 0.7 && titleWordsList.length > 3) {
             score = Math.round(score * 0.4);
           }
         }
+      }
+
+      // ── Domain Penalty: لو الكورس في domain مختلف عن الـ query ──
+      const domainMismatches = [
+        { courseWords: ["اندرويد","android","flutter","يونيتي","unity","الالعاب","blockchain","بلوكشين"], queryNeeds: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","blockchain"] },
+        { courseWords: ["مراقبه","اختراق","hacking","سيبراني","cybersecurity"], queryNeeds: ["مراقبة","امن","اختراق","hacking","حماية"] },
+        { courseWords: ["دروب شيبنج","dropshipping","استيراد","تصدير"], queryNeeds: ["دروب","تجارة","استيراد","تصدير"] },
+      ];
+      const qNormsForDomain = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
+      for (const dm of domainMismatches) {
+        const courseInDomain = dm.courseWords.some(w => titleNorm.includes(normalizeArabic(w.toLowerCase())));
+        if (!courseInDomain) continue;
+        const queryInDomain = dm.queryNeeds.some(w => qNormsForDomain.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt)));
+        if (!queryInDomain) { score = Math.round(score * 0.15); break; }
       }
 
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
