@@ -144,6 +144,7 @@ type=search: بيدور على كورس أو دبلومة أو برنامج تع
 مثال: "عايز كورس X"، "فين أتعلم X؟"، "في كورسات عن X؟"
 🚨 أي رسالة فيها اسم برنامج (فوتوشوب، اكسيل، بريمير، اوتوكاد، بلندر، وورد) → search
 🚨 أي رسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، سناب، لينكدإن) → search
+🚨 فريلانس، اونلاين، يوتيوب، تجارة إلكترونية، ربح من الإنترنت → search مباشرة
 🚨 لو سبق وسألنا توضيح في المحادثة → search إلزامي بدون clarify
 ${hadClarifyBefore ? "🚨 تم سؤال المستخدم من قبل — الآن type=search إلزامي" : ""}
 
@@ -649,11 +650,13 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 ══ التواصل مع الدعم ══
 - واتساب: https://wa.me/201027007899
 - إيميل: https://sso.teachable.com/secure/398126/current_user/contact
-- مواعيد الدعم: 8ص لـ 2ص طوال أيام الأسبوع
+- مواعيد الدعم البشري: 8ص لـ 10م طوال أيام الأسبوع
+- زيكو متاح 24/7
 
 ══ سياسة الاسترداد والاستبدال ══
-- الكورسات والدبلومات: استرداد خلال 14 يوم + استبدال خلال 30 يوم
+- الكورسات والدبلومات: استرداد خلال 14 يوم (بخصم 20% رسوم إدارية) + استبدال خلال 30 يوم مرة واحدة
 - الاشتراك السنوي/الشهري: لا استرداد ولا استبدال — بس إلغاء في أي وقت بدون التزام
+- المدفوعات بفودافون كاش أو انستاباي أو تحويل بنكي: غير قابلة للاسترداد
 
 ══ حالات شائعة ══
 - لو مش شايف كورساته بعد الاشتراك → يروح "دوراتي" في القائمة الرئيسية، ممكن يستغرق لحد 24 ساعة
@@ -663,6 +666,8 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 - لو عايز استرداد للاشتراك → مفيش استرداد بس ممكن يلغيه في أي وقت
 - عايز يعمل CV؟ في كورسات مهارات شخصية وسوق عمل
 - ابنه صغير؟ في كورسات للأطفال زي Scratch وغيره
+- لو قالك "المنافسين أحسن" → ذكّره بمميزات إيزي تي: 23 سنة خبرة، 600+ كورس، زيكو المرشد الذكي جوه كل كورس، أسعار مناسبة
+- لو سأل عن كورسات جديدة → في 5-15 كورس جديد بيتضافوا كل شهر، يتابع صفحات السوشيال ميديا للإعلانات
 
 ${extraContext ? `══ سياق إضافي ══
 ${extraContext}
@@ -701,16 +706,10 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
 
-  // ── FAQ Check — قبل أي حاجة ──
-  const faqAnswer = await findFAQAnswer(message);
-  if (faqAnswer) {
-    session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
-    return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
-  }
-
-  // ── فلتر يدوي للـ Support — قبل GPT ──
+  // ── فلتر يدوي للـ Support — قبل أي حاجة ──
   const supportPatterns = [
-    /مش\s*قادر\s*(اكمل|أكمل|اشوف|أشوف|احمل|أحمل|افتح|أفتح|ادخل|أدخل|اشترك|أشترك|اشغل|أشغل|اكمل|أكمل)/,
+    /مش\s*قادر\s*(اكمل|أكمل|اشوف|أشوف|احمل|أحمل|افتح|أفتح|ادخل|أدخل|اشترك|أشترك|اشغل|أشغل)/,
+    /مش\s*قادر\s*اكمل/,
     /الفيديو\s*مش\s*بيشتغل/,
     /الكورس\s*بيتقفل/,
     /الصوت\s*مش\s*شغال/,
@@ -718,10 +717,18 @@ async function smartChat(message, sessionId) {
     /مش\s*راضي|مش\s*راضى/,
     /عايز\s*(ارجع|أرجع)\s*فلوسي/,
     /عندي\s*شكوى/,
-    /مش\s*قادر\s*اكمل/,
-    /مش\s*بيحمل|مش\s*بيشتغل|بيتقفل|بطيء/,
+    /مش\s*بيحمل|بيتقفل|بطيء/,
   ];
   const isSupport = supportPatterns.some(p => p.test(message));
+
+  // ── FAQ Check — بس لو مش support ──
+  if (!isSupport) {
+    const faqAnswer = await findFAQAnswer(message);
+    if (faqAnswer) {
+      session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
+      return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
+    }
+  }
 
   // ── فلتر يدوي للـ Greeting ──
   const greetingPatterns = [
