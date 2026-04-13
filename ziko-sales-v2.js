@@ -111,6 +111,9 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 - type=search: لو بيدور على كورس أو برنامج محدد أو مصطلح تقني (workflow, excel, python, إلخ) أو لو قال "شرح عن" أو "كورس في" أو "عايز أتعلم X"
 - type=clarify: لو ذكر مهنة أو هدف عام بدون تحديد ماذا يريد تعلمه — اسأل سؤال واحد ذكي
 - 🚨 لو الرسالة فيها اسم برنامج أو مصطلح تقني واضح → type=search فوراً بدون clarify
+- 🚨 لو الرسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، تويتر، لينكدإن، سناب) → type=search فوراً
+- 🚨 لو الرسالة فيها اسم برنامج (فوتوشوب، اكسيل، وورد، بريمير، افتر افكتس، اوتوكاد) → type=search فوراً
+- 🚨 لو الرسالة فيها كلمة "اعلان" أو "ads" أو "تسويق" مع اسم منصة → type=search فوراً بدون clarify
 - type=info: لو سؤال عام عن المنصة أو الأسعار
 - type=subscription: لو سؤال عن اشتراك أو دفع
 - type=support: لو مشكلة تقنية
@@ -714,6 +717,13 @@ async function smartChat(message, sessionId) {
     if (!intent.keywords || intent.keywords.length === 0) {
       intent.keywords = prepareSearchTerms(message.split(/\s+/));
     }
+    // ✅ نضيف الـ keywords الأصلية (lastTopic) للـ keywords الجديدة عشان منخسرش السياق
+    if (session.lastTopic) {
+      const originalKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
+      const merged = [...new Set([...intent.keywords, ...originalKws])];
+      intent.keywords = merged;
+      console.log(`🔄 Post-clarify merged keywords: ${intent.keywords.join(", ")}`);
+    }
     // احتفظ بالـ audience لو GPT استخرجها
     if (intent.audience) session.audience = intent.audience;
     console.log(`🔄 Post-clarify → search: ${intent.keywords?.join(", ")}`);
@@ -826,101 +836,24 @@ async function smartChat(message, sessionId) {
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
 
-    // الـ audience — من intent أو من الـ session المحفوظة
-    const audience = intent.audience || session.audience || null;
-    if (audience) {
-      session.audience = audience; // احتفظ بيها في الـ session
-      console.log(`👥 Audience: ${audience}`);
+    // تحسين: لو الـ keywords مش فيها الـ lastTopic — ضيفه
+    if (session.lastTopic && session.hadClarify) {
+      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
+        .filter(k => !veryGenericWords.has(k.toLowerCase()));
+      topicKws.forEach(k => {
+        if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) {
+          keywords.push(k);
+        }
+      });
+      if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
 
-    // لو أطفال — أضف keywords مناسبة للأطفال
-    if (audience === "أطفال") {
-      keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
-      console.log("👧 Kids mode — added scratch/أطفال keywords");
-    }
-
-    // لو "بصفة عامة" — استخدم الـ lastTopic كـ originalMessage للـ chunks
-    const chunkOriginalMsg = isGeneralRequest && session.lastTopic ? session.lastTopic : message;
-    console.log(`🔍 Passing to performSearch originalMessage: "${chunkOriginalMsg}"`);
-    const results = await performSearch(keywords, [], audience, chunkOriginalMsg);
-    const displayTopic = intent.keywords?.[0] || keywords[0] || message;
-
-    reply = await formatResults(results, displayTopic, session);
-    session.lastTopic = session.lastTopic || keywords.join(" ");
-    session.lastResults = results;
-
-    // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
-    if (results.courses.length > 0 || results.diplomas.length > 0) {
-      session.history = [];
-      session.hadClarify = false; // reset للمحادثة الجديدة
-      session.clarifyCount = 0;
-      // لا تمسح الـ audience — لو المستخدم سأل تاني نفس الـ audience
-    }
-
-    // اقتراحات بعد النتايج
-    if (results.courses.length > 0 || results.diplomas.length > 0) {
-      suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
-    } else {
-      suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓", "اشتراك ✨"];
-    }
-  }
-
-  // ── Info / General ──
-  else {
-    // GPT يرد من bot instructions
-    try {
-      const resp = await gptWithRetry(() => openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `أنت "زيكو" مساعد منصة إيزي تي التعليمية. ردودك قصيرة وودودة بالعامية المصرية.
-${botInstructions ? `\nتعليمات الأدمن:\n${botInstructions}` : ""}
-استخدم <br> للأسطر و<strong> للعناوين. لا تذكر أسعار إلا لو سُئلت.`
-          },
-          ...session.history.slice(-4),
-          { role: "user", content: message }
-        ],
-        max_tokens: 500,
-        temperature: 0.3,
-      }));
-      reply = finalizeReply(resp.choices[0].message.content || "");
-    } catch (e) {
-      reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
-    }
-    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
-  }
-
-  // حفظ الرد في الـ history
-  session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
-
-  reply = finalizeReply(reply);
-  return { reply, suggestions };
-}
-
-// ══════════════════════════════════════════════════════════
-// Routes
-// ══════════════════════════════════════════════════════════
-app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id } = req.body;
-  if (!message || !session_id) {
-    return res.status(400).json({ error: "Missing message or session_id" });
-  }
-  try {
-    const result = await smartChat(message.trim(), session_id);
-    res.json(result);
-  } catch (e) {
-    console.error("❌ Chat error:", e.message);
-    res.json({
-      reply: "عذراً، حصل خطأ تقني! 😅 حاول تاني أو تواصل معنا.",
-      suggestions: ["تواصل معنا 💬"],
-    });
-  }
-});
-
-// Health check
-app.get("/chat/health", (req, res) => {
-  res.json({ status: "ok", sessions: sessions.size });
-});
-
-}; // end registerSalesRoutes
+    // ✅ لو الـ keywords مش فيها الـ lastTopic الأصلي — ضيفه عشان منخسرش السياق
+    if (session.lastTopic && session.hadClarify) {
+      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
+        .filter(k => !veryGenericWords.has(k.toLowerCase()));
+      topicKws.forEach(k => {
+        if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) {
+          keywords.push(k);
+        }
+      });
