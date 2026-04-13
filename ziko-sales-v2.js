@@ -547,6 +547,51 @@ async function formatResults(results, query, session = null) {
 // ══════════════════════════════════════════════════════════
 // Main Chat Handler
 // ══════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════
+// دالة موحدة — GPT بيرد على كل الأسئلة بناءً على التعليمات
+// ══════════════════════════════════════════════════════════
+async function askZiko(message, session, botInstructions, extraContext = "") {
+  const historyMessages = session.history.slice(-6).map(h => ({
+    role: h.role,
+    content: h.content.substring(0, 300)
+  }));
+
+  const systemPrompt = `أنت "زيكو" المساعد الذكي لمنصة إيزي تي التعليمية العربية.
+ردودك بالعامية المصرية — قصيرة وواضحة وودودة.
+استخدم <br> للأسطر الجديدة و<strong> للعناوين.
+
+══ معلومات المنصة الأساسية ══
+- الموقع: https://easyt.online
+- 600+ كورس في كل المجالات
+- اشتراك سنوي: $59 | شهري: $25 | كورس منفرد: من $6.99 | دبلومة: $29.99
+- 30 دبلومة احترافية
+- صفحة الاشتراك: https://easyt.online/p/subscriptions
+- صفحة طرق الدفع: https://easyt.online/p/Payments
+- واتساب الدعم: https://wa.me/201027007899
+- مواعيد الدعم: 8ص لـ 2ص طوال أيام الأسبوع
+- فودافون كاش: 01027007899 (برفع الإيصال من صفحة الدفع)
+- التفعيل بعد الدفع: لحد 24 ساعة
+
+${extraContext ? `══ سياق إضافي ══
+${extraContext}
+` : ""}
+══ تعليمات الأدمن (أولوية قصوى) ══
+${botInstructions || "لا توجد تعليمات إضافية"}`;
+
+  const resp = await gptWithRetry(() => openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...historyMessages,
+      { role: "user", content: message }
+    ],
+    max_tokens: 600,
+    temperature: 0.3,
+  }));
+  return finalizeReply(resp.choices[0].message.content || "");
+}
+
 async function smartChat(message, sessionId) {
   const session = getSession(sessionId);
   const botInstructions = await loadBotInstructions("sales").catch(() => "");
@@ -623,7 +668,11 @@ async function smartChat(message, sessionId) {
 
   // ── Greeting ──
   if (intent.type === "greeting") {
-    reply = intent.direct_reply || "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
+    try {
+      reply = await askZiko(message, session, botInstructions);
+    } catch(e) {
+      reply = "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
+    }
     suggestions = ["كورسات اكسيل 📊", "دبلومات 🎓", "أسعار الاشتراك 💳"];
   }
 
@@ -653,49 +702,28 @@ async function smartChat(message, sessionId) {
 
   // ── Subscription ──
   else if (intent.type === "subscription") {
-    const msgLower = message.toLowerCase();
-    const isPaymentQ = /طرق الدفع|دفع|بطاقة|فيزا|ماستر|كاش|فودافون|اورنج|اتصالات|paypal|payment/.test(msgLower);
-    const isCouponQ = /كوبون|خصم|كود|coupon|discount/.test(msgLower);
-    const isIncludesQ = /بياخد|يشمل|فيه إيه|includes|محتوى الاشتراك/.test(msgLower);
-
-    if (isPaymentQ) {
-      reply = `💳 <strong>طرق الدفع المتاحة:</strong><br><br>` +
-        `💳 بطاقة فيزا أو ماستركارد<br>` +
-        `📱 فودافون كاش<br>` +
-        `📱 اورنج كاش<br>` +
-        `📱 اتصالات كاش<br>` +
-        `📱 WE Pay<br><br>` +
-        `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة الدفع ←</a>`;
-      suggestions = ["أسعار الاشتراك 💰", "فيه كوبون؟", "اشتراك سنوي ✨"];
-    } else if (isCouponQ) {
-      reply = `🎁 <strong>الكوبونات والخصومات:</strong><br><br>` +
-        `بنعمل عروض موسمية من وقت لوقت 🎉<br>` +
-        `تابعونا على <a href="https://www.facebook.com/easyt.online" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">فيسبوك ←</a> عشان تعرف أول بأول<br><br>` +
-        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
-      suggestions = ["أسعار الاشتراك 💰", "طرق الدفع 💳", "كورسات 📘"];
-    } else if (isIncludesQ) {
-      reply = `✨ <strong>الاشتراك السنوي يشمل:</strong><br><br>` +
-        `📚 500+ كورس في كل المجالات<br>` +
-        `🤖 زيكو المرشد الذكي في كل كورس<br>` +
-        `🔄 محتوى جديد كل شهر (5-15 كورس)<br>` +
-        `👥 مجتمع الطلاب التفاعلي<br><br>` +
-        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
-      suggestions = ["كام السعر؟ 💰", "طرق الدفع 💳", "الدبلومات 🎓"];
-    } else {
-      reply = `💳 <strong>أسعار الاشتراك:</strong><br><br>` +
-        `✨ <strong>سنوي:</strong> $59/سنة — أوفر وأحسن 🏆<br>` +
-        `📅 <strong>شهري:</strong> $25/شهر<br>` +
-        `📘 <strong>كورس منفرد:</strong> من $6.99<br>` +
-        `🎓 <strong>دبلومة:</strong> $29.99<br><br>` +
-        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
-      suggestions = ["طرق الدفع 💳", "إيه اللي بياخده الاشتراك؟", "فيه كوبون خصم؟"];
+    try {
+      reply = await askZiko(message, session, botInstructions,
+        `المستخدم بيسأل عن: اشتراك أو أسعار أو دفع أو طرق دفع
+رابط الاشتراك: ${SUBSCRIPTION_URL}
+رابط طرق الدفع: ${PAYMENTS_URL}`
+      );
+    } catch(e) {
+      reply = `💳 <strong>أسعار الاشتراك:</strong><br><br>✨ سنوي: $59/سنة<br>📅 شهري: $25/شهر<br>📘 كورس منفرد: من $6.99<br>🎓 دبلومة: $29.99<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
     }
+    suggestions = ["طرق الدفع 💳", "إيه اللي بياخده الاشتراك؟", "الدبلومات 🎓"];
   }
-
   // ── Support ──
   else if (intent.type === "support") {
-    reply = intent.direct_reply ||
-      `للمساعدة الفنية تواصل معنا: <a href="${WHATSAPP_LINK}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+    try {
+      reply = await askZiko(message, session, botInstructions,
+        `المستخدم عنده مشكلة تقنية أو يحتاج دعم فني
+واتساب الدعم: ${WHATSAPP_LINK}
+مواعيد الدعم: 8ص لـ 2ص`
+      );
+    } catch(e) {
+      reply = `للمساعدة الفنية تواصل معنا: <a href="${WHATSAPP_LINK}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+    }
     suggestions = ["أسعار الاشتراك 💳", "كورسات 📘"];
   }
 
@@ -797,42 +825,12 @@ async function smartChat(message, sessionId) {
   // ── Info / General ──
   else {
     try {
-      const resp = await gptWithRetry(() => openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `أنت "زيكو" مساعد ذكي لمنصة إيزي تي التعليمية العربية.
-ردودك قصيرة وودودة بالعامية المصرية.
-${botInstructions ? `
-تعليمات الأدمن:
-${botInstructions}` : ""}
-
-معلومات المنصة:
-- 500+ كورس في الجرافيك، برمجة، تسويق، ذكاء اصطناعي، أعمال، لغات وأكثر
-- اشتراك سنوي $59 أو شهري $25 يشمل كل الكورسات
-- 30 دبلومة احترافية بسعر $29.99
-- الكورسات المنفردة من $6.99 إلى $12.99
-
-قواعد الرد:
-- لو سألك سؤال تعليمي (ازاى، إيه، فرق بين) → رد باختصار وبعدين اقترح كورس من المنصة يكمله
-- لو شكوى أو مشكلة → اعرض مساعدة وواتساب الدعم
-- لو سؤال عن الأسعار → وضح الأسعار
-- استخدم <br> للأسطر و<strong> للعناوين`
-          },
-          ...session.history.slice(-4),
-          { role: "user", content: message }
-        ],
-        max_tokens: 600,
-        temperature: 0.4,
-      }));
-      reply = finalizeReply(resp.choices[0].message.content || "");
-    } catch (e) {
+      reply = await askZiko(message, session, botInstructions);
+    } catch(e) {
       reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
     }
     suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
-
   // حفظ الرد في الـ history
   session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
 
