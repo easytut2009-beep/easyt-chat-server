@@ -720,6 +720,7 @@ async function smartChat(message, sessionId) {
 
   let reply = "";
   let suggestions = [];
+  let options = [];
 
   // ── Greeting ──
   if (intent.type === "greeting") {
@@ -795,11 +796,8 @@ async function smartChat(message, sessionId) {
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
     reply = intent.clarify_question || "بتدور على إيه بالظبط؟ 😊";
-    if (intent.clarify_options && intent.clarify_options.length > 0) {
-      reply += "<br><br>";
-      intent.clarify_options.forEach(opt => { reply += `• ${opt}<br>`; });
-    }
     suggestions = intent.clarify_options || [];
+    options = intent.clarify_options || [];
   }
 
   // ── Search ──
@@ -890,7 +888,7 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
 
   reply = finalizeReply(reply);
-  return { reply, suggestions };
+  return { reply, suggestions, options };
 }
 
 // ══════════════════════════════════════════════════════════
