@@ -2077,6 +2077,12 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
    🆕 FIX #40: getAllLessonChunks — gets ALL chunks for a lesson
    ══════════════════════════════════════════════════════════ */
 
+/* ═══ Static Widget Files ═══ */
+app.get("/sales-widget.js", (req, res) => {
+  res.setHeader("Content-Type", "application/javascript");
+  res.sendFile(path.join(__dirname, "sales-widget.js"));
+});
+
 /* ═══ Register Routes ═══ */
 /* ═══ Start Server ═══ */
 async function startServer() {
