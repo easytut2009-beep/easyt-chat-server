@@ -1468,13 +1468,9 @@ if (btnSupport && btnGuide) {
     btnGuide.className = "ziko-mode-btn ziko-mode-inactive";
   });
   btnGuide.addEventListener("click", function() {
-    if (btnGuide.disabled) return;
     btnGuide.className = "ziko-mode-btn ziko-mode-active";
     btnSupport.className = "ziko-mode-btn ziko-mode-inactive";
     showAnimatedTipCard();
-    btnGuide.disabled = true;
-    btnGuide.style.opacity = "0.4";
-    btnGuide.style.cursor = "default";
     setTimeout(function() {
       btnSupport.className = "ziko-mode-btn ziko-mode-active";
       btnGuide.className = "ziko-mode-btn ziko-mode-inactive";
