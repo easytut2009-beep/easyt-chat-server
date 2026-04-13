@@ -1060,9 +1060,10 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
       // كلمات بتدل على domain معين — لو في الكورس ومش في الـ query → مش مناسب
       const domainSignals = [
-        { words: ["بيانات", "tableau", "data", "ذكاء", "machine", "تحليل"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل","ذكاء"] },
-        { words: ["مراقبة", "امن", "اختراق", "hacking", "security", "حماية"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
-        { words: ["طبخ", "اكل", "وصفة"], exclude_if_query_lacks: ["طبخ","اكل"] },
+        { words: ["بيانات", "tableau", "data", "ذكاء اصطناعي", "machine learning"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
+        { words: ["مراقبه", "امن سيبراني", "اختراق", "hacking", "security"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
+        { words: ["android", "اندرويد", "flutter", "ios", "kotlin"], exclude_if_query_lacks: ["android","اندرويد","flutter","تطبيق","موبايل","kotlin"] },
+        { words: ["طبخ", "وصفة"], exclude_if_query_lacks: ["طبخ","اكل"] },
       ];
 
       const relevant = allCourses.filter(c => {
