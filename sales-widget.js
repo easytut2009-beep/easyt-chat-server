@@ -230,6 +230,78 @@ flex-shrink: 0;
 
 }
 
+#ziko-mode-toggle {
+
+display: flex;
+
+flex-direction: column;
+
+align-items: center;
+
+gap: 4px;
+
+}
+
+#ziko-mode-label {
+
+font-size: 8.5px;
+
+color: rgba(255,255,255,0.6);
+
+font-weight: 700;
+
+}
+
+#ziko-mode-btns {
+
+display: flex;
+
+background: rgba(0,0,0,0.25);
+
+border-radius: 16px;
+
+padding: 2px;
+
+gap: 2px;
+
+}
+
+.ziko-mode-btn {
+
+padding: 4px 11px;
+
+border-radius: 14px;
+
+font-size: 10px;
+
+font-weight: 700;
+
+border: none;
+
+font-family: Tahoma, Geneva, sans-serif;
+
+cursor: pointer;
+
+transition: all 0.2s;
+
+}
+
+.ziko-mode-btn.ziko-mode-active {
+
+background: white;
+
+color: #a30000;
+
+}
+
+.ziko-mode-btn.ziko-mode-inactive {
+
+background: transparent;
+
+color: rgba(255,255,255,0.5);
+
+}
+
 #ziko-header-info {
 
 display: flex;
@@ -1117,7 +1189,25 @@ alt="زيكو" />
 
 </div>
 
+<div style="display:flex;align-items:center;gap:10px;">
+
+<div id="ziko-mode-toggle">
+
+<span id="ziko-mode-label">طريقة المساعدة</span>
+
+<div id="ziko-mode-btns">
+
+<button class="ziko-mode-btn ziko-mode-active" id="ziko-btn-support">دعم</button>
+
+<button class="ziko-mode-btn ziko-mode-inactive" id="ziko-btn-guide">تعليم</button>
+
+</div>
+
+</div>
+
 <span id="ziko-close">✕</span>
+
+</div>
 
 </div>
 
@@ -1369,6 +1459,25 @@ chatBox.addEventListener("drop", handleDrop);
 
 setupVoice();
 
+var btnSupport = document.getElementById("ziko-btn-support");
+var btnGuide = document.getElementById("ziko-btn-guide");
+
+if (btnSupport && btnGuide) {
+  btnSupport.addEventListener("click", function() {
+    btnSupport.className = "ziko-mode-btn ziko-mode-active";
+    btnGuide.className = "ziko-mode-btn ziko-mode-inactive";
+  });
+  btnGuide.addEventListener("click", function() {
+    btnGuide.className = "ziko-mode-btn ziko-mode-active";
+    btnSupport.className = "ziko-mode-btn ziko-mode-inactive";
+    showGuideModeMessage();
+    setTimeout(function() {
+      btnSupport.className = "ziko-mode-btn ziko-mode-active";
+      btnGuide.className = "ziko-mode-btn ziko-mode-inactive";
+    }, 300);
+  });
+}
+
 }
 
 function handleImagePaste(e) {
@@ -1585,19 +1694,39 @@ lastActivity = Date.now();
 
 function showWelcome() {
 
-addMessage('أهلاً بيك! 👋 أنا <strong>زيكو</strong> مساعدك الذكي في منصة إيزي تي.', "bot");
-
-if (wasCardShownToday()) {
+addMessage('أهلاً بيك! 👋 أنا <strong>زيكو</strong> مساعدك الذكي في منصة إيزي تي. بتدور على إيه النهارده؟', "bot");
 
 setTimeout(function() { showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]); scrollBot(); }, 500);
 
-} else {
+}
 
-setTimeout(function() { showAnimatedTipCard(); }, 600);
+function showGuideModeMessage() {
+
+var old = zikoMessages.querySelector(".ziko-suggestions-inline");
+
+if (old) old.remove();
+
+var card = document.createElement("div");
+
+card.className = "ziko-msg ziko-bot";
+
+card.innerHTML = [
+  '<strong style="font-size:14px;color:#8B0000;display:block;margin-bottom:6px">📚 المرشد التعليمي</strong>',
+  'المرشد التعليمي متاح <strong>جوه الكورس</strong> بعد الاشتراك.<br><br>',
+  '✅ بيشرح أي جزء مش واضح في الدرس<br>',
+  '✅ بيجاوب أسئلتك من محتوى الكورس<br>',
+  '✅ بيعمل ملخصات وتمارين عملية<br>',
+  '✅ متاح 24/7 في كل الكورسات<br><br>',
+  '<a href="https://easyt.online/p/subscriptions" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#d91c1c,#a30000);color:white;padding:8px 16px;border-radius:10px;font-weight:700;font-size:13px;text-decoration:none;">اشترك دلوقتي وجرب زيكو جواك ←</a>'
+].join("");
+
+zikoMessages.appendChild(card);
+
+scrollBot();
 
 }
 
-}
+
 
 function showAnimatedTipCard() {
 
