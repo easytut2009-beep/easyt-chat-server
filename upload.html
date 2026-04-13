@@ -455,6 +455,7 @@ async function doLogin() {
     const data = await api('POST', '/admin/login', { password: pw });
     if (data.success && data.token) {
       token = data.token;
+      localStorage.setItem('easyt_upload_token', token);
       $('view-login').classList.add('hidden');
       $('view-main').classList.remove('hidden');
       $('login-error').style.display = 'none';
@@ -468,6 +469,7 @@ async function doLogin() {
 }
 function doLogout() {
   token = '';
+  localStorage.removeItem('easyt_upload_token');
   selectedCourseId = null;
   $('view-main').classList.add('hidden');
   $('view-login').classList.remove('hidden');
@@ -1264,7 +1266,24 @@ async function onDeleteAll() {
   } catch (e) { addLog('Error: ' + e.message, 'error'); }
 }
 
-$('login-password').focus();
+// ── تسجيل دخول تلقائي لو في token محفوظ ──
+(function() {
+  var saved = localStorage.getItem('easyt_upload_token');
+  if (!saved) { $('login-password').focus(); return; }
+  token = saved;
+  fetch('/admin/stats', { headers: { 'Authorization': 'Bearer ' + saved } })
+    .then(function(r) {
+      if (r.ok) {
+        $('view-login').classList.add('hidden');
+        $('view-main').classList.remove('hidden');
+        loadCourses();
+      } else {
+        localStorage.removeItem('easyt_upload_token');
+        token = '';
+        $('login-password').focus();
+      }
+    }).catch(function() { $('login-password').focus(); });
+})();
 </script>
 </body>
 </html>
