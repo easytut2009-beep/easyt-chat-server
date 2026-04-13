@@ -653,18 +653,43 @@ async function smartChat(message, sessionId) {
 
   // ── Subscription ──
   else if (intent.type === "subscription") {
-    const subReply = intent.direct_reply || "";
-    // لو GPT رد بسعر غلط أو مجهول، نستخدم الأسعار الصح
-    const hasWrongPrice = subReply.includes("500") || subReply.includes("جنيه") || subReply.includes("مش عارف");
-    reply = (!subReply || hasWrongPrice)
-      ? `💳 <strong>أسعار الاشتراك:</strong><br><br>` +
+    const msgLower = message.toLowerCase();
+    const isPaymentQ = /طرق الدفع|دفع|بطاقة|فيزا|ماستر|كاش|فودافون|اورنج|اتصالات|paypal|payment/.test(msgLower);
+    const isCouponQ = /كوبون|خصم|كود|coupon|discount/.test(msgLower);
+    const isIncludesQ = /بياخد|يشمل|فيه إيه|includes|محتوى الاشتراك/.test(msgLower);
+
+    if (isPaymentQ) {
+      reply = `💳 <strong>طرق الدفع المتاحة:</strong><br><br>` +
+        `💳 بطاقة فيزا أو ماستركارد<br>` +
+        `📱 فودافون كاش<br>` +
+        `📱 اورنج كاش<br>` +
+        `📱 اتصالات كاش<br>` +
+        `📱 WE Pay<br><br>` +
+        `<a href="${PAYMENTS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💳 صفحة الدفع ←</a>`;
+      suggestions = ["أسعار الاشتراك 💰", "فيه كوبون؟", "اشتراك سنوي ✨"];
+    } else if (isCouponQ) {
+      reply = `🎁 <strong>الكوبونات والخصومات:</strong><br><br>` +
+        `بنعمل عروض موسمية من وقت لوقت 🎉<br>` +
+        `تابعونا على <a href="https://www.facebook.com/easyt.online" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">فيسبوك ←</a> عشان تعرف أول بأول<br><br>` +
+        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
+      suggestions = ["أسعار الاشتراك 💰", "طرق الدفع 💳", "كورسات 📘"];
+    } else if (isIncludesQ) {
+      reply = `✨ <strong>الاشتراك السنوي يشمل:</strong><br><br>` +
+        `📚 500+ كورس في كل المجالات<br>` +
+        `🤖 زيكو المرشد الذكي في كل كورس<br>` +
+        `🔄 محتوى جديد كل شهر (5-15 كورس)<br>` +
+        `👥 مجتمع الطلاب التفاعلي<br><br>` +
+        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
+      suggestions = ["كام السعر؟ 💰", "طرق الدفع 💳", "الدبلومات 🎓"];
+    } else {
+      reply = `💳 <strong>أسعار الاشتراك:</strong><br><br>` +
         `✨ <strong>سنوي:</strong> $59/سنة — أوفر وأحسن 🏆<br>` +
         `📅 <strong>شهري:</strong> $25/شهر<br>` +
-        `📘 <strong>كورس منفرد:</strong> ~$10<br>` +
+        `📘 <strong>كورس منفرد:</strong> من $6.99<br>` +
         `🎓 <strong>دبلومة:</strong> $29.99<br><br>` +
-        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`
-      : subReply;
-    suggestions = ["إيه اللي بياخده الاشتراك؟", "فيه كوبون خصم؟", "دفع بطاقة أو فيزا؟"];
+        `<a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
+      suggestions = ["طرق الدفع 💳", "إيه اللي بياخده الاشتراك؟", "فيه كوبون خصم؟"];
+    }
   }
 
   // ── Support ──
