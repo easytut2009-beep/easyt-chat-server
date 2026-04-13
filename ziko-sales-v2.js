@@ -663,6 +663,23 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
 
+  // لو اليوزر عايز كورسات تانية — ابحث بنفس الـ topic
+  const isMoreRequest = /تان[يى]|أكتر|اكتر|غير[هك]|ثاني|more|other/.test(message);
+  if (isMoreRequest && session.lastTopic) {
+    console.log(`🔄 More request → reusing lastTopic: "${session.lastTopic}"`);
+    const moreKeywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
+    const moreResults = await performSearch(moreKeywords, [], session.audience, session.lastTopic);
+    // شيل أول 5 نتايج من الـ lastResults عشان يعرض تانية
+    if (moreResults.courses.length > 0) {
+      const prevIds = new Set((session.lastResults?.courses || []).map(c => c.id));
+      moreResults.courses = moreResults.courses.filter(c => !prevIds.has(c.id));
+    }
+    const moreReply = await formatResults(moreResults, session.lastTopic, session);
+    session.lastResults = moreResults;
+    const moreFinalReply = finalizeReply(moreReply);
+    return { reply: moreFinalReply, suggestions: ["كورسات تانية 📘", "سعر الاشتراك 💳", "الدبلومات 🎓"] };
+  }
+
   // لو الرسالة السابقة كانت clarify (توضيح) — الرسالة الحالية هي search مباشرة
   const lastBotMsg = session.history.slice(-2).find(h => h.role === 'assistant');
   const wasAskingClarify = lastBotMsg && (
