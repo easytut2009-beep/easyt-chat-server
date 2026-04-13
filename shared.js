@@ -663,10 +663,32 @@ function setCachedSearch(key, data) {
 }
 
 // ─── expandArabicVariants ───
+// قاموس تصحيح الأخطاء الشائعة في أسماء البرامج
+const _commonCorrections = {
+  'فوتوشب': 'فوتوشوب', 'فوتشوب': 'فوتوشوب', 'فوتوشب': 'فوتوشوب',
+  'اكسيل': 'اكسل', 'اكسيل': 'اكسل', 'excel': 'excel',
+  'بريمير': 'بريمير', 'افتر': 'افتر افكتس',
+  'اليستريتور': 'اليستريتور', 'الستريتور': 'اليستريتور',
+  'انديزاين': 'انديزاين', 'وورد': 'وورد', 'باوربوينت': 'باوربوينت',
+};
+
 function expandArabicVariants(terms) {
   const variants = new Set();
   for (const term of terms) {
     variants.add(term);
+    // تصحيح الأخطاء الشائعة
+    const corrected = _commonCorrections[term.toLowerCase()];
+    if (corrected) variants.add(corrected);
+    // لو الكلمة فيها حرف ناقص من الوسط — جرب نسخة بحرف إضافي
+    // فوتوشب → فوتوشوب (واو ناقصة)
+    if (term.length >= 4) {
+      for (let i = 2; i < term.length - 1; i++) {
+        const withWaw = term.slice(0, i) + 'و' + term.slice(i);
+        variants.add(withWaw);
+        const withAlef = term.slice(0, i) + 'ا' + term.slice(i);
+        variants.add(withAlef);
+      }
+    }
 
     // إ ↔ ا ↔ أ ↔ آ
     const normalized = term
