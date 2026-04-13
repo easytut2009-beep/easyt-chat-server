@@ -1222,6 +1222,7 @@ return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
     // ── فلتر: شيل الكورسات اللي score أقل من 50 لو في كورسات أعلى ──
+    const finalScored = scored;
     const maxScore = finalScored.length > 0 ? finalScored[0].relevanceScore : 0;
     const threshold = maxScore > 200 ? 50 : 0;
     const goodScored = finalScored.filter(c => c.relevanceScore >= threshold);
