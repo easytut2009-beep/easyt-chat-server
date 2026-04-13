@@ -723,10 +723,12 @@ async function smartChat(message, sessionId) {
   const supportPatterns = [
     /مش\s*قادر\s*(اكمل|أكمل|اشوف|أشوف|احمل|أحمل|افتح|أفتح|ادخل|أدخل|اشترك|أشترك|اشغل|أشغل)/,
     /مش\s*قادر\s*اكمل/,
+    /مش\s*قادر\s*أكمل/,
+    /(الكورس|الدرس)\s*مش\s*بيشتغل/,
     /الفيديو\s*مش\s*بيشتغل/,
     /الكورس\s*بيتقفل/,
     /الصوت\s*مش\s*شغال/,
-    /مشكلة\s*في\s*(الموقع|الكورس|الحساب|الدفع)/,
+    /مشكلة\s*في\s*(الموقع|الكورس|الدرس|الحساب|الدفع)/,
     /مش\s*راضي|مش\s*راضى/,
     /عايز\s*(ارجع|أرجع)\s*فلوسي/,
     /عندي\s*شكوى/,
@@ -1002,9 +1004,39 @@ async function smartChat(message, sessionId) {
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
-    reply = intent.clarify_question || "بتدور على إيه بالظبط؟ 😊";
-    suggestions = intent.clarify_options || [];
-    options = intent.clarify_options || [];
+    // لو GPT مديش options — نعمل fallback بناءً على الرسالة
+    let clarifyOptions = intent.clarify_options || [];
+    let clarifyQuestion = intent.clarify_question || "";
+
+    if (!clarifyOptions || clarifyOptions.length === 0) {
+      const msgLower = message.toLowerCase();
+      if (/بيت|منزل|بيتي/.test(msgLower)) {
+        clarifyQuestion = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
+        clarifyOptions = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
+      } else if (/شركة|فريق|موظفين/.test(msgLower)) {
+        clarifyQuestion = "عايز تطور فريقك في إيه؟ 😊";
+        clarifyOptions = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
+      } else if (/فلوس|دخل|ربح/.test(msgLower)) {
+        clarifyQuestion = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
+        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
+      } else if (/فريلانس|مستقل/.test(msgLower)) {
+        clarifyQuestion = "عايز تشتغل فريلانس في إيه؟ 😊";
+        clarifyOptions = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
+      } else if (/مجال|اغير/.test(msgLower)) {
+        clarifyQuestion = "عايز تنتقل لأنهي مجال؟ 😊";
+        clarifyOptions = ["🎨 تصميم وإبداع", "💻 برمجة وتقنية", "📱 تسويق رقمي", "💼 إدارة أعمال"];
+      } else if (/طالب/.test(msgLower)) {
+        clarifyQuestion = "إيه المجال اللي مهتم تتعلمه؟ 😊";
+        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 سوشيال ميديا", "📊 إكسيل وأوفيس"];
+      } else {
+        clarifyQuestion = clarifyQuestion || "عايز تتعلم إيه بالظبط؟ 😊";
+        clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
+      }
+    }
+
+    reply = clarifyQuestion;
+    suggestions = clarifyOptions;
+    options = clarifyOptions;
   }
 
   // ── Search ──
