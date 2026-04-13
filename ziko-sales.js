@@ -720,15 +720,13 @@ async function smartChat(message, sessionId) {
 
   // تحليل النية
   let intent;
+  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general/.test(message);
 
   // لو اتحدد يدوياً كـ support
   if (isSupport) {
     intent = { type: "support", keywords: [], is_ambiguous: false };
   }
   // لو اليوزر قال "بصفة عامة" في أي رسالة
-  else
-  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general/.test(message);
-
   else if (isGeneralRequest && session.lastTopic) {
     // يبحث بالموضوع الأصلي مش بـ "بصفة عامة"
     const topicKeywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
