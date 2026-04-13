@@ -306,6 +306,7 @@ async function performSearch(keywords, instructors, originalMessage = null) {
 
         // استخرج عبارات البحث من الرسالة الأصلية (مصححة) + keywords كـ fallback
         let chunkSearchTerms = [];
+        console.log(`📝 originalMessage for chunks: "${originalMessage}"`);
         if (originalMessage) {
           // استخرج الموضوع الأساسي من الرسالة (مصحح إملائياً) للبحث في الـ chunks
           try {
