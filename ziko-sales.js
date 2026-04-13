@@ -791,6 +791,9 @@ async function smartChat(message, sessionId) {
           if (courses.length > 5) {
             reply += `<br><span style="font-size:12px;color:#666">و${courses.length - 5} كورس تاني...</span>`;
           }
+          if (bestInstructor.link) {
+            reply += `<br><a href="${bestInstructor.link}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 اضغط هنا لمعرفة كل كورسات ${escapeHtml(bestInstructor.name)} ←</a>`;
+          }
           suggestions = ["أسعار الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
         } else {
           reply = `مش لاقي كورسات للمحاضر "${escapeHtml(bestInstructor.name)}" دلوقتي 😅`;
