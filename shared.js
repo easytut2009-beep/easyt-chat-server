@@ -15,7 +15,7 @@ function initShared(clients) {
 
 /* ═══ Constants ═══ */
 const CACHE_TTL = 10 * 60 * 1000;
-const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+const SEARCH_CACHE_TTL = 2 * 60 * 1000; // دقيقتين
 const CORRECTION_CACHE_TTL = 5 * 60 * 1000;
 const FAQ_CACHE_TTL = 5 * 60 * 1000;
 const sessionMemory = new Map();
