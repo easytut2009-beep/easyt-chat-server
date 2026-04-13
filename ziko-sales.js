@@ -190,6 +190,13 @@ null: غير كده
 - تصوير → ["تصوير", "photography", "كاميرا", "lightroom"]
 - برمجة أطفال → ["scratch", "أطفال", "kids"]
 - موشن جرافيك → ["موشن", "motion", "after effects", "افتر افكتس"]
+- "عايز اشتغل في صناعة الفيديو" → keywords: ["مونتاج", "فيديو", "موشن", "بريمير"]
+- "ازاى اعمل اعلان متحرك" → keywords: ["موشن", "after effects", "اعلان"]
+- "عايز اعمل تطبيق موبايل" → keywords: ["تطبيقات", "موبايل", "flutter", "android"]
+- "عايز اشتغل backend developer" → keywords: ["python", "node", "backend", "برمجة"]
+- "عايز ازود مبيعات اونلاين" → keywords: ["تسويق", "مبيعات", "facebook ads", "سوشيال"]
+- "عايز اشتغل media buyer" → keywords: ["media buyer", "فيسبوك ادز", "إعلانات"]
+- "ازاى اصور بالموبايل" → keywords: ["تصوير", "موبايل", "كاميرا"]
 ⚠️ لا كلمات جزئية وحدها زي "داخلي" أو "متقدم"
 🚫 ممنوع تحط في الـ keywords كلمات عامة زي: احترافي، شامل، كامل، دليل، مقدمة، اساسيات، عملي — دي بتوجد في عناوين كل الكورسات وبتشوش البحث`;
 
@@ -1079,7 +1086,7 @@ async function smartChat(message, sessionId) {
   // ── Search ──
   else if (intent.type === "search") {
     // كلمات مش من نطاق المنصة — مش هنبحث عنها
-    const outOfScopeWords = ["لابتوب","laptop","نتفليكس","netflix","موبايل","تليفون","ايفون","iphone","سامسونج","سيارة","عقار","وظيفة","job","مطعم","اكل","طبخ","رياضة","كرة"];
+    const outOfScopeWords = ["لابتوب","laptop","نتفليكس","netflix","ايفون","iphone","سامسونج","samsung","سيارة","عقار","مطعم","طبخ","رياضة","كرة قدم","سباحة"];
     const msgWords = message.toLowerCase().split(/\s+/);
     const isOutOfScope = outOfScopeWords.some(w => msgWords.some(m => m.includes(w)));
     if (isOutOfScope) {
