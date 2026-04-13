@@ -820,8 +820,10 @@ async function smartChat(message, sessionId) {
       console.log("👧 Kids mode — added scratch/أطفال keywords");
     }
 
-    console.log(`🔍 Passing to performSearch originalMessage: "${message}"`);
-    const results = await performSearch(keywords, [], audience, message);
+    // لو "بصفة عامة" — استخدم الـ lastTopic كـ originalMessage للـ chunks
+    const chunkOriginalMsg = isGeneralRequest && session.lastTopic ? session.lastTopic : message;
+    console.log(`🔍 Passing to performSearch originalMessage: "${chunkOriginalMsg}"`);
+    const results = await performSearch(keywords, [], audience, chunkOriginalMsg);
     const displayTopic = intent.keywords?.[0] || keywords[0] || message;
 
     reply = await formatResults(results, displayTopic, session);
