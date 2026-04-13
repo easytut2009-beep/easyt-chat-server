@@ -327,6 +327,7 @@ async function performSearch(keywords, instructors, audience = null, originalMes
             // لو في فاصلة → ابحث بكل جزء
             chunkSearchTerms = topicRaw.split(/،|,/).map(t => t.trim()).filter(t => t.length > 1);
             console.log(`📝 Chunk topic extracted: ${JSON.stringify(chunkSearchTerms)}`);
+            results._correctedTopic = chunkSearchTerms[0] || null;
           } catch(e) {
             chunkSearchTerms = [];
           }
@@ -530,7 +531,9 @@ async function formatResults(results, query, session = null) {
   // chunks
   if (results.chunks.length > 0 || (results._textChunkCourses && results._textChunkCourses.length > 0)) {
     found = true;
-    html += `📖 <strong>لقيت "${shortQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
+    // استخدم الـ topic المصحح في العنوان والتظليل
+    const chunkDisplayQuery = results._correctedTopic || shortQuery;
+    html += `📖 <strong>لقيت "${chunkDisplayQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
 
     // دالة تظليل الكلمة بالأصفر
     function highlightChunkQuery(text, q) {
@@ -593,13 +596,14 @@ async function formatResults(results, query, session = null) {
         if (lessons.size > 0) {
           html += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
           html += `<strong>📖 الدروس المرتبطة:</strong><br>`;
+          // (chunkDisplayQuery used for highlighting below)
           for (const [lessonId, lesson] of [...lessons.entries()].slice(0, 3)) {
             const lessonTitle = lesson.title || "";
             const rawContent = lesson.chunks?.[0] || lesson.content || "";
-            html += `• ${highlightChunkQuery(lessonTitle, query)}<br>`;
+            html += `• ${escapeHtml(lessonTitle)}<br>`;
             if (rawContent) {
               const rephrased = await rephraseChunk(rawContent);
-              html += `<span style="font-size:11px;color:#555;line-height:1.6;display:block;margin:2px 0 6px 10px">${highlightChunkQuery(rephrased, query)}</span>`;
+              html += `<span style="font-size:11px;color:#555;line-height:1.6;display:block;margin:2px 0 6px 10px">${highlightChunkQuery(rephrased, chunkDisplayQuery)}</span>`;
             }
           }
           html += `</div>`;
