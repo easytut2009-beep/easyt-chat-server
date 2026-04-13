@@ -756,6 +756,8 @@ async function smartChat(message, sessionId) {
 
   // ── Instructor Courses ──
   else if (intent.type === "instructor_courses") {
+    session.lastTopic = null;
+    session.hadClarify = false;
     const instructorName = intent.instructor_name || intent.keywords?.[0] || "";
     try {
       const instructors = await getInstructors().catch(() => []);
@@ -807,6 +809,8 @@ async function smartChat(message, sessionId) {
 
   // ── Diploma Courses ──
   else if (intent.type === "diploma_courses") {
+    session.lastTopic = null;
+    session.hadClarify = false;
     const diplomaName = intent.diploma_name || intent.keywords?.[0] || "";
     try {
       const { getDiplomaWithCourses } = require("./shared");
@@ -959,10 +963,23 @@ async function smartChat(message, sessionId) {
     // العنوان — استخدم الـ lastTopic لو موجود، وإلا أول keyword مش عامة
     const genericWords = new Set(["بصفة", "عامة", "عموما", "عموماً", "general", "تعلم", "اتعلم"]);
     const cleanKeyword = keywords.find(k => !genericWords.has(k.toLowerCase())) || keywords[0] || message;
-    const displayTopic = session.lastTopic || intent.keywords?.find(k => !genericWords.has(k.toLowerCase())) || cleanKeyword;
+
+    // لو الـ keywords الجديدة مختلفة عن الـ lastTopic — امسح القديم
+    const newTopic = keywords.join(" ");
+    if (session.lastTopic && !session.hadClarify) {
+      const oldNorm = normalizeArabic(session.lastTopic.toLowerCase());
+      const newNorm = normalizeArabic(newTopic.toLowerCase());
+      const overlap = keywords.filter(k => oldNorm.includes(normalizeArabic(k.toLowerCase())));
+      if (overlap.length === 0) {
+        console.log(`🔄 New topic detected — resetting lastTopic from "${session.lastTopic}" to "${newTopic}"`);
+        session.lastTopic = null;
+      }
+    }
+
+    const displayTopic = (!session.hadClarify ? null : session.lastTopic) || intent.keywords?.find(k => !genericWords.has(k.toLowerCase())) || cleanKeyword;
 
     reply = await formatResults(results, displayTopic, session);
-    session.lastTopic = session.lastTopic || keywords.join(" ");
+    session.lastTopic = newTopic;
     session.lastResults = results;
 
     // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
