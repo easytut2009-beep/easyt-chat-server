@@ -410,8 +410,8 @@ async function performSearch(keywords, instructors, audience = null, originalMes
     } catch (e) { console.error("chunk search error:", e.message); }
   }
 
-  // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
-  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
+  // 5. Semantic fallback على الكورسات — بس لو مفيش أي نتيجة خالص
+  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0 && (!results._textChunkCourses || results._textChunkCourses.length === 0)) {
     try {
       if (supabase && openai) {
         const embResp = await openai.embeddings.create({
