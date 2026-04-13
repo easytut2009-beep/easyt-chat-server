@@ -1197,9 +1197,9 @@ alt="زيكو" />
 
 <div id="ziko-mode-btns">
 
-<button class="ziko-mode-btn ziko-mode-active" id="ziko-btn-support">دعم</button>
+<button class="ziko-mode-btn ziko-mode-active" id="ziko-btn-support" aria-label="وضع الدعم">دعم</button>
 
-<button class="ziko-mode-btn ziko-mode-inactive" id="ziko-btn-guide">تعليم</button>
+<button class="ziko-mode-btn ziko-mode-inactive" id="ziko-btn-guide" aria-label="وضع التعليم">تعليم</button>
 
 </div>
 
@@ -1733,163 +1733,96 @@ function showAnimatedTipCard() {
 if (!zikoMessages) return;
 
 var titleText = "💡 عارف إيه اللي بيحصل لما تشترك في أى كورس؟";
-
 var bodyText = "بتحوّلني من مساعد عادي لمرشدك التعليمي الخاص .";
-
 var features = [
-
-"📖 بكون معاك جوه كل درس أشرحلك أي جزء مش واضح",
-
-"💻 أديك أمثلة عملية، وأحل تمارين، وأتابع معاك",
-
+  "📖 بكون معاك جوه كل درس أشرحلك أي جزء مش واضح",
+  "💻 أديك أمثلة عملية، وأحل تمارين، وأتابع معاك",
 ];
-
 var lastText = "الآن أنا جاهز لمساعدتك في أي استفسار يخص المنصة أو أي كورس أو دبلومة 👇";
 
+function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+function typeWriterAsync(el, text, speed) {
+  return new Promise(function(resolve) { typeWriter(el, text, speed, resolve); });
+}
+function slideFeaturesAsync(container, features) {
+  return new Promise(function(resolve) { slideFeaturesIn(container, features, 0, resolve); });
+}
+function colorWordsAsync(el, text) {
+  return new Promise(function(resolve) { colorWordsIn(el, text, resolve); });
+}
+
 var container = document.createElement("div");
-
 container.className = "ziko-tip-container";
-
 var card = document.createElement("div");
-
 card.className = "ziko-tip-card";
-
 container.appendChild(card);
-
 zikoMessages.appendChild(container);
 
-setTimeout(function() {
-
-card.classList.add("ztip-card-show");
-
-card.classList.add("ztip-card-glow");
-
-scrollBot();
-
-setTimeout(function() {
-
-var titleEl = document.createElement("div");
-
-titleEl.className = "ziko-tip-card-title";
-
-card.appendChild(titleEl);
-
-scrollBot();
-
-typeWriter(titleEl, titleText, 28, function() {
-
-scrollBot();
-
-setTimeout(function() {
-
-var bodyEl = document.createElement("div");
-
-bodyEl.className = "ziko-tip-card-body";
-
-card.appendChild(bodyEl);
-
-scrollBot();
-
-typeWriter(bodyEl, bodyText, 22, function() {
-
-scrollBot();
-
-setTimeout(function() {
-
-var featuresEl = document.createElement("div");
-
-featuresEl.className = "ziko-tip-card-features";
-
-card.appendChild(featuresEl);
-
-scrollBot();
-
-slideFeaturesIn(featuresEl, features, 0, function() {
-
-scrollBot();
-
-setTimeout(function() {
-
-var previewWrapper = document.createElement("div");
-
-previewWrapper.className = "ziko-tip-preview-wrapper";
-
-var previewImg = document.createElement("img");
-
-previewImg.src = PREVIEW_IMAGE;
-
-previewImg.alt = "زيكو - المرشد التعليمي";
-
-previewWrapper.appendChild(previewImg);
-
-card.appendChild(previewWrapper);
-
-scrollBot();
-
-setTimeout(function() {
-
-previewWrapper.classList.add("ztip-preview-show");
-
-scrollBot();
-
-var scrollInterval = setInterval(scrollBot, 100);
-
-setTimeout(function() { clearInterval(scrollInterval); }, 2000);
-
-previewImg.onload = function() { scrollBot(); setTimeout(scrollBot, 100); setTimeout(scrollBot, 300); };
-
-setTimeout(function() { previewWrapper.classList.add("ztip-preview-shimmer"); scrollBot(); }, 800);
-
-setTimeout(function() { collapsePreview(previewWrapper); }, 30000);
-
-setTimeout(function() {
-
-var lastEl = document.createElement("div");
-
-lastEl.className = "ziko-tip-card-last";
-
-card.appendChild(lastEl);
-
-scrollBot();
-
-colorWordsIn(lastEl, lastText, function() {
-
-scrollBot();
-
-card.classList.remove("ztip-card-glow");
-
-card.classList.add("ztip-card-shake");
-
-setTimeout(function() {
-
-showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]);
-
-scrollBot();
-
-}, 700);
-
-});
-
-}, 1400);
-
-}, 150);
-
-}, 350);
-
-});
-
-}, 200);
-
-});
-
-}, 150);
-
-});
-
-}, 600);
-
-}, 400);
-
+async function runAnimation() {
+  await delay(400);
+  card.classList.add("ztip-card-show", "ztip-card-glow");
+  scrollBot();
+
+  await delay(600);
+  var titleEl = document.createElement("div");
+  titleEl.className = "ziko-tip-card-title";
+  card.appendChild(titleEl);
+  scrollBot();
+  await typeWriterAsync(titleEl, titleText, 28);
+  scrollBot();
+
+  await delay(150);
+  var bodyEl = document.createElement("div");
+  bodyEl.className = "ziko-tip-card-body";
+  card.appendChild(bodyEl);
+  scrollBot();
+  await typeWriterAsync(bodyEl, bodyText, 22);
+  scrollBot();
+
+  await delay(150);
+  var featuresEl = document.createElement("div");
+  featuresEl.className = "ziko-tip-card-features";
+  card.appendChild(featuresEl);
+  scrollBot();
+  await slideFeaturesAsync(featuresEl, features);
+  scrollBot();
+
+  await delay(200);
+  var previewWrapper = document.createElement("div");
+  previewWrapper.className = "ziko-tip-preview-wrapper";
+  var previewImg = document.createElement("img");
+  previewImg.src = PREVIEW_IMAGE;
+  previewImg.alt = "زيكو - المرشد التعليمي";
+  previewImg.onload = function() { scrollBot(); setTimeout(scrollBot, 100); setTimeout(scrollBot, 300); };
+  previewWrapper.appendChild(previewImg);
+  card.appendChild(previewWrapper);
+  scrollBot();
+
+  await delay(150);
+  previewWrapper.classList.add("ztip-preview-show");
+  scrollBot();
+  var scrollInterval = setInterval(scrollBot, 100);
+  setTimeout(function() { clearInterval(scrollInterval); }, 2000);
+  setTimeout(function() { previewWrapper.classList.add("ztip-preview-shimmer"); scrollBot(); }, 800);
+  setTimeout(function() { collapsePreview(previewWrapper); }, 30000);
+
+  await delay(1400);
+  var lastEl = document.createElement("div");
+  lastEl.className = "ziko-tip-card-last";
+  card.appendChild(lastEl);
+  scrollBot();
+  await colorWordsAsync(lastEl, lastText);
+  scrollBot();
+
+  card.classList.remove("ztip-card-glow");
+  card.classList.add("ztip-card-shake");
+
+  await delay(700);
+  showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]);
+  scrollBot();
+}
+
+runAnimation();
 }
 
 function collapsePreview(wrapper) {
@@ -2114,7 +2047,7 @@ method: "POST",
 
 headers: { "Content-Type": "application/json" },
 
-body: JSON.stringify({ message: sentText, session_id: getSessionId(), page_url: window.location.href })
+body: JSON.stringify({ message: sentText, session_id: getSessionId() })
 
 });
 
@@ -2131,6 +2064,10 @@ if (data.session_id) { sessionId = data.session_id; try { localStorage.setItem("
 if (data.options && data.options.length > 0) {
   addMessage(data.reply, "bot", function() {
     showSuggestions(data.options);
+  });
+} else if (data.suggestions && data.suggestions.length > 0) {
+  addMessage(data.reply, "bot", function() {
+    showSuggestions(data.suggestions);
   });
 } else {
   addMessage(data.reply, "bot", function() {
@@ -2167,6 +2104,8 @@ html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m, l, c) { return "<pr
 html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
 html = html.replace(/^[-•]\s+(.+)$/gm, '<span style="display:block;padding-right:8px;margin:2px 0">• $1</span>');
+
+html = html.replace(/^>\s+(.+)$/gm, '<span style="display:block;border-right:3px solid #d91c1c;padding-right:8px;margin:4px 0;color:#666;font-style:italic">$1</span>');
 
 html = html.replace(/\n/g, "<br>");
 return html;
