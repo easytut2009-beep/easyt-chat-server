@@ -2436,9 +2436,8 @@ function cleanupUI() {
 
 }
 
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initZiko);
-else initZiko();
-window.addEventListener("load", function() { if (!toggleBtn) initZiko(); });
+// expose للـ GTM — GTM هو اللي بيستدعي initZiko
+window.initZiko = initZiko;
 
 // ── مراقبة التنقل بين الصفحات ──
 function zikoCheckVisibility() {
@@ -2453,7 +2452,6 @@ function zikoCheckVisibility() {
   }
 }
 
-// شغل الـ check عند أي تغيير في الـ URL
 var _zikoLastUrl = window.location.href;
 setInterval(function() {
   if (window.location.href !== _zikoLastUrl) {
