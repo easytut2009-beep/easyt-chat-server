@@ -293,6 +293,7 @@ async function performSearch(keywords, instructors) {
 
   // 4. بحث في الـ chunks لو مفيش نتايج — semantic + text search
   if (results.courses.length === 0 && results.lessons.length === 0) {
+    console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
       if (supabase && openai) {
         // Semantic search في الـ chunks
