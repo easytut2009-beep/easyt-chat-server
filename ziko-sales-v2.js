@@ -589,7 +589,7 @@ ${botInstructions || "لا توجد تعليمات إضافية"}`;
     max_tokens: 600,
     temperature: 0.3,
   }));
-  return finalizeReply(resp.choices[0].message.content || "");
+  return finalizeReply(markdownToHtml(resp.choices[0].message.content || ""));
 }
 
 async function smartChat(message, sessionId) {
