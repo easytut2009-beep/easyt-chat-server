@@ -91,7 +91,7 @@ const limiter = rateLimit({
 /* ═══ Routes ═══ */
 const { initShared } = require("./shared");
 const registerGuideRoutes = require("./ziko-guide");
-const registerSalesRoutes = require("./ziko-sales-v2");
+const registerSalesRoutes = require("./ziko-sales");
 
 
 /* ═══ Chat Image + Admin + Static Endpoints ═══ */
