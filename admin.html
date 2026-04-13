@@ -1631,14 +1631,20 @@ async function openEditFromCache(e, id) {
   }
   try {
     var d = await apiCall('/admin/' + e + '/' + id);
-    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
+    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d.data || d;
     if (item && item.id) {
       openEditModal(e, item);
     } else {
-      toast('مش لاقي البيانات', 'error');
+      // لو مفيش single endpoint — جيب من الـ cache المحمل
+      var cached = _allCrudItems[e] ? _allCrudItems[e].find(function(i){ return String(i.id)===String(id); }) : null;
+      if (cached) { openEditModal(e, cached); }
+      else { toast('مش لاقي البيانات', 'error'); }
     }
   } catch(err) {
-    toast('حدّث الصفحة', 'error');
+    // fallback للـ cache لو الـ endpoint مش موجود
+    var cached = _allCrudItems[e] ? _allCrudItems[e].find(function(i){ return String(i.id)===String(id); }) : null;
+    if (cached) { openEditModal(e, cached); }
+    else { toast('حدّث الصفحة', 'error'); }
   }
 }
 
@@ -1663,10 +1669,35 @@ function closeModal() { document.getElementById('modal').classList.remove('show'
 
 function getFields(e) {
   var m = {
-'courses':[{key:'title',label:'العنوان'},{key:'subtitle',label:'الوصف المختصر',type:'textarea'},{key:'full_content',label:'الوصف التفصيلي',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة'},{key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}],
-    'diplomas':[{key:'title',label:'العنوان'},{key:'slug',label:'Slug'},{key:'link',label:'الرابط'},{key:'description',label:'الوصف',type:'textarea'},{key:'price',label:'السعر',inputType:'number'},{key:'courses_count',label:'عدد الدورات',inputType:'number'},{key:'books_count',label:'عدد الكتب',inputType:'number'},{key:'hours',label:'الساعات',inputType:'number'}],
-
-    'instructors':[{key:'name',label:'الاسم'}],
+'courses':[
+  {key:'title',label:'العنوان'},
+  {key:'heading',label:'العنوان الترويجي'},
+  {key:'subtitle',label:'الوصف المختصر',type:'textarea'},
+  {key:'full_content',label:'الوصف التفصيلي',type:'textarea'},
+  {key:'link',label:'رابط الكورس'},
+  {key:'price',label:'السعر'},
+  {key:'image',label:'رابط الصورة'},
+  {key:'instructor_id',label:'رقم المحاضر (instructor_id)',inputType:'number'},
+  {key:'category',label:'التصنيف'},
+  {key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}
+],
+    'diplomas':[
+  {key:'title',label:'العنوان'},
+  {key:'slug',label:'Slug'},
+  {key:'link',label:'الرابط'},
+  {key:'image',label:'رابط الصورة'},
+  {key:'description',label:'الوصف',type:'textarea'},
+  {key:'price',label:'السعر',inputType:'number'},
+  {key:'courses_count',label:'عدد الدورات',inputType:'number'},
+  {key:'books_count',label:'عدد الكتب',inputType:'number'},
+  {key:'hours',label:'الساعات',inputType:'number'}
+],
+    'instructors':[
+  {key:'name',label:'الاسم'},
+  {key:'title',label:'المسمى الوظيفي'},
+  {key:'image',label:'رابط الصورة'},
+  {key:'courses_link',label:'رابط صفحة الكورسات'}
+],
     'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}],
     'site-pages':[{key:'page_url',label:'الرابط'},{key:'content',label:'المحتوى',type:'textarea'}]
   };
