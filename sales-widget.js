@@ -1470,7 +1470,7 @@ if (btnSupport && btnGuide) {
   btnGuide.addEventListener("click", function() {
     btnGuide.className = "ziko-mode-btn ziko-mode-active";
     btnSupport.className = "ziko-mode-btn ziko-mode-inactive";
-    showAnimatedTipCard();
+    showGuideGridCard();
     setTimeout(function() {
       btnSupport.className = "ziko-mode-btn ziko-mode-active";
       btnGuide.className = "ziko-mode-btn ziko-mode-inactive";
@@ -1690,6 +1690,94 @@ sessionId = null; try { localStorage.removeItem("ziko_session"); } catch(e) {}
 
 lastActivity = Date.now();
 
+}
+
+function showGuideGridCard() {
+if (!zikoMessages) return;
+
+var tools = [
+  {ico:"📄", name:"ملخص الدرس"},
+  {ico:"💡", name:"شرح بطريقة أخرى"},
+  {ico:"📖", name:"مصطلحات الدرس"},
+  {ico:"✅", name:"اختبار تفاعلي"},
+  {ico:"✏️", name:"تمرين عملي"},
+  {ico:"🔍", name:"أسئلة تحليلية"},
+  {ico:"⚠️", name:"أخطاء شائعة"},
+  {ico:"🕐", name:"آخر التحديثات"},
+  {ico:"⬇️", name:"موارد الدرس"}
+];
+
+var old = zikoMessages.querySelector(".ziko-suggestions-inline");
+if (old) old.remove();
+
+var card = document.createElement("div");
+card.className = "ziko-msg ziko-bot";
+card.style.cssText = "border:1.5px solid #d91c1c;padding:12px 13px;width:92%;max-width:92%;";
+
+var headEl = document.createElement("div");
+headEl.style.cssText = "font-size:12.5px;font-weight:700;color:#a30000;margin-bottom:3px;";
+
+var subEl = document.createElement("div");
+subEl.style.cssText = "font-size:10.5px;color:#666;margin-bottom:10px;line-height:1.5;";
+
+var grid = document.createElement("div");
+grid.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;perspective:800px;";
+
+var toolEls = tools.map(function(t) {
+  var div = document.createElement("div");
+  div.style.cssText = "background:#fff5f5;border:1px solid #fde0e0;border-radius:10px;padding:8px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0;transform:rotateY(-90deg);transform-origin:right center;transition:transform 0.45s cubic-bezier(0.34,1.56,0.64,1),opacity 0.3s ease;";
+  div.innerHTML = '<span style="font-size:18px;line-height:1;">'+t.ico+'</span><span style="font-size:9.5px;color:#333;font-weight:700;text-align:center;line-height:1.3;">'+t.name+'</span>';
+  return div;
+});
+toolEls.forEach(function(el) { grid.appendChild(el); });
+
+var cta = document.createElement("a");
+cta.href = "https://easyt.online/p/subscriptions";
+cta.target = "_blank";
+cta.style.cssText = "display:block;background:linear-gradient(135deg,#d91c1c,#a30000);color:white;text-align:center;padding:9px;border-radius:9px;font-size:12px;font-weight:700;text-decoration:none;";
+cta.textContent = "اشترك واستفد من المرشد التعليمي ←";
+
+card.appendChild(headEl);
+card.appendChild(subEl);
+card.appendChild(grid);
+card.appendChild(cta);
+zikoMessages.appendChild(card);
+scrollBot();
+
+function typeWriterSimple(el, text, speed, cb) {
+  var chars = Array.from(text); var i = 0;
+  var cursor = document.createElement("span");
+  cursor.style.cssText = "color:#a30000;font-weight:700;animation:ztipBlink 0.55s step-end infinite;";
+  cursor.textContent = "▏"; el.appendChild(cursor);
+  function tick() {
+    if (i < chars.length) { cursor.before(document.createTextNode(chars[i])); i++; scrollBot(); setTimeout(tick, speed); }
+    else { cursor.remove(); scrollBot(); if (cb) cb(); }
+  }
+  tick();
+}
+
+var headline = "التحويل لوضع التعليم متاح عند الاشتراك 🎓";
+var subText = "هتلاقيني جوه كل درس — أجاوبك بالصوت أو الكتابة وأدعمك بـ 9 أدوات:";
+
+setTimeout(function() {
+  typeWriterSimple(headEl, headline, 18, function() {
+    setTimeout(function() {
+      typeWriterSimple(subEl, subText, 14, function() {
+        var order = [0,3,6,1,4,7,2,5,8];
+        order.forEach(function(idx, i) {
+          setTimeout(function() {
+            toolEls[idx].style.opacity = "1";
+            toolEls[idx].style.transform = "rotateY(0deg)";
+            scrollBot();
+            if (i === order.length - 1) {
+              setTimeout(function() { scrollBot(); }, 400);
+            }
+          }, i * 100);
+        });
+      });
+    }, 150);
+  });
+}, 300);
 }
 
 function showWelcome() {
