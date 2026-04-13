@@ -1063,6 +1063,10 @@ const [ilikeResult, semanticResults] = await Promise.all([
         { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
         { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
         { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه", "game"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","يونيتي"] },
+        { words: ["langchain", "الذكاءات المتعدده", "llm", "النماذج اللغويه"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai"] },
+        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
+        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى","طب"] },
+        { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
       ];
 
       const relevant = allCourses.filter(c => {
