@@ -2439,5 +2439,30 @@ function cleanupUI() {
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initZiko);
 else initZiko();
 window.addEventListener("load", function() { if (!toggleBtn) initZiko(); });
+
+// ── مراقبة التنقل بين الصفحات ──
+function zikoCheckVisibility() {
+  var url = window.location.href;
+  var allowed = /(easyt\.online\/$|easyt\.online\/p\/|easyt\.online\/#)/.test(url);
+  var toggle = document.getElementById('ziko-toggle');
+  var chatBox = document.getElementById('ziko-chat-box');
+  if (toggle) toggle.style.display = allowed ? '' : 'none';
+  if (chatBox && !allowed) {
+    chatBox.style.display = 'none';
+    chatBox.classList.remove('ziko-visible');
+  }
+}
+
+// شغل الـ check عند أي تغيير في الـ URL
+var _zikoLastUrl = window.location.href;
+setInterval(function() {
+  if (window.location.href !== _zikoLastUrl) {
+    _zikoLastUrl = window.location.href;
+    setTimeout(zikoCheckVisibility, 300);
+  }
+}, 500);
+
+zikoCheckVisibility();
+
 })();
 </script>
