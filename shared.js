@@ -505,7 +505,7 @@ async function getInstructors() {
   try {
     const { data } = await supabase
       .from("instructors")
-.select("id, name, image");
+.select("id, name, image, link");
     if (data) {
       instructorCache.data = data;
       instructorCache.ts = Date.now();
