@@ -596,11 +596,11 @@ async function formatResults(results, query, session = null) {
           for (const [lessonId, lesson] of [...lessons.entries()].slice(0, 3)) {
             const lessonTitle = lesson.title || "";
             const rawContent = lesson.chunks?.[0] || lesson.content || "";
-            html += `<div style="font-size:12px;color:#1a1a2e;padding:6px 0;border-bottom:1px solid #fff9c4">`;
-            html += `<div style="font-weight:600;margin-bottom:4px">• ${escapeHtml(lessonTitle)}</div>`;
+            html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #fff9c4">`;
+            html += `• ${highlightChunkQuery(lessonTitle, query)}`;
             if (rawContent) {
               const rephrased = await rephraseChunk(rawContent);
-              html += `<div style="font-size:11px;color:#444;line-height:1.6;padding:5px 10px;background:#fff;border-radius:6px;border-right:3px solid #e63946;margin-top:3px">${highlightChunkQuery(rephrased, query)}</div>`;
+              html += `<div style="font-size:11px;color:#555;line-height:1.6;padding:4px 8px;background:#fff8e1;border-radius:4px;margin-top:4px;border-right:2px solid #ffc107">${highlightChunkQuery(rephrased, query)}</div>`;
             }
             html += `</div>`;
           }
