@@ -296,74 +296,44 @@ async function performSearch(keywords, instructors) {
     console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
       if (supabase && openai) {
-        // Semantic search في الـ chunks — نبعت الـ keywords كاملة عشان يدور على المعنى
-        const semInput = keywords.join(" "); // "حشود عسكرية military crowds"
-        const embResp = await openai.embeddings.create({
-          model: CHUNK_EMBEDDING_MODEL,
-          input: semInput,
-        });
-        const embedding = embResp.data[0].embedding;
-        let { data: semChunks, error: semError } = await supabase.rpc("match_lesson_chunks", {
-          query_embedding: embedding,
-          match_threshold: 0.45,
-          match_count: 8,
-        });
-        if (semError) console.error("❌ Semantic chunks error:", semError.message);
-        else console.log(`📦 Semantic chunks found: ${semChunks?.length || 0}`);
+        // Semantic search في الـ chunks — disabled مؤقتاً بسبب timeout
+        let semChunks = [];
+        console.log("📦 Semantic chunks: skipped (using text search only)");
 
-        // فلترة الـ chunks بالـ threshold (الـ function مش بتفلتر دلوقتي)
-        if (semChunks && semChunks.length > 0) {
-          semChunks = semChunks.filter(c => c.similarity >= 0.45);
-          console.log(`📦 Semantic chunks after threshold filter: ${semChunks.length}`);
-        }
-
-        // إثراء الـ semantic chunks ببيانات الدرس والكورس
-        if (semChunks && semChunks.length > 0) {
-          const semLessonIds = [...new Set(semChunks.map(c => c.lesson_id))];
-          const { data: semLessons } = await supabase
-            .from("lessons")
-            .select("id, title, course_id")
-            .in("id", semLessonIds);
-          if (semLessons && semLessons.length > 0) {
-            const lessonMap = new Map(semLessons.map(l => [l.id, l]));
-            const semCourseIds = [...new Set(semLessons.map(l => l.course_id))];
-            const { data: semCourses } = await supabase
-              .from("courses")
-              .select(COURSE_SELECT_COLS)
-              .in("id", semCourseIds);
-            const courseMap = new Map((semCourses || []).map(c => [c.id, c]));
-            semChunks = semChunks.map(chunk => ({
-              ...chunk,
-              lesson_title: lessonMap.get(chunk.lesson_id)?.title || null,
-              course_id: lessonMap.get(chunk.lesson_id)?.course_id || null,
-              _courseData: courseMap.get(lessonMap.get(chunk.lesson_id)?.course_id) || null,
-            }));
-          }
-        }
-
-        // Text search في الـ chunks
-        const chunkTextFilters = keywords
-          .filter(k => k.length > 2)
-          .slice(0, 4)
-          .map(k => `content.ilike.%${k}%`)
-          .join(",");
+        // Text search في الـ chunks — بيجيب الـ content + lesson_id
+        const chunkKeywords = keywords.filter(k => k.length > 2).slice(0, 4);
 
         let textChunkCourses = [];
-        if (chunkTextFilters) {
-          const { data: tc, error: tcError } = await supabase
-            .from("chunks")
-            .select("lesson_id")
-            .or(chunkTextFilters)
-            .limit(10);
-          if (tcError) console.error("❌ Text chunks error:", tcError.message);
-          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
+        let textChunkLessonsMap = new Map(); // course_id → Map(lesson_id → {title, content})
+
+        if (chunkKeywords.length > 0) {
+          let tc = null;
+          let matchedKeyword = null;
+          for (const kw of chunkKeywords) {
+            const result = await supabase
+              .from("chunks")
+              .select("lesson_id, content")
+              .ilike("content", `%${kw}%`)
+              .limit(15);
+            if (result.error) {
+              console.error(`❌ Text chunks error for "${kw}":`, result.error.message);
+              continue;
+            }
+            if (result.data && result.data.length > 0) {
+              tc = result.data;
+              matchedKeyword = kw;
+              console.log(`📝 Text chunks found: ${tc.length} (keyword: "${kw}")`);
+              break;
+            }
+          }
+          if (!tc) console.log("📝 Text chunks found: 0");
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
-            // جيب الكورسات من الـ lesson_ids
+            // جيب الدروس مع العنوان والـ course_id
             const { data: lessonData } = await supabase
               .from("lessons")
-              .select("course_id")
+              .select("id, title, course_id")
               .in("id", lessonIds);
             if (lessonData && lessonData.length > 0) {
               const courseIds = [...new Set(lessonData.map(l => l.course_id))];
@@ -373,15 +343,31 @@ async function performSearch(keywords, instructors) {
                 .in("id", courseIds);
               textChunkCourses = courseData || [];
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
+
+              // بناء map: course_id → lessons مع الـ chunks
+              const lessonMap = new Map(lessonData.map(l => [l.id, l]));
+              const chunksByCourse = new Map();
+              tc.forEach(chunk => {
+                const lesson = lessonMap.get(chunk.lesson_id);
+                if (!lesson) return;
+                const cid = lesson.course_id;
+                if (!chunksByCourse.has(cid)) chunksByCourse.set(cid, new Map());
+                if (!chunksByCourse.get(cid).has(chunk.lesson_id)) {
+                  chunksByCourse.get(cid).set(chunk.lesson_id, { title: lesson.title, content: chunk.content });
+                }
+              });
+              textChunkLessonsMap = chunksByCourse;
             }
           }
         }
+
 
         // دمج النتايج
         const allChunks = semChunks || [];
         if (allChunks.length > 0 || textChunkCourses.length > 0) {
           results.chunks = allChunks;
           results._textChunkCourses = textChunkCourses;
+          results._textChunkLessonsMap = textChunkLessonsMap;
           results.noDirectCourse = false;
           console.log(`📦 Found ${allChunks.length} semantic chunks + ${textChunkCourses.length} text chunk courses`);
         }
@@ -544,7 +530,8 @@ async function formatResults(results, query, session = null) {
     if (results._textChunkCourses) {
       results._textChunkCourses.forEach(c => {
         if (!courseMap.has(c.id)) {
-          courseMap.set(c.id, { _courseData: c, lessons: new Map() });
+          const lessonsForCourse = results._textChunkLessonsMap?.get(c.id) || new Map();
+          courseMap.set(c.id, { _courseData: c, lessons: lessonsForCourse });
         }
       });
     }
@@ -557,11 +544,13 @@ async function formatResults(results, query, session = null) {
           html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
           html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس اللي فيها "${shortQuery}":</div>`;
           [...lessons.entries()].slice(0, 3).forEach(([lessonId, lesson]) => {
+            // lesson هنا ممكن يكون { title, chunks[] } أو { title, content }
+            const lessonTitle = lesson.title || "";
+            const chunkContent = lesson.chunks?.[0] || lesson.content || "";
             html += `<div style="font-size:12px;color:#1a1a2e;padding:6px 0;border-bottom:1px solid #fff9c4">`;
-            html += `<div style="font-weight:600;margin-bottom:3px">• ${escapeHtml(lesson.title)}</div>`;
-            // عرض أول chunk مع تظليل الكلمة
-            if (lesson.chunks.length > 0) {
-              const chunkText = lesson.chunks[0].substring(0, 200) + (lesson.chunks[0].length > 200 ? "..." : "");
+            html += `<div style="font-weight:600;margin-bottom:3px">• ${escapeHtml(lessonTitle)}</div>`;
+            if (chunkContent) {
+              const chunkText = chunkContent.substring(0, 200) + (chunkContent.length > 200 ? "..." : "");
               html += `<div style="font-size:11px;color:#555;line-height:1.5;padding:4px 8px;background:#fff;border-radius:4px;border-right:3px solid #e63946">${highlightChunkQuery(chunkText, query)}</div>`;
             }
             html += `</div>`;
