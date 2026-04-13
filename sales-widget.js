@@ -1734,7 +1734,7 @@ toolEls.forEach(function(el) { grid.appendChild(el); });
 var cta = document.createElement("a");
 cta.href = "https://easyt.online/p/subscriptions";
 cta.target = "_blank";
-cta.style.cssText = "display:block;background:linear-gradient(135deg,#d91c1c,#a30000);color:white;text-align:center;padding:9px;border-radius:9px;font-size:12px;font-weight:700;text-decoration:none;";
+cta.style.cssText = "display:block;background:linear-gradient(135deg,#d91c1c,#a30000);color:white !important;text-align:center;padding:9px;border-radius:9px;font-size:12px;font-weight:700;text-decoration:none;";
 cta.textContent = "اشترك واستفد من المرشد التعليمي ←";
 
 card.appendChild(headEl);
@@ -1756,8 +1756,8 @@ function typeWriterSimple(el, text, speed, cb) {
   tick();
 }
 
-var headline = "التحويل لوضع التعليم متاح عند الاشتراك 🎓";
-var subText = "هتلاقيني جوه كل درس — أجاوبك بالصوت أو الكتابة وأدعمك بـ 9 أدوات:";
+var headline = "التحويل إلى خيار التعليم متاح عند الاشتراك 🎓";
+var subText = "هتلاقيني داخل كل درس، أقدر أجاوبك على كل استفساراتك وتقدر تكلمني بالصوت أو الكتابة، وكمان هدعمك بمجموعة كبيرة من الأدوات المفيدة:";
 
 setTimeout(function() {
   typeWriterSimple(headEl, headline, 18, function() {
