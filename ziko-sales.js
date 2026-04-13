@@ -98,14 +98,15 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses",
+  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses",
   "keywords": ["كلمة1", "كلمة2"],
   "is_ambiguous": false,
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
   "clarify_question": "السؤال لو type=clarify",
   "clarify_options": ["خيار1", "خيار2"],
   "direct_reply": "رد مباشر لو مش search",
-  "diploma_name": "اسم الدبلومة لو type=diploma_courses"
+  "diploma_name": "اسم الدبلومة لو type=diploma_courses",
+  "instructor_name": "اسم المحاضر لو type=instructor_courses"
 }
 
 ══ قواعد تحديد النوع ══
@@ -125,6 +126,10 @@ type=diplomas_list: طلب قائمة الدبلومات
 type=diploma_courses: سؤال عن الكورسات الموجودة داخل دبلومة معينة
 مثال: "إيه الكورسات في دبلومة التسويق؟"، "دبلومة الجرافيك فيها إيه؟"، "محتوى دبلومة البرمجة"
 → اكتب اسم الدبلومة في diploma_name
+
+type=instructor_courses: سؤال عن كورسات محاضر أو مدرب معين
+مثال: "إيه كورسات أحمد خميس؟"، "كورسات الدكتور محمد"، "مين بيدرس فوتوشوب؟"
+→ اكتب اسم المحاضر في instructor_name
 
 type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
@@ -747,6 +752,57 @@ async function smartChat(message, sessionId) {
       reply = "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
     }
     suggestions = ["كورسات اكسيل 📊", "دبلومات 🎓", "أسعار الاشتراك 💳"];
+  }
+
+  // ── Instructor Courses ──
+  else if (intent.type === "instructor_courses") {
+    const instructorName = intent.instructor_name || intent.keywords?.[0] || "";
+    try {
+      const instructors = await getInstructors().catch(() => []);
+      const normSearch = normalizeArabic(instructorName.toLowerCase().trim());
+
+      // دور على المحاضر بالاسم
+      let bestInstructor = null;
+      let bestScore = 0;
+      for (const inst of instructors) {
+        const normName = normalizeArabic((inst.name || "").toLowerCase());
+        let score = 0;
+        if (normName === normSearch) score = 100;
+        else if (normName.includes(normSearch) || normSearch.includes(normName)) score = 85;
+        else score = similarityRatio(normSearch, normName);
+        if (score > bestScore && score >= 50) { bestScore = score; bestInstructor = inst; }
+      }
+
+      if (bestInstructor) {
+        const { data: courses } = await supabase
+          .from("courses")
+          .select(COURSE_SELECT_COLS)
+          .eq("instructor_id", bestInstructor.id)
+          .order("title", { ascending: true });
+
+        if (courses && courses.length > 0) {
+          reply = `👨‍🏫 <strong>كورسات ${escapeHtml(bestInstructor.name)}:</strong><br><br>`;
+          const withDiploma = await injectDiplomaInfo(courses).catch(() => courses);
+          withDiploma.slice(0, 5).forEach((c, i) => {
+            reply += formatCourseCard(c, instructors, i + 1);
+          });
+          if (courses.length > 5) {
+            reply += `<br><span style="font-size:12px;color:#666">و${courses.length - 5} كورس تاني...</span>`;
+          }
+          suggestions = ["أسعار الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
+        } else {
+          reply = `مش لاقي كورسات للمحاضر "${escapeHtml(bestInstructor.name)}" دلوقتي 😅`;
+          suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
+        }
+      } else {
+        reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br>تقدر تتصفح كل الكورسات وتشوف المحاضرين:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a>`;
+        suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
+      }
+    } catch(e) {
+      console.error("instructor_courses handler error:", e.message);
+      reply = `عذراً، حصل مشكلة في البحث 😅`;
+      suggestions = ["كورسات 📘"];
+    }
   }
 
   // ── Diploma Courses ──
