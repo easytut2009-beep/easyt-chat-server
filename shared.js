@@ -1148,6 +1148,9 @@ const fullQuery = normalizeArabic(
       for (const term of finalTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
+        // تجاهل الكلمات العامة في الـ scoring — دي في كل الكورسات
+        const genericWords = ["احترافي","احترافى","شامل","كامل","متقدم","مبتدئين","مبتدئ","اساسيات","أساسيات","دليل","مقدمة","تعلم","تعلّم","كورس","دورة","برنامج"];
+        if (genericWords.some(g => nt === g || g === nt)) continue;
 if (isWordBoundaryMatch(titleNorm, nt)) {
   score += 150;
   isTitleMatch = true;
