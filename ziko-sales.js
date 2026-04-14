@@ -358,6 +358,8 @@ async function performSearch(keywords, instructors) {
         const chunkTextFilters = keywords
           .filter(k => k.length > 2)
           .slice(0, 4)
+          .flatMap(k => [k, k.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه')])
+          .filter((k, i, arr) => arr.indexOf(k) === i)
           .map(k => `content.ilike.%${k}%`)
           .join(",");
 
