@@ -1273,6 +1273,18 @@ async function smartChat(message, sessionId) {
   reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
 
   reply = finalizeReply(reply);
+  
+  // ── تسجيل المحادثة ──
+  await logChat(sessionId, "user", message, intent?.type || "unknown", { 
+    keywords: intent?.keywords || [],
+    audience: intent?.audience || null 
+  }).catch(e => console.error("Log error:", e.message));
+  
+  await logChat(sessionId, "assistant", reply.replace(/<[^>]+>/g, " ").substring(0, 500), null, {
+    type: intent?.type || "unknown",
+    suggestions: suggestions || []
+  }).catch(e => console.error("Log error:", e.message));
+  
   return { reply, suggestions, options };
 }
 
