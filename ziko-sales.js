@@ -1131,7 +1131,7 @@ async function smartChat(message, sessionId) {
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
 
     // نشيل الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const veryGenericWords = new Set(["تصميم","برمجة","تعلم","اتعلم","شغل","عمل","مجال","حاجة","موضوع","work","flow","وورك","فلو","فلوس","مال","دخل"]);
+    const veryGenericWords = new Set(["تصميم","برمجة","تعلم","اتعلم","شغل","عمل","مجال","حاجة","موضوع","فلوس","مال","دخل"]);
     const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
     if (specificKeywords.length > 0) {
       keywords = specificKeywords;
