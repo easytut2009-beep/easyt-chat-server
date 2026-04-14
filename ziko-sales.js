@@ -972,27 +972,8 @@ async function smartChat(message, sessionId) {
   // ── Info (سؤال معلوماتي) ──
   else if (intent.type === "info") {
     try {
-      // اسأل زيكو يجاوب على السؤال
+      // اسأل زيكو يجاوب على السؤال (بدون كورسات)
       reply = await askZiko(message, session, botInstructions);
-      
-      // لو فيه keywords — ابحث عن كورسات مرتبطة
-      if (intent.keywords && intent.keywords.length > 0) {
-        const instructors = await getInstructors();
-        const results = await performSearch(intent.keywords, instructors);
-        
-        // لو لقينا كورسات — ضيفها للرد
-        if (results.courses && results.courses.length > 0) {
-          reply += `<br><br>📘 <strong>لو عايز تتعلم أكتر — عندنا كورسات مرتبطة:</strong><br><br>`;
-          results.courses.slice(0, 3).forEach((c, i) => {
-            reply += formatCourseCard(c, instructors, i + 1);
-          });
-        } else if (results.diplomas && results.diplomas.length > 0) {
-          reply += `<br><br>🎓 <strong>عندنا دبلومات مرتبطة:</strong><br><br>`;
-          results.diplomas.slice(0, 2).forEach(d => {
-            reply += formatDiplomaCard(d);
-          });
-        }
-      }
     } catch(e) {
       console.error("Info handler error:", e.message);
       reply = await askZiko(message, session, botInstructions);
