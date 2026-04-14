@@ -365,12 +365,13 @@ async function performSearch(keywords, instructors) {
 
         let textChunkCourses = [];
         if (chunkTextFilters) {
+          console.log(`🔍 Chunk filters: ${chunkTextFilters}`);
           const { data: tc, error: tcError } = await supabase
             .from("chunks")
             .select("lesson_id, content, timestamp_start")
             .or(chunkTextFilters)
             .limit(15);
-          if (tcError) console.error("❌ Text chunks error:", tcError.message);
+          if (tcError) console.error("❌ Text chunks error:", tcError.message, tcError.details);
           else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
           if (tc && tc.length > 0) {
