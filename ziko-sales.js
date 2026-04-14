@@ -977,6 +977,7 @@ async function smartChat(message, sessionId) {
       
       // لو فيه keywords — ابحث عن كورسات مرتبطة
       if (intent.keywords && intent.keywords.length > 0) {
+        const instructors = await getInstructors();
         const results = await performSearch(intent.keywords, instructors);
         
         // لو لقينا كورسات — ضيفها للرد
