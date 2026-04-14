@@ -1012,7 +1012,7 @@ async function smartChat(message, sessionId) {
 
   // ── Courses List ──
   else if (intent.type === "courses_list") {
-    reply = `📚 عندنا 500+ كورس في كل المجالات!<br><br>`;
+    reply = `📚 عندنا 600+ كورس ومحتوى تعليمي في كل المجالات!<br><br>`;
     reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a><br>`;
     reply += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
     suggestions = ["فوتوشوب 🎨", "اكسيل 📊", "برمجة 💻"];
