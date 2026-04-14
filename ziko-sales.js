@@ -371,44 +371,24 @@ async function performSearch(keywords, instructors) {
         let semChunks = [];
         console.log("📦 Semantic chunks: skipped");
 
-        // Text search في الـ chunks — AND أولاً، لو مش لاقي → OR
-        let textChunkCourses = [];
-        
-        // Step A: AND search — كل keyword لازم تكون في نفس الـ chunk
-        let finalChunkMatches = [];
-        const andWords = [...new Set(
-          keywords.filter(w => w.length > 2)
-        )].slice(0, 4);
-        
-        if (andWords.length >= 2) {
-          let andQuery = supabase.from("chunks").select("lesson_id");
-          for (const w of andWords) {
-            andQuery = andQuery.ilike("content", `%${w}%`);
-          }
-          const { data: andMatches } = await andQuery.limit(20);
-          finalChunkMatches = andMatches || [];
-          console.log(`📝 AND chunks found: ${finalChunkMatches.length}`);
-        }
-        
-        // Step B: لو AND مش لاقي — OR عادي
-        if (finalChunkMatches.length === 0) {
-          const orFilters = keywords
-            .filter(k => k.length > 2)
-            .slice(0, 4)
-            .map(k => `content.ilike.%${k}%`)
-            .join(",");
-          if (orFilters) {
-            const { data: orMatches } = await supabase
-              .from("chunks").select("lesson_id").or(orFilters).limit(20);
-            finalChunkMatches = orMatches || [];
-            console.log(`📝 OR chunks found: ${finalChunkMatches.length}`);
-          }
-        }
-        
-        console.log(`📝 Text chunks found: ${finalChunkMatches.length}`);
-        const tc = finalChunkMatches;
+        // Text search في الـ chunks
+        const chunkTextFilters = keywords
+          .filter(k => k.length > 2)
+          .slice(0, 4)
+          .map(k => `content.ilike.%${k}%`)
+          .join(",");
 
-        if (tc && tc.length > 0) {
+        let textChunkCourses = [];
+        if (chunkTextFilters) {
+          const { data: tc, error: tcError } = await supabase
+            .from("chunks")
+            .select("lesson_id")
+            .or(chunkTextFilters)
+            .limit(10);
+          if (tcError) console.error("❌ Text chunks error:", tcError.message);
+          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
+
+          if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
             // جيب الكورسات من الـ lesson_ids
             const { data: lessonData } = await supabase
@@ -425,6 +405,7 @@ async function performSearch(keywords, instructors) {
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
+        }
 
         // دمج النتايج
         const allChunks = semChunks || [];
@@ -887,17 +868,12 @@ async function smartChat(message, sessionId) {
     }
     // لو diplomas_list بدون كلمة دبلوم → search
     if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
-      console.log(`⚠️ diplomas_list without دبلوم — forcing search`);
       intent.type = "search";
     }
     // لو info مع keywords → search
     if (intent.type === "info" && intent.keywords && intent.keywords.length > 0) {
       console.log(`⚠️ GPT said info but has keywords — forcing search`);
       intent.type = "search";
-    }
-    // لو audience=أطفال مع جامعة → null
-    if (intent.audience === "أطفال" && /جامع|university|كلي/.test(message)) {
-      intent.audience = null;
     }
   }
   console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
