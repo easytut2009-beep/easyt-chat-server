@@ -1190,6 +1190,8 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
           { courseWords: ["تعديل السلوك","استيراتيجيات تعديل"], queryNeeds: ["سلوك","تربية","نفس"] },
           { courseWords: ["معماري","معماريه"], queryNeeds: ["معماري","هندسي","بناء"] },
           { courseWords: ["الدروب شيبنج","dropshipping","drop servicing"], queryNeeds: ["دروب","شيبنج","تجارة"] },
+          // كورسات الأطفال بس لو الـ query فيها أطفال
+          { courseWords: ["للأطفال","للاطفال","للأطفال (","kids","children"], queryNeeds: ["أطفال","اطفال","ابني","بنتي","طفل","kids","children","سنين","ابنتي","ابني"] },
         ];
         for (const dp of domainPenalties) {
           const cInDomain = dp.courseWords.some(w => titleNorm.includes(normalizeArabic(w.toLowerCase())));
