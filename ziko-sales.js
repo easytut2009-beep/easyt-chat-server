@@ -334,8 +334,12 @@ async function performSearch(keywords, instructors) {
     }
   } catch (e) { console.error("course search error:", e.message); }
 
-  // 3. بحث في الدروس دايماً — لو في كورسات من keywords وكمان لو مفيش كورسات
+  // 3. بحث في الدروس — بس لو مفيش كورسات كافية من الـ title search
   try {
+    // لو في 3+ كورسات من title/keyword search → مش محتاج lesson search
+    if (results.courses.length >= 3) {
+      console.log(`⏭️ Skipping lesson search — already have ${results.courses.length} courses`);
+    } else {
     const lessonResults = await searchLessonsInCourses(keywords);
     if (lessonResults && lessonResults.length > 0) {
       if (results.courses.length === 0) {
@@ -360,6 +364,7 @@ async function performSearch(keywords, instructors) {
         });
       }
     }
+    } // end else (lesson search)
   } catch (e) { console.error("lesson search error:", e.message); }
 
   // 4. بحث في الـ chunks لو مفيش نتايج — semantic + text search
@@ -866,12 +871,12 @@ async function smartChat(message, sessionId) {
         intent.keywords = prepareSearchTerms(message.split(/\s+/));
       }
     }
-    // لو GPT قال diplomas_list بس مفيش كلمة "دبلوم" في الرسالة → search
+    // لو diplomas_list بدون كلمة دبلوم → search
     if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
       console.log(`⚠️ diplomas_list without دبلوم — forcing search`);
       intent.type = "search";
     }
-    // لو audience=أطفال بس فيه جامعة → null
+    // لو audience=أطفال مع جامعة → null
     if (intent.audience === "أطفال" && /جامع|university|كلي/.test(message)) {
       intent.audience = null;
     }
@@ -1111,12 +1116,12 @@ async function smartChat(message, sessionId) {
       : prepareSearchTerms(message.split(/\s+/));
 
     // نشيل كلمات زي "كورس" و"دورة" من الـ keywords
-    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي", "احترافي", "احترافى", "الاحترافي", "الاحترافى", "متقدم", "شامل", "كامل"]);
+    const stopWords = new Set(["كورس","دورة","دروس","course","كورسات","دبلومة","دبلومات","diploma","ممكن","عايز","عاوز","ابي","ابغى","اريد","محتاج","ازاى","ازاي","كيف","إزاي","احترافي","احترافى","الاحترافي","الاحترافى","متقدم","شامل","كامل"]);
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
 
     // نشيل الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع", "work", "flow", "وورك", "فلو", "فلوس", "مال", "دخل"]);
+    const veryGenericWords = new Set(["تصميم","برمجة","تعلم","اتعلم","شغل","عمل","مجال","حاجة","موضوع","work","flow","وورك","فلو","فلوس","مال","دخل"]);
     const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
     if (specificKeywords.length > 0) {
       keywords = specificKeywords;
@@ -1175,15 +1180,15 @@ async function smartChat(message, sessionId) {
       console.log(`👥 Audience: ${audience}`);
     }
 
-    // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني محدد
+    // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني
     if (audience === "أطفال") {
-      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "فوتوشوب", "illustrator", "بايثون", "node", "backend", "api"];
-      const hasTech = keywords.some(k => techKeywords.some(t => k.toLowerCase().includes(t.toLowerCase())));
+      const techKws = ["python","برمجة","html","javascript","flutter","اندرويد","فوتوشوب","illustrator","بايثون","node","backend","api"];
+      const hasTech = keywords.some(k => techKws.some(t => k.toLowerCase().includes(t.toLowerCase())));
       if (!hasTech) {
         keywords = [...keywords, "scratch", "أطفال"];
         console.log("👧 Kids mode — added scratch/أطفال keywords");
       } else {
-        console.log("👧 Kids mode + tech topic — keeping specific keywords only");
+        console.log("👧 Kids mode + tech topic — keeping specific keywords");
       }
     }
 
