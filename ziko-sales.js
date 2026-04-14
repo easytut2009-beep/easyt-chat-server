@@ -339,8 +339,18 @@ async function performSearch(keywords, instructors) {
     const lessonResults = await searchLessonsInCourses(keywords);
     if (lessonResults && lessonResults.length > 0) {
       if (results.courses.length === 0) {
-        // مفيش كورسات — اعرض الكورسات من الدروس
-        results.lessons = lessonResults.slice(0, MAX_COURSES_DISPLAY);
+        // لو في كورسات عندها title match واضح — حطهم في courses مش lessons
+        const hasTitleMatch = lessonResults.some(c => {
+          const titleLow = (c.title || '').toLowerCase();
+          return keywords.some(k => titleLow.includes(k.toLowerCase()));
+        });
+        if (hasTitleMatch) {
+          const withDiploma = await injectDiplomaInfo(lessonResults).catch(() => lessonResults);
+          results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
+        } else {
+          // مفيش title match — اعرض مسار الدروس
+          results.lessons = lessonResults.slice(0, MAX_COURSES_DISPLAY);
+        }
       } else {
         // في كورسات بالفعل — ضيف الكورسات الجديدة اللي فيها دروس matching
         const existingIds = new Set(results.courses.map(c => c.id));
