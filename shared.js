@@ -1048,15 +1048,14 @@ const [ilikeResult, semanticResults] = await Promise.all([
       const domainSignals = [
         { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
         { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","hacking","حماية"] },
-        { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","unity","موبايل"] },
+        { words: ["اندرويد ستوديو", "android studio", "flutter", "يونيتي", "unity", "الالعاب"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","unity","mobile"] },
         { words: ["langchain", "الذكاءات المتعدده", "llm", "النماذج اللغويه"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai","نماذج"] },
         { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
         { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
         { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
         { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
-        { words: ["رؤيه حاسوبيه", "computer vision", "opencv"], exclude_if_query_lacks: ["computer vision","رؤية","opencv","python"] },
-        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","اطفال","نفس"] },
-        { words: ["سي شارب", "c#", "csharp"], exclude_if_query_lacks: ["c#","سي شارب","csharp","برمجة","net"] },
+        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس"] },
+        { words: ["سي شارب", "c#", "csharp"], exclude_if_query_lacks: ["c#","سي شارب","csharp","net"] },
       ];
 
       const relevant = allCourses.filter(c => {
