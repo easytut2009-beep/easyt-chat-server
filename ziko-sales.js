@@ -1353,31 +1353,25 @@ async function smartChat(message, sessionId) {
   
   // ── تسجيل المحادثة ──
   const cleanReply = reply
-    .replace(/<[^>]+>/g, " ")           // شيل HTML tags
-    .replace(/\s+/g, " ")                // شيل spaces زيادة  
-    .replace(/[^\u0000-\u007F\u0600-\u06FF\u0660-\u0669\s]/g, "") // شيل حروف غريبة
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
-    .substring(0, 500);                  // أول 500 حرف
+    .substring(0, 500);
   
-  console.log(`📝 Logging chat - User: ${message.length} chars | Assistant: ${cleanReply.length} chars`);
+  console.log(`📝 Logging - User: ${message.length}ch | Bot: ${cleanReply.length}ch`);
   
   try {
     // تسجيل السؤال
-    await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", { 
-      keywords: intent?.keywords || [],
-      audience: intent?.audience || null 
-    });
+    await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", {});
     
-    // تسجيل الرد
-    await logChat(sessionId, "assistant", cleanReply, null, {
-      type: intent?.type || "unknown",
-      has_courses: (reply.includes("formatCourseCard") || reply.includes("📘")),
-      suggestions_count: (suggestions || []).length
-    });
+    // تسجيل الرد - role = "bot" مش "assistant"
+    await logChat(sessionId, "bot", cleanReply, null, {});
     
-    console.log(`✅ Chat logged successfully`);
+    console.log(`✅ Logged OK`);
   } catch(e) {
-    console.error("❌ Failed to log chat:", e.message, e.stack);
+    console.error("❌ Log failed:", e.message);
+    // لو فشل — جرب بدون await
+    logChat(sessionId, "bot", cleanReply, null, {}).catch(() => {});
   }
   
   return { reply, suggestions, options };
