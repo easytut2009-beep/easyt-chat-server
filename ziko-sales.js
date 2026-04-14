@@ -565,9 +565,16 @@ async function formatResults(results, query, session = null) {
       html += formatCourseCard(course, instructors, i + 1);
 
       if (chunks && chunks.length > 0) {
-        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#e8f4fd;border-radius:0 0 10px 10px;border:1px solid #b3d9f5;border-top:none">`;
-        html += `<div style="font-size:12px;font-weight:700;color:#1565c0;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
-        chunks.slice(0, 2).forEach(chunk => {
+        html += `<div style="font-size:12px;color:#1a1a2e;margin:6px 0;padding:8px;background:#f0f7ff;border-radius:8px;border-right:3px solid #e63946">`;
+        html += `<strong>📖 الدروس المرتبطة:</strong><br>`;
+        // deduplicate — درس واحد مرة واحدة بس
+        const seenLessons = new Set();
+        const uniqueChunks = chunks.filter(c => {
+          if (seenLessons.has(c.lessonTitle)) return false;
+          seenLessons.add(c.lessonTitle);
+          return true;
+        });
+        uniqueChunks.slice(0, 2).forEach(chunk => {
           // تنظيف الـ snippet من الكلام البايظ
           let raw = (chunk.content || '').substring(0, 200);
           // شيل الجمل الناقصة في الآخر
@@ -584,10 +591,8 @@ async function formatResults(results, query, session = null) {
               snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
             });
           });
-          html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #f0f0f0">`;
-          html += `<div style="font-weight:600;margin-bottom:2px">• ${escapeHtml(chunk.lessonTitle || '')}</div>`;
-          html += `<div style="color:#666;font-size:11px">${snippet}...</div>`;
-          html += `</div>`;
+          html += `• ${escapeHtml(chunk.lessonTitle || '')}<br>`;
+          html += `<span style="color:#555;font-size:11px">${snippet}</span><br>`;
         });
         html += `</div>`;
       }
