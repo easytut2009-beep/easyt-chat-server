@@ -1356,7 +1356,7 @@ async function smartChat(message, sessionId) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .substring(0, 500);
+    .substring(0, 2000);  // ✅ زودناها لـ 2000 حرف
   
   console.log(`📝 Logging - User: ${message.length}ch | Bot: ${cleanReply.length}ch`);
   
