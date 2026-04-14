@@ -1124,19 +1124,18 @@ async function smartChat(message, sessionId) {
       console.log("🎯 Removed generic words, specific keywords:", keywords);
     }
 
-    // ── Keyword Expansion Map — توسيع الـ keywords بناءً على النية ──
+    // ── Keyword Expansion Map ──
     const expansionMap = [
-      { trigger: ["تطبيق", "موبايل", "mobile", "android", "اندرويد", "app"], expand: ["اندرويد", "flutter", "android", "تطبيقات موبايل", "swift"] },
-      { trigger: ["برمجة", "صفر", "مبتدئ", "ابدأ", "بدأ"], expand: ["برمجة", "python", "بايثون", "مبتدئ", "أساسيات برمجة"] },
-      { trigger: ["انيميشن", "animation", "موشن", "motion", "تحريك"], expand: ["after effects", "انيميشن", "موشن", "تحريك شخصيات"] },
-      { trigger: ["هوية", "بصرية", "brand", "شعار", "لوجو", "logo"], expand: ["هوية بصرية", "لوجو", "illustrator", "جرافيك"] },
-      { trigger: ["تصوير", "فوتوغراف", "photography", "كاميرا"], expand: ["تصوير", "photography", "كاميرا"] },
-      { trigger: ["ذكاء", "اصطناعي", "ai", "chatgpt", "gpt"], expand: ["ذكاء اصطناعي", "chatgpt", "machine learning", "python"] },
+      { trigger: ["تطبيق", "موبايل", "mobile", "android", "اندرويد", "app"], expand: ["اندرويد", "flutter", "android", "تطبيقات موبايل"] },
+      { trigger: ["برمجة", "صفر", "مبتدئ", "ابدأ"], expand: ["برمجة", "python", "بايثون", "أساسيات برمجة"] },
+      { trigger: ["انيميشن", "animation", "موشن", "motion", "تحريك"], expand: ["after effects", "انيميشن", "موشن"] },
+      { trigger: ["هوية", "بصرية", "brand"], expand: ["هوية بصرية", "لوجو", "illustrator"] },
+      { trigger: ["تصوير", "فوتوغراف", "photography"], expand: ["تصوير", "photography", "كاميرا"] },
+      { trigger: ["ذكاء", "اصطناعي", "chatgpt", "gpt"], expand: ["ذكاء اصطناعي", "chatgpt", "machine learning", "python"] },
       { trigger: ["تيك توك", "tiktok"], expand: ["تيك توك", "tiktok", "ادز", "سوشيال ميديا"] },
-      { trigger: ["backend", "باك ايند", "سيرفر", "server", "api"], expand: ["node", "python", "api", "backend", "قواعد بيانات"] },
-      { trigger: ["اطفال", "أطفال", "طفل", "kids", "ابني", "بنتي", "سنين"], expand: ["أطفال", "kids", "scratch", "برمجة أطفال"] },
-      { trigger: ["فريلانس", "freelance", "مستقل"], expand: ["فريلانس", "freelance"] },
-      { trigger: ["تجارة", "اونلاين", "متجر", "shopify", "شوبيفاي"], expand: ["تجارة إلكترونية", "shopify", "دروب شيبنج"] },
+      { trigger: ["backend", "باك ايند", "api", "سيرفر"], expand: ["node", "python", "api", "backend"] },
+      { trigger: ["فريلانس", "freelance"], expand: ["فريلانس", "freelance"] },
+      { trigger: ["تجارة", "شوبيفاي", "shopify", "متجر"], expand: ["تجارة إلكترونية", "shopify", "دروب شيبنج"] },
     ];
     const msgLower = message.toLowerCase();
     for (const entry of expansionMap) {
@@ -1177,10 +1176,18 @@ async function smartChat(message, sessionId) {
       console.log(`👥 Audience: ${audience}`);
     }
 
-    // لو أطفال — أضف keywords مناسبة للأطفال
+    // لو أطفال — أضف keywords مناسبة للأطفال بس لو مفيش keywords تقنية محددة
     if (audience === "أطفال") {
-      keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
-      console.log("👧 Kids mode — added scratch/أطفال keywords");
+      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "تصميم", "فوتوشوب", "illustrator"];
+      const hasTech = keywords.some(k => techKeywords.some(t => k.toLowerCase().includes(t)));
+      if (hasTech) {
+        // فيه موضوع تقني محدد — متضيفش "أطفال" للـ keywords عشان ميجيبش كورسات جرافيك أطفال
+        // بس فلتر النتايج بـ audience في الـ performSearch
+        console.log("👧 Kids mode + tech topic — keeping specific keywords, skipping أطفال keyword");
+      } else {
+        keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
+        console.log("👧 Kids mode — added scratch/أطفال keywords");
+      }
     }
 
     const results = await performSearch(keywords, [], audience);
