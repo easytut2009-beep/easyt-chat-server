@@ -1181,6 +1181,7 @@ async function smartChat(message, sessionId) {
     }
 
     // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني
+    let excludeTerms = [];
     if (audience === "أطفال") {
       const techKws = ["python","برمجة","html","javascript","flutter","اندرويد","فوتوشوب","illustrator","بايثون","node","backend","api"];
       const hasTech = keywords.some(k => techKws.some(t => k.toLowerCase().includes(t.toLowerCase())));
@@ -1188,11 +1189,13 @@ async function smartChat(message, sessionId) {
         keywords = [...keywords, "scratch", "أطفال"];
         console.log("👧 Kids mode — added scratch/أطفال keywords");
       } else {
-        console.log("👧 Kids mode + tech topic — keeping specific keywords");
+        // موضوع تقني + أطفال → استثنِ كورسات الجرافيك واللغات للأطفال
+        excludeTerms = ["الجرافيكس للأطفال", "الجرافيك للأطفال", "اللغة العربية للأطفال", "اللغة الانجليزية للأطفال", "للأطفال (باللغة", "للأطفال (بالل"];
+        console.log("👧 Kids mode + tech topic — excluding graphic/language kids courses");
       }
     }
 
-    const results = await performSearch(keywords, [], audience);
+    const results = await performSearch(keywords, excludeTerms, audience);
 
     // العنوان — استخدم الـ lastTopic لو موجود، وإلا أول keyword مش عامة
     const genericWords = new Set(["بصفة", "عامة", "عموما", "عموماً", "general", "تعلم", "اتعلم"]);
