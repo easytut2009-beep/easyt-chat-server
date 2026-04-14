@@ -1363,6 +1363,8 @@ async function smartChat(message, sessionId) {
     .replace(/\s+/g, " ")                // شيل spaces زيادة
     .trim()
     .substring(0, 500);                  // أول 500 حرف
+  
+  console.log(`📝 Logging assistant reply (${cleanReply.length} chars):`, cleanReply.substring(0, 100));
     
   logChat(sessionId, "assistant", cleanReply, null, {
     type: intent?.type || "unknown",
