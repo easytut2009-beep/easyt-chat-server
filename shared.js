@@ -1385,7 +1385,15 @@ const allTerms = prepareSearchTerms(searchTerms);
 
       if (!error) {
         // فلتر بـ word boundary — "work" مش هيطابق "network"
-        allLessons = (lessons || []).map((l) => ({
+        const filtered = (lessons || []).filter(l => {
+          const titleNorm = normalizeArabic((l.title || '').toLowerCase());
+          return allTerms.some(term => {
+            const nt = normalizeArabic(term.toLowerCase());
+            if (nt.length <= 2) return false;
+            return isWordBoundaryMatch(titleNorm, nt) || titleNorm.includes(nt);
+          });
+        });
+        allLessons = filtered.map((l) => ({
           ...l,
           matchSource: "title_search",
         }));
