@@ -371,22 +371,38 @@ async function performSearch(keywords, instructors) {
         let semChunks = [];
         console.log("📦 Semantic chunks: skipped");
 
-        // Text search في الـ chunks
-        const chunkTextFilters = keywords
+        // Text search في الـ chunks — phrase أولاً، لو مش لاقي → split
+        let textChunkCourses = [];
+        
+        // ابحث بالـ keywords كـ phrases أولاً
+        const phraseFilters = keywords
           .filter(k => k.length > 2)
           .slice(0, 4)
           .map(k => `content.ilike.%${k}%`)
           .join(",");
-
-        let textChunkCourses = [];
-        if (chunkTextFilters) {
-          const { data: tc, error: tcError } = await supabase
-            .from("chunks")
-            .select("lesson_id")
-            .or(chunkTextFilters)
-            .limit(10);
-          if (tcError) console.error("❌ Text chunks error:", tcError.message);
-          else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
+        
+        let finalChunkMatches = [];
+        if (phraseFilters) {
+          const { data: pm } = await supabase
+            .from("chunks").select("lesson_id").or(phraseFilters).limit(20);
+          finalChunkMatches = pm || [];
+          console.log(`📝 Phrase chunks found: ${finalChunkMatches.length}`);
+        }
+        
+        // لو مش لاقي بالـ phrase — ابحث بكل كلمة منفردة
+        if (finalChunkMatches.length === 0) {
+          const splitTerms = [...new Set(keywords.flatMap(k => k.split(/\s+/)).filter(k => k.length > 2))];
+          const splitFilters = splitTerms.slice(0, 6).map(k => `content.ilike.%${k}%`).join(",");
+          if (splitFilters) {
+            const { data: sm } = await supabase
+              .from("chunks").select("lesson_id").or(splitFilters).limit(20);
+            finalChunkMatches = sm || [];
+            console.log(`📝 Split chunks found: ${finalChunkMatches.length}`);
+          }
+        }
+        
+        console.log(`📝 Text chunks found: ${finalChunkMatches.length}`);
+        const tc = finalChunkMatches;
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
@@ -871,7 +887,7 @@ async function smartChat(message, sessionId) {
       console.log(`⚠️ diplomas_list without دبلوم — forcing search`);
       intent.type = "search";
     }
-    // لو info مع keywords → search (يعني GPT لقى موضوع محدد)
+    // لو info مع keywords → search
     if (intent.type === "info" && intent.keywords && intent.keywords.length > 0) {
       console.log(`⚠️ GPT said info but has keywords — forcing search`);
       intent.type = "search";
