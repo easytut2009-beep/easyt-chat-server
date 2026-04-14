@@ -325,7 +325,9 @@ async function performSearch(keywords, instructors) {
 
   // 3. بحث في الدروس دايماً — لو في كورسات من keywords وكمان لو مفيش كورسات
   try {
-    const lessonResults = await searchLessonsInCourses(keywords);
+    const longKeywords = keywords.filter(k => k.length > 4);
+    const lessonKeywords = longKeywords.length > 0 ? longKeywords : keywords;
+    const lessonResults = await searchLessonsInCourses(lessonKeywords);
     if (lessonResults && lessonResults.length > 0) {
       if (results.courses.length === 0) {
         const hasTitleMatch = lessonResults.some(c => {
