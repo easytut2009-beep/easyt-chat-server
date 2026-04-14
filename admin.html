@@ -283,10 +283,12 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
     <a href="#" onclick="showTab('guideconversations')" id="nav-guideconversations">🎓 محادثات المرشد</a>
     <a href="#" onclick="showTab('corrections')" id="nav-corrections">✅ التصحيحات</a>
     <a href="#" onclick="showTab('botinstructions')" id="nav-botinstructions">🧠 تعليمات البوت</a>
+    <a href="#" onclick="showTab('customresponses')" id="nav-customresponses">🛠️ الردود المخصصة</a>
     <a href="#" onclick="showTab('courses')" id="nav-courses">📚 الكورسات</a>
     <a href="#" onclick="showTab('diplomas')" id="nav-diplomas">🎓 الدبلومات</a>
     <a href="#" onclick="showTab('instructors')" id="nav-instructors">👤 المحاضرين</a>
     <a href="#" onclick="showTab('faq')" id="nav-faq">❓ الأسئلة الشائعة</a>
+    <a href="#" onclick="showTab('sitepages')" id="nav-sitepages">📄 صفحات الموقع</a>
     <a href="#" onclick="doLogout()" style="color:#ef4444;border-top:2px solid #334155;margin-top:20px">🚪 خروج</a>
   </div>
 
@@ -358,6 +360,17 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
       <div id="botInstructionsList"></div>
     </div>
 
+    <div id="tab-customresponses" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">🛠️ الردود المخصصة</h2>
+      <div class="support-badge" style="margin-bottom:12px">🛠️ البوت بيدور هنا الأول قبل GPT — ردود ثابتة بكلمات مفتاحية</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="customresponsesSearch" placeholder="🔍 بحث..." onkeydown="if(event.key==='Enter')loadCustomResponses()" style="max-width:400px;margin:0">
+        <button class="btn btn-primary btn-sm" onclick="loadCustomResponses()">بحث</button>
+        <button class="btn btn-success btn-sm" onclick="openAddCustomResponseModal()">+ إضافة</button>
+      </div>
+      <div class="card" id="customResponsesList"></div>
+    </div>
+
     <div id="tab-courses" class="tab-content">
       <h2 style="margin:0 0 16px;font-size:20px">📚 الكورسات</h2>
       <div class="card">
@@ -398,6 +411,14 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6
       </div>
     </div>
 
+    <div id="tab-sitepages" class="tab-content">
+      <h2 style="margin:0 0 16px;font-size:20px">📄 صفحات الموقع</h2>
+      <div class="card">
+        <button class="btn btn-success btn-sm" onclick="openAddModal('site-pages')" style="margin-bottom:12px">+ إضافة</button>
+        <div id="site-pages-table"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -432,6 +453,7 @@ var currentConvPage = 1;
 var currentGuideConvPage = 1;
 var _confirmResolve = null;
 var _crudCache = {};
+var _customResponsesCache = [];
 var _botInstructionsCache = [];
 var _correctionsCache = [];
 var _convViewMode = 'flat';
@@ -495,7 +517,6 @@ async function doLogin() {
     var d = await r.json();
     if (r.ok) {
       TOKEN = d.token;
-      localStorage.setItem('easyt_admin_token', TOKEN);
       document.getElementById('loginScreen').style.display='none';
       document.getElementById('dashboard').style.display='block';
       loadStats();
@@ -511,29 +532,10 @@ async function doLogin() {
 
 function doLogout() {
   TOKEN='';
-  localStorage.removeItem('easyt_admin_token');
   document.getElementById('loginScreen').style.display='block';
   document.getElementById('dashboard').style.display='none';
   document.getElementById('passInput').value='';
 }
-
-// ── تسجيل دخول تلقائي لو في token محفوظ ──
-(function() {
-  var saved = localStorage.getItem('easyt_admin_token');
-  if (!saved) return;
-  TOKEN = saved;
-  fetch(API + '/admin/stats', { headers: { 'Authorization': 'Bearer ' + saved } })
-    .then(function(r) {
-      if (r.ok) {
-        document.getElementById('loginScreen').style.display='none';
-        document.getElementById('dashboard').style.display='block';
-        loadStats();
-      } else {
-        localStorage.removeItem('easyt_admin_token');
-        TOKEN = '';
-      }
-    }).catch(function() { localStorage.removeItem('easyt_admin_token'); TOKEN = ''; });
-})();
 
 // ═══════════════════════════════════════════════════════════
 // API CALLS
@@ -601,10 +603,12 @@ function showTab(tab) {
   else if(tab==='guideconversations') loadGuideConversations(1);
   else if(tab==='corrections') loadCorrections();
   else if(tab==='botinstructions') loadBotInstructions();
+  else if(tab==='customresponses') loadCustomResponses();
   else if(tab==='courses') loadCrud('courses');
   else if(tab==='diplomas') loadCrud('diplomas');
   else if(tab==='instructors') loadCrud('instructors');
   else if(tab==='faq') loadCrud('faq');
+  else if(tab==='sitepages') loadCrud('site-pages');
 }
 
 // ═══════════════════════════════════════
@@ -616,23 +620,25 @@ async function loadStats() {
     var d = resp.stats || resp.data || resp;
     var extra = {};
     try { var biResp = await apiCall('/admin/bot-instructions'); extra.totalBotInstructions = (biResp.instructions || biResp.items || []).length; } catch(e) { extra.totalBotInstructions = 0; }
-    try { var crResp = await apiCall('/admin/corrections'); extra.totalCorrections = (crResp.corrections || crResp.items || []).length; } catch(e) { extra.totalCorrections = 0; }
+    try { var crResp = await apiCall('/admin/corrections'); extra.totalCorrections = (crResp.corrections || crResp.items || []).length; } catch(e) {}
+    try { var custResp = await apiCall('/admin/custom-responses'); extra.totalCustomResponses = (custResp.responses || custResp.items || []).length; } catch(e) {}
     try { var faqResp = await apiCall('/admin/faq'); extra.totalFaq = (faqResp.faqs || faqResp.entries || faqResp.items || []).length; } catch(e) { extra.totalFaq = 0; }
     try { var instResp = await apiCall('/admin/instructors'); extra.totalInstructors = (instResp.instructors || instResp.items || []).length; } catch(e) { extra.totalInstructors = 0; }
+    try { var spResp = await apiCall('/admin/site-pages'); extra.totalSitePages = (spResp.pages || spResp.items || []).length; } catch(e) { extra.totalSitePages = 0; }
     try { var gcResp = await apiCall('/admin/guide-conversations?limit=1'); extra.totalGuideConvs = (gcResp.pagination && gcResp.pagination.total) ? gcResp.pagination.total : (gcResp.conversations || gcResp.items || gcResp.data || []).length; } catch(e) { extra.totalGuideConvs = 0; }
 
     var g = document.getElementById('statsGrid');
     var items = [
-      ['💬', d.totalChats || 0, 'رسائل المساعد'],
-      ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
-      ['📅', d.todayChats || 0, 'رسائل اليوم'],
+      ['💬', d.totalChats || 0, 'رسائل المساعد'], ['👥', d.uniqueSessions || 0, 'جلسات فريدة'],
+      ['📅', d.todayChats || 0, 'رسائل اليوم'], ['🟢', d.activeSessions || 0, 'جلسات نشطة'],
       ['🎓', extra.totalGuideConvs || 0, 'محادثات المرشد'],
-      ['✅', extra.totalCorrections || 0, 'تصحيحات'],
-      ['🧠', extra.totalBotInstructions || 0, 'تعليمات البوت'],
-      ['📚', d.totalCourses || 0, 'كورسات'],
-      ['🎓', d.totalDiplomas || 0, 'دبلومات'],
-      ['👤', extra.totalInstructors || 0, 'محاضرين'],
-      ['❓', extra.totalFaq || 0, 'أسئلة شائعة'],
+      ['🧠', extra.totalCorrections != null ? extra.totalCorrections : (d.totalCorrections || 0), 'تصحيحات'],
+      ['📝', extra.totalBotInstructions != null ? extra.totalBotInstructions : (d.totalBotInstructions || 0), 'تعليمات البوت'],
+      ['🛠️', extra.totalCustomResponses != null ? extra.totalCustomResponses : (d.totalCustomResponses || 0), 'ردود مخصصة'],
+      ['📚', d.totalCourses || 0, 'كورسات'], ['🎓', d.totalDiplomas || 0, 'دبلومات'],
+      ['👤', extra.totalInstructors != null ? extra.totalInstructors : (d.totalInstructors || 0), 'محاضرين'],
+      ['❓', extra.totalFaq != null ? extra.totalFaq : (d.totalFaq || 0), 'أسئلة شائعة'],
+      ['📄', extra.totalSitePages != null ? extra.totalSitePages : (d.totalSitePages || 0), 'صفحات']
     ];
     g.innerHTML = items.map(function(a) {
       return '<div class="card stat-card"><div style="font-size:24px">' + a[0] + '</div><div class="stat-num">' + (a[1]||0) + '</div><div class="stat-label">' + a[2] + '</div></div>';
@@ -1505,6 +1511,57 @@ async function deleteBotInstruction(id) {
 // ═══════════════════════════════════════
 // CUSTOM RESPONSES
 // ═══════════════════════════════════════
+async function loadCustomResponses() {
+  var el = document.getElementById('customResponsesList');
+  el.innerHTML = '<p style="text-align:center;padding:20px;color:#94a3b8">⏳</p>';
+  try {
+    var se = document.getElementById('customresponsesSearch'); var s = se?se.value:'';
+    var d = await apiCall('/admin/custom-responses?limit=100'+(s?'&search='+encodeURIComponent(s):''));
+    var items = d.responses || d.items || d.data || [];
+    _customResponsesCache = items.slice();
+    if (!items.length) { el.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">لا توجد</p>'; return; }
+    var html = '<div style="display:grid;gap:12px">';
+    items.forEach(function(item, idx) {
+      var ia = item.is_active !== false;
+      var kw = (item.keywords||'').split(',').map(function(k){return k.trim();}).filter(function(k){return k;});
+      html += '<div style="border:1px solid '+(ia?'#e2e8f0':'#fee2e2')+';border-radius:10px;padding:14px;background:'+(ia?'#fff':'#fef2f2')+'">';
+      html += '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;gap:8px"><b>'+esc(item.title||'')+'</b><span class="badge badge-blue">'+esc(item.category||'')+'</span></div><span style="color:'+(ia?'#16a34a':'#dc2626')+'">'+(ia?'✅':'❌')+'</span></div>';
+      if(kw.length) { html += '<div style="margin-bottom:8px">'; kw.slice(0,8).forEach(function(k){html += '<span class="keyword-tag">'+esc(k)+'</span>';}); html += '</div>'; }
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;color:#475569;margin-bottom:8px;max-height:50px;overflow:hidden">'+esc(stripHtml(item.response||'').slice(0,150))+'</div>';
+      html += '<div style="display:flex;gap:6px"><button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8" onclick="openEditCustomResponse('+idx+')">✏️</button><button class="btn btn-sm '+(ia?'btn-warning':'btn-success')+'" onclick="toggleCustomResponse(\''+item.id+'\','+ !ia +')">'+(ia?'⏸️':'▶️')+'</button><button class="btn btn-danger btn-sm" onclick="deleteCustomResponse(\''+item.id+'\')">🗑️</button></div></div>';
+    });
+    el.innerHTML = html + '</div>';
+  } catch(e) { el.innerHTML='<p style="color:#ef4444;text-align:center">❌ ' + esc(e.message) + '</p>'; }
+}
+
+function openAddCustomResponseModal() {
+  modalState = {type:'custom_response_add'};
+  document.getElementById('modalTitle').textContent = '➕ رد مخصص';
+  document.getElementById('modalBody').innerHTML = buildCRForm(null);
+  document.getElementById('modal').classList.add('show');
+}
+
+function openEditCustomResponse(idx) {
+  var item = _customResponsesCache[idx]; if(!item) return;
+  modalState = {type:'custom_response_edit', id:item.id};
+  document.getElementById('modalTitle').textContent = '✏️ تعديل';
+  document.getElementById('modalBody').innerHTML = buildCRForm(item);
+  document.getElementById('modal').classList.add('show');
+}
+
+function buildCRForm(item) {
+  var t=item?esc(item.title||''):'', k=item?esc(item.keywords||''):'', cat=item?(item.category||'SUPPORT'):'SUPPORT', r=item?esc(item.response||''):'', p=item?(item.priority||0):10, a=item?(item.is_active!==false):true;
+  return '<label style="font-size:12px;font-weight:600">العنوان:</label><input type="text" id="cr_title" value="'+t+'" style="margin-bottom:8px">'+
+    '<label style="font-size:12px;font-weight:600">كلمات مفتاحية:</label><textarea id="cr_keywords" rows="2" style="margin-bottom:8px">'+k+'</textarea>'+
+    '<div style="display:flex;gap:12px;margin-bottom:8px"><div style="flex:1"><label style="font-size:12px;font-weight:600">تصنيف:</label><select id="cr_category"><option value="SUPPORT"'+(cat==='SUPPORT'?' selected':'')+'>SUPPORT</option><option value="GENERAL"'+(cat==='GENERAL'?' selected':'')+'>GENERAL</option><option value="PAYMENT"'+(cat==='PAYMENT'?' selected':'')+'>PAYMENT</option><option value="ACCESS"'+(cat==='ACCESS'?' selected':'')+'>ACCESS</option></select></div><div style="flex:1"><label style="font-size:12px;font-weight:600">أولوية:</label><input type="number" id="cr_priority" value="'+p+'" min="0" max="100"></div></div>'+
+    '<label style="font-size:12px;font-weight:600">الرد:</label><textarea id="cr_response" rows="6" style="margin-bottom:8px">'+r+'</textarea>'+
+    '<div style="display:flex;align-items:center;gap:8px"><label class="toggle-switch"><input type="checkbox" id="cr_active"'+(a?' checked':'')+'><span class="toggle-slider"></span></label><span>مفعّل</span></div>';
+}
+
+async function toggleCustomResponse(id, val) { try { await apiCall('/admin/custom-responses/'+id,{method:'PUT',body:JSON.stringify({is_active:val})}); toast(val?'✅':'⏸️'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); } }
+async function deleteCustomResponse(id) { if(!(await showConfirm('حذف؟'))) return; try { await apiCall('/admin/custom-responses/'+id,{method:'DELETE'}); toast('تم ✅'); loadCustomResponses(); } catch(e) { toast('خطأ','error'); } }
+
+// ═══════════════════════════════════════
 // GENERIC CRUD
 // ═══════════════════════════════════════
 async function loadCrud(entity, page, forceReload) {
@@ -1574,20 +1631,14 @@ async function openEditFromCache(e, id) {
   }
   try {
     var d = await apiCall('/admin/' + e + '/' + id);
-    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d.data || d;
+    var item = d.item || d.course || d.diploma || d.instructor || d.faq || d.page || d;
     if (item && item.id) {
       openEditModal(e, item);
     } else {
-      // لو مفيش single endpoint — جيب من الـ cache المحمل
-      var cached = _allCrudItems[e] ? _allCrudItems[e].find(function(i){ return String(i.id)===String(id); }) : null;
-      if (cached) { openEditModal(e, cached); }
-      else { toast('مش لاقي البيانات', 'error'); }
+      toast('مش لاقي البيانات', 'error');
     }
   } catch(err) {
-    // fallback للـ cache لو الـ endpoint مش موجود
-    var cached = _allCrudItems[e] ? _allCrudItems[e].find(function(i){ return String(i.id)===String(id); }) : null;
-    if (cached) { openEditModal(e, cached); }
-    else { toast('حدّث الصفحة', 'error'); }
+    toast('حدّث الصفحة', 'error');
   }
 }
 
@@ -1612,36 +1663,12 @@ function closeModal() { document.getElementById('modal').classList.remove('show'
 
 function getFields(e) {
   var m = {
-'courses':[
-  {key:'title',label:'العنوان'},
-  {key:'heading',label:'العنوان الترويجي'},
-  {key:'subtitle',label:'الوصف المختصر',type:'textarea'},
-  {key:'full_content',label:'الوصف التفصيلي',type:'textarea'},
-  {key:'link',label:'رابط الكورس'},
-  {key:'price',label:'السعر'},
-  {key:'image',label:'رابط الصورة'},
-  {key:'instructor_id',label:'رقم المحاضر (instructor_id)',inputType:'number'},
-  {key:'category',label:'التصنيف'},
-  {key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}
-],
-    'diplomas':[
-  {key:'title',label:'العنوان'},
-  {key:'slug',label:'Slug'},
-  {key:'link',label:'الرابط'},
-  {key:'image',label:'رابط الصورة'},
-  {key:'description',label:'الوصف',type:'textarea'},
-  {key:'price',label:'السعر',inputType:'number'},
-  {key:'courses_count',label:'عدد الدورات',inputType:'number'},
-  {key:'books_count',label:'عدد الكتب',inputType:'number'},
-  {key:'hours',label:'الساعات',inputType:'number'}
-],
-    'instructors':[
-  {key:'name',label:'الاسم'},
-  {key:'title',label:'المسمى الوظيفي'},
-  {key:'image',label:'رابط الصورة'},
-  {key:'courses_link',label:'رابط صفحة الكورسات'}
-],
-    'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}]
+'courses':[{key:'title',label:'العنوان'},{key:'subtitle',label:'الوصف المختصر',type:'textarea'},{key:'full_content',label:'الوصف التفصيلي',type:'textarea'},{key:'link',label:'الرابط'},{key:'price',label:'السعر'},{key:'image',label:'صورة'},{key:'keywords',label:'الكلمات المفتاحية',type:'keywords'}],
+    'diplomas':[{key:'title',label:'العنوان'},{key:'slug',label:'Slug'},{key:'link',label:'الرابط'},{key:'description',label:'الوصف',type:'textarea'},{key:'price',label:'السعر',inputType:'number'},{key:'courses_count',label:'عدد الدورات',inputType:'number'},{key:'books_count',label:'عدد الكتب',inputType:'number'},{key:'hours',label:'الساعات',inputType:'number'}],
+
+    'instructors':[{key:'name',label:'الاسم'}],
+    'faq':[{key:'section',label:'القسم'},{key:'question',label:'السؤال',type:'textarea'},{key:'answer',label:'الإجابة',type:'textarea'}],
+    'site-pages':[{key:'page_url',label:'الرابط'},{key:'content',label:'المحتوى',type:'textarea'}]
   };
   return m[e]||[{key:'title',label:'العنوان'}];
 }
@@ -1720,6 +1747,13 @@ if(modalState.type==='diploma_courses') { await saveDiplomaCourses(); return; }
       if(!b.corrected_reply) { toast('اكتب الإجابة!','error'); return; }
       await apiCall('/admin/corrections/'+modalState.id,{method:'PUT',body:JSON.stringify(b)});
       closeModal(); toast('تم التعديل ✅'); loadCorrections(); return;
+    }
+    if(modalState.type==='custom_response_add'||modalState.type==='custom_response_edit') {
+      var cr = { title: document.getElementById('cr_title').value, keywords: document.getElementById('cr_keywords').value, category: document.getElementById('cr_category').value, response: document.getElementById('cr_response').value, priority: parseInt(document.getElementById('cr_priority').value)||0, is_active: document.getElementById('cr_active').checked };
+      if(!cr.title||!cr.keywords||!cr.response) { toast('املأ الحقول!','error'); return; }
+      if(modalState.type==='custom_response_add') await apiCall('/admin/custom-responses',{method:'POST',body:JSON.stringify(cr)});
+      else await apiCall('/admin/custom-responses/'+modalState.id,{method:'PUT',body:JSON.stringify(cr)});
+      closeModal(); toast('تم ✅'); loadCustomResponses(); return;
     }
 if(modalState.type==='bot_instruction_add'||modalState.type==='bot_instruction_edit') {
       var bi = { instruction: document.getElementById('bi_instruction').value, category: document.getElementById('bi_category').value, priority: parseInt(document.getElementById('bi_priority').value)||0, is_active: document.getElementById('bi_active').checked, target: document.getElementById('bi_target').value };

@@ -39,7 +39,7 @@ async function testSupabaseConnection() {
 /* ═══ Admin Auth ═══ */
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "EasyT_Admin_2024";
 const adminTokens = new Map();
-const ADMIN_TOKEN_TTL = 7 * 24 * 60 * 60 * 1000; // 7 أيام
+const ADMIN_TOKEN_TTL = 24 * 60 * 60 * 1000;
 
 function generateAdminToken() {
   const token = crypto.randomBytes(32).toString("hex");
@@ -49,24 +49,14 @@ function generateAdminToken() {
 
 function adminAuth(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "غير مصرح" });
-  
-  // لو Token موجود في الـ memory — تمام
-  if (adminTokens.has(token)) {
-    const td = adminTokens.get(token);
-    td.lastUsed = Date.now();
-    return next();
+  if (!token || !adminTokens.has(token)) return res.status(401).json({ error: "غير مصرح" });
+  const td = adminTokens.get(token);
+  if (Date.now() - td.created > ADMIN_TOKEN_TTL) {
+    adminTokens.delete(token);
+    return res.status(401).json({ error: "انتهت الجلسة" });
   }
-  
-  // لو Token مش موجود (بعد restart) — تحقق لو هو الـ password نفسه
-  const adminPass = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "admin123";
-  if (token === adminPass) {
-    // أعد إنشاء الـ token في الـ memory
-    adminTokens.set(token, { created: Date.now(), lastUsed: Date.now() });
-    return next();
-  }
-  
-  return res.status(401).json({ error: "انتهت الجلسة" });
+  td.lastUsed = Date.now();
+  next();
 }
 
 setInterval(() => {
@@ -237,9 +227,8 @@ app.post("/admin/login", adminLoginLimiter, (req, res) => {
     return res.status(400).json({ success: false, error: "كلمة السر مطلوبة" });
   }
   if (password === ADMIN_PASSWORD) {
-    // نرجع الـ password نفسه كـ token — بيفضل شغال حتى بعد restart
-    adminTokens.set(password, { created: Date.now(), lastUsed: Date.now() });
-    return res.json({ success: true, token: password });
+    const token = generateAdminToken();
+    return res.json({ success: true, token });
   }
   return res.status(401).json({ success: false, error: "كلمة السر غلط" });
 });
@@ -1102,21 +1091,6 @@ app.get("/admin/faq", adminAuth, async (req, res) => {
   }
 });
 
-app.get("/admin/faq/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false });
-  try {
-    const { data, error } = await supabase
-      .from("faq")
-      .select("*")
-      .eq("id", req.params.id)
-      .single();
-    if (error) throw error;
-    res.json({ success: true, item: data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
 app.post("/admin/faq", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
@@ -1177,21 +1151,6 @@ app.get("/admin/site-pages", adminAuth, async (req, res) => {
     res.json({ success: true, pages: data || [] });
   } catch (e) {
     res.json({ success: true, pages: [] });
-  }
-});
-
-app.get("/admin/site-pages/:id", adminAuth, async (req, res) => {
-  if (!supabase) return res.status(500).json({ success: false });
-  try {
-    const { data, error } = await supabase
-      .from("site_pages")
-      .select("*")
-      .eq("id", req.params.id)
-      .single();
-    if (error) throw error;
-    res.json({ success: true, item: data });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
   }
 });
 
