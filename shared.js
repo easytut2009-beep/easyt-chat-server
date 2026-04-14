@@ -1390,7 +1390,7 @@ const allTerms = prepareSearchTerms(searchTerms);
           return allTerms.some(term => {
             const nt = normalizeArabic(term.toLowerCase());
             if (nt.length <= 2) return false;
-            return isWordBoundaryMatch(titleNorm, nt) || titleNorm.includes(nt);
+            return isWordBoundaryMatch(titleNorm, nt);
           });
         });
         allLessons = filtered.map((l) => ({
