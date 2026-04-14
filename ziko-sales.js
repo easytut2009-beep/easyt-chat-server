@@ -286,17 +286,6 @@ async function performSearch(keywords, instructors) {
 
       if (hasRealTitleMatch) {
         const withDiploma = await injectDiplomaInfo(courseResults).catch(() => courseResults);
-        try {
-          const lessonResults = await searchLessonsInCourses(keywords);
-          if (lessonResults && lessonResults.length > 0) {
-            const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
-            withDiploma.forEach(c => {
-              if (lessonMap.has(c.id) && !c.matchedLessons) {
-                c.matchedLessons = lessonMap.get(c.id);
-              }
-            });
-          }
-        } catch (e) { }
         results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
       } else {
         // مفيش في العنوان أو الـ keywords — بس في الـ syllabus
