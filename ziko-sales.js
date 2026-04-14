@@ -414,22 +414,27 @@ async function performSearch(keywords, instructors) {
 
               textChunkCourses = [...courseChunksMap.values()]
                 .sort((a, b) => {
-                  const scoreA = chunkWords.filter(w => {
-                    const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
-                    return a.chunks.some(c => {
+                  const getScore = (item) => {
+                    const allWords = chunkWords.flatMap(w => [w.toLowerCase(), w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه').toLowerCase()]);
+                    // بونص كبير لو في chunk واحدة فيها كل الكلمات معاً
+                    const hasAllInOne = item.chunks.some(c => {
                       const ct = (c.content || '').toLowerCase();
-                      return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                      return chunkWords.every(w => {
+                        const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                        return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                      });
                     });
-                  }).length;
-                  const scoreB = chunkWords.filter(w => {
-                    const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
-                    return b.chunks.some(c => {
-                      const ct = (c.content || '').toLowerCase();
-                      return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
-                    });
-                  }).length;
-                  if (scoreB !== scoreA) return scoreB - scoreA;
-                  return b.chunks.length - a.chunks.length;
+                    if (hasAllInOne) return 1000;
+                    // عدد الكلمات المختلفة الموجودة
+                    return chunkWords.filter(w => {
+                      const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                      return item.chunks.some(c => {
+                        const ct = (c.content || '').toLowerCase();
+                        return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                      });
+                    }).length;
+                  };
+                  return getScore(b) - getScore(a);
                 });
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
