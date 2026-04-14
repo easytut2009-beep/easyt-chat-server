@@ -372,15 +372,9 @@ async function performSearch(keywords, instructors) {
         console.log("📦 Semantic chunks: skipped");
 
         // Text search في الـ chunks
-        // نسبلت الـ keywords المركبة عشان نبحث بكل كلمة لوحدها في الـ chunks
-        const chunkSearchTerms = [...new Set(
-          keywords
-            .flatMap(k => k.split(/\s+/)) // سبلت "حشود عسكرية" → ["حشود", "عسكرية"]
-            .filter(k => k.length > 2)
-        )];
-        
-        const chunkTextFilters = chunkSearchTerms
-          .slice(0, 6)
+        const chunkTextFilters = keywords
+          .filter(k => k.length > 2)
+          .slice(0, 4)
           .map(k => `content.ilike.%${k}%`)
           .join(",");
 
@@ -426,7 +420,7 @@ async function performSearch(keywords, instructors) {
   }
 
   // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
-  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
+  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0 && (!results._textChunkCourses || results._textChunkCourses.length === 0)) {
     try {
       if (supabase && openai) {
         const embResp = await openai.embeddings.create({
