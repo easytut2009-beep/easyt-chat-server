@@ -1055,7 +1055,7 @@ const [ilikeResult, semanticResults] = await Promise.all([
         { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
         { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
         { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس"] },
-        { words: ["سي شارب", "c#", "csharp"], exclude_if_query_lacks: ["c#","سي شارب","csharp","net"] },
+        { words: ["تعليم الجرافيكس للأطفال", "للأطفال (باللغة الإنجليزية)", "للأطفال (باللغة العربية)"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","سنين","kids","children"] },
       ];
 
       const relevant = allCourses.filter(c => {
