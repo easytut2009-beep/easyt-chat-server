@@ -404,7 +404,7 @@ async function performSearch(keywords, instructors) {
         console.log(`📝 Text chunks found: ${finalChunkMatches.length}`);
         const tc = finalChunkMatches;
 
-          if (tc && tc.length > 0) {
+        if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
             // جيب الكورسات من الـ lesson_ids
             const { data: lessonData } = await supabase
@@ -421,7 +421,6 @@ async function performSearch(keywords, instructors) {
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
-        }
 
         // دمج النتايج
         const allChunks = semChunks || [];
