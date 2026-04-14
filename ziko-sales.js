@@ -1116,6 +1116,10 @@ async function smartChat(message, sessionId) {
     } else if (/مهندس|هندسة/.test(msgLower)) {
       clarifyQuestion = "عايز تتطور في إيه؟ 😊";
       clarifyOptions = ["📐 اوتوكاد وتصميم", "💻 برمجة", "📊 إدارة مشاريع", "🤖 ذكاء اصطناعي"];
+    } else if (intent.clarify_options && intent.clarify_options.length >= 2) {
+      // استخدم options من GPT لو موجودة
+      clarifyQuestion = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
+      clarifyOptions = intent.clarify_options;
     } else {
       clarifyQuestion = "عايز تتعلم إيه بالظبط؟ 😊";
       clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
