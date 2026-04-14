@@ -1041,6 +1041,45 @@ const [ilikeResult, semanticResults] = await Promise.all([
 
     let filtered = allCourses;
 
+    // ── فلتر ذكي — شيل الكورسات اللي في domain مختلف ──
+    if (allTerms.length > 0 && allCourses.length > 3) {
+      const qTerms = allTerms.map(t => normalizeArabic(t.toLowerCase())).filter(t => t.length > 2);
+
+      const domainSignals = [
+        { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
+        { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","hacking","حماية"] },
+        { words: ["اندرويد ستوديو", "android studio", "flutter", "يونيتي", "unity", "الالعاب"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","unity","mobile"] },
+        { words: ["langchain", "الذكاءات المتعدده", "llm", "النماذج اللغويه"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai","نماذج"] },
+        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
+        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
+        { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
+        { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
+        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس"] },
+        { words: ["تعليم الجرافيكس للأطفال", "للأطفال (باللغة الإنجليزية)", "للأطفال (باللغة العربية)"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","سنين","kids","children"] },
+        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق","هاكر"] },
+        { words: ["طب شرعي", "الطب الشرعى"], exclude_if_query_lacks: ["طب شرعي","جنائي","forensic"] },
+        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس","اطفال"] },
+        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
+        { words: ["صينيه", "chinese", "اللغة الصينية"], exclude_if_query_lacks: ["صيني","صينية","chinese"] },
+        { words: ["oracle adf", "oracle apex", "اوراكل"], exclude_if_query_lacks: ["oracle","اوراكل","قاعدة بيانات"] },
+      ];
+
+      const relevant = allCourses.filter(c => {
+        const titleNormC = normalizeArabic((c.title || "").toLowerCase());
+        for (const signal of domainSignals) {
+          const courseHasSignal = signal.words.some(w => titleNormC.includes(normalizeArabic(w.toLowerCase())));
+          if (!courseHasSignal) continue;
+          const queryHasSignal = signal.exclude_if_query_lacks.some(w =>
+            qTerms.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt))
+          );
+          if (!queryHasSignal) return false;
+        }
+        return true;
+      });
+
+      if (relevant.length >= 2) filtered = relevant;
+    }
+
     if (excludeTerms.length > 0) {
       filtered = allCourses.filter((c) => {
         const tn = normalizeArabic((c.title || "").toLowerCase());
@@ -1109,6 +1148,9 @@ const fullQuery = normalizeArabic(
       for (const term of finalTerms) {
         const nt = normalizeArabic(term.toLowerCase());
         if (nt.length <= 1) continue;
+        // تجاهل الكلمات العامة في الـ scoring — دي في كل الكورسات
+        const genericWords = ["احترافي","احترافى","شامل","كامل","متقدم","مبتدئين","مبتدئ","اساسيات","أساسيات","دليل","مقدمة","تعلم","تعلّم","كورس","دورة","برنامج"];
+        if (genericWords.some(g => nt === g || g === nt)) continue;
 if (isWordBoundaryMatch(titleNorm, nt)) {
   score += 150;
   isTitleMatch = true;
@@ -1139,6 +1181,24 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
       ).length;
       if (titleHits >= 2) score += 40;
 
+      // ── Domain Penalty: لو الكورس في domain مختلف عن الـ query ──
+      if (score > 0 && finalTerms.length > 0) {
+        const qNormsD = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
+        const domainPenalties = [
+          { courseWords: ["اندرويد","android","flutter","يونيتي","unity","الالعاب"], queryNeeds: ["اندرويد","android","flutter","تطبيق","لعبة","unity"] },
+          { courseWords: ["langchain","llm","النماذج اللغويه"], queryNeeds: ["langchain","llm","ذكاء اصطناعي","نماذج"] },
+          { courseWords: ["تعديل السلوك","استيراتيجيات تعديل"], queryNeeds: ["سلوك","تربية","نفس"] },
+          { courseWords: ["معماري","معماريه"], queryNeeds: ["معماري","هندسي","بناء"] },
+          { courseWords: ["الدروب شيبنج","dropshipping","drop servicing"], queryNeeds: ["دروب","شيبنج","تجارة"] },
+        ];
+        for (const dp of domainPenalties) {
+          const cInDomain = dp.courseWords.some(w => titleNorm.includes(normalizeArabic(w.toLowerCase())));
+          if (!cInDomain) continue;
+          const qInDomain = dp.queryNeeds.some(w => qNormsD.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt)));
+          if (!qInDomain) { score = Math.round(score * 0.15); break; }
+        }
+      }
+
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
 
       if (semanticMap.has(c.id)) {
@@ -1152,18 +1212,19 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
+    const finalScored = scored;
+    const maxScore = finalScored.length > 0 ? finalScored[0].relevanceScore : 0;
+    const threshold = maxScore > 200 ? 50 : 0;
+    const goodScored = finalScored.filter(c => c.relevanceScore >= threshold);
+    const finalFiltered = goodScored.length >= 2 ? goodScored : finalScored;
 
-    scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    finalFiltered.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    scored.slice(0, 5).forEach((c, i) => {
-      console.log(
-        `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
-          c.domain ? ` (${c.domain})` : ""
-        }`
-      );
+    finalFiltered.slice(0, 5).forEach((c, i) => {
+      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${c.domain ? ` (${c.domain})` : ""}`);
     });
 
-    const result = scored.slice(0, 15);
+    const result = finalFiltered.slice(0, 15);
     setCachedSearch(cacheKey, result);
     return result;
   } catch (e) {
