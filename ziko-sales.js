@@ -373,7 +373,7 @@ async function performSearch(keywords, instructors) {
             .from("chunks")
             .select("lesson_id, content, timestamp_start")
             .or(chunkTextFilters)
-            .limit(15);
+            .limit(50);
           if (tcError) console.error("❌ Text chunks error:", tcError.message, tcError.details);
           else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
