@@ -1132,7 +1132,6 @@ async function smartChat(message, sessionId) {
       });
       if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
-    }
 
     // الـ audience — من intent أو من الـ session المحفوظة
     const audience = intent.audience || session.audience || null;
