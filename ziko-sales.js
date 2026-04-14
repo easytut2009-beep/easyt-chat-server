@@ -424,22 +424,22 @@ async function performSearch(keywords, instructors) {
                 return { word: w, freq: count };
               }).sort((a, b) => a.freq - b.freq);
 
-              textChunkCourses = [...courseChunksMap.values()]
-                .sort((a, b) => {
-                  const getScore = (item) => {
-                    let score = 0;
-                    wordFreq.forEach(({ word, freq }, idx) => {
-                      const w2 = word.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
-                      const hasWord = item.chunks.some(c => {
-                        const ct = (c.content || '').toLowerCase();
-                        return ct.includes(word.toLowerCase()) || ct.includes(w2.toLowerCase());
-                      });
-                      if (hasWord) score += (wordFreq.length - idx) * 100;
+              // لو في أكتر من كلمة — عرض بس الكورسات اللي فيها كل الكلمات
+              let filteredCourses = [...courseChunksMap.values()];
+              if (chunkWords.length > 1) {
+                const allWordsFiltered = filteredCourses.filter(item =>
+                  chunkWords.every(w => {
+                    const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                    return item.chunks.some(c => {
+                      const ct = (c.content || '').toLowerCase();
+                      return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
                     });
-                    return score;
-                  };
-                  return getScore(b) - getScore(a);
-                });
+                  })
+                );
+                if (allWordsFiltered.length > 0) filteredCourses = allWordsFiltered;
+              }
+              textChunkCourses = filteredCourses
+                .sort((a, b) => b.chunks.length - a.chunks.length);
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
