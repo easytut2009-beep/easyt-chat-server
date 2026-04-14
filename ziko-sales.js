@@ -336,6 +336,18 @@ async function performSearch(keywords, instructors) {
 
   // 3. بحث في الدروس — بس لو مفيش كورسات كافية من الـ title search
   try {
+    // domain-aware: لو مش query عن موبايل/تطبيق → مش نضيف كورسات android/unity من الدروس
+    const isMobileQuery = keywords.some(k => ["android","اندرويد","flutter","تطبيق","mobile","unity","لعبة"].some(t => k.toLowerCase().includes(t)));
+    
+    function filterLessonResults(lessonResults) {
+      if (isMobileQuery) return lessonResults;
+      // شيل كورسات android/unity من الدروس لو مش mobile query
+      return lessonResults.filter(c => {
+        const t = (c.title || "").toLowerCase();
+        return !t.includes("android studio") && !t.includes("unity");
+      });
+    }
+
     // لو في 3+ كورسات من title/keyword search → مش محتاج lesson search
     if (results.courses.length >= 3) {
       console.log(`⏭️ Skipping lesson search — already have ${results.courses.length} courses`);
@@ -350,7 +362,8 @@ async function performSearch(keywords, instructors) {
         });
       }
     } else {
-    const lessonResults = await searchLessonsInCourses(keywords);
+    const rawLessonResults = await searchLessonsInCourses(keywords);
+    const lessonResults = filterLessonResults(rawLessonResults || []);
     if (lessonResults && lessonResults.length > 0) {
       if (results.courses.length === 0) {
         // مفيش كورسات — اعرض الكورسات من الدروس
@@ -1141,15 +1154,20 @@ async function smartChat(message, sessionId) {
     // ── Keyword Expansion Map ──
     const expansionMap = [
       { trigger: ["تطبيق","mobile","android","اندرويد","flutter","app"], expand: ["اندرويد","flutter","android","تطبيقات موبايل"] },
-      { trigger: ["تصوير","photography","فوتوغراف"], expand: ["تصوير","photography","كاميرا"] },
-      { trigger: ["برمجة","صفر","مبتدئ"], expand: ["برمجة","python","بايثون","أساسيات برمجة"] },
-      { trigger: ["انيميشن","animation","موشن","motion","تحريك","after effects","افتر افكت"], expand: ["after effects","انيميشن","موشن"] },
-      { trigger: ["هوية","بصرية","brand","لوجو","logo","شعار"], expand: ["هوية بصرية","لوجو","illustrator"] },
-      { trigger: ["ذكاء","اصطناعي","chatgpt","gpt"], expand: ["ذكاء اصطناعي","chatgpt","machine learning","python"] },
+      { trigger: ["تصوير","photography","فوتوغراف","cinematography"], expand: ["تصوير","photography","كاميرا","cinematography"] },
+      { trigger: ["برمجة","صفر","مبتدئ","coding","programmer"], expand: ["برمجة","python","بايثون","html","أساسيات برمجة"] },
+      { trigger: ["انيميشن","animation","موشن","motion","تحريك","after effects","افتر افكت","مونتاج","فيديو","اعلان متحرك","premiere","بريمير","capcut"], expand: ["after effects","انيميشن","موشن","alight motion"] },
+      { trigger: ["هوية","بصرية","brand","لوجو","logo","logos","شعار","جرافيك","graphic","illustrator","فوتوشوب","photoshop"], expand: ["هوية بصرية","لوجو","logos","illustrator","فوتوشوب","جرافيك"] },
+      { trigger: ["ذكاء","اصطناعي","chatgpt","gpt","ai"], expand: ["ذكاء اصطناعي","chatgpt","machine learning","python"] },
       { trigger: ["تيك توك","tiktok"], expand: ["تيك توك","tiktok","ادز","سوشيال ميديا"] },
-      { trigger: ["backend","api","باك ايند","سيرفر"], expand: ["node","python","api","backend"] },
-      { trigger: ["تجارة","شوبيفاي","shopify","متجر","دروب"], expand: ["تجارة إلكترونية","shopify","دروب شيبنج"] },
-      { trigger: ["فريلانس","freelance"], expand: ["فريلانس","freelance"] },
+      { trigger: ["backend","api","باك ايند","سيرفر","node","php","sql"], expand: ["node","python","api","backend","php"] },
+      { trigger: ["تجارة","شوبيفاي","shopify","متجر","دروب","ربح","إنترنت","اونلاين","فريلانس","freelance"], expand: ["تجارة إلكترونية","shopify","دروب شيبنج","فريلانس"] },
+      { trigger: ["سوشيال","social","انستجرام","instagram","facebook","فيسبوك","تسويق","marketing","محتوى","كتابة محتوى"], expand: ["سوشيال ميديا","فيسبوك","تسويق","facebook ads"] },
+      { trigger: ["وورك","workflow","notion","نوشن","اوتوماتيك","zapier","make"], expand: ["وورك","workflow","notion","إنتاجية"] },
+      { trigger: ["اكسيل","excel","word","powerpoint","اوفيس","office"], expand: ["اكسيل","excel","microsoft","word","powerpoint"] },
+      { trigger: ["نفس","psychology","عقل","الباطن"], expand: ["نفس","عقل","سلوك","الباطن"] },
+      { trigger: ["مهارات شخصية","تفاوض","إقناع","ريادة","startup","مشروع"], expand: ["مهارات","إدارة","مشاريع"] },
+      { trigger: ["ادوبي","adobe"], expand: ["after effects","illustrator","فوتوشوب","جرافيك","موشن"] },
     ];
     const msgLower = message.toLowerCase();
     for (const entry of expansionMap) {
@@ -1193,15 +1211,18 @@ async function smartChat(message, sessionId) {
     // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني
     let excludeTerms = [];
     if (audience === "أطفال") {
+      // دايماً استثنِ كورسات الجرافيك واللغات للأطفال — مش مناسبة لطلب البرمجة أو Scratch
+      const kidsGraphicExclude = ["الجرافيكس للأطفال","اللغة العربية للأطفال","اللغة الانجليزية للأطفال","للأطفال (باللغة العربية)","للأطفال (باللغة الإنجليزية)","الكهرباء والإلكترونيات للأطفال","تعديل السلوك"];
+      excludeTerms = kidsGraphicExclude;
       const techKws = ["python","برمجة","html","javascript","flutter","اندرويد","فوتوشوب","illustrator","بايثون","node","backend","api"];
       const hasTech = keywords.some(k => techKws.some(t => k.toLowerCase().includes(t.toLowerCase())));
-      if (!hasTech) {
+      const hasScratch = keywords.some(k => ["scratch","سكراتش"].some(t => k.toLowerCase().includes(t)));
+      if (!hasTech && !hasScratch) {
+        // مفيش موضوع محدد → أضف scratch وأطفال للبحث
         keywords = [...keywords, "scratch", "أطفال"];
         console.log("👧 Kids mode — added scratch/أطفال keywords");
       } else {
-        // موضوع تقني + أطفال → استثنِ كورسات الجرافيك واللغات للأطفال
-        excludeTerms = ["الجرافيكس للأطفال", "الجرافيك للأطفال", "اللغة العربية للأطفال", "اللغة الانجليزية للأطفال", "للأطفال (باللغة", "للأطفال (بالل"];
-        console.log("👧 Kids mode + tech topic — excluding graphic/language kids courses");
+        console.log("👧 Kids mode + specific topic — keeping keywords, excluding graphic/language kids courses");
       }
     }
 
