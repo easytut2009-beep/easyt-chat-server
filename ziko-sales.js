@@ -86,7 +86,7 @@ function formatDiplomaCard(diploma) {
 // Intent Analysis — GPT يفهم النية ويولد keywords
 // ══════════════════════════════════════════════════════════
 async function analyzeIntent(message, history = [], hadClarify = false) {
-  const lastMessages = history.slice(-2).map(h => `${h.role}: ${h.content}`).join("\n");
+  const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
   const hadClarifyBefore = hadClarify || history.some(h => h.role === 'assistant' && (
     h.content.includes('بالظبط') || h.content.includes('بالضبط') || h.content.includes('في إيه') || h.content.includes('في ايه')
   ));
@@ -243,7 +243,7 @@ null: غير كده
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [{ role: "system", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.1,
