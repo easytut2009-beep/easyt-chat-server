@@ -365,6 +365,8 @@ async function logChat(sessionId, role, message, intent, extra = {}) {
       role,
       message,
       intent: intent || null,
+      entity: null,
+      corrected: false,
       metadata: extra,
       created_at: new Date().toISOString(),
     });
