@@ -414,13 +414,20 @@ async function performSearch(keywords, instructors) {
 
               textChunkCourses = [...courseChunksMap.values()]
                 .sort((a, b) => {
-                  // كورس فيه كل الكلمات يجي الأول
-                  const scoreA = chunkWords.filter(w => 
-                    a.chunks.some(c => (c.content || '').toLowerCase().includes(w.toLowerCase()))
-                  ).length;
-                  const scoreB = chunkWords.filter(w => 
-                    b.chunks.some(c => (c.content || '').toLowerCase().includes(w.toLowerCase()))
-                  ).length;
+                  const scoreA = chunkWords.filter(w => {
+                    const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                    return a.chunks.some(c => {
+                      const ct = (c.content || '').toLowerCase();
+                      return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                    });
+                  }).length;
+                  const scoreB = chunkWords.filter(w => {
+                    const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                    return b.chunks.some(c => {
+                      const ct = (c.content || '').toLowerCase();
+                      return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                    });
+                  }).length;
                   if (scoreB !== scoreA) return scoreB - scoreA;
                   return b.chunks.length - a.chunks.length;
                 });
