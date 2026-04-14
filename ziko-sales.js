@@ -868,12 +868,11 @@ async function smartChat(message, sessionId) {
     }
     // لو GPT قال diplomas_list بس مفيش كلمة "دبلوم" في الرسالة → search
     if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
-      console.log(`⚠️ GPT said diplomas_list but no دبلوم in message — forcing search`);
+      console.log(`⚠️ diplomas_list without دبلوم — forcing search`);
       intent.type = "search";
     }
-    // لو GPT قال audience=أطفال بس فيه "جامعة" في الرسالة → null
+    // لو audience=أطفال بس فيه جامعة → null
     if (intent.audience === "أطفال" && /جامع|university|كلي/.test(message)) {
-      console.log(`⚠️ Resetting audience — university context`);
       intent.audience = null;
     }
   }
@@ -1112,7 +1111,7 @@ async function smartChat(message, sessionId) {
       : prepareSearchTerms(message.split(/\s+/));
 
     // نشيل كلمات زي "كورس" و"دورة" من الـ keywords
-    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي"]);
+    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي", "احترافي", "احترافى", "الاحترافي", "الاحترافى", "متقدم", "شامل", "كامل"]);
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
 
@@ -1126,15 +1125,14 @@ async function smartChat(message, sessionId) {
 
     // ── Keyword Expansion Map ──
     const expansionMap = [
-      { trigger: ["تطبيق", "موبايل", "mobile", "android", "اندرويد", "app"], expand: ["اندرويد", "flutter", "android", "تطبيقات موبايل"] },
-      { trigger: ["برمجة", "صفر", "مبتدئ", "ابدأ"], expand: ["برمجة", "python", "بايثون", "أساسيات برمجة"] },
+      { trigger: ["تطبيق", "موبايل", "mobile", "android", "اندرويد"], expand: ["اندرويد", "flutter", "android", "تطبيقات موبايل"] },
+      { trigger: ["برمجة", "صفر", "مبتدئ"], expand: ["برمجة", "python", "بايثون", "أساسيات برمجة"] },
       { trigger: ["انيميشن", "animation", "موشن", "motion", "تحريك"], expand: ["after effects", "انيميشن", "موشن"] },
       { trigger: ["هوية", "بصرية", "brand"], expand: ["هوية بصرية", "لوجو", "illustrator"] },
-      { trigger: ["تصوير", "فوتوغراف", "photography"], expand: ["تصوير", "photography", "كاميرا"] },
+      { trigger: ["تصوير", "photography", "فوتوغراف"], expand: ["تصوير", "photography", "كاميرا"] },
       { trigger: ["ذكاء", "اصطناعي", "chatgpt", "gpt"], expand: ["ذكاء اصطناعي", "chatgpt", "machine learning", "python"] },
       { trigger: ["تيك توك", "tiktok"], expand: ["تيك توك", "tiktok", "ادز", "سوشيال ميديا"] },
-      { trigger: ["backend", "باك ايند", "api", "سيرفر"], expand: ["node", "python", "api", "backend"] },
-      { trigger: ["فريلانس", "freelance"], expand: ["فريلانس", "freelance"] },
+      { trigger: ["backend", "api", "باك ايند", "سيرفر"], expand: ["node", "python", "api", "backend"] },
       { trigger: ["تجارة", "شوبيفاي", "shopify", "متجر"], expand: ["تجارة إلكترونية", "shopify", "دروب شيبنج"] },
     ];
     const msgLower = message.toLowerCase();
@@ -1176,17 +1174,15 @@ async function smartChat(message, sessionId) {
       console.log(`👥 Audience: ${audience}`);
     }
 
-    // لو أطفال — أضف keywords مناسبة للأطفال بس لو مفيش keywords تقنية محددة
+    // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني محدد
     if (audience === "أطفال") {
-      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "تصميم", "فوتوشوب", "illustrator"];
-      const hasTech = keywords.some(k => techKeywords.some(t => k.toLowerCase().includes(t)));
-      if (hasTech) {
-        // فيه موضوع تقني محدد — متضيفش "أطفال" للـ keywords عشان ميجيبش كورسات جرافيك أطفال
-        // بس فلتر النتايج بـ audience في الـ performSearch
-        console.log("👧 Kids mode + tech topic — keeping specific keywords, skipping أطفال keyword");
-      } else {
-        keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
+      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "فوتوشوب", "illustrator", "تصميم", "scratch", "بايثون"];
+      const hasTech = keywords.some(k => techKeywords.some(t => k.toLowerCase().includes(t.toLowerCase())));
+      if (!hasTech) {
+        keywords = [...keywords, "scratch", "أطفال"];
         console.log("👧 Kids mode — added scratch/أطفال keywords");
+      } else {
+        console.log("👧 Kids mode + tech topic — keeping specific keywords only");
       }
     }
 
