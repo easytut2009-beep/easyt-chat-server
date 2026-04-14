@@ -923,7 +923,7 @@ console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
 // 🔧 Phase 1: بحث في العنوان والـ keywords فقط (الأدق)
-const coreCols = ["title", "subtitle", "keywords", "domain"];
+const coreCols = ["title", "subtitle", "domain"];
 
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
@@ -947,7 +947,7 @@ const embResp = await openai.embeddings.create({
     });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.65,
+              match_threshold: 0.75,
               match_count: 10,
             });
             return data || [];
@@ -1258,7 +1258,7 @@ const embResponse = await openai.embeddings.create({
           "match_diplomas",
           {
             query_embedding: embResponse.data[0].embedding,
-            match_threshold: 0.65,
+            match_threshold: 0.75,
             match_count: 8,
           }
         );
@@ -1420,7 +1420,7 @@ const embResp = await openai.embeddings.create({
           "match_lesson_chunks",
           {
             query_embedding: embResp.data[0].embedding,
-            match_threshold: 0.65,
+            match_threshold: 0.75,
             match_count: 8,
             filter_course_id: null,
           }
