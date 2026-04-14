@@ -412,27 +412,31 @@ async function performSearch(keywords, instructors) {
                 });
               });
 
+              // رتب الكلمات حسب الندرة — الأقل شيوعاً أولاً
+              const wordFreq = chunkWords.map(w => {
+                const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                const count = [...courseChunksMap.values()].filter(item =>
+                  item.chunks.some(c => {
+                    const ct = (c.content || '').toLowerCase();
+                    return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                  })
+                ).length;
+                return { word: w, freq: count };
+              }).sort((a, b) => a.freq - b.freq);
+
               textChunkCourses = [...courseChunksMap.values()]
                 .sort((a, b) => {
                   const getScore = (item) => {
-                    const allWords = chunkWords.flatMap(w => [w.toLowerCase(), w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه').toLowerCase()]);
-                    // بونص كبير لو في chunk واحدة فيها كل الكلمات معاً
-                    const hasAllInOne = item.chunks.some(c => {
-                      const ct = (c.content || '').toLowerCase();
-                      return chunkWords.every(w => {
-                        const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
-                        return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
-                      });
-                    });
-                    if (hasAllInOne) return 1000;
-                    // عدد الكلمات المختلفة الموجودة
-                    return chunkWords.filter(w => {
-                      const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
-                      return item.chunks.some(c => {
+                    let score = 0;
+                    wordFreq.forEach(({ word, freq }, idx) => {
+                      const w2 = word.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+                      const hasWord = item.chunks.some(c => {
                         const ct = (c.content || '').toLowerCase();
-                        return ct.includes(w.toLowerCase()) || ct.includes(w2.toLowerCase());
+                        return ct.includes(word.toLowerCase()) || ct.includes(w2.toLowerCase());
                       });
-                    }).length;
+                      if (hasWord) score += (wordFreq.length - idx) * 100;
+                    });
+                    return score;
                   };
                   return getScore(b) - getScore(a);
                 });
