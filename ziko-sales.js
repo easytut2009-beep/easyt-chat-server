@@ -657,7 +657,7 @@ function faqSimilarity(q1, q2) {
   return common / Math.max(wa.size, wb.size);
 }
 
-async function findFAQAnswer(message, threshold = 0.55) {
+async function findFAQAnswer(message, threshold = 0.70) {
   try {
     const faqs = await loadAllFAQs();
     if (!faqs || faqs.length === 0) return null;
