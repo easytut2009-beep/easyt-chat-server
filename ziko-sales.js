@@ -413,7 +413,17 @@ async function performSearch(keywords, instructors) {
               });
 
               textChunkCourses = [...courseChunksMap.values()]
-                .sort((a, b) => b.chunks.length - a.chunks.length);
+                .sort((a, b) => {
+                  // كورس فيه كل الكلمات يجي الأول
+                  const scoreA = chunkWords.filter(w => 
+                    a.chunks.some(c => (c.content || '').toLowerCase().includes(w.toLowerCase()))
+                  ).length;
+                  const scoreB = chunkWords.filter(w => 
+                    b.chunks.some(c => (c.content || '').toLowerCase().includes(w.toLowerCase()))
+                  ).length;
+                  if (scoreB !== scoreA) return scoreB - scoreA;
+                  return b.chunks.length - a.chunks.length;
+                });
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
@@ -470,7 +480,8 @@ async function formatResults(results, query, session = null) {
   let found = false;
 
   // اختصر الـ query للعنوان (أول كلمتين بس)
-  const shortQuery = query.split(/\s+/).slice(0, 2).join(" ");
+  const _stopW = new Set(["كورس","دورة","دروس","كورسات","ممكن","عايز","عاوز","محتاج","ابي","اريد"]);
+  const shortQuery = query.split(/\s+/).filter(w => !_stopW.has(w.toLowerCase())).slice(0, 2).join(" ") || query.split(/\s+/).slice(0, 2).join(" ");
 
   // دبلومات
   if (results.diplomas.length > 0) {
