@@ -540,11 +540,9 @@ async function formatResults(results, query, session = null) {
         chunks.slice(0, 2).forEach(chunk => {
           // تظليل الكلمة في الـ content
           let snippet = escapeHtml((chunk.content || '').substring(0, 120));
-          keywords.forEach(kw => {
-            if (kw.length > 2) {
-              const re = new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-              snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
-            }
+          query.split(/\s+/).filter(kw => kw.length > 2).forEach(kw => {
+            const re = new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
           });
           html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #f0f0f0">`;
           html += `<div style="font-weight:600;margin-bottom:2px">• ${escapeHtml(chunk.lessonTitle || '')}</div>`;
