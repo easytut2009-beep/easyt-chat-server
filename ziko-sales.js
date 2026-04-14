@@ -342,12 +342,8 @@ async function performSearch(keywords, instructors) {
         // في كورسات بالفعل — ضيف الكورسات الجديدة اللي فيها دروس matching
         const existingIds = new Set(results.courses.map(c => c.id));
         const newFromLessons = lessonResults.filter(c => !existingIds.has(c.id));
-        if (newFromLessons.length > 0) {
-          const withDiploma = await injectDiplomaInfo(newFromLessons).catch(() => newFromLessons);
-          withDiploma.forEach(c => { c._foundInContent = true; delete c.matchedLessons; });
-          results.courses = [...results.courses, ...withDiploma].slice(0, MAX_COURSES_DISPLAY);
-          console.log(`📖 Added ${newFromLessons.length} courses from lesson search`);
-        }
+        // لو في كورسات من title match — متضيفش كورسات من الدروس
+        console.log(`📖 Skipped lesson courses — title match already found`);
       }
     }
   } catch (e) { console.error("lesson search error:", e.message); }
