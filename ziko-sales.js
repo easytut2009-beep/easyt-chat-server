@@ -420,7 +420,7 @@ async function performSearch(keywords, instructors) {
   }
 
   // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
-  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0) {
+  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0 && (!results._textChunkCourses || results._textChunkCourses.length === 0)) {
     try {
       if (supabase && openai) {
         const embResp = await openai.embeddings.create({
@@ -865,6 +865,15 @@ async function smartChat(message, sessionId) {
       if (!intent.keywords || intent.keywords.length === 0) {
         intent.keywords = prepareSearchTerms(message.split(/\s+/));
       }
+    }
+    // لو diplomas_list بدون كلمة دبلوم → search
+    if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
+      intent.type = "search";
+    }
+    // لو info مع keywords → search
+    if (intent.type === "info" && intent.keywords && intent.keywords.length > 0) {
+      console.log(`⚠️ GPT said info but has keywords — forcing search`);
+      intent.type = "search";
     }
   }
   console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
