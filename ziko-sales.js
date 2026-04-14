@@ -412,7 +412,8 @@ async function performSearch(keywords, instructors) {
                 });
               });
 
-              textChunkCourses = [...courseChunksMap.values()];
+              textChunkCourses = [...courseChunksMap.values()]
+                .sort((a, b) => b.chunks.length - a.chunks.length);
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
