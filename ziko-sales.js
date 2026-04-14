@@ -145,18 +145,25 @@ type=search: بيدور على كورس أو دبلومة أو برنامج تع
 مثال: "عايز كورس X"، "فين أتعلم X؟"، "في كورسات عن X؟"
 🚨 أي رسالة فيها اسم برنامج (فوتوشوب، اكسيل، بريمير، اوتوكاد، بلندر، وورد) → search
 🚨 أي رسالة فيها اسم منصة (فيسبوك، انستجرام، يوتيوب، تيك توك، سناب، لينكدإن) → search
-🚨 فريلانس، اونلاين، يوتيوب، تجارة إلكترونية، ربح من الإنترنت → search مباشرة
-🚨 "عايز اتعلم اوفيس" → search, keywords: ["word", "excel", "powerpoint", "اوفيس"]
-🚨 "عايز اتعلم الذكاء الاصطناعي" → search, keywords: ["ذكاء اصطناعي", "chatgpt", "python", "machine learning"]
-🚨 "الكورسات بالعربي" أو "هل الكورسات بالعربي" → type=info (سؤال عن المنصة مش بحث)
-🚨 "فيه شهادات" → type=info (سؤال عن المنصة مش بحث)
-🚨 "مهندس وعايز اتطور" → type=clarify (اسأل عن التخصص)
-🚨 لو سبق وسألنا توضيح في المحادثة → search إلزامي بدون clarify
+🚨 فريلانس، اونلاين، تجارة إلكترونية، ربح → search مباشرة
+🚨 "عايز اشتغل في X" أو "عايز اتعلم X" + موضوع محدد → search دائماً
+🚨 "صناعة الفيديو" → search, keywords: ["مونتاج", "فيديو", "بريمير", "capcut"]
+🚨 "media buyer" → search, keywords: ["فيسبوك ادز", "إعلانات", "media buyer"]
+🚨 "backend developer" → search, keywords: ["node", "python", "backend", "api"]
+🚨 "كتابة محتوى" → search, keywords: ["كتابة محتوى", "copywriting", "سوشيال ميديا"]
+🚨 "ابدأ مشروعي" → search, keywords: ["ريادة أعمال", "مشروع", "startup"]
+🚨 "اتعلم اوفيس" → search, keywords: ["word", "excel", "powerpoint"]
+🚨 "الذكاء الاصطناعي" → search, keywords: ["ذكاء اصطناعي", "chatgpt", "python", "machine learning"]
+🚨 "الكورسات بالعربي" أو "هل الكورسات بالعربي" → type=info
+🚨 "فيه شهادات" → type=info
+🚨 "مهندس وعايز اتطور" → type=clarify
+🚨 لو سبق وسألنا توضيح → search إلزامي
 ${hadClarifyBefore ? "🚨 تم سؤال المستخدم من قبل — الآن type=search إلزامي" : ""}
 
-type=clarify: طلب عام أو مهنة بدون تحديد — اسأل سؤال واحد فقط
-مثال: "أنا محاسب وعايز أتعلم"، "عايز أشتغل أونلاين"
-⚠️ اسأل clarify بس لو الطلب عام جداً ومفيش برنامج أو موضوع محدد
+type=clarify: طلب عام جداً بدون أي تحديد للموضوع
+مثال: "أنا محاسب وعايز أتعلم" (مش محدد إيه)، "عايز أشتغل" (مش محدد في إيه)
+⚠️ clarify بس لو مفيش أي موضوع أو مجال محدد في الرسالة خالص
+⚠️ لو فيه أي كلمة بتدل على مجال (تصميم، برمجة، تسويق، فيديو، موبايل، إلخ) → search مش clarify
 
 ══ قواعد الـ audience ══
 أطفال: لو ذكر أطفال أو عمر صغير (8 سنين، ابني، ابنتي، في الابتدائي، في الإعدادي، إلخ)
@@ -978,7 +985,7 @@ async function smartChat(message, sessionId) {
 
   // ── Courses List ──
   else if (intent.type === "courses_list") {
-    reply = `📚 عندنا 500+ كورس في كل المجالات!<br><br>`;
+    reply = `📚 عندنا 600+ كورس ومحتوى تعليمي في كل المجالات!<br><br>`;
     reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a><br>`;
     reply += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
     suggestions = ["فوتوشوب 🎨", "اكسيل 📊", "برمجة 💻"];
