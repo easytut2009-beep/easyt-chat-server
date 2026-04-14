@@ -903,13 +903,7 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     console.log("🔍 Search terms:", allTerms);
 
-    // فلتر الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const _genericWords = new Set(["تصميم", "برمجه", "برمجة", "تعلم", "شغل", "عمل", "مجال", "work", "flow", "وورك", "فلو"]);
-    const _specificTerms = allTerms.filter(t => !_genericWords.has(normalizeArabic(t.toLowerCase())) && !_genericWords.has(t.toLowerCase()));
-    const finalTerms = _specificTerms.length >= 1 ? _specificTerms : allTerms;
-    if (_specificTerms.length < allTerms.length) {
-      console.log(`🎯 Filtered generic terms: ${allTerms.length} → ${finalTerms.length}`);
-    }
+    const finalTerms = allTerms;
 
 const limitedTerms = finalTerms.slice(0, 8);
 
