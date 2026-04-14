@@ -1125,15 +1125,16 @@ async function smartChat(message, sessionId) {
 
     // ── Keyword Expansion Map ──
     const expansionMap = [
-      { trigger: ["تطبيق", "موبايل", "mobile", "android", "اندرويد"], expand: ["اندرويد", "flutter", "android", "تطبيقات موبايل"] },
-      { trigger: ["برمجة", "صفر", "مبتدئ"], expand: ["برمجة", "python", "بايثون", "أساسيات برمجة"] },
-      { trigger: ["انيميشن", "animation", "موشن", "motion", "تحريك"], expand: ["after effects", "انيميشن", "موشن"] },
-      { trigger: ["هوية", "بصرية", "brand"], expand: ["هوية بصرية", "لوجو", "illustrator"] },
-      { trigger: ["تصوير", "photography", "فوتوغراف"], expand: ["تصوير", "photography", "كاميرا"] },
-      { trigger: ["ذكاء", "اصطناعي", "chatgpt", "gpt"], expand: ["ذكاء اصطناعي", "chatgpt", "machine learning", "python"] },
-      { trigger: ["تيك توك", "tiktok"], expand: ["تيك توك", "tiktok", "ادز", "سوشيال ميديا"] },
-      { trigger: ["backend", "api", "باك ايند", "سيرفر"], expand: ["node", "python", "api", "backend"] },
-      { trigger: ["تجارة", "شوبيفاي", "shopify", "متجر"], expand: ["تجارة إلكترونية", "shopify", "دروب شيبنج"] },
+      { trigger: ["تطبيق","mobile","android","اندرويد","flutter","app"], expand: ["اندرويد","flutter","android","تطبيقات موبايل"] },
+      { trigger: ["تصوير","photography","فوتوغراف"], expand: ["تصوير","photography","كاميرا"] },
+      { trigger: ["برمجة","صفر","مبتدئ"], expand: ["برمجة","python","بايثون","أساسيات برمجة"] },
+      { trigger: ["انيميشن","animation","موشن","motion","تحريك","after effects","افتر افكت"], expand: ["after effects","انيميشن","موشن"] },
+      { trigger: ["هوية","بصرية","brand","لوجو","logo","شعار"], expand: ["هوية بصرية","لوجو","illustrator"] },
+      { trigger: ["ذكاء","اصطناعي","chatgpt","gpt"], expand: ["ذكاء اصطناعي","chatgpt","machine learning","python"] },
+      { trigger: ["تيك توك","tiktok"], expand: ["تيك توك","tiktok","ادز","سوشيال ميديا"] },
+      { trigger: ["backend","api","باك ايند","سيرفر"], expand: ["node","python","api","backend"] },
+      { trigger: ["تجارة","شوبيفاي","shopify","متجر","دروب"], expand: ["تجارة إلكترونية","shopify","دروب شيبنج"] },
+      { trigger: ["فريلانس","freelance"], expand: ["فريلانس","freelance"] },
     ];
     const msgLower = message.toLowerCase();
     for (const entry of expansionMap) {
@@ -1176,7 +1177,7 @@ async function smartChat(message, sessionId) {
 
     // لو أطفال — أضف keywords مناسبة بس لو مفيش موضوع تقني محدد
     if (audience === "أطفال") {
-      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "فوتوشوب", "illustrator", "تصميم", "scratch", "بايثون"];
+      const techKeywords = ["python", "برمجة", "html", "javascript", "flutter", "اندرويد", "فوتوشوب", "illustrator", "بايثون", "node", "backend", "api"];
       const hasTech = keywords.some(k => techKeywords.some(t => k.toLowerCase().includes(t.toLowerCase())));
       if (!hasTech) {
         keywords = [...keywords, "scratch", "أطفال"];
