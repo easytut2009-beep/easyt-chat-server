@@ -354,12 +354,7 @@ async function performSearch(keywords, instructors) {
   if (results.courses.length === 0 && results.lessons.length === 0) {
     console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
-      if (supabase && openai) {
-        // Semantic search disabled مؤقتاً
-        let semChunks = [];
-        console.log("📦 Semantic chunks: skipped");
-
-        // Text search في الـ chunks
+      if (supabase) {
         const chunkTextFilters = keywords
           .filter(k => k.length > 2)
           .slice(0, 4)
@@ -370,38 +365,56 @@ async function performSearch(keywords, instructors) {
         if (chunkTextFilters) {
           const { data: tc, error: tcError } = await supabase
             .from("chunks")
-            .select("lesson_id")
+            .select("lesson_id, content, timestamp_start")
             .or(chunkTextFilters)
-            .limit(10);
+            .limit(15);
           if (tcError) console.error("❌ Text chunks error:", tcError.message);
           else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
           if (tc && tc.length > 0) {
             const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
-            // جيب الكورسات من الـ lesson_ids
             const { data: lessonData } = await supabase
               .from("lessons")
-              .select("course_id")
+              .select("id, course_id, title")
               .in("id", lessonIds);
+
             if (lessonData && lessonData.length > 0) {
               const courseIds = [...new Set(lessonData.map(l => l.course_id))];
               const { data: courseData } = await supabase
                 .from("courses")
                 .select(COURSE_SELECT_COLS)
                 .in("id", courseIds);
-              textChunkCourses = courseData || [];
+
+              // ربط كل chunk بالـ lesson والكورس
+              const lessonMap = new Map(lessonData.map(l => [l.id, l]));
+              const courseMap = new Map((courseData || []).map(c => [c.id, c]));
+
+              // جمع الـ chunks لكل كورس
+              const courseChunksMap = new Map();
+              tc.forEach(chunk => {
+                const lesson = lessonMap.get(chunk.lesson_id);
+                if (!lesson) return;
+                const course = courseMap.get(lesson.course_id);
+                if (!course) return;
+                if (!courseChunksMap.has(course.id)) {
+                  courseChunksMap.set(course.id, { course, chunks: [] });
+                }
+                courseChunksMap.get(course.id).chunks.push({
+                  lessonTitle: lesson.title,
+                  content: chunk.content,
+                  timestamp: chunk.timestamp_start,
+                });
+              });
+
+              textChunkCourses = [...courseChunksMap.values()];
               console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
         }
 
-        // دمج النتايج
-        const allChunks = semChunks || [];
-        if (allChunks.length > 0 || textChunkCourses.length > 0) {
-          results.chunks = allChunks;
+        if (textChunkCourses.length > 0) {
           results._textChunkCourses = textChunkCourses;
           results.noDirectCourse = false;
-          console.log(`📦 Found ${allChunks.length} semantic chunks + ${textChunkCourses.length} text chunk courses`);
         }
       }
     } catch (e) { console.error("chunk search error:", e.message); }
@@ -508,50 +521,35 @@ async function formatResults(results, query, session = null) {
   }
 
   // chunks
-  if (results.chunks.length > 0 || (results._textChunkCourses && results._textChunkCourses.length > 0)) {
+  if (results._textChunkCourses && results._textChunkCourses.length > 0) {
     found = true;
     html += `📖 <strong>لقيت "${shortQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
 
-    const courseMap = new Map();
+    results._textChunkCourses.slice(0, MAX_COURSES_DISPLAY).forEach(({ course, chunks }, i) => {
+      html += formatCourseCard(course, instructors, i + 1);
 
-    // من الـ semantic chunks
-    results.chunks.forEach(c => {
-      const key = c.course_title || c.course_id;
-      if (!courseMap.has(key)) courseMap.set(key, { course: c, lessons: [] });
-      if (c.lesson_title && !courseMap.get(key).lessons.includes(c.lesson_title)) {
-        courseMap.get(key).lessons.push(c.lesson_title);
-      }
-    });
-
-    // من الـ text chunk courses
-    if (results._textChunkCourses) {
-      results._textChunkCourses.forEach(c => {
-        if (!courseMap.has(c.title)) {
-          courseMap.set(c.title, { course: { course_title: c.title, course_link: c.link }, lessons: [], _fullCourse: c });
-        }
-      });
-    }
-
-    let idx = 1;
-    courseMap.forEach(({ course, lessons, _fullCourse }) => {
-      if (_fullCourse) {
-        // كارت كامل من الـ text chunks
-        html += formatCourseCard(_fullCourse, instructors, idx++);
-      } else {
-        html += `<div style="border:1px solid #eee;border-radius:10px;margin:6px 0;padding:10px;background:#fff">`;
-        html += `<div style="font-weight:700;font-size:14px;color:#1a1a2e;margin-bottom:6px">📘 ${idx++}. ${escapeHtml(course.course_title || "")}</div>`;
-        if (lessons.length > 0) {
-          html += `<div style="background:#fffde7;border-radius:8px;padding:8px;margin-bottom:6px">`;
-          lessons.slice(0, 3).forEach(l => {
-            html += `<div style="font-size:12px;color:#333;padding:2px 0">• ${escapeHtml(l)}</div>`;
+      if (chunks && chunks.length > 0) {
+        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fff;border-radius:0 0 10px 10px;border:1px solid #eee;border-top:none">`;
+        html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
+        chunks.slice(0, 2).forEach(chunk => {
+          // تظليل الكلمة في الـ content
+          let snippet = escapeHtml((chunk.content || '').substring(0, 120));
+          keywords.forEach(kw => {
+            if (kw.length > 2) {
+              const re = new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+              snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
+            }
           });
+          html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #f0f0f0">`;
+          html += `<div style="font-weight:600;margin-bottom:2px">• ${escapeHtml(chunk.lessonTitle || '')}</div>`;
+          html += `<div style="color:#666;font-size:11px">${snippet}...</div>`;
           html += `</div>`;
-        }
-        if (course.course_link) html += `<a href="${course.course_link}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔗 تفاصيل الدورة والاشتراك ←</a>`;
+        });
         html += `</div>`;
       }
     });
 
+    html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
   }
 
