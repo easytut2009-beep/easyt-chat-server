@@ -339,7 +339,6 @@ async function performSearch(keywords, instructors) {
     const lessonResults = await searchLessonsInCourses(keywords);
     if (lessonResults && lessonResults.length > 0) {
       if (results.courses.length === 0) {
-        // لو في كورسات عندها title match واضح — حطهم في courses مش lessons
         const hasTitleMatch = lessonResults.some(c => {
           const titleLow = (c.title || '').toLowerCase();
           return keywords.some(k => titleLow.includes(k.toLowerCase()));
@@ -348,7 +347,6 @@ async function performSearch(keywords, instructors) {
           const withDiploma = await injectDiplomaInfo(lessonResults).catch(() => lessonResults);
           results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
         } else {
-          // مفيش title match — اعرض مسار الدروس
           results.lessons = lessonResults.slice(0, MAX_COURSES_DISPLAY);
         }
       } else {
