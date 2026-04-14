@@ -15,7 +15,7 @@ function initShared(clients) {
 
 /* ═══ Constants ═══ */
 const CACHE_TTL = 10 * 60 * 1000;
-const SEARCH_CACHE_TTL = 2 * 60 * 1000; // دقيقتين
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const CORRECTION_CACHE_TTL = 5 * 60 * 1000;
 const FAQ_CACHE_TTL = 5 * 60 * 1000;
 const sessionMemory = new Map();
@@ -107,19 +107,6 @@ const BASIC_STOP_WORDS = new Set([
   "هذا", "هذه", "و", "أو", "او", "ثم", "لكن", "كل", "بعض",
   "غير", "لا", "ال", "ان", "إن", "ما", "هل",
   "the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
-  // كلمات شائعة في عناوين الكورسات — بتشوش البحث
-  "احترافي", "احترافية", "احتراف", "الاحترافي", "الاحترافية",
-  "شامل", "شاملة", "الشامل", "الشاملة",
-  "كامل", "كاملة", "الكامل", "الكاملة",
-  "متكامل", "متكاملة",
-  "مبسط", "مبسطة",
-  "تطبيقي", "تطبيقية",
-  "عملي", "عملية",
-  "دليل", "الدليل",
-  "اساسيات", "أساسيات", "الاساسيات",
-  "مقدمة", "مقدمه",
-  "مستوى", "المستوى",
-  "كورس", "دورة", "دوره",
 ]);
 
 const WHATSAPP_SUPPORT_LINK = '<a href="https://wa.me/201027007899" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">على الواتساب 💬</a>';
@@ -1058,18 +1045,18 @@ const [ilikeResult, semanticResults] = await Promise.all([
     if (allTerms.length > 0 && allCourses.length > 3) {
       const qTerms = allTerms.map(t => normalizeArabic(t.toLowerCase())).filter(t => t.length > 2);
 
-      // كلمات بتدل على domain معين — لو في الكورس ومش في الـ query → مش مناسب
       const domainSignals = [
         { words: ["بيانات", "tableau", "data"], exclude_if_query_lacks: ["بيانات","data","tableau","تحليل"] },
-        { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","security","hacking","حماية"] },
-        { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه", "game"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","يونيتي","موبايل"] },
+        { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","hacking","حماية"] },
+        { words: ["اندرويد", "android", "flutter", "يونيتي", "unity", "الالعاب", "لعبه"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","unity","موبايل"] },
         { words: ["langchain", "الذكاءات المتعدده", "llm", "النماذج اللغويه"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai","نماذج"] },
         { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
-        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى","طب"] },
+        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
         { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
-        { words: ["معماري", "معماريه", "اتوكاد معماري"], exclude_if_query_lacks: ["معماري","معمار","اتوكاد","هندسي","بناء"] },
-        { words: ["رؤيه حاسوبيه", "computer vision", "opencv"], exclude_if_query_lacks: ["computer vision","رؤية حاسوبية","opencv","بايثون","python"] },
-        { words: ["مهارات التواصل", "تواصل فعال", "علاقات"], exclude_if_query_lacks: ["تواصل","علاقات","مهارات شخصية","ناعمة"] },
+        { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
+        { words: ["رؤيه حاسوبيه", "computer vision", "opencv"], exclude_if_query_lacks: ["computer vision","رؤية","opencv","python"] },
+        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","اطفال","نفس"] },
+        { words: ["سي شارب", "c#", "csharp"], exclude_if_query_lacks: ["c#","سي شارب","csharp","برمجة","net"] },
       ];
 
       const relevant = allCourses.filter(c => {
@@ -1186,33 +1173,22 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
       ).length;
       if (titleHits >= 2) score += 40;
 
-      // ── Penalty: لو العنوان فيه كلمات كتير مش في الـ query → ده كورس مش مناسب ──
-      if (score > 0 && finalTerms.length > 0) {
-        const titleWordsList = titleNorm.split(/\s+/).filter(w => w.length > 2);
-        const qNorms = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
-        const unmatchedTitleWords = titleWordsList.filter(tw =>
-          !qNorms.some(qt => tw.includes(qt) || qt.includes(tw))
-        );
-        if (titleWordsList.length > 0) {
-          const unmatchRatio = unmatchedTitleWords.length / titleWordsList.length;
-          if (unmatchRatio > 0.7 && titleWordsList.length > 3) {
-            score = Math.round(score * 0.4);
-          }
-        }
-      }
-
       // ── Domain Penalty: لو الكورس في domain مختلف عن الـ query ──
-      const domainMismatches = [
-        { courseWords: ["اندرويد","android","flutter","يونيتي","unity","الالعاب","blockchain","بلوكشين"], queryNeeds: ["اندرويد","android","flutter","تطبيق","لعبة","game","unity","blockchain"] },
-        { courseWords: ["مراقبه","اختراق","hacking","سيبراني","cybersecurity"], queryNeeds: ["مراقبة","امن","اختراق","hacking","حماية"] },
-        { courseWords: ["دروب شيبنج","dropshipping","استيراد","تصدير"], queryNeeds: ["دروب","تجارة","استيراد","تصدير"] },
-      ];
-      const qNormsForDomain = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
-      for (const dm of domainMismatches) {
-        const courseInDomain = dm.courseWords.some(w => titleNorm.includes(normalizeArabic(w.toLowerCase())));
-        if (!courseInDomain) continue;
-        const queryInDomain = dm.queryNeeds.some(w => qNormsForDomain.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt)));
-        if (!queryInDomain) { score = Math.round(score * 0.15); break; }
+      if (score > 0 && finalTerms.length > 0) {
+        const qNormsD = finalTerms.map(t => normalizeArabic(t.toLowerCase()));
+        const domainPenalties = [
+          { courseWords: ["اندرويد","android","flutter","يونيتي","unity","الالعاب"], queryNeeds: ["اندرويد","android","flutter","تطبيق","لعبة","unity"] },
+          { courseWords: ["langchain","llm","النماذج اللغويه"], queryNeeds: ["langchain","llm","ذكاء اصطناعي","نماذج"] },
+          { courseWords: ["تعديل السلوك","استيراتيجيات تعديل"], queryNeeds: ["سلوك","تربية","نفس"] },
+          { courseWords: ["معماري","معماريه"], queryNeeds: ["معماري","هندسي","بناء"] },
+          { courseWords: ["الدروب شيبنج","dropshipping","drop servicing"], queryNeeds: ["دروب","شيبنج","تجارة"] },
+        ];
+        for (const dp of domainPenalties) {
+          const cInDomain = dp.courseWords.some(w => titleNorm.includes(normalizeArabic(w.toLowerCase())));
+          if (!cInDomain) continue;
+          const qInDomain = dp.queryNeeds.some(w => qNormsD.some(qt => qt.includes(normalizeArabic(w.toLowerCase())) || normalizeArabic(w.toLowerCase()).includes(qt)));
+          if (!qInDomain) { score = Math.round(score * 0.15); break; }
+        }
       }
 
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
@@ -1228,22 +1204,16 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 return { ...c, relevanceScore: score, _titleMatch: isTitleMatch };
     });
 
-    // ── فلتر: شيل الكورسات اللي score أقل من 50 لو في كورسات أعلى ──
     const finalScored = scored;
     const maxScore = finalScored.length > 0 ? finalScored[0].relevanceScore : 0;
     const threshold = maxScore > 200 ? 50 : 0;
     const goodScored = finalScored.filter(c => c.relevanceScore >= threshold);
     const finalFiltered = goodScored.length >= 2 ? goodScored : finalScored;
 
-
     finalFiltered.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
     finalFiltered.slice(0, 5).forEach((c, i) => {
-      console.log(
-        `   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${
-          c.domain ? ` (${c.domain})` : ""
-        }`
-      );
+      console.log(`   ${i + 1}. [score=${c.relevanceScore}] ${c.title}${c.domain ? ` (${c.domain})` : ""}`);
     });
 
     const result = finalFiltered.slice(0, 15);
