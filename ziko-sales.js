@@ -1123,32 +1123,15 @@ async function smartChat(message, sessionId) {
     keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
     if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
 
-    // نشيل الكلمات العامة جداً لو في كلمات أكثر تحديداً
-    const veryGenericWords = new Set(["تصميم", "برمجة", "تعلم", "اتعلم", "شغل", "عمل", "مجال", "حاجة", "موضوع", "work", "flow", "وورك", "فلو", "فلوس", "مال", "دخل"]);
-    const specificKeywords = keywords.filter(k => !veryGenericWords.has(k.toLowerCase()));
-    if (specificKeywords.length > 0) {
-      keywords = specificKeywords;
-      console.log("🎯 Removed generic words, specific keywords:", keywords);
-    }
+
     // لو بعد clarify — أضف الـ lastTopic عشان متخسرش السياق الأصلي
     if (session.lastTopic && session.hadClarify) {
-      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
-        .filter(k => !veryGenericWords.has(k.toLowerCase()));
+      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
       topicKws.forEach(k => {
         if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) keywords.push(k);
       });
       if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
-    // ✅ لو بعد clarify — أضف الـ lastTopic عشان متخسرش السياق الأصلي
-    if (session.lastTopic && session.hadClarify) {
-      const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/))
-        .filter(k => !veryGenericWords.has(k.toLowerCase()));
-      topicKws.forEach(k => {
-        if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) {
-          keywords.push(k);
-        }
-      });
-      if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
 
     // الـ audience — من intent أو من الـ session المحفوظة
