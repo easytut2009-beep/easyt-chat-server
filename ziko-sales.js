@@ -371,33 +371,39 @@ async function performSearch(keywords, instructors) {
         let semChunks = [];
         console.log("📦 Semantic chunks: skipped");
 
-        // Text search في الـ chunks — phrase أولاً، لو مش لاقي → split
+        // Text search في الـ chunks — AND أولاً (كل الكلمات لازم تكون موجودة)، لو مش لاقي → OR
         let textChunkCourses = [];
         
-        // ابحث بالـ keywords كـ phrases أولاً
-        const phraseFilters = keywords
-          .filter(k => k.length > 2)
-          .slice(0, 4)
-          .map(k => `content.ilike.%${k}%`)
-          .join(",");
+        // Step A: ابحث بـ AND — كل keyword لازم تكون في نفس الـ chunk
+        // نبحث بالـ phrase الأصلية من الـ message كـ AND
+        const msgWords = message.split(/\s+/).filter(w => w.length > 2 && !["عايز","عاوز","عندي","محتاج","ابغى","اريد","ممكن","كيف","إيه","ايه","فين","شرح","عن","في","من","على","الي","اللي"].includes(w));
         
         let finalChunkMatches = [];
-        if (phraseFilters) {
-          const { data: pm } = await supabase
-            .from("chunks").select("lesson_id").or(phraseFilters).limit(20);
-          finalChunkMatches = pm || [];
-          console.log(`📝 Phrase chunks found: ${finalChunkMatches.length}`);
+        
+        if (msgWords.length >= 2) {
+          // AND search: ابحث عن chunk فيه كل الكلمات
+          let andQuery = supabase.from("chunks").select("lesson_id");
+          for (const w of msgWords.slice(0, 4)) {
+            andQuery = andQuery.ilike("content", `%${w}%`);
+          }
+          const { data: andMatches } = await andQuery.limit(20);
+          finalChunkMatches = andMatches || [];
+          console.log(`📝 AND chunks found: ${finalChunkMatches.length}`);
         }
         
-        // لو مش لاقي بالـ phrase — ابحث بكل كلمة منفردة
+        // Step B: لو AND مش لاقي — ابحث بـ OR (أي كلمة)
         if (finalChunkMatches.length === 0) {
-          const splitTerms = [...new Set(keywords.flatMap(k => k.split(/\s+/)).filter(k => k.length > 2))];
-          const splitFilters = splitTerms.slice(0, 6).map(k => `content.ilike.%${k}%`).join(",");
-          if (splitFilters) {
-            const { data: sm } = await supabase
-              .from("chunks").select("lesson_id").or(splitFilters).limit(20);
-            finalChunkMatches = sm || [];
-            console.log(`📝 Split chunks found: ${finalChunkMatches.length}`);
+          const orFilters = keywords
+            .flatMap(k => k.split(/\s+/))
+            .filter(k => k.length > 2)
+            .slice(0, 4)
+            .map(k => `content.ilike.%${k}%`)
+            .join(",");
+          if (orFilters) {
+            const { data: orMatches } = await supabase
+              .from("chunks").select("lesson_id").or(orFilters).limit(20);
+            finalChunkMatches = orMatches || [];
+            console.log(`📝 OR chunks found: ${finalChunkMatches.length}`);
           }
         }
         
