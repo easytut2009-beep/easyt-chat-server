@@ -1056,6 +1056,12 @@ const [ilikeResult, semanticResults] = await Promise.all([
         { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
         { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس"] },
         { words: ["تعليم الجرافيكس للأطفال", "للأطفال (باللغة الإنجليزية)", "للأطفال (باللغة العربية)"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","سنين","kids","children"] },
+        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق","هاكر"] },
+        { words: ["طب شرعي", "الطب الشرعى"], exclude_if_query_lacks: ["طب شرعي","جنائي","forensic"] },
+        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس","اطفال"] },
+        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
+        { words: ["صينيه", "chinese", "اللغة الصينية"], exclude_if_query_lacks: ["صيني","صينية","chinese"] },
+        { words: ["oracle adf", "oracle apex", "اوراكل"], exclude_if_query_lacks: ["oracle","اوراكل","قاعدة بيانات"] },
       ];
 
       const relevant = allCourses.filter(c => {
