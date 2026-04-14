@@ -488,6 +488,16 @@ async function formatResults(results, query, session = null) {
     }
     results.courses.forEach((c, i) => {
       html += formatCourseCard(c, instructors, i + 1);
+      // عرض الدروس المطابقة لو موجودة
+      if (c.matchedLessons && c.matchedLessons.length > 0) {
+        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fffde7;border-radius:0 0 10px 10px;border:1px solid #fff59d;border-top:none">`;
+        html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
+        c.matchedLessons.slice(0, 3).forEach(lesson => {
+          const title = lesson.title || lesson;
+          html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #fff9c4">• ${escapeHtml(title)}</div>`;
+        });
+        html += `</div>`;
+      }
     });
     html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
