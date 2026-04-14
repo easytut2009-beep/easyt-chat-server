@@ -447,6 +447,7 @@ async function performSearch(keywords, instructors) {
 
         if (textChunkCourses.length > 0) {
           results._textChunkCourses = textChunkCourses;
+          results._chunkWords = chunkWords;
           results.noDirectCourse = false;
         }
       }
@@ -564,13 +565,24 @@ async function formatResults(results, query, session = null) {
       html += formatCourseCard(course, instructors, i + 1);
 
       if (chunks && chunks.length > 0) {
-        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fff;border-radius:0 0 10px 10px;border:1px solid #eee;border-top:none">`;
-        html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
+        html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#e8f4fd;border-radius:0 0 10px 10px;border:1px solid #b3d9f5;border-top:none">`;
+        html += `<div style="font-size:12px;font-weight:700;color:#1565c0;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
         chunks.slice(0, 2).forEach(chunk => {
-          let snippet = escapeHtml((chunk.content || '').substring(0, 120));
-          query.split(/\s+/).filter(kw => kw.length > 2).forEach(kw => {
-            const re = new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-            snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
+          // تنظيف الـ snippet من الكلام البايظ
+          let raw = (chunk.content || '').substring(0, 200);
+          // شيل الجمل الناقصة في الآخر
+          const lastDot = Math.max(raw.lastIndexOf('،'), raw.lastIndexOf('.'), raw.lastIndexOf('؟'));
+          if (lastDot > 80) raw = raw.substring(0, lastDot + 1);
+          else raw = raw.substring(0, 120);
+          let snippet = escapeHtml(raw);
+          // تظليل بـ chunkWords
+          const highlightWords = results._chunkWords || query.split(/\s+/).filter(kw => kw.length > 2);
+          highlightWords.forEach(kw => {
+            const kw2 = kw.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
+            [kw, kw2].forEach(k => {
+              const re = new RegExp(`(${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+              snippet = snippet.replace(re, '<mark style="background:#fff59d;color:#111;border-radius:3px;padding:0 2px;font-weight:700">$1</mark>');
+            });
           });
           html += `<div style="font-size:12px;color:#333;padding:4px 0;border-bottom:1px solid #f0f0f0">`;
           html += `<div style="font-weight:600;margin-bottom:2px">• ${escapeHtml(chunk.lessonTitle || '')}</div>`;
