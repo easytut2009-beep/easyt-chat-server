@@ -1413,7 +1413,15 @@ imgRemove = document.getElementById("ziko-img-remove");
 
 dropOverlay = document.getElementById("ziko-drop-overlay");
 
-if (!toggleBtn || !chatBox) { setTimeout(initZiko, 500); return; }
+// لو العناصر مش جاهزة → retry لحد 10 مرات
+if (!toggleBtn || !chatBox) { 
+  if (!window.zikoRetryCount) window.zikoRetryCount = 0;
+  window.zikoRetryCount++;
+  if (window.zikoRetryCount < 10) {
+    setTimeout(initZiko, 500);
+  }
+  return;
+}
 
 if (!wasNotifyShown()) {
 
