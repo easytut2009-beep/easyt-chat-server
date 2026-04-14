@@ -348,13 +348,6 @@ async function performSearch(keywords, instructors) {
           results.courses = [...results.courses, ...withDiploma].slice(0, MAX_COURSES_DISPLAY);
           console.log(`📖 Added ${newFromLessons.length} courses from lesson search`);
         }
-        // حقن الدروس في الكورسات الموجودة
-        const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
-        results.courses.forEach(c => {
-          if (lessonMap.has(c.id) && !c.matchedLessons) {
-            c.matchedLessons = lessonMap.get(c.id);
-          }
-        });
       }
     }
   } catch (e) { console.error("lesson search error:", e.message); }
