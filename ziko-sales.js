@@ -1318,15 +1318,24 @@ async function smartChat(message, sessionId) {
   reply = finalizeReply(reply);
   
   // ── تسجيل المحادثة ──
-  await logChat(sessionId, "user", message, intent?.type || "unknown", { 
+  // تسجيل السؤال
+  logChat(sessionId, "user", message, intent?.type || "unknown", { 
     keywords: intent?.keywords || [],
     audience: intent?.audience || null 
-  }).catch(e => console.error("Log error:", e.message));
+  }).catch(e => console.error("❌ Log user error:", e.message));
   
-  await logChat(sessionId, "assistant", reply.replace(/<[^>]+>/g, " ").substring(0, 500), null, {
+  // تسجيل الرد (بدون HTML)
+  const cleanReply = reply
+    .replace(/<[^>]+>/g, " ")           // شيل HTML tags
+    .replace(/\s+/g, " ")                // شيل spaces زيادة
+    .trim()
+    .substring(0, 500);                  // أول 500 حرف
+    
+  logChat(sessionId, "assistant", cleanReply, null, {
     type: intent?.type || "unknown",
-    suggestions: suggestions || []
-  }).catch(e => console.error("Log error:", e.message));
+    has_courses: (reply.includes("formatCourseCard") || reply.includes("📘")),
+    suggestions_count: (suggestions || []).length
+  }).catch(e => console.error("❌ Log assistant error:", e.message));
   
   return { reply, suggestions, options };
 }
