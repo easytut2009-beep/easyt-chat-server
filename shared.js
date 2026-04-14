@@ -903,7 +903,13 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     console.log("🔍 Search terms:", allTerms);
 
-    const finalTerms = allTerms;
+    // فلتر الكلمات العامة جداً لو في كلمات أكثر تحديداً
+    const _genericWords = new Set(["تصميم", "برمجه", "برمجة", "تعلم", "شغل", "عمل", "مجال", "work", "flow", "وورك", "فلو"]);
+    const _specificTerms = allTerms.filter(t => !_genericWords.has(normalizeArabic(t.toLowerCase())) && !_genericWords.has(t.toLowerCase()));
+    const finalTerms = _specificTerms.length >= 1 ? _specificTerms : allTerms;
+    if (_specificTerms.length < allTerms.length) {
+      console.log(`🎯 Filtered generic terms: ${allTerms.length} → ${finalTerms.length}`);
+    }
 
 const limitedTerms = finalTerms.slice(0, 8);
 
@@ -941,7 +947,7 @@ const embResp = await openai.embeddings.create({
     });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.75,
+              match_threshold: 0.65,
               match_count: 10,
             });
             return data || [];
@@ -1252,7 +1258,7 @@ const embResponse = await openai.embeddings.create({
           "match_diplomas",
           {
             query_embedding: embResponse.data[0].embedding,
-            match_threshold: 0.75,
+            match_threshold: 0.65,
             match_count: 8,
           }
         );
@@ -1414,7 +1420,7 @@ const embResp = await openai.embeddings.create({
           "match_lesson_chunks",
           {
             query_embedding: embResp.data[0].embedding,
-            match_threshold: 0.75,
+            match_threshold: 0.65,
             match_count: 8,
             filter_course_id: null,
           }
