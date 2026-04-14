@@ -1402,54 +1402,8 @@ const allTerms = prepareSearchTerms(searchTerms);
       console.error("Lesson table query error:", lessonErr.message);
     }
 
-    // Semantic search in chunks
-    if (openai) {
-      try {
-        const queryText = searchTerms.join(" ");
-const embResp = await openai.embeddings.create({
-          model: CHUNK_EMBEDDING_MODEL,
-          input: queryText.substring(0, 2000),
-        });
-
-        const { data: chunkMatches, error: chunkErr } = await supabase.rpc(
-          "match_lesson_chunks",
-          {
-            query_embedding: embResp.data[0].embedding,
-            match_threshold: 0.75,
-            match_count: 8,
-            filter_course_id: null,
-          }
-        );
-
-        if (!chunkErr && chunkMatches && chunkMatches.length > 0) {
-          const existingLessonIds = new Set(allLessons.map((l) => l.id));
-
-          for (const chunk of chunkMatches) {
-            if (chunk.lesson_id && !existingLessonIds.has(chunk.lesson_id)) {
-              allLessons.push({
-                id: chunk.lesson_id,
-                title: chunk.lesson_title || "",
-                course_id: chunk.course_id,
-                timestamp_start: chunk.timestamp_start,
-                similarity: chunk.similarity,
-                matchSource: "semantic_chunk",
-              });
-              existingLessonIds.add(chunk.lesson_id);
-            }
-
-            const existing = allLessons.find(
-              (l) => l.id === chunk.lesson_id
-            );
-            if (existing && !existing.timestamp_start && chunk.timestamp_start) {
-              existing.timestamp_start = chunk.timestamp_start;
-              existing.similarity = chunk.similarity;
-            }
-          }
-        }
-      } catch (semErr) {
-        console.error("Semantic lesson search error:", semErr.message);
-      }
-    }
+    // Semantic search in chunks — disabled (بيجيب نتايج غلط)
+    
 
     if (allLessons.length === 0) {
       setCachedSearch(cacheKey, []);
