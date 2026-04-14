@@ -339,6 +339,16 @@ async function performSearch(keywords, instructors) {
     // لو في 3+ كورسات من title/keyword search → مش محتاج lesson search
     if (results.courses.length >= 3) {
       console.log(`⏭️ Skipping lesson search — already have ${results.courses.length} courses`);
+      // بس حقن الدروس في الكورسات الموجودة لو الـ keywords محددة
+      const lessonResults = await searchLessonsInCourses(keywords);
+      if (lessonResults && lessonResults.length > 0) {
+        const lessonMap = new Map(lessonResults.map(l => [l.id, l.matchedLessons]));
+        results.courses.forEach(c => {
+          if (lessonMap.has(c.id) && !c.matchedLessons) {
+            c.matchedLessons = lessonMap.get(c.id);
+          }
+        });
+      }
     } else {
     const lessonResults = await searchLessonsInCourses(keywords);
     if (lessonResults && lessonResults.length > 0) {
