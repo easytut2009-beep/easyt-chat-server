@@ -355,8 +355,11 @@ async function performSearch(keywords, instructors) {
     console.log(`🔍 Step 4: Starting chunks search for: ${keywords.join(", ")}`);
     try {
       if (supabase) {
-        const chunkTextFilters = keywords
-          .filter(k => k.length > 2)
+        // كسّر الـ keywords لكلمات منفردة
+        const chunkWords = [...new Set(
+          keywords.flatMap(k => k.split(/\s+/)).filter(k => k.length > 2)
+        )];
+        const chunkTextFilters = chunkWords
           .slice(0, 4)
           .flatMap(k => [k, k.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه')])
           .filter((k, i, arr) => arr.indexOf(k) === i)
