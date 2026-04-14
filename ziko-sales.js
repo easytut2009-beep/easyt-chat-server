@@ -872,6 +872,20 @@ async function smartChat(message, sessionId) {
         intent.keywords = prepareSearchTerms(message.split(/\s+/));
       }
     }
+    // لو diplomas_list بدون كلمة دبلوم → search
+    if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
+      console.log(`⚠️ diplomas_list without دبلوم — forcing search`);
+      intent.type = "search";
+    }
+    // لو info مع keywords → search (يعني GPT لقى موضوع محدد)
+    if (intent.type === "info" && intent.keywords && intent.keywords.length > 0) {
+      console.log(`⚠️ GPT said info but has keywords — forcing search`);
+      intent.type = "search";
+    }
+    // لو audience=أطفال مع جامعة → null
+    if (intent.audience === "أطفال" && /جامع|university|كلي/.test(message)) {
+      intent.audience = null;
+    }
   }
   console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
 
