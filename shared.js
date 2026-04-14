@@ -1050,18 +1050,23 @@ const [ilikeResult, semanticResults] = await Promise.all([
         { words: ["مراقبه", "اختراق", "hacking", "سيبراني"], exclude_if_query_lacks: ["مراقبة","امن","اختراق","hacking","حماية"] },
         { words: ["اندرويد ستوديو", "android studio", "flutter", "يونيتي", "unity", "الالعاب"], exclude_if_query_lacks: ["اندرويد","android","flutter","تطبيق","لعبة","unity","mobile"] },
         { words: ["langchain", "الذكاءات المتعدده", "llm", "النماذج اللغويه"], exclude_if_query_lacks: ["langchain","llm","ذكاء اصطناعي","ai","نماذج"] },
-        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق"] },
+        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق","هاكر"] },
         { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
         { words: ["بينتيريست", "pinterest"], exclude_if_query_lacks: ["pinterest","بينتيريست"] },
         { words: ["معماري", "معماريه"], exclude_if_query_lacks: ["معماري","معمار","هندسي","بناء","اتوكاد"] },
-        { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس"] },
-        { words: ["تعليم الجرافيكس للأطفال", "للأطفال (باللغة الإنجليزية)", "للأطفال (باللغة العربية)"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","سنين","kids","children"] },
-        { words: ["الويب المظلم", "dark web"], exclude_if_query_lacks: ["dark web","ويب مظلم","اختراق","هاكر"] },
-        { words: ["طب شرعي", "الطب الشرعى"], exclude_if_query_lacks: ["طب شرعي","جنائي","forensic"] },
         { words: ["تعديل السلوك", "استيراتيجيات تعديل"], exclude_if_query_lacks: ["سلوك","تربية","نفس","اطفال"] },
-        { words: ["عيادات", "طبيه", "طبي"], exclude_if_query_lacks: ["عيادة","طبي","صحة","مستشفى"] },
+        { words: ["تعليم الجرافيكس للأطفال", "للأطفال (باللغة الإنجليزية)", "للأطفال (باللغة العربية)"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","سنين","kids","children","طفل","طفلة"] },
+        { words: ["طب شرعي", "الطب الشرعى"], exclude_if_query_lacks: ["طب شرعي","جنائي","forensic"] },
         { words: ["صينيه", "chinese", "اللغة الصينية"], exclude_if_query_lacks: ["صيني","صينية","chinese"] },
         { words: ["oracle adf", "oracle apex", "اوراكل"], exclude_if_query_lacks: ["oracle","اوراكل","قاعدة بيانات"] },
+        // blender مش يطلع في انيميشن/after effects
+        { words: ["blender", "بلندر"], exclude_if_query_lacks: ["blender","بلندر","ثلاثي الابعاد","3d","نمذجة"] },
+        // after effects مش يطلع في blender/3D
+        { words: ["after effects", "افتر افكت"], exclude_if_query_lacks: ["after effects","افتر","موشن","انيميشن","motion","تحريك","مونتاج","فيديو"] },
+        // lumion بس مع الهندسة/معمار
+        { words: ["lumion"], exclude_if_query_lacks: ["lumion","معماري","هندسي","تصميم داخلي","ثلاثي"] },
+        // كورسات الأطفال مش تطلع في بحث الكبار
+        { words: ["للاطفال", "للأطفال", "kids coding", "scratch للاطفال"], exclude_if_query_lacks: ["أطفال","اطفال","ابني","بنتي","طفل","kids","children","سنين"] },
       ];
 
       const relevant = allCourses.filter(c => {
