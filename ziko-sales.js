@@ -1111,6 +1111,16 @@ async function smartChat(message, sessionId) {
       if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
 
+    // لو في كلمتين إنجليزيتين متجاورتين في الـ keywords — أضف نسختهم المدمجة
+    const engKws = keywords.filter(k => /^[a-zA-Z]+$/.test(k));
+    if (engKws.length >= 2) {
+      const concatenated = engKws.join('').toLowerCase();
+      if (!keywords.some(k => k.toLowerCase() === concatenated)) {
+        keywords.push(concatenated);
+        console.log(`🔗 Added concatenated: ${concatenated}`);
+      }
+    }
+
     // الـ audience — من intent أو من الـ session المحفوظة
     const audience = intent.audience || session.audience || null;
     if (audience) {
