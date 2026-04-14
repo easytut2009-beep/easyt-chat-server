@@ -371,19 +371,18 @@ async function performSearch(keywords, instructors) {
         let semChunks = [];
         console.log("📦 Semantic chunks: skipped");
 
-        // Text search في الـ chunks — AND أولاً (كل الكلمات لازم تكون موجودة)، لو مش لاقي → OR
+        // Text search في الـ chunks — AND أولاً، لو مش لاقي → OR
         let textChunkCourses = [];
         
-        // Step A: ابحث بـ AND — كل keyword لازم تكون في نفس الـ chunk
-        // نبحث بالـ phrase الأصلية من الـ message كـ AND
-        const msgWords = message.split(/\s+/).filter(w => w.length > 2 && !["عايز","عاوز","عندي","محتاج","ابغى","اريد","ممكن","كيف","إيه","ايه","فين","شرح","عن","في","من","على","الي","اللي"].includes(w));
-        
+        // Step A: AND search — كل keyword لازم تكون في نفس الـ chunk
         let finalChunkMatches = [];
+        const andWords = [...new Set(
+          keywords.filter(w => w.length > 2)
+        )].slice(0, 4);
         
-        if (msgWords.length >= 2) {
-          // AND search: ابحث عن chunk فيه كل الكلمات
+        if (andWords.length >= 2) {
           let andQuery = supabase.from("chunks").select("lesson_id");
-          for (const w of msgWords.slice(0, 4)) {
+          for (const w of andWords) {
             andQuery = andQuery.ilike("content", `%${w}%`);
           }
           const { data: andMatches } = await andQuery.limit(20);
@@ -391,10 +390,9 @@ async function performSearch(keywords, instructors) {
           console.log(`📝 AND chunks found: ${finalChunkMatches.length}`);
         }
         
-        // Step B: لو AND مش لاقي — ابحث بـ OR (أي كلمة)
+        // Step B: لو AND مش لاقي — OR عادي
         if (finalChunkMatches.length === 0) {
           const orFilters = keywords
-            .flatMap(k => k.split(/\s+/))
             .filter(k => k.length > 2)
             .slice(0, 4)
             .map(k => `content.ilike.%${k}%`)
