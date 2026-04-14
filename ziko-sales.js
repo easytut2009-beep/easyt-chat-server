@@ -532,6 +532,7 @@ async function formatResults(results, query, session = null) {
     found = true;
     html += `📖 <strong>لقيت "${shortQuery}" في محتوى هذه الكورسات:</strong><br><br>`;
 
+    try {
     results._textChunkCourses.slice(0, MAX_COURSES_DISPLAY).forEach(({ course, chunks }, i) => {
       html += formatCourseCard(course, instructors, i + 1);
 
@@ -539,7 +540,6 @@ async function formatResults(results, query, session = null) {
         html += `<div style="margin:-6px 0 8px 0;padding:8px 12px;background:#fff;border-radius:0 0 10px 10px;border:1px solid #eee;border-top:none">`;
         html += `<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📖 الدروس المرتبطة:</div>`;
         chunks.slice(0, 2).forEach(chunk => {
-          // تظليل الكلمة في الـ content
           let snippet = escapeHtml((chunk.content || '').substring(0, 120));
           query.split(/\s+/).filter(kw => kw.length > 2).forEach(kw => {
             const re = new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
@@ -553,6 +553,7 @@ async function formatResults(results, query, session = null) {
         html += `</div>`;
       }
     });
+    } catch(chunkErr) { console.error("❌ Chunk display error:", chunkErr.message, chunkErr.stack); }
 
     html += `<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🔍 تصفح كل الكورسات ←</a>`;
     return html;
