@@ -1355,6 +1355,7 @@ async function smartChat(message, sessionId) {
   const cleanReply = reply
     .replace(/<[^>]+>/g, " ")           // شيل HTML tags
     .replace(/\s+/g, " ")                // شيل spaces زيادة  
+    .replace(/[^\u0000-\u007F\u0600-\u06FF\u0660-\u0669\s]/g, "") // شيل حروف غريبة
     .trim()
     .substring(0, 500);                  // أول 500 حرف
   
@@ -1362,7 +1363,7 @@ async function smartChat(message, sessionId) {
   
   try {
     // تسجيل السؤال
-    await logChat(sessionId, "user", message, intent?.type || "unknown", { 
+    await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", { 
       keywords: intent?.keywords || [],
       audience: intent?.audience || null 
     });
@@ -1376,7 +1377,7 @@ async function smartChat(message, sessionId) {
     
     console.log(`✅ Chat logged successfully`);
   } catch(e) {
-    console.error("❌ Failed to log chat:", e.message);
+    console.error("❌ Failed to log chat:", e.message, e.stack);
   }
   
   return { reply, suggestions, options };
