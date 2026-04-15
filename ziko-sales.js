@@ -195,6 +195,12 @@ conversational_reply: رد ودود + سؤال ذكي لفهم احتياجه
 needs_courses: false
 🚨 **مهم:** المستخدم بيحكي — **استمع + اسأل** — متعرضش كورسات
 
+type=recommend: المستخدم عبّر عن رغبة في التعلم لكن مش طلب مباشر
+مثال: "عايز أتعلم X"، "محتاج أطور نفسي"، "نفسي أبقى X"
+conversational_reply: نصيحة + اقتراح + سؤال "عايز تشوفها؟"
+needs_courses: false
+🚨 **مهم:** ننصح ونقترح — لكن **مانعرضش** كورسات إلا لو المستخدم طلب
+
 type=diplomas_list: طلب قائمة الدبلومات
 مثال: "إيه الدبلومات الموجودة؟"، "وريني الدبلومات"
 needs_courses: false
@@ -213,17 +219,33 @@ type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
 needs_courses: false
 
-type=course_request: طلب صريح لكورس
-مثال: "عايز كورس Python"، "فين أتعلم Photoshop؟"
-keywords: أذكى كلمات للبحث
-needs_courses: true
-🚨 **الحالة الوحيدة اللي بنعرض فيها كورسات مباشرة**
+type=course_request: طلب **مباشر** لعرض الكورسات
+مثال: "فين أتعلم؟"، "وريني الكورسات"، "عندكم كورسات؟"، "ممكن تديني؟"، "موجود عندكم؟"
 
-type=clarify: طلب عام جداً بدون تحديد
-مثال: "عايز أتعلم"، "محتاج مساعدة"
+⚠️ **مهم جداً — الفرق بين الرغبة والطلب:**
+
+✅ **طلب مباشر** (type=course_request):
+- "فين أتعلم X؟"
+- "وريني كورسات X"
+- "عندكم X؟"
+- "ممكن تديني X؟"
+- "موجود عندكم X؟"
+- "عايز أشوف الكورسات"
+
+❌ **مش طلب مباشر** (type=conversational أو clarify):
+- "عايز أتعلم X" → conversational
+- "محتاج أطور نفسي في X" → conversational
+- "نفسي أبقى X" → conversational
+- "عايز أبدأ في X" → conversational
+
+**القاعدة:** لو مفيش كلمة طلب صريحة (فين، وريني، عندكم، ممكن) → مش course_request
+
+type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في التعلم بدون تحديد
+مثال: "عايز أتعلم"، "محتاج مساعدة"، "عايز أتعلم تسويق" (بدون تحديد)
 clarify_question: "سؤال واضح"
-clarify_options: ["خيار1", "خيار2", "خيار3"]
+clarify_options: ["خيار1", "خيار2", "خيار3", "خيار4"]
 needs_courses: false
+🚨 **مهم:** نسأل أسئلة توضيحية — **مانعرضش** كورسات
 
 ══ الفرق المهم جداً ══
 
@@ -1230,6 +1252,21 @@ async function smartChat(message, sessionId) {
     suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
 
+  // ── Recommend (النصيحة بدون عرض) ──
+  else if (intent.type === "recommend") {
+    // زيكو ينصح ويقترح — لكن مايعرضش كورسات
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions, 
+      `المستخدم عبّر عن رغبة في التعلم لكن مش طلب مباشر.
+      
+**مهمتك:**
+1. انصحه بإيه المناسب ليه (دبلومة؟ كورس؟)
+2. اشرح ليه ده مناسب
+3. اسأله: "عايز تشوفها؟" أو "حابب أوريك تفاصيلها؟"
+
+**مش تعرض كورسات — بس نصيحة + سؤال!**`);
+    suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر", "عايز أعرف أكتر"];
+  }
+
   // ── Diplomas List ──
   else if (intent.type === "diplomas_list") {
     const diplomas = await loadAllDiplomas().catch(() => []);
@@ -1349,7 +1386,7 @@ async function smartChat(message, sessionId) {
     }
   }
 
-  // ── Clarify ──
+  // ── Clarify (أسئلة توضيحية مع options) ──
   else if (intent.type === "clarify") {
     if (intent.audience) session.audience = intent.audience;
     if (intent.keywords && intent.keywords.length > 0 && !session.lastTopic) {
