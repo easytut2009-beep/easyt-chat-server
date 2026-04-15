@@ -1254,7 +1254,7 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
 // ══════════════════════════════════════════════════════════
 // Main Chat Handler (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
-async function smartChat(message, sessionId, userId = null) {
+async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   const session = getSession(sessionId);
   const botInstructions = await loadBotInstructions("sales").catch(() => "");
 
@@ -1265,23 +1265,28 @@ async function smartChat(message, sessionId, userId = null) {
     session.visit_count = visit_count;
     session.userId = userId;
     
-    // 👋 رسالة ترحيب للمستخدمين الجدد (أول زيارة)
-    if (visit_count === 1 && !session.memory.name && session.history.length === 0) {
-      session.isFirstVisit = true;
-      const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
-      
-      session.history.push({ role: "assistant", content: welcomeMsg });
-      
-      return { 
-        reply: finalizeReply(welcomeMsg), 
-        suggestions: [],
-        options: []
-      };
-    }
-    
     if (visit_count > 1) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
     }
+  }
+
+  // 👋 رسالة ترحيب (لو welcome request أو أول زيارة بدون اسم)
+  const shouldShowWelcome = (
+    isWelcome || 
+    (session.visit_count === 1 && !session.memory.name && session.history.length === 0)
+  );
+  
+  if (shouldShowWelcome) {
+    session.isFirstVisit = true;
+    const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
+    
+    session.history.push({ role: "assistant", content: welcomeMsg });
+    
+    return { 
+      reply: finalizeReply(welcomeMsg), 
+      suggestions: [],
+      options: []
+    };
   }
 
   // نظّف الرسالة
@@ -1786,13 +1791,15 @@ async function smartChat(message, sessionId, userId = null) {
 // Routes
 // ══════════════════════════════════════════════════════════
 app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id, user_id } = req.body;  // ✅ إضافة user_id
-  if (!message || !session_id) {
+  const { message, session_id, user_id, is_welcome } = req.body;
+  
+  // السماح بـ message فاضي في حالة welcome
+  if ((!message && !is_welcome) || !session_id) {
     return res.status(400).json({ error: "Missing message or session_id" });
   }
+  
   try {
-    // ✅ تمرير user_id لـ smartChat (optional — لو مفيش هيبقى null)
-    const result = await smartChat(message.trim(), session_id, user_id || null);
+    const result = await smartChat(message ? message.trim() : "", session_id, user_id || null, is_welcome || false);
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
