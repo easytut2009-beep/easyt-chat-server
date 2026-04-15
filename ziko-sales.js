@@ -98,7 +98,7 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses",
+  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "educational_request",
   "keywords": ["كلمة1", "كلمة2"],
   "is_ambiguous": false,
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
@@ -113,6 +113,13 @@ ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 type=greeting: تحية أو كلام عام بدون طلب محدد
 مثال: "أهلاً"، "مين أنت؟"
+
+type=educational_request: 🆕 طلب تعليمي (شرح/اختبار/حل/تمرين) — المستخدم فاكر إني المرشد التعليمي
+مثال: "اختبرني"، "امتحنّي"، "quiz me"، "اشرحلي الدرس ده"، "مش فاهم النقطة دي"، "ممكن تعيد الشرح؟"، "وضحلي أكتر"، "حل المسألة دي معايا"، "ساعدني في التمرين ده"، "solve this"
+🚨 أي طلب فيه: اختبار/شرح/توضيح/حل مسألة/تمرين/فهم → type=educational_request
+⚠️ ده غير السؤال المعلوماتي — الفرق:
+  - "إيه فايدة Python؟" → type=info (سؤال معلوماتي)
+  - "اشرحلي Python" → type=educational_request (طلب شرح تعليمي)
 
 type=subscription: سؤال عن أسعار أو اشتراك أو دفع
 مثال: "كام سعر الاشتراك؟"، "إزاى ادفع؟"، "فيه كوبون؟"
@@ -998,6 +1005,12 @@ async function smartChat(message, sessionId) {
       reply = "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
     }
     suggestions = ["كورسات اكسيل 📊", "دبلومات 🎓", "أسعار الاشتراك 💳"];
+  }
+
+  // ── Educational Request (طلب تعليمي) ──
+  else if (intent.type === "educational_request") {
+    reply = "أنا زيكو المساعد البيعي 😊 بساعدك تلاقي وتختار الكورسات المناسبة.<br><br>لو عايز شرح أو اختبارات أو مساعدة في المحتوى — هتلاقي <strong>زيكو المرشد التعليمي</strong> جوه كل كورس بيساعدك خطوة بخطوة!<br><br>عايز تشوف كورسات في مجال معين؟";
+    suggestions = ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"];
   }
 
   // ── Info (سؤال معلوماتي) ──
