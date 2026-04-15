@@ -37,7 +37,7 @@ const {
 // ══════════════════════════════════════════════════════════
 const MAX_COURSES_DISPLAY = 5;
 const MAX_DIPLOMAS_DISPLAY = 5;
-const SESSION_TTL = 30 * 60 * 1000; // 30 دقيقة
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 يوم (شهر)
 const WHATSAPP_LINK = WHATSAPP_SUPPORT_LINK || "https://wa.me/201027007899";
 
 // ══════════════════════════════════════════════════════════
@@ -135,6 +135,28 @@ setInterval(() => {
     if (now - s.lastActivity > SESSION_TTL) sessions.delete(sid);
   }
 }, 10 * 60 * 1000);
+
+// 🧹 تنظيف user_sessions من Supabase (كل ساعة)
+// يحذف المستخدمين اللي مفيش نشاط ليهم من أكتر من شهر
+setInterval(async () => {
+  if (!supabase) return;
+  
+  try {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
+    
+    const { data, error } = await supabase
+      .from(USER_SESSIONS_TABLE)
+      .delete()
+      .lt('last_seen', oneMonthAgo.toISOString());
+    
+    if (!error && data) {
+      console.log(`🧹 Cleaned ${data.length} old user sessions`);
+    }
+  } catch (e) {
+    console.error('❌ Cleanup error:', e.message);
+  }
+}, 60 * 60 * 1000); // كل ساعة
 
 // ══════════════════════════════════════════════════════════
 // Format Diploma Card
@@ -1226,6 +1248,20 @@ async function smartChat(message, sessionId, userId = null) {
     session.visit_count = visit_count;
     session.userId = userId;
     
+    // 👋 رسالة ترحيب للمستخدمين الجدد (أول زيارة)
+    if (visit_count === 1 && !session.memory.name && session.history.length === 0) {
+      session.isFirstVisit = true;
+      const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
+      
+      session.history.push({ role: "assistant", content: welcomeMsg });
+      
+      return { 
+        reply: finalizeReply(welcomeMsg), 
+        suggestions: [],
+        options: []
+      };
+    }
+    
     if (visit_count > 1) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
     }
@@ -1240,6 +1276,50 @@ async function smartChat(message, sessionId, userId = null) {
     .trim();
 
   if (!message) return { reply: "أهلاً! 👋 بتدور على إيه النهارده؟", suggestions: [] };
+
+  // 👤 كشف الاسم (لو أول زيارة ومفيش اسم محفوظ)
+  if (session.isFirstVisit && !session.memory.name) {
+    // جرب تكشف لو الرد فيه اسم
+    const nameMatch = message.match(/^(اسمي|انا|اسم[يه]?)\s+(.+)$/i);
+    const wordsOnly = message.replace(/[^\u0600-\u06FFa-zA-Z\s]/g, '').trim();
+    const words = wordsOnly.split(/\s+/);
+    
+    // لو الرد قصير (1-3 كلمات) ومفيهوش كلمات زي "كورس"، "عايز"، إلخ
+    const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل'];
+    const hasIgnored = ignoreWords.some(w => message.toLowerCase().includes(w));
+    
+    if (nameMatch && nameMatch[2]) {
+      // قال "اسمي أحمد" أو "أنا محمد"
+      const name = nameMatch[2].trim();
+      session.memory.name = name;
+      await saveUserMemory(session.userId, session.memory);
+      
+      const reply = `أهلاً **${name}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+      session.history.push({ role: "user", content: message });
+      session.history.push({ role: "assistant", content: reply });
+      session.isFirstVisit = false;
+      
+      return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      
+    } else if (words.length >= 1 && words.length <= 3 && !hasIgnored) {
+      // رد قصير ومفيهوش كلمات استفهام → يمكن يكون اسم
+      const possibleName = wordsOnly;
+      session.memory.name = possibleName;
+      await saveUserMemory(session.userId, session.memory);
+      
+      const reply = `أهلاً **${possibleName}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+      session.history.push({ role: "user", content: message });
+      session.history.push({ role: "assistant", content: reply });
+      session.isFirstVisit = false;
+      
+      return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      
+    } else {
+      // مش اسم — سؤال أو طلب مباشر → نكمل عادي ونشيل الـ flag
+      session.isFirstVisit = false;
+      console.log("⚠️ User skipped name — continuing normally");
+    }
+  }
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
   let isRepeated = false;
@@ -1284,6 +1364,14 @@ async function smartChat(message, sessionId, userId = null) {
   // ── Greeting ──
   if (intent.type === "greeting") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    
+    // 👋 لو في اسم محفوظ، استخدمه في الترحيب
+    if (session.memory && session.memory.name && reply) {
+      // استبدل "أهلاً" بـ "أهلاً [الاسم]" (بس أول مرة في الرد)
+      if (!reply.includes(session.memory.name)) {
+        reply = reply.replace(/^(أهلاً|اهلا|هلا|مرحب[اً]?)/, `$1 **${session.memory.name}**`);
+      }
+    }
     // مفيش suggestions ثابتة
   }
 
