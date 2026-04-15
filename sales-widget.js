@@ -1316,6 +1316,8 @@ var sessionId = null;
 
 var rec = null;
 
+var finalTranscript = "";
+
 var isRecording = false;
 
 var isSending = false;
@@ -2361,7 +2363,7 @@ rec.interimResults   = true;
 rec.maxAlternatives  = 1;
 
 var SILENCE_MS       = 3000;
-var finalTranscript  = "";
+finalTranscript  = "";  // شيلنا var عشان تبقى global
 var silenceTimer     = null;
 var cancelled        = false;
 
@@ -2387,18 +2389,16 @@ rec.onresult = function (e) {
 
   clearTimeout(silenceTimer);
 
-  // ناخد آخر result بس (الأحدث)
-  var lastResult = e.results[e.results.length - 1];
-  var transcript = lastResult[0].transcript;
+  var transcript = "";
   
-  if (lastResult.isFinal) {
-    // لو نهائي - نضيفه على finalTranscript
-    finalTranscript += transcript + " ";
-    zikoInput.value = finalTranscript.trim();
-  } else {
-    // لو مؤقت - نعرضه مع النهائي بدون ما نحفظه
-    zikoInput.value = (finalTranscript + transcript).trim();
+  // ناخد آخر transcript (الكامل)
+  for (var i = 0; i < e.results.length; i++) {
+    transcript += e.results[i][0].transcript;
+    if (i < e.results.length - 1) transcript += " ";
   }
+  
+  // نحط النص الكامل في الـ input (بدون إضافة)
+  zikoInput.value = transcript.trim();
 
   silenceTimer = setTimeout(function () {
     if (isRecording && !cancelled) stopAndSend();
