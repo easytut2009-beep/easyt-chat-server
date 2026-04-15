@@ -244,6 +244,7 @@ type=defensive: رسالة استفزازية أو اتهام
 conversational_reply: رد ذكي وودود يوضح هوية زيكو + عرض مساعدة
 needs_courses: false
 🚨 **مهم:** المستخدم بيختبر زيكو — الرد لازم يكون ذكي ومحترم
+⚠️ **ملاحظة:** لو الرسالة **اسم شخص** (مثل: أحمد، محمد، سارة) → مش defensive! → type=conversational
 
 type=educational_content: سؤال تعليمي عن محتوى كورس معين
 مثال: "ما دلالات الخطوط؟"، "إزاي أعمل X في الدرس؟"، "مش فاهم النقطة دي"
@@ -1331,6 +1332,11 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
     }
   }
+  
+  // 🎯 تحديد isFirstVisit — لو session جديد ومفيش اسم محفوظ
+  if (session.history.length === 0 && !session.memory?.name) {
+    session.isFirstVisit = true;
+  }
 
   // 👋 رسالة ترحيب
   // بس لو الرسالة فاضية أو "مرحبا" أو "هاي" — مش لو المستخدم قال اسم!
@@ -1341,8 +1347,6 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   );
   
   if (shouldShowWelcome) {
-    session.isFirstVisit = !session.memory.name;  // first visit لو مفيش اسم بس
-    
     // لو في اسم محفوظ → رحب بالاسم (مش تسأل عنه!)
     if (session.memory && session.memory.name) {
       const welcomeMsg = `أهلاً **${session.memory.name}**! 👋<br>ازيك؟ عايز مساعدة في إيه النهارده؟ 😊`;
@@ -1355,7 +1359,6 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     }
     
     // لو مفيش اسم → اسأل عنه
-    session.isFirstVisit = true;
     const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
     
     session.history.push({ role: "assistant", content: welcomeMsg });
