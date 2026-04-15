@@ -1389,13 +1389,17 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     // دالة للتحقق من صحة الاسم باستخدام GPT
     async function validateName(possibleName) {
       try {
+        console.log(`🔍 Validating name: "${possibleName}"`);
+        
         // Quick check: لو اسم عربي شائع → قبول فوري
         const commonNames = /^(احمد|أحمد|محمد|محمود|علي|على|عمر|عمرو|خالد|يوسف|حسن|حسين|عبدالله|عبد الله|مصطفى|كريم|طارق|ياسر|سعيد|فهد|فيصل|نور|عادل|وليد|هشام|مالك|سامي|رامي|باسم|تامر|فاطمة|فاطمه|عائشة|عايشة|خديجة|خديجه|مريم|زينب|سارة|ساره|نورا|هدى|هدي|ليلى|ليلا|سلمى|سلما|رنا|رنى|دينا|دينه|منى|مني|ريم|اميرة|أميرة|ملك|ندى|نادية|ناديه|رشا|رشى|نهى|نهي|سمر|سمير|John|Maria|Ahmed|Mohammed|Sara|Fatima|Ali|Omar)$/i;
         
         if (commonNames.test(possibleName.trim())) {
+          console.log(`✅ Common name accepted: "${possibleName}"`);
           return true;
         }
         
+        console.log(`🤖 Asking GPT to validate: "${possibleName}"`);
         const validation = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: [{
@@ -1474,8 +1478,10 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
       const isValid = await validateName(possibleName);
       
       if (isValid) {
+        console.log(`💾 Saving name to memory: "${possibleName}"`);
         session.memory.name = possibleName;
         await saveUserMemory(session.userId, session.memory);
+        console.log(`✅ Name saved successfully!`);
         
         const reply = `أهلاً **${possibleName}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
         session.history.push({ role: "user", content: message });
