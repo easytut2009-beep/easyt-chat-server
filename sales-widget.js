@@ -1314,6 +1314,8 @@ var notifyAutoTimer = null;
 
 var sessionId = null;
 
+var rec = null;
+
 var isRecording = false;
 
 var isSending = false;
@@ -2352,7 +2354,7 @@ function setupVoice() {
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!SR || !micBtn) { if (micBtn) micBtn.style.display = "none"; return; }
 
-var rec = new SR();
+rec = new SR();
 rec.lang            = "ar-EG";
 rec.continuous       = true;
 rec.interimResults   = true;
