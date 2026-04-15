@@ -1468,7 +1468,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
         session.memory.name = name;
         await saveUserMemory(session.userId, session.memory);
         
-        const reply = `أهلاً **${name}**! 🎉 فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+        const reply = `أهلاً **${name}**! 🎉 فرصة سعيدة إني أساعدك 😊 قولي، عايز أساعدك في إيه النهارده؟`;
         session.history.push({ role: "user", content: message });
         session.history.push({ role: "assistant", content: reply });
         session.isFirstVisit = false;
@@ -1496,7 +1496,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
         await saveUserMemory(session.userId, session.memory);
         console.log(`✅ Name saved successfully!`);
         
-        const reply = `أهلاً **${possibleName}**! 🎉 فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+        const reply = `أهلاً **${possibleName}**! 🎉 فرصة سعيدة إني أساعدك 😊 قولي، عايز أساعدك في إيه النهارده؟`;
         session.history.push({ role: "user", content: message });
         session.history.push({ role: "assistant", content: reply });
         session.isFirstVisit = false;
