@@ -803,42 +803,80 @@ ${conversation}
 
 المستخدم دلوقتي قال: "${message}"
 
-حلل الحوار واستخرج:
-1. فهم عميق لاحتياجات المستخدم (العمر، المستوى، اللغة، الهدف)
-2. أذكى keywords للبحث (بناءً على الحوار — مش افتراضات)
-3. عدد النتائج المطلوبة (1-3 بس — في الصميم)
-4. ترتيب الأولويات (إيه الأول، إيه الثاني)
-5. رسائل conversational مناسبة
+🎯 **مهمتك:**
+حلل الحوار **كامل** واستنتج احتياجات المستخدم بدقة.
+
+**ركز على:**
+1. هل المستخدم ذكر لغة ضعيفة (إنجليزي)؟
+2. هل المستخدم مبتدئ تماماً (صفر خبرة)؟
+3. هل المستخدم ذكر عمره أو خلفيته؟
+4. إيه الهدف الأساسي (برمجة، تصميم، تسويق)؟
+5. هل ذكر لغة برمجة معينة (Python، JavaScript، C#)؟
+
+**قواعد مهمة:**
+- لو ذكر لغته الإنجليزية ضعيفة → أول search لازم يكون كورس إنجليزي
+- لو قال "برمجة من الصفر" → ابحث عن دبلومة مبتدئين
+- لو ذكر لغة برمجة معينة → ابحث عنها بالاسم
+- استخدم keywords **من الحوار نفسه** — مش افتراضات
 
 ارجع JSON:
 {
   "user_profile": {
-    "inferred_age": "وصف عمري مستنتج",
-    "skill_level": "وصف المستوى",
-    "language_barrier": "وصف مشكلة اللغة لو موجودة",
-    "main_goal": "الهدف الأساسي"
+    "inferred_age": "وصف (مثلاً: '40 سنة — كبير')",
+    "skill_level": "صفر | مبتدئ | متوسط",
+    "language_barrier": "ضعيف | متوسط | جيد | null",
+    "main_goal": "الهدف المستنتج من الحوار"
   },
   "search_plan": [
     {
-      "keywords": ["كلمة1", "كلمة2", "كلمة3"],
+      "keywords": ["كلمة1", "كلمة2"],
       "search_type": "course" | "diploma",
       "priority": 1,
-      "why": "السبب من الحوار"
+      "why": "السبب **من الحوار**"
     }
   ],
   "max_items": 2,
   "response": {
-    "intro": "مقدمة conversational",
-    "step_descriptions": ["وصف الخطوة 1", "وصف الخطوة 2"],
+    "intro": "مقدمة conversational (مثلاً: 'بناءً على حوارنا، ده المنهج المناسب')",
+    "step_descriptions": ["خطوة 1: ...", "خطوة 2: ..."],
     "conclusion": "خاتمة تحفيزية"
   }
 }
 
-**مهم جداً:**
-- استنتج كل حاجة من الحوار — مفيش افتراضات
-- Keywords ذكية بناءً على اللي المستخدم قاله
-- max_items دايماً 1-3 — في الصميم بس
-- step_descriptions عددها = عدد الخطوات في search_plan`;
+**أمثلة للـ keywords الصحيحة:**
+
+❌ غلط: ["برمجة", "مبتدئ"] — عام جداً
+✅ صح: ["python", "للمبتدئين", "صفر"]
+
+❌ غلط: ["إنجليزي"] — عام
+✅ صح: ["ice breaker", "نطق", "تحدث"]
+
+❌ غلط: ["دبلومة"] — عام
+✅ صح: ["دبلومة برمجة", "python", "مبتدئين"]
+
+**مثال كامل:**
+لو المستخدم قال:
+- "لغتي الإنجليزية مش كويسة"
+- "عايز أتعلم برمجة"
+- "Python أو JavaScript"
+
+search_plan يكون:
+[
+  {
+    "keywords": ["ice breaker", "انجليزي", "نطق"],
+    "search_type": "course",
+    "priority": 1,
+    "why": "لازم يحسن إنجليزيته الأول لأنه قال لغته ضعيفة"
+  },
+  {
+    "keywords": ["python", "javascript", "برمجة للمبتدئين"],
+    "search_type": "diploma",
+    "priority": 2,
+    "why": "دبلومة Python أو JavaScript للمبتدئين لأنه ذكرهم في الحوار"
+  }
+]
+
+max_items: 2 (مش أكتر!)`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
@@ -846,10 +884,12 @@ ${conversation}
       messages: [{ role: "system", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.1,
-      max_tokens: 800,
+      max_tokens: 1000,
     }));
     
-    return JSON.parse(resp.choices[0].message.content);
+    const result = JSON.parse(resp.choices[0].message.content);
+    console.log("✅ analyzeUserContext parsed successfully");
+    return result;
   } catch (e) {
     console.error("❌ analyzeUserContext error:", e.message);
     return null;
@@ -1174,16 +1214,29 @@ async function smartChat(message, sessionId) {
   else if (intent.type === "course_request" || intent.needs_courses) {
     
     // 🎯 جرب Context-Aware أولاً (لو في history كافي)
+    console.log(`📊 Session history length: ${session.history.length}`);
+    
     if (session.history.length >= 4) {
       try {
         console.log("🔍 Trying context-aware search...");
+        console.log("📝 History:", session.history.map(h => `${h.role}: ${h.content.substring(0, 50)}...`));
+        
         const context = await analyzeUserContext(session.history, message);
+        console.log("🎯 Context analysis result:", context ? "✅ Success" : "❌ Failed");
+        
+        if (context) {
+          console.log("📋 User profile:", JSON.stringify(context.user_profile, null, 2));
+          console.log("🔎 Search plan:", JSON.stringify(context.search_plan, null, 2));
+          console.log("📊 Max items:", context.max_items);
+        }
         
         if (context && context.search_plan && context.search_plan.length > 0) {
+          console.log(`🔍 Executing search plan with ${context.search_plan.length} queries...`);
           const results = await executeSearchPlan(context.search_plan);
+          console.log(`📋 Search results: ${results.length} items found`);
           
           if (results.length > 0) {
-            console.log(`✅ Context-aware found ${results.length} results`);
+            console.log(`✅ Context-aware SUCCESS - showing ${results.length} results`);
             reply = await buildContextAwareResponse(
               results, 
               context.response, 
@@ -1210,21 +1263,26 @@ async function smartChat(message, sessionId) {
             
             return { reply, suggestions, options: [] };
           } else {
-            console.log("⚠️ Context-aware returned no results — falling back to normal search");
+            console.log("⚠️ Context-aware returned 0 results — falling back to normal search");
           }
         } else {
-          console.log("⚠️ No search plan from context — falling back to normal search");
+          console.log("⚠️ No valid search plan from context — falling back to normal search");
         }
       } catch (e) {
-        console.error("❌ Context-aware search failed:", e.message);
+        console.error("❌ Context-aware search FAILED:", e.message);
+        console.error("Stack:", e.stack);
       }
+    } else {
+      console.log(`⚠️ History too short (${session.history.length} < 4) — skipping context-aware`);
     }
     
     // 🔄 Fallback: البحث العادي (الكود القديم)
-    console.log("🔍 Using normal search...");
+    console.log("🔍 Using NORMAL search (fallback)...");
     let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
       : prepareSearchTerms(message.split(/\s+/));
+    
+    console.log("🔑 Keywords from intent:", keywords);
 
     const stopWords = new Set(["كورس", "دورة", "course", "ممكن", "عايز", "محتاج"]);
     keywords = keywords.filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
