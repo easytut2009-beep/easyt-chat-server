@@ -1497,8 +1497,13 @@ function initZiko() {
 
 // 👤 توليد User ID (أول حاجة)
 if (!userId) {
+try {
 userId = getUserId();
 console.log('👤 User ID:', userId);
+} catch(e) {
+console.error('getUserId error:', e);
+userId = 'user_' + Math.random().toString(36).substring(2, 15);
+}
 }
 
 toggleBtn = document.getElementById("ziko-toggle");
