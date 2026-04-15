@@ -1378,32 +1378,102 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل', 'عندي', 'عندى'];
     const hasIgnored = ignoreWords.some(w => message.toLowerCase().includes(w));
     
+    // دالة للتحقق من صحة الاسم باستخدام GPT
+    async function validateName(possibleName) {
+      try {
+        const validation = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{
+            role: "system",
+            content: `أنت خبير في كشف الأسماء الحقيقية.
+
+مهمتك: تحديد لو النص المُدخل اسم شخص حقيقي ولا لأ.
+
+🚫 **ليس اسماً:**
+- شتائم أو ألفاظ نابية بأي لغة
+- كلمات عامة (كورس، كتاب، سيارة، موبايل)
+- ضحك أو تعبيرات (هههه، lol، haha، ❤️)
+- أرقام أو رموز (123، @#$)
+- كلمات متكررة (ااااا، ههههه)
+- أفعال أو أسئلة (عايز، محتاج، ازاي)
+- كلمة واحدة غير منطقية كاسم
+
+✅ **اسم صحيح:**
+- أسماء عربية حقيقية (أحمد، محمد، فاطمة، سارة)
+- أسماء أجنبية حقيقية (John، Maria، Ahmed)
+- أسماء مركبة (عبد الله، أبو بكر، محمد علي)
+- ألقاب مع أسماء (م/ أحمد، د/ محمود)
+
+رد **JSON فقط** بدون أي نص إضافي:
+{
+  "is_valid": true/false
+}`
+          },
+          {
+            role: "user",
+            content: `هل "${possibleName}" اسم شخص حقيقي؟`
+          }],
+          temperature: 0,
+          response_format: { type: "json_object" }
+        });
+        
+        const result = JSON.parse(validation.choices[0].message.content);
+        return result.is_valid === true;
+      } catch (e) {
+        console.error("❌ Name validation error:", e.message);
+        // لو في مشكلة → نقبل الاسم (safer)
+        return true;
+      }
+    }
+    
     if (nameMatch && nameMatch[2]) {
       // قال "اسمي أحمد" أو "أنا محمد"
       const name = nameMatch[2].trim();
-      session.memory.name = name;
-      await saveUserMemory(session.userId, session.memory);
       
-      const reply = `أهلاً **${name}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
-      session.history.push({ role: "user", content: message });
-      session.history.push({ role: "assistant", content: reply });
-      session.isFirstVisit = false;
+      // تحقق من صحة الاسم
+      const isValid = await validateName(name);
       
-      return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      if (isValid) {
+        session.memory.name = name;
+        await saveUserMemory(session.userId, session.memory);
+        
+        const reply = `أهلاً **${name}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+        session.history.push({ role: "user", content: message });
+        session.history.push({ role: "assistant", content: reply });
+        session.isFirstVisit = false;
+        
+        return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      } else {
+        // اسم مش منطقي → طنش وكمل عادي
+        console.log(`⚠️ Invalid name detected: "${name}" — skipping`);
+        session.isFirstVisit = false;
+        // نكمل في analyzeIntent
+      }
       
     } else if (words.length >= 1 && words.length <= 3 && !hasIgnored) {
       // رد قصير ومفيهوش كلمات استفهام → يمكن يكون اسم
       // ناخد **أول كلمة بس** (مش كل الكلمات)
       const possibleName = words[0];
-      session.memory.name = possibleName;
-      await saveUserMemory(session.userId, session.memory);
       
-      const reply = `أهلاً **${possibleName}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
-      session.history.push({ role: "user", content: message });
-      session.history.push({ role: "assistant", content: reply });
-      session.isFirstVisit = false;
+      // تحقق من صحة الاسم
+      const isValid = await validateName(possibleName);
       
-      return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      if (isValid) {
+        session.memory.name = possibleName;
+        await saveUserMemory(session.userId, session.memory);
+        
+        const reply = `أهلاً **${possibleName}**! 🎉<br>فرصة سعيدة إني أساعدك 😊<br><br>قولي، عايز أساعدك في إيه النهارده؟`;
+        session.history.push({ role: "user", content: message });
+        session.history.push({ role: "assistant", content: reply });
+        session.isFirstVisit = false;
+        
+        return { reply: finalizeReply(reply), suggestions: [], options: [] };
+      } else {
+        // اسم مش منطقي → طنش وكمل عادي
+        console.log(`⚠️ Invalid name detected: "${possibleName}" — skipping`);
+        session.isFirstVisit = false;
+        // نكمل في analyzeIntent
+      }
       
     } else {
       // مش اسم — سؤال أو طلب مباشر → نكمل عادي ونشيل الـ flag
@@ -1432,6 +1502,33 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   // حفظ في الـ history
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
+
+  // 🔧 كشف تصحيح الاسم
+  if (session.memory && session.memory.name) {
+    const nameCorrectionPattern = /(?:مش اسم[يى]|اسم[يى] مش|انا مش|انا اسم[يى]|اسم[يى]|انا)\s+(.+)/i;
+    const wrongNamePattern = new RegExp(`مش\\s+${session.memory.name}`, 'i');
+    
+    if (wrongNamePattern.test(message) || message.match(/مش اسم[يى]|اسم[يى] مش/i)) {
+      // المستخدم بيقول إن الاسم غلط
+      // استخرج الاسم الصح
+      const match = message.match(/(?:انا|اسم[يى])\s+([^\s،.!؟]+)/i);
+      
+      if (match && match[1]) {
+        const newName = match[1].trim();
+        const ignoreWords = ['مش', 'لا', 'مين', 'ايه', 'كيف', 'فين'];
+        
+        if (!ignoreWords.includes(newName.toLowerCase())) {
+          session.memory.name = newName;
+          await saveUserMemory(session.userId, session.memory);
+          
+          const reply = `أعتذر عن الخطأ، **${newName}**! 😊<br>حفظت اسمك الصح دلوقتي.<br><br>عايز أساعدك في إيه؟`;
+          session.history.push({ role: "assistant", content: reply });
+          
+          return { reply: finalizeReply(reply), suggestions: [], options: [] };
+        }
+      }
+    }
+  }
 
   // ── FAQ Check أولاً ──
   const faqAnswer = await findFAQAnswer(message);
