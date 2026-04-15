@@ -2368,6 +2368,13 @@ micBtn.addEventListener("click", function () {
   if (!isRecording) startRec(); else stopAndSend();
 });
 
+// إضافة touch event للموبايل
+micBtn.addEventListener("touchstart", function (e) {
+  e.preventDefault(); // منع الكيبورد من الفتح
+  if (isSending) return;
+  if (!isRecording) startRec(); else stopAndSend();
+}, {passive: false});
+
 rec.onresult = function (e) {
   if (cancelled) return;
 
