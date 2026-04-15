@@ -1919,4 +1919,28 @@ if(window.visualViewport){window.visualViewport.addEventListener("resize",setZgV
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);
 else init();
 window.addEventListener("load",function(){if(!document.getElementById("zg-toggle"))init();});
+
+// ══════════════════════════════════════════════════════════
+// Heartbeat Check — يتأكد إن الأيقونة موجودة ومش frozen
+// ══════════════════════════════════════════════════════════
+setInterval(function(){
+var tog=document.getElementById("zg-toggle");
+if(tog&&tog.style.display!=="none"){
+// الأيقونة موجودة - نتأكد إنها responsive
+if(!tog.__zgHeartbeat){
+tog.__zgHeartbeat=true;
+// لو في مشكلة في الـ events - reinit
+var testClick=function(){tog.__zgResponsive=true;};
+tog.addEventListener("pointerdown",testClick,{once:true,passive:true});
+setTimeout(function(){
+if(!tog.__zgResponsive){
+console.log("[ZikoGuide] Re-initializing frozen widget");
+init();
+}
+delete tog.__zgResponsive;
+},100);
+}
+}
+},30000); // كل 30 ثانية
+
 })();
