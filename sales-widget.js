@@ -1425,13 +1425,7 @@ try {
 
 var stored = localStorage.getItem('easyt-user-id');
 
-if (stored) {
-
-sessionStorage.setItem('easyt-user-id', stored);
-
-return stored;
-
-}
+if (stored) return stored;
 
 stored = sessionStorage.getItem('easyt-user-id');
 
@@ -1443,7 +1437,8 @@ return stored;
 
 }
 
-var newId = generateSmartFingerprint();
+// ولّد ID بسيط
+var newId = 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
 localStorage.setItem('easyt-user-id', newId);
 
