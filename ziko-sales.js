@@ -1681,12 +1681,13 @@ async function smartChat(message, sessionId, userId = null) {
 // Routes
 // ══════════════════════════════════════════════════════════
 app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id } = req.body;
+  const { message, session_id, user_id } = req.body;  // ✅ إضافة user_id
   if (!message || !session_id) {
     return res.status(400).json({ error: "Missing message or session_id" });
   }
   try {
-    const result = await smartChat(message.trim(), session_id);
+    // ✅ تمرير user_id لـ smartChat (optional — لو مفيش هيبقى null)
+    const result = await smartChat(message.trim(), session_id, user_id || null);
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
