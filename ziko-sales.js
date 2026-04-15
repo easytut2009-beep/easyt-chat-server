@@ -415,11 +415,21 @@ needs_courses: false
 - "في كورسات عن التسويق؟" → type=course_request
 
 ══ قواعد الـ keywords ══
+🎯 **أمثلة مهمة:**
 - "تصوير الموبايل" → ["تصوير", "موبايل", "photography"]
 - "web developer" → ["html", "css", "javascript", "مواقع"]
 - "تطبيق موبايل" → ["اندرويد", "flutter", "تطبيقات"]
-- "الذكاء الاصطناعي" → ["ذكاء اصطناعي", "chatgpt", "python"]
-🚫 ممنوع keywords عامة: احترافي، شامل، كامل`;
+- "الذكاء الاصطناعي" → ["ذكاء اصطناعي", "ai", "chatgpt"]
+- "تصميم" → ["جرافيك", "فوتوشوب", "illustrator"] (مش "تصميم" لوحدها)
+- "متجر اونلاين" → ["تجارة إلكترونية", "متجر", "shopify", "woocommerce"]
+- "افتح متجر" → ["تجارة إلكترونية", "متجر", "بيع أونلاين"]
+
+⚠️ **كلمات عامة محتاجة تحديد:**
+- "تصميم" لوحدها → ["جرافيك", "فوتوشوب"] (أضيق)
+- "برمجة" لوحدها → ["python", "برمجة"] (عشان يضيق النتائج)
+- "ذكاء اصطناعي" → ["ذكاء اصطناعي", "ai", "chatgpt"] (كلمات محددة)
+
+🚫 ممنوع keywords عامة: احترافي، شامل، كامل، تصميم (لوحدها)`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
@@ -638,7 +648,19 @@ async function performSearch(keywords, instructors) {
                 }
               }
               
-              if (chunkWords.length > 1 && filteredCourses.length > 0) {
+              // ✅ جودة النتائج: لو مفيش كورسات فيها الكلمة في الـ title → chunks مش موثوقة
+              if (filteredCourses.length > 0) {
+                const hasTitleMatch = filteredCourses.some(item => {
+                  const titleLow = (item.course.title || '').toLowerCase();
+                  return chunkWords.some(w => titleLow.includes(w.toLowerCase()));
+                });
+                if (!hasTitleMatch) {
+                  console.log(`⚠️ No title match in chunks results — skipping chunks`);
+                  textChunkCourses = [];  // مفيش title match → chunks مش موثوقة
+                }
+              }
+              
+              if (textChunkCourses.length === 0 && chunkWords.length > 1 && filteredCourses.length > 0) {
                 const allWordsFiltered = filteredCourses.filter(item =>
                   chunkWords.every(w => {
                     const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
