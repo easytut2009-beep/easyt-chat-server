@@ -1336,10 +1336,6 @@ var completeStreamFn = null;
 
 try { sessionId = localStorage.getItem("ziko_session") || null; } catch(e) {}
 
-userId = getUserId();
-
-console.log('👤 User ID:', userId);
-
 function wasNotifyShown() {
 
 try {
@@ -1498,6 +1494,12 @@ requestAnimationFrame(function() { zikoMessages.scrollTop = zikoMessages.scrollH
 }
 
 function initZiko() {
+
+// 👤 توليد User ID (أول حاجة)
+if (!userId) {
+userId = getUserId();
+console.log('👤 User ID:', userId);
+}
 
 toggleBtn = document.getElementById("ziko-toggle");
 
