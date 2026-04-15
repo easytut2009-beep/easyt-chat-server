@@ -1314,8 +1314,6 @@ var notifyAutoTimer = null;
 
 var sessionId = null;
 
-var rec = null;
-
 var isRecording = false;
 
 var isSending = false;
@@ -2354,7 +2352,7 @@ function setupVoice() {
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!SR || !micBtn) { if (micBtn) micBtn.style.display = "none"; return; }
 
-rec = new SR();
+var rec = new SR();
 rec.lang            = "ar-EG";
 rec.continuous       = true;
 rec.interimResults   = true;
@@ -2369,13 +2367,6 @@ micBtn.addEventListener("click", function () {
   if (isSending) return;
   if (!isRecording) startRec(); else stopAndSend();
 });
-
-// استخدام touchend للموبايل (أقوى من touchstart)
-micBtn.addEventListener("touchend", function (e) {
-  e.preventDefault();
-  if (isSending) return;
-  if (!isRecording) startRec(); else stopAndSend();
-}, {passive: false});
 
 rec.onresult = function (e) {
   if (cancelled) return;
@@ -2444,18 +2435,6 @@ function cleanupUI() {
 }
 
 }
-
-// ══════════════════════════════════════════════════════════
-// Heartbeat Check — يتأكد إن الـ event listener لسه شغال
-// ══════════════════════════════════════════════════════════
-setInterval(function() {
-  var btn = document.getElementById('ziko-toggle');
-  if (btn && !btn.onclick && !btn.__hasListener) {
-    console.log('[Ziko] Re-attaching click listener (heartbeat check)');
-    btn.addEventListener('click', toggleChatBox);
-    btn.__hasListener = true;
-  }
-}, 30000); // كل 30 ثانية
 
 // expose للـ GTM
 window.initZiko = initZiko;
