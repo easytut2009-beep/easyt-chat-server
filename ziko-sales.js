@@ -1083,9 +1083,35 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
       reply += formatCourseCard(result.item, instructors, i + 1);
     }
     
+    // 💡 رسالة مفيدة للمستخدم بدل الـ why الداخلي
+    // نخلي GPT يولد رسالة مفيدة بناءً على السياق
     if (result.why) {
-      reply += `<div style="background:#f0f7ff;padding:8px;margin:8px 0;border-radius:8px;font-size:13px">`;
-      reply += `💡 ${result.why}</div>`;
+      // نحول الـ why الداخلي لرسالة مفيدة
+      let userMessage = "";
+      
+      // تحليل الـ why وتحويله لرسالة مفيدة
+      const whyLower = result.why.toLowerCase();
+      
+      if (whyLower.includes("لغ") && (whyLower.includes("ضعيف") || whyLower.includes("مش كويس"))) {
+        userMessage = "تحسين لغتك الإنجليزية هيسهل عليك فهم مصطلحات البرمجة والمراجع";
+      } else if (whyLower.includes("صفر") || whyLower.includes("مبتدئ")) {
+        userMessage = "مسار متكامل من الصفر — مناسب لأي حد بيبدأ بدون خبرة سابقة";
+      } else if (whyLower.includes("برمج")) {
+        userMessage = "أساسيات قوية هتبني عليها مهاراتك في البرمجة";
+      } else if (whyLower.includes("تصميم")) {
+        userMessage = "هتتعلم الأدوات والتقنيات اللي المحترفين بيستخدموها";
+      } else {
+        // fallback: نستخدم الـ why كما هو لكن نخليه أكثر فايدة
+        userMessage = result.why.replace(/المستخدم (قال|ذكر|أبدى)/gi, "").trim();
+        if (userMessage.length < 20) {
+          userMessage = "مناسب لمستواك وأهدافك";
+        }
+      }
+      
+      if (userMessage) {
+        reply += `<div style="background:#f0f7ff;padding:8px;margin:8px 0;border-radius:8px;font-size:13px">`;
+        reply += `💡 ${userMessage}</div>`;
+      }
     }
     reply += `<br>`;
   });
