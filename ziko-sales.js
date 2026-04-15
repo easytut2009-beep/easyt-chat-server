@@ -765,6 +765,145 @@ ${botInstructions || "لا توجد تعليمات"}`;
 }
 
 // ══════════════════════════════════════════════════════════
+// Context-Aware Course Recommendation (بدون كلمات ثابتة)
+// ══════════════════════════════════════════════════════════
+
+async function analyzeUserContext(history, message) {
+  const conversation = history.slice(-8).map(h => `${h.role}: ${h.content}`).join("\n");
+  
+  const prompt = `أنت محلل سياق ذكي لمنصة إيزي تي التعليمية.
+
+الحوار السابق:
+${conversation}
+
+المستخدم دلوقتي قال: "${message}"
+
+حلل الحوار واستخرج:
+1. فهم عميق لاحتياجات المستخدم (العمر، المستوى، اللغة، الهدف)
+2. أذكى keywords للبحث (بناءً على الحوار — مش افتراضات)
+3. عدد النتائج المطلوبة (1-3 بس — في الصميم)
+4. ترتيب الأولويات (إيه الأول، إيه الثاني)
+5. رسائل conversational مناسبة
+
+ارجع JSON:
+{
+  "user_profile": {
+    "inferred_age": "وصف عمري مستنتج",
+    "skill_level": "وصف المستوى",
+    "language_barrier": "وصف مشكلة اللغة لو موجودة",
+    "main_goal": "الهدف الأساسي"
+  },
+  "search_plan": [
+    {
+      "keywords": ["كلمة1", "كلمة2", "كلمة3"],
+      "search_type": "course" | "diploma",
+      "priority": 1,
+      "why": "السبب من الحوار"
+    }
+  ],
+  "max_items": 2,
+  "response": {
+    "intro": "مقدمة conversational",
+    "step_descriptions": ["وصف الخطوة 1", "وصف الخطوة 2"],
+    "conclusion": "خاتمة تحفيزية"
+  }
+}
+
+**مهم جداً:**
+- استنتج كل حاجة من الحوار — مفيش افتراضات
+- Keywords ذكية بناءً على اللي المستخدم قاله
+- max_items دايماً 1-3 — في الصميم بس
+- step_descriptions عددها = عدد الخطوات في search_plan`;
+
+  try {
+    const resp = await gptWithRetry(() => openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.1,
+      max_tokens: 800,
+    }));
+    
+    return JSON.parse(resp.choices[0].message.content);
+  } catch (e) {
+    console.error("❌ analyzeUserContext error:", e.message);
+    return null;
+  }
+}
+
+async function executeSearchPlan(searchPlan) {
+  const results = [];
+  
+  for (const plan of searchPlan) {
+    try {
+      if (plan.search_type === "diploma") {
+        const diplomas = await searchDiplomas(plan.keywords);
+        if (diplomas && diplomas[0]) {
+          const diplomaWithCourses = await getDiplomaWithCourses(diplomas[0].title);
+          if (diplomaWithCourses && diplomaWithCourses.diploma) {
+            results.push({
+              item: diplomaWithCourses.diploma,
+              isDiploma: true,
+              priority: plan.priority || 1,
+              why: plan.why || ""
+            });
+          }
+        }
+      } else {
+        const courses = await searchCourses(plan.keywords);
+        if (courses && courses[0]) {
+          results.push({
+            item: courses[0],
+            isDiploma: false,
+            priority: plan.priority || 1,
+            why: plan.why || ""
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Search plan step error:", e.message);
+    }
+  }
+  
+  results.sort((a, b) => a.priority - b.priority);
+  return results;
+}
+
+async function buildContextAwareResponse(results, responseData, maxItems) {
+  const instructors = await getInstructors().catch(() => []);
+  
+  let reply = (responseData.intro || "بناءً على حوارنا، ده المنهج المناسب:") + "<br><br>";
+  
+  const topResults = results.slice(0, maxItems || 2);
+  
+  topResults.forEach((result, i) => {
+    const stepDesc = responseData.step_descriptions && responseData.step_descriptions[i];
+    
+    if (stepDesc) {
+      reply += `<strong>${stepDesc}:</strong><br>`;
+    }
+    
+    if (result.isDiploma) {
+      reply += formatDiplomaCard(result.item);
+    } else {
+      reply += formatCourseCard(result.item, instructors, i + 1);
+    }
+    
+    if (result.why) {
+      reply += `<div style="background:#f0f7ff;padding:8px;margin:8px 0;border-radius:8px;font-size:13px">`;
+      reply += `💡 ${result.why}</div>`;
+    }
+    reply += `<br>`;
+  });
+  
+  if (responseData.conclusion) {
+    reply += `<strong>${responseData.conclusion}</strong>`;
+  }
+  
+  return reply;
+}
+
+// ══════════════════════════════════════════════════════════
 // Main Chat Handler (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
 async function smartChat(message, sessionId) {
@@ -987,8 +1126,58 @@ async function smartChat(message, sessionId) {
     options = suggestions;
   }
 
-  // ── Course Request (البحث) ──
+  // ── Course Request (البحث مع Context-Aware) ──
   else if (intent.type === "course_request" || intent.needs_courses) {
+    
+    // 🎯 جرب Context-Aware أولاً (لو في history كافي)
+    if (session.history.length >= 4) {
+      try {
+        console.log("🔍 Trying context-aware search...");
+        const context = await analyzeUserContext(session.history, message);
+        
+        if (context && context.search_plan && context.search_plan.length > 0) {
+          const results = await executeSearchPlan(context.search_plan);
+          
+          if (results.length > 0) {
+            console.log(`✅ Context-aware found ${results.length} results`);
+            reply = await buildContextAwareResponse(
+              results, 
+              context.response, 
+              context.max_items
+            );
+            
+            session.history = [];
+            session.hadClarify = false;
+            session.clarifyCount = 0;
+            suggestions = ["أسعار الاشتراك 💳"];
+            
+            // نجح — نخرج مباشرة
+            session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
+            
+            reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
+            reply = finalizeReply(reply);
+            
+            try {
+              await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", {});
+              await logChat(sessionId, "bot", reply.substring(0, 5000), null, {});
+            } catch(e) {
+              console.error("❌ Log failed:", e.message);
+            }
+            
+            return { reply, suggestions, options: [] };
+          } else {
+            console.log("⚠️ Context-aware returned no results — falling back to normal search");
+          }
+        } else {
+          console.log("⚠️ No search plan from context — falling back to normal search");
+        }
+      } catch (e) {
+        console.error("❌ Context-aware search failed:", e.message);
+      }
+    }
+    
+    // 🔄 Fallback: البحث العادي (الكود القديم)
+    console.log("🔍 Using normal search...");
     let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
       : prepareSearchTerms(message.split(/\s+/));
