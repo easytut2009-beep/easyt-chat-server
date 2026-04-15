@@ -211,7 +211,7 @@ ${isRepeated ? '\n🔁 **ملاحظة مهمة:** المستخدم كرر نفس
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "conversational" | "course_request" | "comparison" | "info" | "subscription" | "support" | "greeting" | "defensive" | "educational_content" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "clarify",
+  "type": "conversational" | "course_request" | "comparison" | "info" | "subscription" | "support" | "greeting" | "defensive" | "educational_content" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "clarify" | "out_of_scope",
   "keywords": ["كلمة1", "كلمة2"],
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
   "conversational_reply": "رد conversational ذكي من زيكو",
@@ -354,21 +354,47 @@ type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في 
 مثال: "عايز أتعلم" (بدون ذكر إيه)، "محتاج مساعدة" (بدون تحديد)، "بدور على حاجة" (مش واضح إيه)
 
 ⚠️ **استثناء مهم — Context Awareness:**
-- لو المستخدم قال "محتاج تفاصيل" أو "وريني" **وفي السياق موضوع واضح** → type=course_request مش clarify!
+- لو المستخدم قال "محتاج تفاصيل" أو "وريني" أو "ياريت" أو "نعم" أو "أيوه" **وفي السياق موضوع واضح** → استخدم السياق مباشرة!
 - مثال: 
+  - سياق: "لو محتاج تفاصيل عن الشحن، قولي"
+  - رد: "ياريت" → type=info, رد بتفاصيل الشحن مباشرة
   - سياق: "عندكم هيدروليك؟"
   - رد: "محتاج تفاصيل" → type=course_request, keywords من السياق
+
+🚫 **Out of Scope — خارج نطاق المنصة:**
+لو السؤال عن مواضيع **خارج نطاق المنصة التعليمية**:
+- طبية: أعراض، مرض، علاج، دواء، طبيب، صحة
+- قانونية: محامي، قانون، محكمة، دعوى
+- سياسية: حكومة، انتخابات، سياسة
+- شخصية جداً: علاقات عاطفية، مشاكل أسرية
+
+→ type=out_of_scope
+→ conversational_reply: اعتذار ودود + توضيح التخصص + عرض مساعدة في النطاق
+
+مثال:
+- "أعراض الأمراض العصبية"
+→ "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br>للأسف مقدرش أساعدك في معلومات طبية.<br><br>لو عايز تتعلم **تحليل البيانات الطبية** أو **البرمجة في المجال الطبي**، عندنا كورسات! 📊"
 
 clarify_question: "سؤال توضيحي **مختلف** عن سؤال المستخدم"
 clarify_options: ["خيار1", "خيار2", "خيار3", "خيار4"]
 needs_courses: false
 
-🚨 **مهم:** 
-- استخدم clarify **فقط** لو السؤال **غامض جداً** ومفيش سياق
-- لو السؤال واضح (حتى لو عام) → اجب مباشرة (type=info أو conversational)
-- لو في موضوع في السياق → استخدمه بدل ما تسأل تاني
-- ممنوع تعيد صياغة سؤال المستخدم — اسأل سؤال **توضيحي مختلف**
-- **ممنوع clarify loop** — لو سألت مرتين في نفس الموضوع → اعرض الكورسات مباشرة
+🚨 **قواعد صارمة — STOP ASKING:**
+1. **Clarify Limit = 2 محاولات فقط**
+   - لو سألت مرتين ومفيش وضوح → **STOP**
+   - اعرض الكورسات مباشرة أو اعتذر بأدب
+   
+2. **ممنوع تكرار نفس السؤال**
+   - لو المستخدم مش فاهم السؤال → **غيّر الأسلوب**
+   - لو قال "مش فاهم" أو "لا أفهم" → **شرح بسيط أو اعرض كورسات**
+   
+3. **Context Awareness إلزامي**
+   - لو في موضوع في السياق → **استخدمه فوراً**
+   - ممنوع تسأل عن حاجة واضحة من السياق
+   
+4. **Out of Scope → Stop فوراً**
+   - ممنوع أسئلة توضيحية في مواضيع خارج النطاق
+   - رد واحد بأدب + توضيح التخصص
 
 ══ الفرق المهم جداً ══
 
@@ -907,8 +933,14 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 - 600+ كورس في كل المجالات — أونلاين 100% بالعربي
 - اشتراك سنوي: $59 | شهري: $25 | كورس منفرد: من $6.99
 - 30 دبلومة احترافية ($29.99)
+- 105 كتاب إلكتروني (PDF) — **رقمية مش مطبوعة** — بتوصل فوراً على الإيميل
 - تأسست 2003 — 23 سنة خبرة
 - 750,000+ متعلم
+
+🚫 **مهم عن الكتب:**
+- الكتب **رقمية (PDF)** مش مطبوعة
+- **مفيش شحن** — بتوصل فوراً على الإيميل بعد الشراء
+- لو حد سأل "الكتاب هيوصل امتي" → وضح إنه رقمي بيوصل فوراً
 
 ══ طرق الدفع ══
 - كريدت كارد → تفعيل فوري ✅
@@ -1425,6 +1457,12 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
   }
 
+  // ── Out of Scope ──
+  else if (intent.type === "out_of_scope") {
+    reply = intent.conversational_reply || "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br><br>للأسف مقدرش أساعدك في السؤال ده — لكن لو محتاج كورسات في أي مجال، أنا هنا! 🚀";
+    // مفيش suggestions
+  }
+
   // ── Educational Content ──
   else if (intent.type === "educational_content") {
     reply = intent.conversational_reply || "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊<br><br>لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل!<br><br>لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀";
@@ -1607,10 +1645,30 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
+    // 🛑 Clarify Limit = 2 — STOP ASKING!
+    if (session.clarifyCount >= 2) {
+      console.log("🛑 Clarify limit reached (2) — stopping questions");
+      
+      // لو في موضوع واضح → ابحث واعرض
+      if (session.lastTopic) {
+        console.log(`🔍 Showing courses for topic: ${session.lastTopic}`);
+        const keywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
+        const results = await performSearch(keywords, [], session.audience);
+        reply = await formatResults(results, session.lastTopic, session);
+        session.history = [];
+        session.hadClarify = false;
+        session.clarifyCount = 0;
+      } else {
+        // مفيش موضوع → اعتذر بأدب
+        reply = `يمكن أنا مش قادر أفهمك صح 😅<br><br>ممكن تشوف كل الكورسات عندنا وتختار:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح الكورسات ←</a><br><br>أو كلم الدعم هيساعدك أحسن:<br><a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
+        session.history = [];
+        session.hadClarify = false;
+        session.clarifyCount = 0;
+      }
+    }
     // لو المستخدم كرر نفسه → يعني عايز "كل حاجة"
-    if (isRepeated) {
+    else if (isRepeated) {
       console.log("🔁 المستخدم كرر نفسه في clarify — هنعتبرها 'كل حاجة' ونعرض دبلومة");
-      // نحول لـ recommend ونقترح دبلومة شاملة
       reply = await askZiko(message, session, botInstructions, 
         `المستخدم كرر نفس السؤال — يعني مش فاهم أو عايز كل حاجة.
         
