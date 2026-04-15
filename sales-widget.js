@@ -1165,19 +1165,9 @@ padding-top: max(10px, env(safe-area-inset-top, 10px));
 
 .ziko-mode-btn { padding: 3px 8px; font-size: 9px; }
 
-/* تكبير أيقونة الميكروفون على الموبايل */
+/* تكبير منطقة الضغط للميكروفون على الموبايل */
 #ziko-mic {
-  width: 24px !important;
-  height: 24px !important;
-  right: 45px !important;
-  padding: 4px;
-  touch-action: manipulation;
-}
-
-#ziko-img-btn {
-  width: 28px !important;
-  height: 28px !important;
-  padding: 5px;
+  padding: 12px;
 }
 
 }
