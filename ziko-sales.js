@@ -1333,9 +1333,11 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   }
 
   // 👋 رسالة ترحيب
+  // بس لو الرسالة فاضية أو "مرحبا" أو "هاي" — مش لو المستخدم قال اسم!
+  const isGreeting = /^(مرحبا|هاي|السلام عليكم|أهلا|hi|hello|hey)$/i.test(message);
   const shouldShowWelcome = (
     isWelcome || 
-    (session.history.length === 0)  // أول رسالة في الجلسة
+    (session.history.length === 0 && (!message || isGreeting))  // أول رسالة فاضية أو تحية
   );
   
   if (shouldShowWelcome) {
