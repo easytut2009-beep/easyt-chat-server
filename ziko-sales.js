@@ -818,20 +818,51 @@ ${conversation}
 - ثم الهدف الأساسي (priority 2)
 - **الأولوية دايماً للمشاكل قبل الأهداف!**
 
-🔴 **قاعدة الـ Keywords (حاسمة):**
-**استخدم أسماء المجالات والتقنيات الفعلية — مش أوصاف عامة!**
+🔴 **قاعدة الـ Keywords (حاسمة جداً — اقرأها مرتين):**
 
-❌ **لا تستخدم أبداً:**
-- "كورس" + صفة ("كورس إنجليزي"، "كورس برمجة")
-- "دورة" + صفة ("دورة تصميم")
-- "تعليم" + صفة ("تعليم لغات")
+**🚫 ممنوع منعاً باتاً استخدام:**
+- "كورس" + أي شيء ("كورس إنجليزي"، "كورس برمجة"، "كورس python")
+- "دورة" + أي شيء ("دورة تصميم"، "دورة تسويق")
+- "تعليم" + أي شيء ("تعليم لغات")
+- "دبلومة" + أي شيء ("دبلومة برمجة")
 - أي وصف عام
 
-✅ **استخدم:**
-- أسماء التقنيات المحددة
-- أسماء المجالات المحددة
+**لو استخدمت "كورس" أو "دورة" في الـ keywords → النتائج هتكون صفر!**
+
+✅ **استخدم بدلاً منها:**
+- أسماء اللغات والتقنيات مباشرة
 - المهارات المحددة
-- المصطلحات الفعلية المستخدمة في المجال
+- المصطلحات الفعلية في المجال
+- الكلمات اللي بتوصف المحتوى (مش نوع الكورس)
+
+**أمثلة صريحة:**
+
+❌ **خطأ فادح:**
+- keywords: ["كورس إنجليزي"]
+- keywords: ["دورة برمجة"]
+- keywords: ["تعليم python"]
+
+✅ **صح:**
+- keywords: ["english", "نطق", "تحدث", "ice breaker"]
+- keywords: ["python", "برمجة", "مبتدئين"]
+- keywords: ["photoshop", "تصميم", "جرافيك"]
+
+**السؤال قبل كل keyword: "هل ده اسم تقنية/مهارة أو وصف عام؟"**
+- لو اسم تقنية/مهارة → ✅ استخدمه
+- لو وصف عام → ❌ لا تستخدمه
+
+**كيف تفكر في الـ keywords:**
+
+**مثال: المستخدم قال "لغتي ضعيفة"**
+❌ خطأ: "إيه الكورس اللي بيعلم لغة؟" → keywords: ["كورس لغة"]
+✅ صح: "إيه المهارات اللي محتاج يتعلمها؟" → keywords: ["نطق", "تحدث", "محادثة", "english"]
+
+**مثال: المستخدم قال "عايز أتعلم برمجة"**
+❌ خطأ: keywords: ["كورس برمجة", "دورة برمجة"]
+✅ صح: keywords: ["برمجة", "python", "javascript", "مبتدئين", "أساسيات"]
+
+🔴 **تذكير أخير:**
+**"كورس" و "دورة" و "تعليم" = كلمات محظورة في الـ keywords!**
 
 **كيف تستنتج الـ keywords الصحيحة:**
 
@@ -941,10 +972,34 @@ ${conversation}
 async function executeSearchPlan(searchPlan) {
   const results = [];
   
+  // 🔴 Validation: شيل الكلمات المحظورة
+  const bannedWords = new Set(["كورس", "دورة", "دوره", "تعليم", "course"]);
+  
   for (const plan of searchPlan) {
     try {
+      // تنظيف الـ keywords من الكلمات المحظورة
+      let cleanKeywords = plan.keywords.filter(kw => {
+        const kwLower = kw.toLowerCase().trim();
+        // شيل لو الكلمة محظورة أو بتبدأ بكلمة محظورة
+        for (const banned of bannedWords) {
+          if (kwLower === banned || kwLower.startsWith(banned + " ")) {
+            console.log(`⚠️ Removed banned keyword: "${kw}"`);
+            return false;
+          }
+        }
+        return true;
+      });
+      
+      // لو مفيش keywords بعد التنظيف → skip
+      if (cleanKeywords.length === 0) {
+        console.log(`⚠️ No valid keywords after cleaning for priority ${plan.priority}`);
+        continue;
+      }
+      
+      console.log(`✅ Clean keywords for priority ${plan.priority}:`, cleanKeywords);
+      
       if (plan.search_type === "diploma") {
-        const diplomas = await searchDiplomas(plan.keywords);
+        const diplomas = await searchDiplomas(cleanKeywords);
         if (diplomas && diplomas[0]) {
           const diplomaWithCourses = await getDiplomaWithCourses(diplomas[0].title);
           if (diplomaWithCourses && diplomaWithCourses.diploma) {
@@ -957,7 +1012,7 @@ async function executeSearchPlan(searchPlan) {
           }
         }
       } else {
-        const courses = await searchCourses(plan.keywords);
+        const courses = await searchCourses(cleanKeywords);
         if (courses && courses[0]) {
           results.push({
             item: courses[0],
