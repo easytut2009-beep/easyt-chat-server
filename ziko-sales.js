@@ -1040,12 +1040,26 @@ async function smartChat(message, sessionId) {
   reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
   reply = finalizeReply(reply);
 
-  // ── Log ──
+  // ── تسجيل المحادثة ──
+  const cleanQuestion = message
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, 500);
+  
+  const cleanReply = reply
+    .trim()
+    .substring(0, 5000);
+  
+  console.log(`📝 Logging - User: ${cleanQuestion.length}ch | Bot: ${cleanReply.length}ch`);
+  
   try {
-    await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", {});
-    await logChat(sessionId, "bot", reply.substring(0, 5000), null, {});
+    await logChat(sessionId, "user", cleanQuestion, intent?.type || "unknown", {});
+    await logChat(sessionId, "bot", cleanReply, null, {});
+    console.log(`✅ Logged OK`);
   } catch(e) {
     console.error("❌ Log failed:", e.message);
+    logChat(sessionId, "bot", cleanReply, null, {}).catch(() => {});
   }
 
   return { reply, suggestions, options };
