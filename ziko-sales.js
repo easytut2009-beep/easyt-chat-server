@@ -1377,14 +1377,20 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
 
   // 👤 كشف الاسم (لو أول زيارة ومفيش اسم محفوظ)
   if (session.isFirstVisit && !session.memory.name) {
+    console.log(`🔍 NAME DETECTION: isFirstVisit=${session.isFirstVisit}, hasName=${!!session.memory.name}, message="${message}"`);
+    
     // جرب تكشف لو الرد فيه اسم
     const nameMatch = message.match(/^(اسمي|انا|اسم[يه]?)\s+(.+)$/i);
     const wordsOnly = message.replace(/[^\u0600-\u06FFa-zA-Z\s]/g, '').trim();
     const words = wordsOnly.split(/\s+/).filter(w => w.length > 0);
     
+    console.log(`📋 NAME DETECTION: nameMatch=${!!nameMatch}, words=[${words.join(', ')}], wordCount=${words.length}`);
+    
     // لو الرد قصير (1-3 كلمات) ومفيهوش كلمات زي "كورس"، "عايز"، إلخ
     const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل', 'عندي', 'عندى'];
     const hasIgnored = ignoreWords.some(w => message.toLowerCase().includes(w));
+    
+    console.log(`🚫 NAME DETECTION: hasIgnored=${hasIgnored}, ignoreWords found: ${ignoreWords.filter(w => message.toLowerCase().includes(w)).join(', ') || 'none'}`);
     
     // دالة للتحقق من صحة الاسم باستخدام GPT
     async function validateName(possibleName) {
@@ -1446,6 +1452,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     }
     
     if (nameMatch && nameMatch[2]) {
+      console.log(`✅ NAME BRANCH 1: "اسمي X" pattern matched`);
       // قال "اسمي أحمد" أو "أنا محمد"
       const name = nameMatch[2].trim();
       
@@ -1470,6 +1477,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
       }
       
     } else if (words.length >= 1 && words.length <= 3 && !hasIgnored) {
+      console.log(`✅ NAME BRANCH 2: Short response (${words.length} words), no ignore words`);
       // رد قصير ومفيهوش كلمات استفهام → يمكن يكون اسم
       // ناخد **أول كلمة بس** (مش كل الكلمات)
       const possibleName = words[0];
@@ -1497,6 +1505,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
       }
       
     } else {
+      console.log(`❌ NAME BRANCH 3: Skipping name detection - words.length=${words.length}, hasIgnored=${hasIgnored}`);
       // مش اسم — سؤال أو طلب مباشر → نكمل عادي ونشيل الـ flag
       session.isFirstVisit = false;
       console.log("⚠️ User skipped name — continuing normally");
