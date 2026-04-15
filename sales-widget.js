@@ -1438,6 +1438,7 @@ if (notify) notify.classList.remove("ziko-notify-visible");
 }
 
 toggleBtn.addEventListener("click", function(e) { e.preventDefault(); e.stopPropagation(); openChat(); }, true);
+toggleBtn.__hasClickListener = true; // flag للـ heartbeat check
 
 closeBtn.addEventListener("click", function(e) { e.preventDefault(); e.stopPropagation(); closeChat(); });
 
@@ -2442,6 +2443,21 @@ function cleanupUI() {
 }
 
 }
+
+// ══════════════════════════════════════════════════════════
+// Heartbeat Check — يتأكد إن الأيقونة لسه بترد
+// ══════════════════════════════════════════════════════════
+setInterval(function() {
+  var btn = document.getElementById('ziko-toggle');
+  if (btn) {
+    // تحقق لو الـ listener موجود
+    if (!btn.__hasClickListener) {
+      console.log('[Ziko] Re-attaching click listener');
+      btn.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); openChat(); }, true);
+      btn.__hasClickListener = true;
+    }
+  }
+}, 30000); // كل 30 ثانية
 
 // expose للـ GTM
 window.initZiko = initZiko;
