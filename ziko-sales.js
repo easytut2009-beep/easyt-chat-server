@@ -373,7 +373,12 @@ type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في 
 
 مثال:
 - "أعراض الأمراض العصبية"
-→ "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br>للأسف مقدرش أساعدك في معلومات طبية.<br><br>لو عايز تتعلم **تحليل البيانات الطبية** أو **البرمجة في المجال الطبي**، عندنا كورسات! 📊"
+→ "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br>للأسف مقدرش أساعدك في معلومات طبية."
+
+🚫 **ممنوع في out_of_scope:**
+- ممنوع تذكر كورسات محددة أو تقترح مجالات — بس اعتذر ووضح التخصص
+- ممنوع كلمة "كورس" أو "دورة" أو "تتعلم" + مجال معين
+- فقط: "أنا متخصص في الكورسات التعليمية" + "مقدرش أساعدك في X"
 
 clarify_question: "سؤال توضيحي **مختلف** عن سؤال المستخدم"
 clarify_options: ["خيار1", "خيار2", "خيار3", "خيار4"]
@@ -418,7 +423,7 @@ needs_courses: false
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [{ role: "system", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.1,
@@ -938,9 +943,10 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 - 750,000+ متعلم
 
 🚫 **مهم عن الكتب:**
-- الكتب **رقمية (PDF)** مش مطبوعة
-- **مفيش شحن** — بتوصل فوراً على الإيميل بعد الشراء
-- لو حد سأل "الكتاب هيوصل امتي" → وضح إنه رقمي بيوصل فوراً
+- الكتب **رقمية (PDF)** مش مطبوعة — **مفيش كتب ورقية خالص**
+- **مفيش شحن** — بتوصل **فوراً** على الإيميل بعد الشراء مباشرة
+- **🚨 CRITICAL:** لو حد سأل "الكتاب هيوصل امتي" أو "كتاب X فين" → وضح فوراً إنه رقمي (PDF) بيوصل على الإيميل لحظياً
+- **ممنوع منعاً باتاً** تقول "3-7 أيام" أو "شحن" أو "توصيل" — الكتب **رقمية فقط**
 
 ══ طرق الدفع ══
 - كريدت كارد → تفعيل فوري ✅
@@ -1381,8 +1387,15 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     // دالة للتحقق من صحة الاسم باستخدام GPT
     async function validateName(possibleName) {
       try {
+        // Quick check: لو اسم عربي شائع → قبول فوري
+        const commonNames = /^(احمد|أحمد|محمد|محمود|علي|على|عمر|عمرو|خالد|يوسف|حسن|حسين|عبدالله|عبد الله|مصطفى|كريم|طارق|ياسر|سعيد|فهد|فيصل|نور|عادل|وليد|هشام|مالك|سامي|رامي|باسم|تامر|فاطمة|فاطمه|عائشة|عايشة|خديجة|خديجه|مريم|زينب|سارة|ساره|نورا|هدى|هدي|ليلى|ليلا|سلمى|سلما|رنا|رنى|دينا|دينه|منى|مني|ريم|اميرة|أميرة|ملك|ندى|نادية|ناديه|رشا|رشى|نهى|نهي|سمر|سمير|John|Maria|Ahmed|Mohammed|Sara|Fatima|Ali|Omar)$/i;
+        
+        if (commonNames.test(possibleName.trim())) {
+          return true;
+        }
+        
         const validation = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           messages: [{
             role: "system",
             content: `أنت خبير في كشف الأسماء الحقيقية.
@@ -1505,13 +1518,34 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
 
   // 🔧 كشف تصحيح الاسم
   if (session.memory && session.memory.name) {
-    const nameCorrectionPattern = /(?:مش اسم[يى]|اسم[يى] مش|انا مش|انا اسم[يى]|اسم[يى]|انا)\s+(.+)/i;
     const wrongNamePattern = new RegExp(`مش\\s+${session.memory.name}`, 'i');
+    const correctionPattern = /مش اسم[يى]|اسم[يى] مش|انا مش/i;
     
-    if (wrongNamePattern.test(message) || message.match(/مش اسم[يى]|اسم[يى] مش/i)) {
+    if (wrongNamePattern.test(message) || correctionPattern.test(message)) {
       // المستخدم بيقول إن الاسم غلط
-      // استخرج الاسم الصح
-      const match = message.match(/(?:انا|اسم[يى])\s+([^\s،.!؟]+)/i);
+      // استخرج الاسم الصح - جرب patterns مختلفة
+      // Pattern: "أنا X" - ناخد آخر كلمة في الجملة
+      let match = message.match(/(?:انا|أنا)\s+(.+)$/i);
+      if (match) {
+        // اخد آخر كلمة
+        const words = match[1].trim().split(/\s+/);
+        const newName = words[words.length - 1].replace(/[،.!؟]/g, '').trim();
+        
+        const ignoreWords = ['مش', 'لا', 'مين', 'ايه', 'كيف', 'فين', 'انا', 'أنا'];
+        
+        if (newName && newName.length > 1 && !ignoreWords.includes(newName.toLowerCase())) {
+          session.memory.name = newName;
+          await saveUserMemory(session.userId, session.memory);
+          
+          const reply = `أعتذر عن الخطأ، **${newName}**! 😊<br>حفظت اسمك الصح دلوقتي.<br><br>عايز أساعدك في إيه؟`;
+          session.history.push({ role: "assistant", content: reply });
+          
+          return { reply: finalizeReply(reply), suggestions: [], options: [] };
+        }
+      }
+      
+      // Fallback: "اسمي X"
+      match = message.match(/اسم[يى]\s+([^\s،.!؟]+)/i);
       
       if (match && match[1]) {
         const newName = match[1].trim();
