@@ -41,6 +41,72 @@ const SESSION_TTL = 30 * 60 * 1000; // 30 دقيقة
 const WHATSAPP_LINK = WHATSAPP_SUPPORT_LINK || "https://wa.me/201027007899";
 
 // ══════════════════════════════════════════════════════════
+// Memory System — التعرف على المستخدم عبر الجلسات
+// ══════════════════════════════════════════════════════════
+
+const USER_SESSIONS_TABLE = 'user_sessions';
+
+async function loadUserMemory(userId) {
+  if (!userId) return { memory: {}, visit_count: 1 };
+  
+  try {
+    const { data, error } = await supabase
+      .from(USER_SESSIONS_TABLE)
+      .select('memory, visit_count')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error || !data) {
+      // مستخدم جديد
+      await supabase.from(USER_SESSIONS_TABLE).insert({
+        user_id: userId,
+        memory: {},
+        first_seen: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
+        visit_count: 1
+      });
+      console.log(`💾 New user: ${userId}`);
+      return { memory: {}, visit_count: 1 };
+    }
+    
+    // تحديث آخر زيارة
+    const newVisitCount = (data.visit_count || 0) + 1;
+    await supabase
+      .from(USER_SESSIONS_TABLE)
+      .update({ 
+        last_seen: new Date().toISOString(),
+        visit_count: newVisitCount
+      })
+      .eq('user_id', userId);
+    
+    console.log(`💾 Loaded memory for ${userId} (visit #${newVisitCount})`);
+    return { memory: data.memory || {}, visit_count: newVisitCount };
+    
+  } catch (e) {
+    console.error('Memory load error:', e.message);
+    return { memory: {}, visit_count: 1 };
+  }
+}
+
+async function saveUserMemory(userId, memory) {
+  if (!userId) return;
+  
+  try {
+    await supabase
+      .from(USER_SESSIONS_TABLE)
+      .update({ 
+        memory,
+        last_seen: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+    
+    console.log(`💾 Saved memory for ${userId}`);
+  } catch (e) {
+    console.error('Memory save error:', e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
 // Session Memory
 // ══════════════════════════════════════════════════════════
 const sessions = new Map();
@@ -1149,9 +1215,21 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
 // ══════════════════════════════════════════════════════════
 // Main Chat Handler (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
-async function smartChat(message, sessionId) {
+async function smartChat(message, sessionId, userId = null) {
   const session = getSession(sessionId);
   const botInstructions = await loadBotInstructions("sales").catch(() => "");
+
+  // 💾 تحميل Memory من Supabase (أول مرة فقط)
+  if (userId && !session.memory) {
+    const { memory, visit_count } = await loadUserMemory(userId);
+    session.memory = memory;
+    session.visit_count = visit_count;
+    session.userId = userId;
+    
+    if (visit_count > 1) {
+      console.log(`🎉 Welcome back! Visit #${visit_count}`);
+    }
+  }
 
   // نظّف الرسالة
   message = message
@@ -1458,6 +1536,44 @@ async function smartChat(message, sessionId) {
             
             // نجح — نخرج مباشرة
             session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
+            
+            // 💾 حفظ في Memory
+            if (session.userId && results.length > 0) {
+              session.memory.interests = session.memory.interests || [];
+              session.memory.last_recommended = results.map(r => ({
+                type: r.isDiploma ? "diploma" : "course",
+                name: r.item.title,
+                date: new Date().toISOString()
+              }));
+              
+              // استخراج interests من search plan
+              if (context.search_plan) {
+                context.search_plan.forEach(plan => {
+                  if (plan.keywords) {
+                    plan.keywords.forEach(kw => {
+                      if (kw && !session.memory.interests.includes(kw)) {
+                        session.memory.interests.push(kw);
+                      }
+                    });
+                  }
+                });
+              }
+              
+              // حفظ level & language_barrier
+              if (context.user_profile) {
+                if (context.user_profile.skill_level) {
+                  session.memory.level = context.user_profile.skill_level;
+                }
+                if (context.user_profile.language_barrier) {
+                  session.memory.language_barrier = context.user_profile.language_barrier;
+                }
+                if (context.user_profile.main_goal) {
+                  session.memory.goals = context.user_profile.main_goal;
+                }
+              }
+              
+              await saveUserMemory(session.userId, session.memory);
+            }
             
             reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
             reply = finalizeReply(reply);
