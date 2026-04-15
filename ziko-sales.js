@@ -97,7 +97,7 @@ function formatDiplomaCard(diploma) {
 // ══════════════════════════════════════════════════════════
 // Intent Analysis — GPT يفهم النية (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
-async function analyzeIntent(message, history = [], hadClarify = false) {
+async function analyzeIntent(message, history = [], hadClarify = false, isRepeated = false) {
   const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
 
   const prompt = `أنت محلل نوايا ذكي لزيكو — مساعد الدعم والمساعدة في منصة إيزي تي التعليمية العربية.
@@ -108,6 +108,7 @@ async function analyzeIntent(message, history = [], hadClarify = false) {
 
 المستخدم كتب: "${message}"
 ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
+${isRepeated ? '\n🔁 **ملاحظة مهمة:** المستخدم كرر نفس الرسالة مرتين — يعني مش فاهم أو عايز "كل حاجة"\nلو كان سؤال عن تعلم حاجة → اعتبرها طلب للحصول على "دبلومة شاملة" أو "كل حاجة"' : ''}
 
 ارجع JSON فقط بهذا الشكل:
 {
@@ -1162,6 +1163,23 @@ async function smartChat(message, sessionId) {
 
   if (!message) return { reply: "أهلاً! 👋 بتدور على إيه النهارده؟", suggestions: [] };
 
+  // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
+  let isRepeated = false;
+  if (session.history.length >= 2) {
+    const recentUserMessages = session.history
+      .filter(h => h.role === 'user')
+      .slice(-3); // آخر 3 رسائل
+    
+    const repeatedCount = recentUserMessages.filter(h => 
+      h.content.trim().toLowerCase() === message.trim().toLowerCase()
+    ).length;
+    
+    if (repeatedCount >= 2) {
+      isRepeated = true;
+      console.log("🔁 المستخدم كرر نفس الرسالة — يعني عايز 'كل حاجة'");
+    }
+  }
+
   // حفظ في الـ history
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
@@ -1170,11 +1188,11 @@ async function smartChat(message, sessionId) {
   const faqAnswer = await findFAQAnswer(message);
   if (faqAnswer) {
     session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
-    return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
+    return { reply: finalizeReply(faqAnswer), suggestions: [] };
   }
 
   // ── تحليل النية ──
-  const intent = await analyzeIntent(message, session.history.slice(-4), session.hadClarify);
+  const intent = await analyzeIntent(message, session.history.slice(-4), session.hadClarify, isRepeated);
   console.log(`🎯 Intent: ${intent.type} | needs_courses: ${intent.needs_courses}`);
 
   let reply = "";
@@ -1188,24 +1206,21 @@ async function smartChat(message, sessionId) {
   // ── Greeting ──
   if (intent.type === "greeting") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
+    // مفيش suggestions ثابتة
   }
 
   // ── Defensive ──
   else if (intent.type === "defensive") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓"];
   }
 
   // ── Educational Content ──
   else if (intent.type === "educational_content") {
     reply = intent.conversational_reply || "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊<br><br>لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل!<br><br>لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀";
-    suggestions = ["كورسات 📘", "دبلومات 🎓"];
   }
 
   // ── Support ──
   else if (intent.type === "support") {
-    // زيكو يحاول يساعد أو يوجه — مش يحول مباشرة
     try {
       reply = await askZiko(message, session, botInstructions, 
         `المستخدم عنده مشكلة تقنية في منصة إيزي تي.
@@ -1225,31 +1240,26 @@ async function smartChat(message, sessionId) {
       console.error("Support handler error:", e.message);
       reply = `للمساعدة الفنية تواصل معنا: <a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
     }
-    suggestions = ["أسعار 💳", "كورسات 📘"];
   }
 
   // ── Subscription ──
   else if (intent.type === "subscription") {
     reply = await askZiko(message, session, botInstructions, `المستخدم بيسأل عن اشتراك\nرابط الاشتراك: ${SUBSCRIPTION_URL}\nرابط طرق الدفع: ${PAYMENTS_URL}`);
-    suggestions = ["طرق الدفع 💳", "الدبلومات 🎓"];
   }
 
   // ── Comparison ──
   else if (intent.type === "comparison") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓"];
   }
 
   // ── Info ──
   else if (intent.type === "info") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓"];
   }
 
   // ── Conversational ──
   else if (intent.type === "conversational") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
 
   // ── Recommend (النصيحة بدون عرض) ──
@@ -1280,14 +1290,12 @@ async function smartChat(message, sessionId) {
     } else {
       reply = `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
     }
-    suggestions = ["سعر الدبلومة 💰", "الاشتراك ✨", "كورسات 📘"];
   }
 
   // ── Courses List ──
   else if (intent.type === "courses_list") {
     reply = `📚 عندنا 600+ كورس في كل المجالات!<br><br>`;
     reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a>`;
-    suggestions = ["فوتوشوب 🎨", "اكسيل 📊", "برمجة 💻"];
   }
 
   // ── Instructor Courses ──
@@ -1340,19 +1348,15 @@ async function smartChat(message, sessionId) {
           if (instLink) {
             reply += `<br><a href="${instLink}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 كل كورسات ${escapeHtml(foundInstructor.name)} ←</a>`;
           }
-          suggestions = ["أسعار 💳", "كورسات تانية 📘", "دبلومات 🎓"];
         } else {
           reply = `مش لاقي كورسات للمحاضر "${escapeHtml(foundInstructor.name)}" دلوقتي 😅`;
-          suggestions = ["تصفح الكورسات 📚", "الدبلومات 🎓"];
         }
       } else {
         reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br><a href="${ALL_COURSES_URL}" target="_blank">📚 تصفح الكورسات ←</a>`;
-        suggestions = ["الكورسات 📚", "الدبلومات 🎓"];
       }
     } catch(e) {
       console.error("instructor_courses error:", e.message);
       reply = `عذراً، حصل مشكلة 😅`;
-      suggestions = ["كورسات 📘"];
     }
   }
 
@@ -1374,15 +1378,12 @@ async function smartChat(message, sessionId) {
           courses.forEach((c, i) => { reply += formatCourseCard(c, instructors, i + 1); });
           reply += `<br><a href="${diploma.link || ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة ←</a>`;
         }
-        suggestions = ["سعر الدبلومة 💰", "الاشتراك ✨", "دبلومات أخرى 🎓"];
       } else {
         reply = `مش لاقي دبلومة باسم "${escapeHtml(diplomaName)}" 😅<br><a href="${ALL_DIPLOMAS_URL}" target="_blank">🎓 كل الدبلومات ←</a>`;
-        suggestions = ["الدبلومات 🎓", "الاشتراك 💳"];
       }
     } catch(e) {
       console.error("diploma_courses error:", e.message);
       reply = `عذراً، حصل مشكلة 😅`;
-      suggestions = ["الدبلومات 🎓"];
     }
   }
 
@@ -1395,10 +1396,26 @@ async function smartChat(message, sessionId) {
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
-    reply = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
-    suggestions = intent.clarify_options && intent.clarify_options.length >= 2
-      ? intent.clarify_options
-      : ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
+    // لو المستخدم كرر نفسه → يعني عايز "كل حاجة"
+    if (isRepeated) {
+      console.log("🔁 المستخدم كرر نفسه في clarify — هنعتبرها 'كل حاجة' ونعرض دبلومة");
+      // نحول لـ recommend ونقترح دبلومة شاملة
+      reply = await askZiko(message, session, botInstructions, 
+        `المستخدم كرر نفس السؤال — يعني مش فاهم أو عايز كل حاجة.
+        
+**مهمتك:**
+1. اقترح دبلومة شاملة مناسبة للموضوع اللي بيسأل عنه
+2. وضح إن الدبلومة دي هتغطي كل حاجة من الصفر
+3. اسأله: "عايز تشوفها؟"
+
+**مش تعرض الدبلومة — بس اقتراح + سؤال!**`);
+      suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر"];
+    } else {
+      reply = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
+      suggestions = intent.clarify_options && intent.clarify_options.length >= 2
+        ? intent.clarify_options
+        : ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
+    }
     options = suggestions;
   }
 
@@ -1438,7 +1455,6 @@ async function smartChat(message, sessionId) {
             session.history = [];
             session.hadClarify = false;
             session.clarifyCount = 0;
-            suggestions = ["أسعار الاشتراك 💳"];
             
             // نجح — نخرج مباشرة
             session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
@@ -1503,16 +1519,13 @@ async function smartChat(message, sessionId) {
       session.history = [];
       session.hadClarify = false;
       session.clarifyCount = 0;
-      suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "دبلومات 🎓"];
     } else {
-      suggestions = ["تصفح الكورسات 📚", "الدبلومات 🎓"];
     }
   }
 
   // ── Fallback ──
   else {
     reply = await askZiko(message, session, botInstructions);
-    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
 
   // ══════════════════════════════════════════════════════════
