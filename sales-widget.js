@@ -2370,11 +2370,12 @@ micBtn.addEventListener("click", function () {
   if (!isRecording) startRec(); else stopAndSend();
 });
 
-// إضافة touch event للموبايل
-micBtn.addEventListener("touchstart", function (e) {
+// استخدام touchend للموبايل (أقوى من touchstart)
+micBtn.addEventListener("touchend", function (e) {
+  e.preventDefault();
   if (isSending) return;
   if (!isRecording) startRec(); else stopAndSend();
-});
+}, {passive: false});
 
 rec.onresult = function (e) {
   if (cancelled) return;
