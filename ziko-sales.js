@@ -640,8 +640,9 @@ async function performSearch(keywords, instructors) {
                 if (allWordsFiltered.length > 0) filteredCourses = allWordsFiltered;
               }
               textChunkCourses = filteredCourses
+                .filter(item => item.chunks.length >= 2)  // على الأقل 2 chunks
                 .sort((a, b) => b.chunks.length - a.chunks.length);
-              console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
+              console.log(`📝 Text chunks found in ${textChunkCourses.length} courses (min 2 chunks per course)`);
             }
           }
         }
@@ -1334,11 +1335,11 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   // 👋 رسالة ترحيب
   const shouldShowWelcome = (
     isWelcome || 
-    (session.visit_count === 1 && !session.memory.name && session.history.length === 0)
+    (session.history.length === 0)  // أول رسالة في الجلسة
   );
   
   if (shouldShowWelcome) {
-    session.isFirstVisit = true;
+    session.isFirstVisit = !session.memory.name;  // first visit لو مفيش اسم بس
     
     // لو في اسم محفوظ → رحب بالاسم (مش تسأل عنه!)
     if (session.memory && session.memory.name) {
@@ -1352,6 +1353,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     }
     
     // لو مفيش اسم → اسأل عنه
+    session.isFirstVisit = true;
     const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
     
     session.history.push({ role: "assistant", content: welcomeMsg });
