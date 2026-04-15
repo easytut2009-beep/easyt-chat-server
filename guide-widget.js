@@ -1762,9 +1762,9 @@ if(recMaxTimer){clearTimeout(recMaxTimer);recMaxTimer=null;}
 $mic.addEventListener("click",function(){if(sending)return;if(!recording)startRec();else stopRec(true);});
 rec.onresult=function(e){
 lastSpeechTime=Date.now();hadSpeech=true;
-var fin="",interim="";
-for(var i=0;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript;}
-finalTranscript=fin;$inp.value=fin+interim;
+var newFinal="",interim="";
+for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)newFinal+=e.results[i][0].transcript+" ";else interim+=e.results[i][0].transcript;}
+if(newFinal)finalTranscript=newFinal;$inp.value=(finalTranscript+interim).trim();
 };
 rec.onend=function(){if(recording){stopRec(!!finalTranscript.trim());}};
 rec.onerror=function(){if(recording){stopRec(!!finalTranscript.trim());}};
