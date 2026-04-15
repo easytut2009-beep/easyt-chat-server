@@ -1165,11 +1165,6 @@ padding-top: max(10px, env(safe-area-inset-top, 10px));
 
 .ziko-mode-btn { padding: 3px 8px; font-size: 9px; }
 
-/* تكبير منطقة الضغط للميكروفون على الموبايل */
-#ziko-mic {
-  padding: 12px;
-}
-
 }
 
 </style>
