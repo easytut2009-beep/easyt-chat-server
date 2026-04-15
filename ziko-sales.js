@@ -211,7 +211,7 @@ ${isRepeated ? '\n🔁 **ملاحظة مهمة:** المستخدم كرر نفس
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "conversational" | "course_request" | "comparison" | "info" | "subscription" | "support" | "greeting" | "defensive" | "educational_content" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "clarify" | "out_of_scope",
+  "type": "conversational" | "course_request" | "comparison" | "info" | "subscription" | "support" | "greeting" | "defensive" | "educational_content" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "clarify",
   "keywords": ["كلمة1", "كلمة2"],
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
   "conversational_reply": "رد conversational ذكي من زيكو",
@@ -244,7 +244,6 @@ type=defensive: رسالة استفزازية أو اتهام
 conversational_reply: رد ذكي وودود يوضح هوية زيكو + عرض مساعدة
 needs_courses: false
 🚨 **مهم:** المستخدم بيختبر زيكو — الرد لازم يكون ذكي ومحترم
-⚠️ **ملاحظة:** لو الرسالة **اسم شخص** (مثل: أحمد، محمد، سارة) → مش defensive! → type=conversational
 
 type=educational_content: سؤال تعليمي عن محتوى كورس معين
 مثال: "ما دلالات الخطوط؟"، "إزاي أعمل X في الدرس؟"، "مش فاهم النقطة دي"
@@ -299,24 +298,11 @@ conversational_reply: رد ودود + سؤال ذكي لفهم احتياجه
 needs_courses: false
 🚨 **مهم:** المستخدم بيحكي — **استمع + اسأل** — متعرضش كورسات
 
-type=course_request: طلب **مباشر** لعرض الكورسات
-🚨 **مهم جداً — "عايز أتعلم X" = course_request:**
-
-✅ **دائماً course_request:**
-- **"عايز أتعلم X"** ← طلب مباشر! ابحث فوراً!
-- **"عايز كورس X"** ← طلب مباشر!
-- **"محتاج أتعلم X"** ← طلب مباشر!
-- "فين أتعلم X؟"
-- "وريني كورسات X"
-- **"عندكم X؟"** ← يجب البحث فوراً!
-- **"فيه X؟"** ← يجب البحث!
-- **"موجود عندكم X؟"** ← يجب البحث!
-- "ممكن تديني X؟"
-- "عايز أشوف الكورسات"
-- **"محتاج تفاصيل"** (لو في موضوع في السياق) ← يجب البحث!
-
-keywords: ["X المذكور في السؤال"]
-needs_courses: true
+type=recommend: المستخدم عبّر عن رغبة في التعلم لكن مش طلب مباشر
+مثال: "عايز أتعلم X"، "محتاج أطور نفسي"، "نفسي أبقى X"
+conversational_reply: نصيحة + اقتراح + سؤال "عايز تشوفها؟"
+needs_courses: false
+🚨 **مهم:** ننصح ونقترح — لكن **مانعرضش** كورسات إلا لو المستخدم طلب
 
 type=diplomas_list: طلب قائمة الدبلومات
 مثال: "إيه الدبلومات الموجودة؟"، "وريني الدبلومات"
@@ -336,70 +322,36 @@ type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
 needs_courses: false
 
-🚫 **ممنوع منعاً باتاً:**
-- **ممنوع تقول "أيوه عندنا" إلا لو فعلاً هتبحث وتعرض النتايج**
-- **ممنوع تخترع** وجود كورسات — لو السؤال "عندكم X؟" → لازم type=course_request عشان نبحث فعلياً
-- لو مفيش نتايج في البحث → رد بصدق "للأسف مفيش"
+type=course_request: طلب **مباشر** لعرض الكورسات
+مثال: "فين أتعلم؟"، "وريني الكورسات"، "عندكم كورسات؟"، "ممكن تديني؟"، "موجود عندكم؟"
+
+⚠️ **مهم جداً — الفرق بين الرغبة والطلب:**
+
+✅ **طلب مباشر** (type=course_request):
+- "فين أتعلم X؟"
+- "وريني كورسات X"
+- "عندكم X؟"
+- "ممكن تديني X؟"
+- "موجود عندكم X؟"
+- "عايز أشوف الكورسات"
+
+❌ **مش طلب مباشر** (type=conversational أو clarify):
+- "عايز أتعلم X" → conversational
+- "محتاج أطور نفسي في X" → conversational
+- "نفسي أبقى X" → conversational
+- "عايز أبدأ في X" → conversational
+
+**القاعدة:** لو مفيش كلمة طلب صريحة (فين، وريني، عندكم، ممكن) → مش course_request
 
 type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في التعلم بدون تحديد
 مثال: "عايز أتعلم" (بدون ذكر إيه)، "محتاج مساعدة" (بدون تحديد)، "بدور على حاجة" (مش واضح إيه)
-
-⚠️ **استثناء مهم — Context Awareness:**
-- لو المستخدم قال "محتاج تفاصيل" أو "وريني" أو "ياريت" أو "نعم" أو "أيوه" **وفي السياق موضوع واضح** → استخدم السياق مباشرة!
-- مثال: 
-  - سياق: "لو محتاج تفاصيل عن الشحن، قولي"
-  - رد: "ياريت" → type=info, رد بتفاصيل الشحن مباشرة
-  - سياق: "عندكم هيدروليك؟"
-  - رد: "محتاج تفاصيل" → type=course_request, keywords من السياق
-
-🚫 **Out of Scope — خارج نطاق المنصة:**
-لو السؤال عن مواضيع **خارج نطاق المنصة التعليمية**:
-- طبية: أعراض، مرض، علاج، دواء، طبيب، صحة
-- قانونية: محامي، قانون، محكمة، دعوى
-- سياسية: حكومة، انتخابات، سياسة
-- شخصية جداً: علاقات عاطفية، مشاكل أسرية
-- **طبخ/وصفات:** كيكة، طبخ، وصفة، أكلة
-- **ترجمة:** ترجملي، translate، ترجمة جملة
-- **كتابة محتوى شخصي:** اكتبلي تقرير، اعملي assignment، رسالة ماجستير
-
-→ type=out_of_scope
-→ conversational_reply: اعتذار ودود + توضيح التخصص + عرض مساعدة في النطاق
-
-أمثلة:
-- "أعراض الأمراض العصبية"
-→ "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br>للأسف مقدرش أساعدك في معلومات طبية."
-
-- "عايز وصفة كيكة"
-→ "أنا متخصص في **الكورسات التعليمية** 😊<br>مقدرش أساعدك في وصفات الطبخ — لكن لو محتاج تتعلم الطبخ، ممكن تشوف كورساتنا!"
-
-- "ترجملي الجملة دي"
-→ "أنا متخصص في **الكورسات التعليمية** 😊<br>مقدرش أترجملك — لكن لو عايز تتعلم اللغة، عندنا كورسات رائعة!"
-
-🚫 **ممنوع في out_of_scope:**
-- ممنوع تذكر كورسات محددة أو تقترح مجالات — بس اعتذر ووضح التخصص
-- ممنوع كلمة "كورس" أو "دورة" مع مجال محدد (ماعدا في الجملة الأخيرة كعرض عام)
-- فقط: "أنا متخصص في الكورسات التعليمية" + "مقدرش أساعدك في X"
-
 clarify_question: "سؤال توضيحي **مختلف** عن سؤال المستخدم"
 clarify_options: ["خيار1", "خيار2", "خيار3", "خيار4"]
 needs_courses: false
-
-🚨 **قواعد صارمة — STOP ASKING:**
-1. **Clarify Limit = 2 محاولات فقط**
-   - لو سألت مرتين ومفيش وضوح → **STOP**
-   - اعرض الكورسات مباشرة أو اعتذر بأدب
-   
-2. **ممنوع تكرار نفس السؤال**
-   - لو المستخدم مش فاهم السؤال → **غيّر الأسلوب**
-   - لو قال "مش فاهم" أو "لا أفهم" → **شرح بسيط أو اعرض كورسات**
-   
-3. **Context Awareness إلزامي**
-   - لو في موضوع في السياق → **استخدمه فوراً**
-   - ممنوع تسأل عن حاجة واضحة من السياق
-   
-4. **Out of Scope → Stop فوراً**
-   - ممنوع أسئلة توضيحية في مواضيع خارج النطاق
-   - رد واحد بأدب + توضيح التخصص
+🚨 **مهم:** 
+- استخدم clarify **فقط** لو السؤال **غامض جداً**
+- لو السؤال واضح (حتى لو عام) → اجب مباشرة (type=info أو conversational)
+- ممنوع تعيد صياغة سؤال المستخدم — اسأل سؤال **توضيحي مختلف**
 
 ══ الفرق المهم جداً ══
 
@@ -415,25 +367,15 @@ needs_courses: false
 - "في كورسات عن التسويق؟" → type=course_request
 
 ══ قواعد الـ keywords ══
-🎯 **أمثلة مهمة:**
 - "تصوير الموبايل" → ["تصوير", "موبايل", "photography"]
 - "web developer" → ["html", "css", "javascript", "مواقع"]
-- "برمجة مواقع" → ["html", "css", "javascript", "php", "مواقع"]
 - "تطبيق موبايل" → ["اندرويد", "flutter", "تطبيقات"]
-- "تصميم" → ["جرافيك", "فوتوشوب", "illustrator"] (مش "تصميم" لوحدها)
-
-⚠️ **كلمات عامة محتاجة تحديد دقيق (عشان الـ timeout):**
-- "ذكاء اصطناعي" → ["chatgpt", "machine learning", "ai"] (كلمات محددة - مش "ذكاء اصطناعي" لوحدها)
-- "متجر اونلاين" → ["shopify", "woocommerce", "تجارة"] (مش "متجر" لوحدها)
-- "افتح متجر" → ["shopify", "تجارة إلكترونية", "بيع"] (محدد)
-- "تصميم" لوحدها → ["فوتوشوب", "illustrator", "جرافيك"]
-- "برمجة" لوحدها → ["python", "javascript", "برمجة"]
-
-🚫 ممنوع keywords عامة: احترافي، شامل، كامل، تصميم (لوحدها)، ذكاء اصطناعي (لوحدها)، متجر (لوحدها)`;
+- "الذكاء الاصطناعي" → ["ذكاء اصطناعي", "chatgpt", "python"]
+🚫 ممنوع keywords عامة: احترافي، شامل، كامل`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [{ role: "system", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.1,
@@ -637,30 +579,7 @@ async function performSearch(keywords, instructors) {
 
               // لو في أكتر من كلمة — عرض بس الكورسات اللي فيها كل الكلمات
               let filteredCourses = [...courseChunksMap.values()];
-              
-              // ✅ Relevance filter: لو الكلمة موجودة في 80%+ من الكورسات → تجاهل النتائج (كلمة عامة جداً)
-              const totalCourses = filteredCourses.length;
-              if (totalCourses > 5) {
-                const irrelevantWords = wordFreq.filter(wf => wf.freq > totalCourses * 0.8).map(wf => wf.word);
-                if (irrelevantWords.length > 0) {
-                  console.log(`⚠️ Irrelevant words detected (too common): ${irrelevantWords.join(", ")} — skipping chunks`);
-                  textChunkCourses = [];  // امسح النتائج — الكلمة عامة جداً
-                }
-              }
-              
-              // ✅ جودة النتائج: لو مفيش كورسات فيها الكلمة في الـ title → chunks مش موثوقة
-              if (filteredCourses.length > 0) {
-                const hasTitleMatch = filteredCourses.some(item => {
-                  const titleLow = (item.course.title || '').toLowerCase();
-                  return chunkWords.some(w => titleLow.includes(w.toLowerCase()));
-                });
-                if (!hasTitleMatch) {
-                  console.log(`⚠️ No title match in chunks results — skipping chunks`);
-                  textChunkCourses = [];  // مفيش title match → chunks مش موثوقة
-                }
-              }
-              
-              if (textChunkCourses.length === 0 && chunkWords.length > 1 && filteredCourses.length > 0) {
+              if (chunkWords.length > 1) {
                 const allWordsFiltered = filteredCourses.filter(item =>
                   chunkWords.every(w => {
                     const w2 = w.replace(/ه$/g, 'ة').replace(/ة$/g, 'ه');
@@ -673,9 +592,8 @@ async function performSearch(keywords, instructors) {
                 if (allWordsFiltered.length > 0) filteredCourses = allWordsFiltered;
               }
               textChunkCourses = filteredCourses
-                .filter(item => item.chunks.length >= 2)  // على الأقل 2 chunks
                 .sort((a, b) => b.chunks.length - a.chunks.length);
-              console.log(`📝 Text chunks found in ${textChunkCourses.length} courses (min 2 chunks per course)`);
+              console.log(`📝 Text chunks found in ${textChunkCourses.length} courses`);
             }
           }
         }
@@ -935,12 +853,6 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 
 🔴 **قواعد مهمة:**
 
-**🚫 ممنوع الاختراع — كن صادقاً:**
-- **ممنوع منعاً باتاً** تقول "أيوه عندنا كورسات في X" إلا لو **فعلاً** شفت نتايج بحث
-- لو المستخدم سأل "عندكم X؟" أو "فيه X؟" → **مش دورك** تجاوب — ده سؤال يحتاج **بحث فعلي**
-- لو مش متأكد → قول "خليني أدور" أو "هتحقق" — **ممنوع** تقول "أيوه" من نفسك
-- **الصدق أهم من أي حاجة** — لو مش عارف → قول "مش متأكد"
-
 **1. لما المشكلة مش واضحة — اسأل أسئلة توضيحية:**
 مثال: "عندي مشكلة في البرامج"
 → اسأل: "البرامج دي زي إيه بالظبط؟ (Photoshop، AutoCAD، Illustrator؟)<br>والمشكلة في تشغيل كورسات إيزي تي ولا برامج تانية؟"
@@ -972,15 +884,8 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 - 600+ كورس في كل المجالات — أونلاين 100% بالعربي
 - اشتراك سنوي: $59 | شهري: $25 | كورس منفرد: من $6.99
 - 30 دبلومة احترافية ($29.99)
-- 105 كتاب إلكتروني (PDF) — **رقمية مش مطبوعة** — بتوصل فوراً على الإيميل
 - تأسست 2003 — 23 سنة خبرة
 - 750,000+ متعلم
-
-🚫 **مهم عن الكتب:**
-- الكتب **رقمية (PDF)** مش مطبوعة — **مفيش كتب ورقية خالص**
-- **مفيش شحن** — بتوصل **فوراً** على الإيميل بعد الشراء مباشرة
-- **🚨 CRITICAL:** لو حد سأل "الكتاب هيوصل امتي" أو "كتاب X فين" → وضح فوراً إنه رقمي (PDF) بيوصل على الإيميل لحظياً
-- **ممنوع منعاً باتاً** تقول "3-7 أيام" أو "شحن" أو "توصيل" — الكتب **رقمية فقط**
 
 ══ طرق الدفع ══
 - كريدت كارد → تفعيل فوري ✅
@@ -1349,62 +1254,20 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
 // ══════════════════════════════════════════════════════════
 // Main Chat Handler (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
-async function smartChat(message, sessionId, userId = null, isWelcome = false) {
+async function smartChat(message, sessionId, userId = null) {
   const session = getSession(sessionId);
   const botInstructions = await loadBotInstructions("sales").catch(() => "");
 
   // 💾 تحميل Memory من Supabase (أول مرة فقط)
   if (userId && !session.memory) {
     const { memory, visit_count } = await loadUserMemory(userId);
-    session.memory = memory || {};  // ← تأكد إنها object حتى لو null
+    session.memory = memory;
     session.visit_count = visit_count;
     session.userId = userId;
     
     if (visit_count > 1) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
     }
-  }
-  
-  // ✅ تأكد إن session.memory موجود دايماً
-  if (!session.memory) {
-    session.memory = {};
-  }
-  
-  // 🎯 تحديد isFirstVisit — لو session جديد ومفيش اسم محفوظ
-  if (session.history.length === 0 && !session.memory?.name) {
-    session.isFirstVisit = true;
-  }
-
-  // 👋 رسالة ترحيب
-  // بس لو الرسالة فاضية أو "مرحبا" أو "هاي" — مش لو المستخدم قال اسم!
-  const isGreeting = /^(مرحبا|هاي|السلام عليكم|أهلا|hi|hello|hey)$/i.test(message);
-  const shouldShowWelcome = (
-    isWelcome || 
-    (session.history.length === 0 && (!message || isGreeting))  // أول رسالة فاضية أو تحية
-  );
-  
-  if (shouldShowWelcome) {
-    // لو في اسم محفوظ → رحب بالاسم (مش تسأل عنه!)
-    if (session.memory && session.memory.name) {
-      const welcomeMsg = `أهلاً **${session.memory.name}**! 👋<br>ازيك؟ عايز مساعدة في إيه النهارده؟ 😊`;
-      session.history.push({ role: "assistant", content: welcomeMsg });
-      return { 
-        reply: finalizeReply(welcomeMsg), 
-        suggestions: [],
-        options: []
-      };
-    }
-    
-    // لو مفيش اسم → اسأل عنه
-    const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
-    
-    session.history.push({ role: "assistant", content: welcomeMsg });
-    
-    return { 
-      reply: finalizeReply(welcomeMsg), 
-      suggestions: [],
-      options: []
-    };
   }
 
   // نظّف الرسالة
@@ -1416,143 +1279,6 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     .trim();
 
   if (!message) return { reply: "أهلاً! 👋 بتدور على إيه النهارده؟", suggestions: [] };
-
-  // 👤 كشف الاسم (لو أول زيارة ومفيش اسم محفوظ)
-  if (session.isFirstVisit && !session.memory.name) {
-    console.log(`🔍 NAME DETECTION: isFirstVisit=${session.isFirstVisit}, hasName=${!!session.memory.name}, message="${message}"`);
-    
-    // جرب تكشف لو الرد فيه اسم
-    const nameMatch = message.match(/^(اسمي|انا|اسم[يه]?)\s+(.+)$/i);
-    const wordsOnly = message.replace(/[^\u0600-\u06FFa-zA-Z\s]/g, '').trim();
-    const words = wordsOnly.split(/\s+/).filter(w => w.length > 0);
-    
-    console.log(`📋 NAME DETECTION: nameMatch=${!!nameMatch}, words=[${words.join(', ')}], wordCount=${words.length}`);
-    
-    // لو الرد قصير (1-3 كلمات) ومفيهوش كلمات زي "كورس"، "عايز"، إلخ
-    const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل', 'عندي', 'عندى'];
-    const hasIgnored = ignoreWords.some(w => message.toLowerCase().includes(w));
-    
-    console.log(`🚫 NAME DETECTION: hasIgnored=${hasIgnored}, ignoreWords found: ${ignoreWords.filter(w => message.toLowerCase().includes(w)).join(', ') || 'none'}`);
-    
-    // دالة للتحقق من صحة الاسم باستخدام GPT
-    async function validateName(possibleName) {
-      try {
-        console.log(`🔍 Validating name: "${possibleName}"`);
-        
-        // Quick check: لو اسم عربي شائع → قبول فوري
-        const commonNames = /^(احمد|أحمد|محمد|محمود|علي|على|عمر|عمرو|خالد|يوسف|حسن|حسين|عبدالله|عبد الله|مصطفى|كريم|طارق|ياسر|سعيد|فهد|فيصل|نور|عادل|وليد|هشام|مالك|سامي|رامي|باسم|تامر|فاطمة|فاطمه|عائشة|عايشة|خديجة|خديجه|مريم|زينب|سارة|ساره|نورا|هدى|هدي|ليلى|ليلا|سلمى|سلما|رنا|رنى|دينا|دينه|منى|مني|ريم|اميرة|أميرة|ملك|ندى|نادية|ناديه|رشا|رشى|نهى|نهي|سمر|سمير|John|Maria|Ahmed|Mohammed|Sara|Fatima|Ali|Omar)$/i;
-        
-        if (commonNames.test(possibleName.trim())) {
-          console.log(`✅ Common name accepted: "${possibleName}"`);
-          return true;
-        }
-        
-        console.log(`🤖 Asking GPT to validate: "${possibleName}"`);
-        const validation = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{
-            role: "system",
-            content: `أنت خبير في كشف الأسماء الحقيقية.
-
-مهمتك: تحديد لو النص المُدخل اسم شخص حقيقي ولا لأ.
-
-🚫 **ليس اسماً:**
-- شتائم أو ألفاظ نابية بأي لغة
-- كلمات عامة (كورس، كتاب، سيارة، موبايل)
-- ضحك أو تعبيرات (هههه، lol، haha، ❤️)
-- أرقام أو رموز (123، @#$)
-- كلمات متكررة (ااااا، ههههه)
-- أفعال أو أسئلة (عايز، محتاج، ازاي)
-- كلمة واحدة غير منطقية كاسم
-
-✅ **اسم صحيح:**
-- أسماء عربية حقيقية (أحمد، محمد، فاطمة، سارة)
-- أسماء أجنبية حقيقية (John، Maria، Ahmed)
-- أسماء مركبة (عبد الله، أبو بكر، محمد علي)
-- ألقاب مع أسماء (م/ أحمد، د/ محمود)
-
-رد **JSON فقط** بدون أي نص إضافي:
-{
-  "is_valid": true/false
-}`
-          },
-          {
-            role: "user",
-            content: `هل "${possibleName}" اسم شخص حقيقي؟`
-          }],
-          temperature: 0,
-          response_format: { type: "json_object" }
-        });
-        
-        const result = JSON.parse(validation.choices[0].message.content);
-        return result.is_valid === true;
-      } catch (e) {
-        console.error("❌ Name validation error:", e.message);
-        // لو في مشكلة → نقبل الاسم (safer)
-        return true;
-      }
-    }
-    
-    if (nameMatch && nameMatch[2]) {
-      console.log(`✅ NAME BRANCH 1: "اسمي X" pattern matched`);
-      // قال "اسمي أحمد" أو "أنا محمد"
-      const name = nameMatch[2].trim();
-      
-      // تحقق من صحة الاسم
-      const isValid = await validateName(name);
-      
-      if (isValid) {
-        session.memory.name = name;
-        await saveUserMemory(session.userId, session.memory);
-        
-        const reply = `أهلاً **${name}**! فرصة سعيدة إني أساعدك 😊 قولي، عايز أساعدك في إيه النهارده؟`;
-        session.history.push({ role: "user", content: message });
-        session.history.push({ role: "assistant", content: reply });
-        session.isFirstVisit = false;
-        
-        return { reply: finalizeReply(reply), suggestions: [], options: [] };
-      } else {
-        // اسم مش منطقي → طنش وكمل عادي
-        console.log(`⚠️ Invalid name detected: "${name}" — skipping`);
-        session.isFirstVisit = false;
-        // نكمل في analyzeIntent
-      }
-      
-    } else if (words.length >= 1 && words.length <= 3 && !hasIgnored) {
-      console.log(`✅ NAME BRANCH 2: Short response (${words.length} words), no ignore words`);
-      // رد قصير ومفيهوش كلمات استفهام → يمكن يكون اسم
-      // ناخد **أول كلمة بس** (مش كل الكلمات)
-      const possibleName = words[0];
-      
-      // تحقق من صحة الاسم
-      const isValid = await validateName(possibleName);
-      
-      if (isValid) {
-        console.log(`💾 Saving name to memory: "${possibleName}"`);
-        session.memory.name = possibleName;
-        await saveUserMemory(session.userId, session.memory);
-        console.log(`✅ Name saved successfully!`);
-        
-        const reply = `أهلاً **${possibleName}**! فرصة سعيدة إني أساعدك 😊 قولي، عايز أساعدك في إيه النهارده؟`;
-        session.history.push({ role: "user", content: message });
-        session.history.push({ role: "assistant", content: reply });
-        session.isFirstVisit = false;
-        
-        return { reply: finalizeReply(reply), suggestions: [], options: [] };
-      } else {
-        // اسم مش منطقي → طنش وكمل عادي
-        console.log(`⚠️ Invalid name detected: "${possibleName}" — skipping`);
-        session.isFirstVisit = false;
-        // نكمل في analyzeIntent
-      }
-      
-    } else {
-      console.log(`❌ NAME BRANCH 3: Skipping name detection - words.length=${words.length}, hasIgnored=${hasIgnored}`);
-      // مش اسم — سؤال أو طلب مباشر → نكمل عادي ونشيل الـ flag
-      session.isFirstVisit = false;
-      console.log("⚠️ User skipped name — continuing normally");
-    }
-  }
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
   let isRepeated = false;
@@ -1574,54 +1300,6 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   // حفظ في الـ history
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
-
-  // 🔧 كشف تصحيح الاسم
-  if (session.memory && session.memory.name) {
-    const wrongNamePattern = new RegExp(`مش\\s+${session.memory.name}`, 'i');
-    const correctionPattern = /مش اسم[يى]|اسم[يى] مش|انا مش/i;
-    
-    if (wrongNamePattern.test(message) || correctionPattern.test(message)) {
-      // المستخدم بيقول إن الاسم غلط
-      // استخرج الاسم الصح - جرب patterns مختلفة
-      // Pattern: "أنا X" - ناخد آخر كلمة في الجملة
-      let match = message.match(/(?:انا|أنا)\s+(.+)$/i);
-      if (match) {
-        // اخد آخر كلمة
-        const words = match[1].trim().split(/\s+/);
-        const newName = words[words.length - 1].replace(/[،.!؟]/g, '').trim();
-        
-        const ignoreWords = ['مش', 'لا', 'مين', 'ايه', 'كيف', 'فين', 'انا', 'أنا'];
-        
-        if (newName && newName.length > 1 && !ignoreWords.includes(newName.toLowerCase())) {
-          session.memory.name = newName;
-          await saveUserMemory(session.userId, session.memory);
-          
-          const reply = `أعتذر عن الخطأ، **${newName}**! 😊<br>حفظت اسمك الصح دلوقتي.<br><br>عايز أساعدك في إيه؟`;
-          session.history.push({ role: "assistant", content: reply });
-          
-          return { reply: finalizeReply(reply), suggestions: [], options: [] };
-        }
-      }
-      
-      // Fallback: "اسمي X"
-      match = message.match(/اسم[يى]\s+([^\s،.!؟]+)/i);
-      
-      if (match && match[1]) {
-        const newName = match[1].trim();
-        const ignoreWords = ['مش', 'لا', 'مين', 'ايه', 'كيف', 'فين'];
-        
-        if (!ignoreWords.includes(newName.toLowerCase())) {
-          session.memory.name = newName;
-          await saveUserMemory(session.userId, session.memory);
-          
-          const reply = `أعتذر عن الخطأ، **${newName}**! 😊<br>حفظت اسمك الصح دلوقتي.<br><br>عايز أساعدك في إيه؟`;
-          session.history.push({ role: "assistant", content: reply });
-          
-          return { reply: finalizeReply(reply), suggestions: [], options: [] };
-        }
-      }
-    }
-  }
 
   // ── FAQ Check أولاً ──
   const faqAnswer = await findFAQAnswer(message);
@@ -1645,26 +1323,12 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   // ── Greeting ──
   if (intent.type === "greeting") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-    
-    // 👋 لو في اسم محفوظ، استخدمه في الترحيب
-    if (session.memory && session.memory.name && reply) {
-      // استبدل "أهلاً" بـ "أهلاً [الاسم]" (بس أول مرة في الرد)
-      if (!reply.includes(session.memory.name)) {
-        reply = reply.replace(/^(أهلاً|اهلا|هلا|مرحب[اً]?)/, `$1 **${session.memory.name}**`);
-      }
-    }
     // مفيش suggestions ثابتة
   }
 
   // ── Defensive ──
   else if (intent.type === "defensive") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-  }
-
-  // ── Out of Scope ──
-  else if (intent.type === "out_of_scope") {
-    reply = intent.conversational_reply || "أنا متخصص في مساعدتك تلاقي **كورسات تعليمية** في إيزي تي 😊<br><br>للأسف مقدرش أساعدك في السؤال ده — لكن لو محتاج كورسات في أي مجال، أنا هنا! 🚀";
-    // مفيش suggestions
   }
 
   // ── Educational Content ──
@@ -1849,30 +1513,10 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
-    // 🛑 Clarify Limit = 2 — STOP ASKING!
-    if (session.clarifyCount >= 2) {
-      console.log("🛑 Clarify limit reached (2) — stopping questions");
-      
-      // لو في موضوع واضح → ابحث واعرض
-      if (session.lastTopic) {
-        console.log(`🔍 Showing courses for topic: ${session.lastTopic}`);
-        const keywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
-        const results = await performSearch(keywords, [], session.audience);
-        reply = await formatResults(results, session.lastTopic, session);
-        session.history = [];
-        session.hadClarify = false;
-        session.clarifyCount = 0;
-      } else {
-        // مفيش موضوع → اعتذر بأدب
-        reply = `يمكن أنا مش قادر أفهمك صح 😅<br><br>ممكن تشوف كل الكورسات عندنا وتختار:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح الكورسات ←</a><br><br>أو كلم الدعم هيساعدك أحسن:<br><a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
-        session.history = [];
-        session.hadClarify = false;
-        session.clarifyCount = 0;
-      }
-    }
     // لو المستخدم كرر نفسه → يعني عايز "كل حاجة"
-    else if (isRepeated) {
+    if (isRepeated) {
       console.log("🔁 المستخدم كرر نفسه في clarify — هنعتبرها 'كل حاجة' ونعرض دبلومة");
+      // نحول لـ recommend ونقترح دبلومة شاملة
       reply = await askZiko(message, session, botInstructions, 
         `المستخدم كرر نفس السؤال — يعني مش فاهم أو عايز كل حاجة.
         
@@ -2076,15 +1720,13 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
 // Routes
 // ══════════════════════════════════════════════════════════
 app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id, user_id, is_welcome } = req.body;
-  
-  // السماح بـ message فاضي في حالة welcome
-  if ((!message && !is_welcome) || !session_id) {
+  const { message, session_id, user_id } = req.body;  // ✅ إضافة user_id
+  if (!message || !session_id) {
     return res.status(400).json({ error: "Missing message or session_id" });
   }
-  
   try {
-    const result = await smartChat(message ? message.trim() : "", session_id, user_id || null, is_welcome || false);
+    // ✅ تمرير user_id لـ smartChat (optional — لو مفيش هيبقى null)
+    const result = await smartChat(message.trim(), session_id, user_id || null);
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
