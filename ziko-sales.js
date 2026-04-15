@@ -1,5 +1,17 @@
 /* ══════════════════════════════════════════════════════════
-   ziko-sales-v2.js — المساعد البيعي (نسخة نظيفة)
+   ziko-sales.js — المساعد الذكي (النسخة 3.0)
+   
+   🎯 الشخصية الجديدة:
+   - مساعد دعم فني ومستشار تعليمي (مش بائع كورسات)
+   - الأولوية: فهم → مساعدة → توضيح → حوار
+   - الكورسات **آخر حاجة** — بس لو المستخدم طلب صراحة
+   
+   🔒 القواعد الصارمة:
+   - ممنوع أي كلمات ثابتة في الكود
+   - كل الكشف يكون عبر GPT
+   - منطق البحث زي ما هو — مفيش تغيير
+   
+   📅 آخر تحديث: 15 أبريل 2026
    ══════════════════════════════════════════════════════════ */
 
 "use strict";
@@ -26,7 +38,7 @@ const {
 const MAX_COURSES_DISPLAY = 5;
 const MAX_DIPLOMAS_DISPLAY = 5;
 const SESSION_TTL = 30 * 60 * 1000; // 30 دقيقة
-const WHATSAPP_LINK = WHATSAPP_SUPPORT_LINK || "https://wa.me/201000000000";
+const WHATSAPP_LINK = WHATSAPP_SUPPORT_LINK || "https://wa.me/201027007899";
 
 // ══════════════════════════════════════════════════════════
 // Session Memory
@@ -40,9 +52,9 @@ function getSession(sid) {
       lastTopic: null,
       lastResults: null,
       lastActivity: Date.now(),
-      audience: null,        // أطفال / مبتدئ / متقدم
-      clarifyCount: 0,       // عدد مرات الـ clarify في المحادثة
-      hadClarify: false,     // هل سألنا توضيح من قبل؟
+      audience: null,
+      hadClarify: false,
+      clarifyCount: 0,
     });
   }
   const s = sessions.get(sid);
@@ -83,190 +95,137 @@ function formatDiplomaCard(diploma) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Intent Analysis — GPT يفهم النية ويولد keywords
+// Intent Analysis — GPT يفهم النية (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
 async function analyzeIntent(message, history = [], hadClarify = false) {
   const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
-  const hadClarifyBefore = hadClarify || history.some(h => h.role === 'assistant' && (
-    h.content.includes('بالظبط') || h.content.includes('بالضبط') || h.content.includes('في إيه') || h.content.includes('في ايه')
-  ));
 
-  const prompt = `أنت محلل نوايا لمنصة إيزي تي التعليمية العربية.
+  const prompt = `أنت محلل نوايا ذكي لزيكو — مساعد الدعم والمساعدة في منصة إيزي تي التعليمية العربية.
 
-المستخدم بعت: "${message}"
+🎯 **شخصية زيكو الجديدة:**
+زيكو هو **مساعد دعم فني ومستشار تعليمي** — هدفه الأساسي **مساعدة الناس وحل مشاكلهم**.
+زيكو **مش بائع كورسات** — الكورسات آخر حاجة بيفكر فيها.
+
+المستخدم كتب: "${message}"
 ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
 
 ارجع JSON فقط بهذا الشكل:
 {
-  "type": "search" | "clarify" | "info" | "subscription" | "support" | "greeting" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "educational_request",
+  "type": "conversational" | "course_request" | "comparison" | "info" | "subscription" | "support" | "greeting" | "defensive" | "educational_content" | "diplomas_list" | "courses_list" | "diploma_courses" | "instructor_courses" | "clarify",
   "keywords": ["كلمة1", "كلمة2"],
-  "is_ambiguous": false,
   "audience": "أطفال" | "مبتدئ" | "متقدم" | null,
-  "clarify_question": "السؤال لو type=clarify",
-  "clarify_options": ["خيار1", "خيار2"],
-  "direct_reply": "رد مباشر لو مش search",
-  "diploma_name": "اسم الدبلومة لو type=diploma_courses",
-  "instructor_name": "اسم المحاضر لو type=instructor_courses"
+  "conversational_reply": "رد conversational ذكي من زيكو",
+  "needs_courses": false,
+  "diploma_name": null,
+  "instructor_name": null,
+  "clarify_question": null,
+  "clarify_options": []
 }
+
+══ القاعدة الذهبية ══
+🎯 زيكو = **مساعد + مستشار + صديق**
+❌ زيكو ≠ **بائع كورسات**
+
+الأولوية:
+1️⃣ **فهم** — إيه اللي المستخدم محتاجه؟
+2️⃣ **مساعدة** — حل المشكلة، توضيح، نصيحة
+3️⃣ **حوار** — أسئلة ذكية، متابعة
+4️⃣ **عرض كورسات** — **آخر حاجة** — بس لو المستخدم طلب صراحة
 
 ══ قواعد تحديد النوع ══
 
-type=greeting: تحية أو كلام عام بدون طلب محدد
-مثال: "أهلاً"، "مين أنت؟"
+type=greeting: تحية أو سؤال عن زيكو
+مثال: "أهلاً"، "السلام عليكم"، "مين أنت؟"، "بتعمل إيه؟"
+conversational_reply: رد ودود يعرّف بنفسه ويسأل كيف يساعد
+needs_courses: false
 
-type=educational_request: 🆕 طلب تعليمي (شرح/اختبار/حل/تمرين) — المستخدم فاكر إني المرشد التعليمي
-مثال: "اختبرني"، "امتحنّي"، "quiz me"، "اشرحلي الدرس ده"، "مش فاهم النقطة دي"، "ممكن تعيد الشرح؟"، "وضحلي أكتر"، "حل المسألة دي معايا"، "ساعدني في التمرين ده"، "solve this"
-🚨 أي طلب فيه: اختبار/شرح/توضيح/حل مسألة/تمرين/فهم → type=educational_request
-⚠️ ده غير السؤال المعلوماتي — الفرق:
-  - "إيه فايدة Python؟" → type=info (سؤال معلوماتي)
-  - "اشرحلي Python" → type=educational_request (طلب شرح تعليمي)
+type=defensive: رسالة استفزازية أو اتهام
+مثال: "انت هكر؟"، "انت روبوت؟"، "انت غبي؟"، "انت نصاب؟"
+conversational_reply: رد ذكي وودود يوضح هوية زيكو + عرض مساعدة
+needs_courses: false
+🚨 **مهم:** المستخدم بيختبر زيكو — الرد لازم يكون ذكي ومحترم
+
+type=educational_content: سؤال تعليمي عن محتوى كورس معين
+مثال: "ما دلالات الخطوط؟"، "إزاي أعمل X في الدرس؟"، "مش فاهم النقطة دي"
+conversational_reply: "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊 لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل! لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀"
+needs_courses: false
+
+type=support: مشكلة تقنية في الموقع أو الكورس
+مثال: "مش قادر أدخل"، "الفيديو مش بيشتغل"، "مش شايف الكورس"، "الموقع بطيء"
+conversational_reply: رد بحل سريع لو ممكن + توجيه للدعم
+needs_courses: false
 
 type=subscription: سؤال عن أسعار أو اشتراك أو دفع
-مثال: "كام سعر الاشتراك؟"، "إزاى ادفع؟"، "فيه كوبون؟"
+مثال: "كام سعر الاشتراك؟"، "إزاي أدفع؟"، "فيه خصم؟"
+conversational_reply: معلومات واضحة عن الأسعار
+needs_courses: false
 
-type=support: مشكلة تقنية في الموقع أو الكورس أو الاشتراك
-مثال: "مش قادر أدخل"، "الفيديو مش بيشتغل"، "مش قادر اكمل الكورس"، "مش شايف الكورسات"، "مش قادر اشترك"، "باعت الكورسات"، "مش بيحمل"، "مشكلة في الموقع"، "مش قادر افتح"
-⚠️ أي رسالة فيها "مش قادر" + فعل متعلق بالموقع أو الكورس → type=support
+type=comparison: سؤال مقارنة بين شيئين
+مثال: "إيه الفرق بين X وY؟"، "Python ولا JavaScript أحسن؟"
+🚨 **خاص:** "إيه الفرق بين الاشتراك السنوي والدبلومات؟" → type=comparison
+conversational_reply: شرح واضح للفرق + توضيح أيهم مناسب لإيه
+needs_courses: false
 
-type=diplomas_list: طلب قائمة الدبلومات أو توصية عامة بدبلومة بدون تحديد مجال
-مثال: "إيه الدبلومات الموجودة؟"، "ايه افضل دبلومة للمبتدئين"، "وريني الدبلومات"
-🚨 "عايز دبلومة في البرمجة" → type=search, keywords: ["دبلومة", "برمجة"] — مش diplomas_list
-🚨 "عايز دبلومة في التصميم" → type=search, keywords: ["دبلومة", "تصميم"] — مش diplomas_list
-🚨 "دبلومة الذكاء الاصطناعي" → type=search, keywords: ["دبلومة", "ذكاء اصطناعي"] — مش diplomas_list
+type=info: سؤال معلوماتي عام
+مثال: "إيه فايدة Python؟"، "إيه هو التسويق الرقمي؟"، "ينفع أتعلم البرمجة وأنا كبير؟"
+conversational_reply: إجابة مختصرة + "لو عايز تتعلم، عندنا كورسات"
+needs_courses: false
 
-type=diploma_courses: سؤال عن الكورسات الموجودة داخل دبلومة معينة أو طلب رابط دبلومة معينة
-مثال: "إيه الكورسات في دبلومة التسويق؟"، "دبلومة الجرافيك فيها إيه؟"، "محتوى دبلومة البرمجة"
-مثال: "رابط دبلوم التسويق"، "اعطيني دبلومة الجرافيك"، "دبلوم التصميم"، "دبلومة الذكاء الاصطناعي"
-🚨 أي سؤال فيه "دبلوم" أو "دبلومة" + اسم مجال محدد → type=diploma_courses
-→ اكتب اسم الدبلومة في diploma_name (مثال: "التسويق الإلكتروني"، "الجرافيك"، "البرمجة")
+type=conversational: حوار عام أو كلام شخصي بدون طلب محدد
+مثال: "أنا مشترك معاكم"، "اللغة صعبة شوية"، "عايز حد أكلمه"، "أنا في الجامعة"
+conversational_reply: رد ودود + سؤال ذكي لفهم احتياجه
+needs_courses: false
+🚨 **مهم:** المستخدم بيحكي — **استمع + اسأل** — متعرضش كورسات
 
-type=instructor_courses: سؤال عن كورسات محاضر أو مدرب معين
-مثال: "إيه كورسات أحمد خميس؟"، "كورسات الدكتور محمد"، "مين بيدرس فوتوشوب؟"
-→ اكتب اسم المحاضر في instructor_name
+type=diplomas_list: طلب قائمة الدبلومات
+مثال: "إيه الدبلومات الموجودة؟"، "وريني الدبلومات"
+needs_courses: false
+
+type=diploma_courses: سؤال عن دبلومة معينة
+مثال: "إيه الكورسات في دبلومة التسويق؟"
+diploma_name: "اسم الدبلومة"
+needs_courses: true
+
+type=instructor_courses: سؤال عن كورسات محاضر
+مثال: "إيه كورسات أحمد خميس؟"
+instructor_name: "اسم المحاضر"
+needs_courses: true
 
 type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
+needs_courses: false
 
-type=info: سؤال معلوماتي أو استشاري عن موضوع — مش بيدور على كورس
-مثال: "إزاى اعمل X؟"، "إيه الفرق بين X وY؟"، "إيه أحسن طريقة لـ X؟"
-مثال: "ممكن تترجملي"، "ممكن تعمل لي اسايمنت"، "عندي امتحان"، "عندي مشروع تخرج" → type=info (مش search)
-مثال: "فيه كورسات جديدة؟"، "بتضيفوا كورسات جديدة؟" → type=info (سؤال عن المنصة مش بحث عن كورس)
+type=course_request: طلب صريح لكورس
+مثال: "عايز كورس Python"، "فين أتعلم Photoshop؟"
+keywords: أذكى كلمات للبحث
+needs_courses: true
+🚨 **الحالة الوحيدة اللي بنعرض فيها كورسات مباشرة**
 
-🔴 قاعدة مهمة جداً — فرّق بين السؤال المعلوماتي وطلب الكورس:
+type=clarify: طلب عام جداً بدون تحديد
+مثال: "عايز أتعلم"، "محتاج مساعدة"
+clarify_question: "سؤال واضح"
+clarify_options: ["خيار1", "خيار2", "خيار3"]
+needs_courses: false
 
-**أسئلة معلوماتية (type=info) — حتى لو فيها اسم برنامج أو لغة:**
-"هل Python تصنع تطبيقات؟" → type=info (سؤال معلوماتي)
-"إيه فايدة Photoshop؟" → type=info
-"Python ولا JavaScript أحسن؟" → type=info
-"Excel بيعمل إيه؟" → type=info
-"ينفع أتعلم البرمجة وأنا كبير؟" → type=info
-"إيه الفرق بين frontend و backend؟" → type=info
+══ الفرق المهم جداً ══
 
-**طلبات كورسات (type=search):**
-"عايز كورس Python" → type=search
-"فين أتعلم Photoshop؟" → type=search
-"كورسات Excel" → type=search
-"محتاج أتعلم JavaScript" → type=search
-"عايز اشتغل في X" → type=search
+❌ **مش course_request**:
+- "هل Python تصنع تطبيقات؟" → type=info
+- "Python ولا JavaScript أحسن؟" → type=comparison
+- "أنا مشترك معاكم" → type=conversational
+- "اللغة صعبة شوية" → type=conversational
 
-🎯 **الفرق الأساسي:**
-- لو بيسأل سؤال عن الموضوع → info
-- لو عايز يتعلم/يدور على كورس → search
-
-type=search: بيدور على كورس أو دبلومة أو برنامج تعليمي
-مثال: "عايز كورس X"، "فين أتعلم X؟"، "في كورسات عن X؟"، "محتاج أتعلم X"
-🚨 فريلانس، اونلاين، تجارة إلكترونية، ربح + طلب تعلم → search مباشرة
-🚨 "عايز اشتغل في X" أو "عايز اتعلم X" أو "محتاج اتعلم X" + موضوع محدد → search دائماً
-🚨 "صناعة الفيديو" مع طلب تعلم → search, keywords: ["مونتاج", "فيديو", "بريمير", "capcut"]
-🚨 "media buyer" مع طلب تعلم → search, keywords: ["فيسبوك ادز", "إعلانات", "media buyer"]
-🚨 "backend developer" مع طلب تعلم → search, keywords: ["node", "python", "backend", "api"]
-🚨 "كتابة محتوى" مع طلب تعلم → search, keywords: ["كتابة محتوى", "copywriting", "سوشيال ميديا"]
-🚨 "ابدأ مشروعي" → search, keywords: ["ريادة أعمال", "مشروع", "startup"]
-🚨 "اتعلم اوفيس" → search, keywords: ["word", "excel", "powerpoint"]
-🚨 "الذكاء الاصطناعي" مع طلب تعلم → search, keywords: ["ذكاء اصطناعي", "chatgpt", "python", "machine learning"]
-🚨 "الكورسات بالعربي" أو "هل الكورسات بالعربي" → type=info
-🚨 "فيه شهادات" → type=info
-🚨 "مهندس وعايز اتطور" → type=clarify
-🚨 لو سبق وسألنا توضيح → search إلزامي
-${hadClarifyBefore ? "🚨 تم سؤال المستخدم من قبل — الآن type=search إلزامي" : ""}
-
-type=clarify: طلب عام جداً بدون أي تحديد للموضوع
-مثال: "أنا محاسب وعايز أتعلم" (مش محدد إيه)، "عايز أشتغل" (مش محدد في إيه)
-⚠️ clarify بس لو مفيش أي موضوع أو مجال محدد في الرسالة خالص
-⚠️ لو فيه أي كلمة بتدل على مجال (تصميم، برمجة، تسويق، فيديو، موبايل، إلخ) → search مش clarify
-
-══ قواعد الـ audience ══
-أطفال: لو ذكر أطفال أو عمر صغير (8 سنين، ابني، ابنتي، في الابتدائي، في الإعدادي، إلخ)
-مبتدئ: لو قال "من الصفر" أو "مبتدئ"
-متقدم: لو قال "محترف" أو "متقدم"
-null: غير كده
-
-══ قواعد الحوار الذكي بعد الـ clarify ══
-لو في سياق المحادثة إن اليوزر اختار من خيارات سابقة (مثلاً اختار "تصميم جرافيك" أو "برمجة") — شوف هل محتاج سؤال تاني قبل البحث:
-
-حالات تحتاج سؤال تاني (type=clarify):
-- اختار مجال عام زي "تصميم جرافيك" بدون تحديد هدف → اسأل عن الهدف:
-  مثال: "عايز تشتغل فريلانس ولا تصميم للشركات؟" → options: ["🎨 فريلانس", "🏢 شغل في شركة", "📱 سوشيال ميديا"]
-- اختار "برمجة" بدون تحديد نوع → اسأل:
-  مثال: options: ["🌐 مواقع", "📱 تطبيقات موبايل", "🤖 ذكاء اصطناعي", "💼 برمجة عامة"]
-- اختار "تسويق رقمي" → اسأل:
-  options: ["📘 فيسبوك وانستجرام", "🎬 يوتيوب وتيك توك", "📧 ايميل ماركتينج", "🔍 SEO"]
-
-حالات تروح للبحث مباشرة (type=search):
-- لو اليوزر حدد بالفعل هدف واضح زي "فريلانس في التصميم" أو "تطبيقات موبايل"
-- لو عمل clarify مرتين قبل كده → search إلزامي
-
-🚨 مهم: لو اليوزر بيتكلم كلام كتير عن وضعه (عمره، وضعه، مش لاقي شغل، مبتدئ) بدون ذكر مجال → type=clarify مع options مناسبة لوضعه مش سؤال تاني عن وضعه
-
-أمثلة clarify مع options إلزامية:
-"أنا نجار" → clarify_options: ["🪑 تصميم الأثاث", "📋 إدارة الورشة", "💰 تسعير وتكاليف"]
-"عايز أشتغل أونلاين" → clarify_options: ["🎨 تصميم جرافيك", "💻 برمجة", "📱 سوشيال ميديا", "✍️ كتابة محتوى"]
-"ربة بيت وعايزة اشتغل من البيت" → clarify_options: ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة"]
-"صاحب شركة وعايز اطور فريقي" → clarify_options: ["📊 إكسيل وأوفيس", "📱 سوشيال ميديا وتسويق", "💼 إدارة وقيادة", "💻 مهارات تقنية"]
-"عايز اتعلم حاجة تجيبلي فلوس" → clarify_options: ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"]
-
-أمثلة مشاريع — type=search مش clarify:
-"عندي مشروع برمجة" → type=search, keywords: ["برمجة", "python", "javascript"]
-"عندي مشروع تخرج في التصميم" → type=search, keywords: ["تصميم", "جرافيك"]
-"محتاج اتعلم حاجة لمشروعي" → type=clarify (مش محدد)
-"عندي امتحان بكره" → type=info (مش علاقته بكورس)
-"محتاج مساعدة في الـ thesis" → type=info
+✅ **course_request**:
+- "عايز كورس Python" → type=course_request
+- "فين أتعلم Photoshop؟" → type=course_request
+- "في كورسات عن التسويق؟" → type=course_request
 
 ══ قواعد الـ keywords ══
-الهدف: أذكى كلمات تلاقي الكورس في قاعدة البيانات
-- برنامج محدد → بالعربي والإنجليزي: "فوتوشوب" → ["فوتوشوب", "photoshop"]
-- مهنة أو هدف → البرامج المستخدمة فيه: "تصميم أثاث" → ["3ds max", "اوتوكاد", "blender"]
-- تسويق رقمي / ازود مبيعاتي → ["تسويق", "facebook ads", "سوشيال ميديا", "seo", "إعلانات"]
-- محاسبة → ["محاسبة", "اكسيل"]
-- تصميم مواقع / ابني موقع → ["html", "css", "javascript", "wordpress"]
-- تطوير تطبيقات / تطبيق موبايل → ["اندرويد", "android studio", "flutter", "swift"]
-- تعلم اوفيس → ["word", "excel", "powerpoint", "اوفيس"]
-- اعلان متحرك / موشن / انيميشن → ["موشن", "after effects", "انيميشن"]
-- تصميم اعلانات / تصميم جرافيك → ["جرافيك", "فوتوشوب", "ايلاستريتور", "تصميم"]
-- تصميم لوجو / هوية بصرية → ["لوجو", "هوية بصرية", "brand", "جرافيك"]
-- الذكاء الاصطناعي / AI → ["ذكاء اصطناعي", "chatgpt", "python", "machine learning"]
-- تطوير تطبيقات (عام) → ["flutter", "اندرويد", "android", "تطبيقات موبايل"]
-- مهندس عايز يتطور → keywords حسب التخصص: مدني→["اوتوكاد","civil 3d"] ميكانيكي→["solidworks"] معماري→["revit","3ds max"]
-- ازود متابعين / سوشيال ميديا → ["سوشيال ميديا", "إنستجرام", "محتوى", "تسويق"]
-- فريلانس في التصميم → ["جرافيك", "فوتوشوب", "تصميم", "فريلانس"]
-- تجارة الكترونية → ["تجارة الكترونية", "shopify", "دروب شيبنج", "متجر"]
-- "تصوير الموبايل / تصوير بالموبايل" → keywords: ["تصوير", "موبايل", "photography", "كاميرا"]
-- "تصميم لوجو / logo" → keywords: ["لوجو", "logo", "شعار", "هوية بصرية", "illustrator"]
-- "تصميم جرافيك / فريلانس في التصميم" → keywords: ["جرافيك", "فوتوشوب", "illustrator", "تصميم"]
-- "web developer / اشتغل مواقع" → keywords: ["html", "css", "javascript", "php", "مواقع"]
-- "تطبيق موبايل / mobile developer" → keywords: ["اندرويد", "android studio", "flutter", "تطبيقات"]
-- "تطوير تطبيقات" → keywords: ["اندرويد", "flutter", "swift", "تطبيقات موبايل"]
-- "برمجة من الصفر / مبتدئ في البرمجة" → keywords: ["برمجة", "python", "scratch", "كيف تبدأ"]
-- "python للمبتدئين" → keywords: ["python", "بايثون", "برمجة"]
-- "backend developer" → keywords: ["node", "python", "api", "backend", "قواعد بيانات"]
-- "فريلانس عام" → type=clarify اسأل في أي مجال
-- "عايز دبلومة في البرمجة" → keywords: ["دبلومة برمجة", "python", "تطوير"]
-- "عايز دبلومة في التصميم" → keywords: ["دبلومة جرافيك", "تصميم", "فوتوشوب"]
-- "دبلومة الذكاء الاصطناعي" → keywords: ["دبلومة ذكاء اصطناعي", "chatgpt", "machine learning"]
-- "انيميشن" → keywords: ["انيميشن", "animation", "after effects", "تحريك شخصيات"]
-- "نطق الانجليزي / تحسين نطق" → keywords: ["نطق", "ice breaker", "تحدث", "انجليزي"]
-⚠️ لا كلمات جزئية وحدها زي "داخلي" أو "متقدم"
-🚫 ممنوع keywords عامة: احترافي، شامل، كامل، مبتدئين، من الصفر — دي في كل الكورسات`;
+- "تصوير الموبايل" → ["تصوير", "موبايل", "photography"]
+- "web developer" → ["html", "css", "javascript", "مواقع"]
+- "تطبيق موبايل" → ["اندرويد", "flutter", "تطبيقات"]
+- "الذكاء الاصطناعي" → ["ذكاء اصطناعي", "chatgpt", "python"]
+🚫 ممنوع keywords عامة: احترافي، شامل، كامل`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
@@ -274,16 +233,26 @@ null: غير كده
       messages: [{ role: "system", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.1,
-      max_tokens: 400,
+      max_tokens: 500,
     }));
     const raw = resp.choices[0].message.content;
-    return JSON.parse(raw);
+    const result = JSON.parse(raw);
+    
+    if (result.needs_courses === undefined) {
+      result.needs_courses = false;
+    }
+    
+    return result;
   } catch (e) {
     console.error("❌ analyzeIntent error:", e.message);
-    return { type: "search", keywords: prepareSearchTerms(message.split(/\s+/)), is_ambiguous: false };
+    return {
+      type: "conversational",
+      keywords: [],
+      conversational_reply: "معلش، مفهمتش قصدك — ممكن توضح أكتر؟ 😊",
+      needs_courses: false,
+    };
   }
 }
-
 // ══════════════════════════════════════════════════════════
 // Search Engine — بحث تدريجي
 // ══════════════════════════════════════════════════════════
@@ -669,12 +638,7 @@ async function formatResults(results, query, session = null) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Main Chat Handler
-// ══════════════════════════════════════════════════════════
-
-
-// ══════════════════════════════════════════════════════════
-// FAQ Matcher — بيدور على إجابة جاهزة قبل GPT
+// FAQ Matcher
 // ══════════════════════════════════════════════════════════
 function normQ(text) {
   return text
@@ -691,7 +655,6 @@ function faqSimilarity(q1, q2) {
   const a = normQ(q1);
   const b = normQ(q2);
   if (a === b) return 1;
-  // word overlap score
   const wa = new Set(a.split(' ').filter(w => w.length > 2));
   const wb = new Set(b.split(' ').filter(w => w.length > 2));
   if (wa.size === 0 || wb.size === 0) return 0;
@@ -721,7 +684,7 @@ async function findFAQAnswer(message, threshold = 0.55) {
 }
 
 // ══════════════════════════════════════════════════════════
-// دالة موحدة — GPT بيرد على كل الأسئلة بناءً على التعليمات
+// askZiko — GPT conversation (الشخصية الجديدة)
 // ══════════════════════════════════════════════════════════
 async function askZiko(message, session, botInstructions, extraContext = "") {
   const historyMessages = session.history.slice(-6).map(h => ({
@@ -729,130 +692,64 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
     content: h.content.substring(0, 300)
   }));
 
-  const systemPrompt = `أنت "زيكو" المساعد الذكي لمنصة إيزي تي التعليمية العربية.
-ردودك بالعامية المصرية — قصيرة وواضحة وودودة.
-🚫 ممنوع تقول "سؤال حلو" أو "سؤال ممتاز" أو أي مديح للسؤال — ابدأ بالرد مباشرة.
-🚫 لو حد طلب ترجمة أو كتابة تقرير أو عمل اسايمنت أو حل واجب — رد بشكل ودود: "أنا متخصص في كورسات إيزي تي 😊 لو عايز تتعلم [الموضوع ده]، عندنا كورسات ممتازة!"
-🚫 لو حد قال "عندي امتحان" أو "عندي مشروع تخرج" أو "thesis" — اسأل عن الموضوع وقدم كورس مناسب.
+  const systemPrompt = `أنت "زيكو" — مساعد الدعم الفني والمستشار التعليمي في منصة إيزي تي.
 
-🔴 قاعدة مهمة جداً — أنا المساعد البيعي مش المرشد التعليمي:
-**لو المستخدم فاكرني إني المرشد التعليمي** (بيطلب شرح أو اختبار أو حل مسألة أو إعادة شرح):
-- "اختبرني" / "امتحنّي" / "quiz me"
-- "اشرحلي الدرس ده" / "مش فاهم النقطة دي"
-- "ممكن تعيد الشرح؟" / "وضحلي أكتر"
-- "حل المسألة دي معايا" / "ساعدني في التمرين ده"
+🎯 **شخصيتك:**
+- مساعد دعم فني ومستشار — **مش بائع كورسات**
+- الأولوية: فهم → مساعدة → توضيح → حوار
+- الكورسات **آخر حاجة** — بس لو المستخدم طلب صراحة
 
-→ رد موحّد:
-"أنا زيكو المساعد البيعي 😊 بساعدك تلاقي وتختار الكورسات المناسبة.
+🗣️ **أسلوبك:**
+- ردودك بالعامية المصرية — قصيرة وواضحة وودودة
+- تتكلم زي صديق بيساعد — مش زي موظف بيبيع
+- 🚫 ممنوع "سؤال حلو" أو أي مديح للسؤال
+- 🚫 متعرضش كورسات إلا لو المستخدم طلب صراحة
 
-لو عايز شرح أو اختبارات أو مساعدة في المحتوى — هتلاقي **زيكو المرشد التعليمي** جوه كل كورس بيساعدك خطوة بخطوة!
+🔴 **قواعد مهمة:**
 
-عايز تشوف كورسات في مجال معين؟"
+**1. الفرق بينك وبين زيكو المرشد التعليمي:**
+لو المستخدم سأل سؤال تعليمي عن محتوى كورس:
+→ "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊 لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل! لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀"
 
-🔴 قاعدة صارمة — التحويل للدعم:
-**✅ حوّل للدعم فقط في هذه الحالات:**
-1. مشكلة تقنية (الفيديو مش شغال، الكورس بيتقفل، مش قادر أدخل، الموقع بطيء)
-2. مشكلة دفع (دفعت ومش شايف الكورس بعد 24 ساعة، الدفع فشل)
-3. طلب استرداد
-4. شكوى أو مش راضي
-5. نسي كلمة السر
+**2. الأسئلة خارج نطاق المنصة:**
+لو سؤال عام (مثلاً: "مين بنى الأهرامات؟" أو "إيه Claude؟")
+→ اجب بجملة قصيرة جداً + "لكن أنا متخصص في مساعدتك تلاقي كورسات في إيزي تي..."
 
-**❌ لا تحول للدعم في هذه الحالات:**
-- أسئلة عامة خارج نطاق المنصة (زي "إيه Claude؟" أو "مين بنى الأهرامات؟" أو "إيه عاصمة فرنسا؟")
-  → اجب بجملة بسيطة جداً (جملة أو اتنين)، ثم قول: "لكن أنا متخصص في كورسات إيزي تي..."
-  
-  أمثلة:
-  • "هو إيه Claude؟" 
-    → "Claude هو مساعد ذكاء اصطناعي من شركة Anthropic 🤖 لكن أنا متخصص في مساعدتك تلاقي كورسات في إيزي تي — عندنا كورسات عن الذكاء الاصطناعي لو مهتم! 😊"
-  
-  • "مين بنى الأهرامات؟"
-    → "الأهرامات بناها المصريين القدماء 🏛️ لكن أنا متخصص في كورسات إيزي تي — ممكن أساعدك تلاقي كورسات في أي مجال تقني؟ 😊"
-  
-  • "إيه عاصمة فرنسا؟"
-    → "عاصمة فرنسا هي باريس 🇫🇷 لكن أنا متخصص في كورسات إيزي تي — عندنا كورسات لغات لو عايز تتعلم فرنساوي! 😊"
-  
-  • "ازاي أعمل كيكة؟"
-    → "الكيكة محتاجة دقيق وسكر وبيض — بتخلطهم وتحطهم في الفرن 🍰 لكن أنا متخصص في كورسات إيزي تي في مجالات زي التصميم والبرمجة — ممكن أساعدك؟ 😊"
-  
-  • "إيه أحسن لابتوب للجرافيك؟"
-    → "للجرافيك محتاج لابتوب بمعالج قوي وكارت شاشة كويس 💻 لكن أنا متخصص في كورسات الجرافيك في إيزي تي — عندنا كورسات فوتوشوب وإليستريتور لو عايز تبدأ! 😊"
-  
-- معندكش معلومات كافية عن حاجة
-  → رد: "معنديش معلومات كافية عن ده، لكن أنا متخصص في كورسات إيزي تي — ممكن أساعدك تلاقي كورسات في أي مجال تاني؟ 😊"
-  
-- سؤال عن موضوع مش موجود في المنصة
-  → رد: "مش لاقي كورسات عن [الموضوع] في المنصة دلوقتي 😊 ممكن تدور على حاجة تانية؟"
-استخدم <br> للأسطر الجديدة و<strong> للعناوين.
-🚨 مهم جداً: لما تذكر "تواصل مع الدعم" أو "الدعم الفني" — دايماً اكتب الرابط كـ HTML هكذا بالظبط:
-<a href="https://wa.me/201027007899" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">واتساب الدعم 💬</a>
+**3. التحويل للدعم:**
+✅ حوّل للدعم في: مشاكل تقنية، دفع فشل، استرداد، شكوى، نسي كلمة السر
+❌ لا تحول للدعم في: أسئلة عامة، معلومات، استفسارات
 
-══ معلومات المنصة الأساسية ══
+══ معلومات المنصة ══
 - الموقع: https://easyt.online
-- 600+ كورس في كل المجالات — كلها أونلاين 100% وبالعربي
-- بتتضاف 5-15 كورس جديد كل شهر
-- اشتراك سنوي: $59 | شهري: $25 | كورس منفرد: من $6.99 | دبلومة: $29.99
-🚨 ممنوع تذكر أي عروض أو خصومات موسمية — الأسعار الثابتة فقط
-- 30 دبلومة احترافية
-- تأسست المنصة سنة 2003 — عندها أكتر من 23 سنة خبرة
-- 750,000+ متعلم عربي
-- الكورسات أونلاين 100% — تتعلم من أي مكان في أي وقت
-- مفيش تطبيق موبايل حالياً — جاري التطوير
-- مفيش trial أو تجربة مجانية
-- مفيش اشتراك للمؤسسات حالياً — جاري التطوير
+- 600+ كورس في كل المجالات — أونلاين 100% بالعربي
+- اشتراك سنوي: $59 | شهري: $25 | كورس منفرد: من $6.99
+- 30 دبلومة احترافية ($29.99)
+- تأسست 2003 — 23 سنة خبرة
+- 750,000+ متعلم
 - في شهادة إتمام بعد كل كورس
-- صفحة الاشتراك: https://easyt.online/p/subscriptions
+- صفحة الاشتراك: ${SUBSCRIPTION_URL}
 
 ══ طرق الدفع ══
-- كريدت كارد (فيزا / ماستركارد) — تفعيل فوري ✅
-- فودافون كاش: 01027007899 — بعد الدفع بترفع الإيصال من خلال فورم في صفحة طرق الدفع — التفعيل خلال 24 ساعة ⏰
-- انستاباي — التفعيل خلال 24 ساعة ⏰
-- تحويل بنكي — التفعيل خلال 24 ساعة ⏰
+- كريدت كارد → تفعيل فوري ✅
+- فودافون كاش: 01027007899 → التفعيل خلال 24 ساعة
+- انستاباي → التفعيل خلال 24 ساعة
 - صفحة طرق الدفع: ${PAYMENTS_URL}
 
-🔴 مهم جداً: لو حد سأل "بعد ما أدفع الكورس يظهر امتى؟" أو "الدفع بياخد وقت قد إيه؟" أو "امتى الكورس هيظهر؟"
-→ اشرحله الحالتين بالظبط كده:
-
-"الدفع بالبطاقة (فيزا/ماستركارد) من الموقع → التفعيل فوري ✅
-
-لكن لو دفعت بفودافون كاش أو انستاباي أو تحويل بنكي → التفعيل بياخد لحد 24 ساعة ⏰
-
-لو فيه أي استفسار تاني، أنا هنا! 😊"
-
 ══ التواصل مع الدعم ══
-- واتساب: https://wa.me/201027007899
-- إيميل: https://sso.teachable.com/secure/398126/current_user/contact
-- مواعيد الدعم البشري: 8ص لـ 10م طوال أيام الأسبوع
-- زيكو متاح 24/7
+- واتساب: ${WHATSAPP_LINK}
+- مواعيد: 8ص لـ 10م
 
-══ سياسة الاسترداد والاستبدال ══
-- الكورسات والدبلومات: استرداد خلال 14 يوم + استبدال خلال 30 يوم مرة واحدة — وفقاً للشروط والأحكام
-- الشروط والأحكام: <a href="https://easyt.online/p/terms#" target="_blank">اضغط هنا</a>
-- الاشتراك السنوي/الشهري: لا استرداد ولا استبدال — بس إلغاء في أي وقت بدون التزام
-- المدفوعات بفودافون كاش أو انستاباي أو تحويل بنكي: غير قابلة للاسترداد
+══ سياسة الاسترداد ══
+- الكورسات: استرداد خلال 14 يوم + استبدال خلال 30 يوم
+- الاشتراك: لا استرداد — إلغاء في أي وقت
 
-══ تحميل الكورسات ══
-- الكورسات غير قابلة للتحميل — المشاهدة من الموقع فقط (streaming)
+استخدم <br> للأسطر الجديدة.
+🚨 لما تذكر الدعم:
+<a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">واتساب الدعم 💬</a>
 
-══ مراجعات الطلاب ══
-- لو عايز تشوف آراء الطلاب السابقين — ادخل على الصفحة الرئيسية أو صفحة الدبلومات وهتلاقي مراجعات وتقييمات الطلاب
-
-══ حالات شائعة ══
-- لو مش شايف كورساته بعد الاشتراك → يروح "دوراتي" في القائمة الرئيسية، ممكن يستغرق لحد 24 ساعة
-- لو مش راضي عن الكورس → ممكن الاستبدال أو الاسترداد لو توفرت الشروط (<a href="https://easyt.online/p/terms#" target="_blank">اضغط هنا للشروط والأحكام</a>) وبعدين تواصل مع الدعم
-- لو عنده شكوى → وجّهه للدعم فوراً
-- لو نسي كلمة السر → تواصل مع الدعم
-- لو الفيديو مش شغال أو مش قادر يكمل الكورس → تواصل مع الدعم
-- لو عايز استرداد للاشتراك → مفيش استرداد للاشتراك (سنوي أو شهري) بس ممكن يلغيه في أي وقت بدون التزام
-- عايز يعمل CV؟ في كورسات مهارات شخصية وسوق عمل
-- ابنه صغير؟ في كورسات للأطفال زي Scratch وغيره
-- لو قالك "المنافسين أحسن" → ذكّره بمميزات إيزي تي: 23 سنة خبرة، 600+ كورس، زيكو المرشد الذكي جوه كل كورس، أسعار مناسبة
-- لو سأل عن كورسات جديدة → في 5-15 كورس جديد بيتضافوا كل شهر، يتابع صفحات السوشيال ميديا للإعلانات
-
-${extraContext ? `══ سياق إضافي ══
-${extraContext}
-` : ""}
-══ تعليمات الأدمن (أولوية قصوى) ══
-${botInstructions || "لا توجد تعليمات إضافية"}`;
+${extraContext ? `══ سياق إضافي ══\n${extraContext}\n` : ""}
+══ تعليمات الأدمن ══
+${botInstructions || "لا توجد تعليمات"}`;
 
   const resp = await gptWithRetry(() => openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -867,6 +764,9 @@ ${botInstructions || "لا توجد تعليمات إضافية"}`;
   return finalizeReply(markdownToHtml(resp.choices[0].message.content || ""));
 }
 
+// ══════════════════════════════════════════════════════════
+// Main Chat Handler (الشخصية الجديدة)
+// ══════════════════════════════════════════════════════════
 async function smartChat(message, sessionId) {
   const session = getSession(sessionId);
   const botInstructions = await loadBotInstructions("sales").catch(() => "");
@@ -885,146 +785,94 @@ async function smartChat(message, sessionId) {
   session.history.push({ role: "user", content: message });
   if (session.history.length > 10) session.history = session.history.slice(-10);
 
-  // ── فلتر يدوي للـ Support — قبل أي حاجة ──
-  const supportPatterns = [
-    /مش\s*قادر\s*(اكمل|أكمل|اشوف|أشوف|احمل|أحمل|افتح|أفتح|ادخل|أدخل|اشترك|أشترك|اشغل|أشغل)/,
-    /مش\s*قادر\s*اكمل/,
-    /مش\s*قادر\s*أكمل/,
-    /(الكورس|الدرس)\s*مش\s*بيشتغل/,
-    /الفيديو\s*مش\s*بيشتغل/,
-    /الكورس\s*بيتقفل/,
-    /الصوت\s*مش\s*شغال/,
-    /مشكلة\s*في\s*(الموقع|الكورس|الدرس|الحساب|الدفع)/,
-    /مش\s*راضي|مش\s*راضى/,
-    /عايز\s*(ارجع|أرجع)\s*فلوسي/,
-    /عندي\s*شكوى/,
-    /مش\s*بيحمل|بيتقفل|بطيء/,
-  ];
-  const isSupport = supportPatterns.some(p => p.test(message));
-
-  // ── FAQ Check — بس لو مش support ──
-  if (!isSupport) {
-    const faqAnswer = await findFAQAnswer(message);
-    if (faqAnswer) {
-      session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
-      return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
-    }
+  // ── FAQ Check أولاً ──
+  const faqAnswer = await findFAQAnswer(message);
+  if (faqAnswer) {
+    session.history.push({ role: "assistant", content: faqAnswer.replace(/<[^>]+>/g, " ").substring(0, 200) });
+    return { reply: finalizeReply(faqAnswer), suggestions: ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"] };
   }
 
-  // ── فلتر يدوي للـ Greeting ──
-  const greetingPatterns = [
-    /^(احنا|إحنا)\s*فين/,
-    /^بتشتغل\s*ازاي/,
-    /^انت\s*(احسن|أحسن)\s*من/,
-    /^انت\s*ذكاء\s*اصطناعي/,
-    /^(انت|أنت)\s*مين/,
-  ];
-  const isGreeting = greetingPatterns.some(p => p.test(message));
-
-  // لو الرسالة السابقة كانت clarify (توضيح) — الرسالة الحالية هي search مباشرة
-  const lastBotMsg = session.history.slice(-2).find(h => h.role === 'assistant');
-  const wasAskingClarify = lastBotMsg && (
-    lastBotMsg.content.includes('إيه بالظبط') ||
-    lastBotMsg.content.includes('ايه بالظبط') ||
-    lastBotMsg.content.includes('بالضبط') ||
-    lastBotMsg.content.includes('في إيه') ||
-    lastBotMsg.content.includes('في ايه')
-  );
-
-  // تحليل النية
-  let intent;
-  const isGeneralRequest = /بصفة عامة|عموما|عموماً|general/.test(message);
-
-  // لو اتحدد يدوياً كـ support
-  if (isSupport) {
-    intent = { type: "support", keywords: [], is_ambiguous: false };
-  }
-  // لو اتحدد يدوياً كـ greeting
-  else if (isGreeting) {
-    intent = { type: "greeting", keywords: [], is_ambiguous: false };
-  }
-  // لو اليوزر قال "بصفة عامة" في أي رسالة
-  else if (isGeneralRequest && session.lastTopic) {
-    // يبحث بالموضوع الأصلي مش بـ "بصفة عامة"
-    const topicKeywords = prepareSearchTerms(session.lastTopic.split(/\s+/));
-    intent = {
-      type: "search",
-      keywords: topicKeywords,
-      is_ambiguous: false,
-    };
-    console.log(`🔮 General request → search for: "${session.lastTopic}"`);
-  } else if (isGeneralRequest && !session.lastTopic) {
-    // مفيش موضوع محفوظ — اسأل اليوزر يحدد أكتر
-    intent = {
-      type: "clarify",
-      keywords: [],
-      is_ambiguous: true,
-      clarify_question: "عايز تتعلم إيه بالظبط؟ 😊 قولي الموضوع أو المجال اللي بتدور عليه",
-      clarify_options: ["جرافيك وتصميم", "برمجة", "تسويق رقمي", "إكسيل وأوفيس", "ذكاء اصطناعي", "ربح من الإنترنت"],
-    };
-    console.log(`⚠️ General request but no lastTopic — asking clarify again`);
-  } else if (wasAskingClarify || session.hadClarify) {
-    intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
-    intent.type = "search";
-    intent.is_ambiguous = false;
-    if (!intent.keywords || intent.keywords.length === 0) {
-      intent.keywords = prepareSearchTerms(message.split(/\s+/));
-    }
-    // ✅ ادمج keywords الجديدة مع الـ lastTopic عشان منخسرش السياق
-    if (session.lastTopic) {
-      const origKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
-      intent.keywords = [...new Set([...intent.keywords, ...origKws])];
-    }
-    if (intent.audience) session.audience = intent.audience;
-    console.log(`🔄 Post-clarify merged keywords: ${intent.keywords?.join(", ")}`);
-  } else {
-    intent = await analyzeIntent(message, session.history.slice(-2), session.hadClarify);
-    // لو GPT أصر على clarify تاني — اجبره على search
-    if ((intent.type === "clarify" || intent.is_ambiguous) && session.hadClarify) {
-      console.log(`⚠️ GPT wanted clarify again — forcing search`);
-      intent.type = "search";
-      intent.is_ambiguous = false;
-      if (!intent.keywords || intent.keywords.length === 0) {
-        intent.keywords = prepareSearchTerms(message.split(/\s+/));
-      }
-    }
-    // لو diplomas_list بدون كلمة دبلوم → search
-    if (intent.type === "diplomas_list" && !message.includes("دبلوم")) {
-      intent.type = "search";
-    }
-  }
-  console.log(`🎯 Intent: ${intent.type} | keywords: ${(intent.keywords||[]).join(", ")} | ambiguous: ${intent.is_ambiguous}`);
+  // ── تحليل النية ──
+  const intent = await analyzeIntent(message, session.history.slice(-4), session.hadClarify);
+  console.log(`🎯 Intent: ${intent.type} | needs_courses: ${intent.needs_courses}`);
 
   let reply = "";
   let suggestions = [];
   let options = [];
 
+  // ══════════════════════════════════════════════════════════
+  // Handlers حسب النوع
+  // ══════════════════════════════════════════════════════════
+
   // ── Greeting ──
   if (intent.type === "greeting") {
-    try {
-      reply = await askZiko(message, session, botInstructions);
-    } catch(e) {
-      reply = "أهلاً وسهلاً! 👋 أنا زيكو مساعدك الذكي في إيزي تي. بتدور على إيه النهارده؟";
-    }
-    suggestions = ["كورسات اكسيل 📊", "دبلومات 🎓", "أسعار الاشتراك 💳"];
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
 
-  // ── Educational Request (طلب تعليمي) ──
-  else if (intent.type === "educational_request") {
-    reply = "أنا زيكو المساعد البيعي 😊 بساعدك تلاقي وتختار الكورسات المناسبة.<br><br>لو عايز شرح أو اختبارات أو مساعدة في المحتوى — هتلاقي <strong>زيكو المرشد التعليمي</strong> جوه كل كورس بيساعدك خطوة بخطوة!<br><br>عايز تشوف كورسات في مجال معين؟";
-    suggestions = ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"];
+  // ── Defensive ──
+  else if (intent.type === "defensive") {
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓"];
   }
 
-  // ── Info (سؤال معلوماتي) ──
+  // ── Educational Content ──
+  else if (intent.type === "educational_content") {
+    reply = intent.conversational_reply || "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊<br><br>لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل!<br><br>لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀";
+    suggestions = ["كورسات 📘", "دبلومات 🎓"];
+  }
+
+  // ── Support ──
+  else if (intent.type === "support") {
+    reply = await askZiko(message, session, botInstructions, `المستخدم عنده مشكلة تقنية\nواتساب الدعم: ${WHATSAPP_LINK}`);
+    suggestions = ["أسعار 💳", "كورسات 📘"];
+  }
+
+  // ── Subscription ──
+  else if (intent.type === "subscription") {
+    reply = await askZiko(message, session, botInstructions, `المستخدم بيسأل عن اشتراك\nرابط الاشتراك: ${SUBSCRIPTION_URL}\nرابط طرق الدفع: ${PAYMENTS_URL}`);
+    suggestions = ["طرق الدفع 💳", "الدبلومات 🎓"];
+  }
+
+  // ── Comparison ──
+  else if (intent.type === "comparison") {
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓"];
+  }
+
+  // ── Info ──
   else if (intent.type === "info") {
-    try {
-      // اسأل زيكو يجاوب على السؤال (بدون كورسات)
-      reply = await askZiko(message, session, botInstructions);
-    } catch(e) {
-      console.error("Info handler error:", e.message);
-      reply = await askZiko(message, session, botInstructions);
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓"];
+  }
+
+  // ── Conversational ──
+  else if (intent.type === "conversational") {
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
+  }
+
+  // ── Diplomas List ──
+  else if (intent.type === "diplomas_list") {
+    const diplomas = await loadAllDiplomas().catch(() => []);
+    if (diplomas.length > 0) {
+      reply = `🎓 <strong>دبلوماتنا المتاحة (${diplomas.length} دبلومة):</strong><br><br>`;
+      diplomas.forEach((d, i) => {
+        const url = d.link || ALL_DIPLOMAS_URL;
+        reply += `${i+1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${escapeHtml(d.title)}</a><br>`;
+      });
+      reply += `<br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الدبلومات ←</a>`;
+    } else {
+      reply = `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
     }
-    suggestions = ["كورسات 📘", "الدبلومات 🎓", "أسعار الاشتراك 💳"];
+    suggestions = ["سعر الدبلومة 💰", "الاشتراك ✨", "كورسات 📘"];
+  }
+
+  // ── Courses List ──
+  else if (intent.type === "courses_list") {
+    reply = `📚 عندنا 600+ كورس في كل المجالات!<br><br>`;
+    reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a>`;
+    suggestions = ["فوتوشوب 🎨", "اكسيل 📊", "برمجة 💻"];
   }
 
   // ── Instructor Courses ──
@@ -1034,8 +882,6 @@ async function smartChat(message, sessionId) {
     const instructorName = intent.instructor_name || intent.keywords?.[0] || "";
     try {
       const instructors = await getInstructors().catch(() => []);
-
-      // Step 1: دور في instructors بالاسم
       const normSearch = normalizeArabic(
         instructorName.replace(/^(م|د|أ|ا|ر|مهندس|دكتور|استاذ|مستر)\s*[\/\.\-]\s*/gi, "").trim().toLowerCase()
       );
@@ -1058,10 +904,8 @@ async function smartChat(message, sessionId) {
         }
         if (score > bestScore && score >= 35) { bestScore = score; foundInstructor = inst; }
       }
-      console.log(`👨‍🏫 Instructor match: "${instructorName}" → "${foundInstructor?.name}" (score=${bestScore})`);
 
       if (foundInstructor) {
-        // Step 2: جيب الكورسات بـ instructor_id
         const { data: courses } = await supabase
           .from("courses")
           .select(COURSE_SELECT_COLS)
@@ -1077,23 +921,22 @@ async function smartChat(message, sessionId) {
           if (courses.length > 5) {
             reply += `<br><span style="font-size:12px;color:#666">و${courses.length - 5} كورس تاني...</span>`;
           }
-          // رابط المحاضر من courses_link
           const instLink = foundInstructor.courses_link || foundInstructor.link;
           if (instLink) {
-            reply += `<br><a href="${instLink}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 اضغط هنا لمعرفة كل كورسات ${escapeHtml(foundInstructor.name)} ←</a>`;
+            reply += `<br><a href="${instLink}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">👨‍🏫 كل كورسات ${escapeHtml(foundInstructor.name)} ←</a>`;
           }
-          suggestions = ["أسعار الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
+          suggestions = ["أسعار 💳", "كورسات تانية 📘", "دبلومات 🎓"];
         } else {
           reply = `مش لاقي كورسات للمحاضر "${escapeHtml(foundInstructor.name)}" دلوقتي 😅`;
-          suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
+          suggestions = ["تصفح الكورسات 📚", "الدبلومات 🎓"];
         }
       } else {
-        reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br>تقدر تتصفح كل الكورسات:<br><a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 كل الكورسات ←</a>`;
-        suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓"];
+        reply = `مش لاقي محاضر باسم "${escapeHtml(instructorName)}" 😅<br><a href="${ALL_COURSES_URL}" target="_blank">📚 تصفح الكورسات ←</a>`;
+        suggestions = ["الكورسات 📚", "الدبلومات 🎓"];
       }
     } catch(e) {
-      console.error("instructor_courses handler error:", e.message);
-      reply = `عذراً، حصل مشكلة في البحث 😅`;
+      console.error("instructor_courses error:", e.message);
+      reply = `عذراً، حصل مشكلة 😅`;
       suggestions = ["كورسات 📘"];
     }
   }
@@ -1104,7 +947,6 @@ async function smartChat(message, sessionId) {
     session.hadClarify = false;
     const diplomaName = intent.diploma_name || intent.keywords?.[0] || "";
     try {
-      const { getDiplomaWithCourses } = require("./shared");
       const result = await getDiplomaWithCourses(diplomaName);
       if (result && result.diploma) {
         const { diploma, courses } = result;
@@ -1112,296 +954,100 @@ async function smartChat(message, sessionId) {
         if (courses.length === 0) {
           reply += "الدبلومة دي مش فيها كورسات مسجلة دلوقتي.";
         } else {
-          reply += `📚 <strong>الكورسات الموجودة في الدبلومة (${courses.length} كورس):</strong><br><br>`;
+          reply += `📚 <strong>الكورسات (${courses.length} كورس):</strong><br><br>`;
           const instructors = await getInstructors().catch(() => []);
           courses.forEach((c, i) => { reply += formatCourseCard(c, instructors, i + 1); });
           reply += `<br><a href="${diploma.link || ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-size:13px;font-weight:700;text-decoration:none">🎓 تفاصيل الدبلومة ←</a>`;
         }
-        suggestions = ["سعر الدبلومة 💰", "الاشتراك السنوي ✨", "دبلومات أخرى 🎓"];
+        suggestions = ["سعر الدبلومة 💰", "الاشتراك ✨", "دبلومات أخرى 🎓"];
       } else {
-        reply = `مش لاقي دبلومة باسم "${escapeHtml(diplomaName)}" 😅<br>تقدر تشوف كل الدبلومات من هنا:<br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 كل الدبلومات ←</a>`;
-        suggestions = ["كل الدبلومات 🎓", "أسعار الاشتراك 💳"];
+        reply = `مش لاقي دبلومة باسم "${escapeHtml(diplomaName)}" 😅<br><a href="${ALL_DIPLOMAS_URL}" target="_blank">🎓 كل الدبلومات ←</a>`;
+        suggestions = ["الدبلومات 🎓", "الاشتراك 💳"];
       }
     } catch(e) {
-      console.error("diploma_courses handler error:", e.message);
-      reply = `عذراً، حصل مشكلة في جلب محتوى الدبلومة 😅`;
+      console.error("diploma_courses error:", e.message);
+      reply = `عذراً، حصل مشكلة 😅`;
       suggestions = ["الدبلومات 🎓"];
     }
   }
 
-  // ── Diplomas List ──
-  else if (intent.type === "diplomas_list") {
-    const diplomas = await loadAllDiplomas().catch(() => []);
-    if (diplomas.length > 0) {
-      reply = `🎓 <strong>دبلوماتنا المتاحة (${diplomas.length} دبلومة):</strong><br><br>`;
-      diplomas.forEach((d, i) => {
-        const url = d.link || ALL_DIPLOMAS_URL;
-        reply += `${i+1}. <a href="${url}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">${escapeHtml(d.title)}</a><br>`;
-      });
-      reply += `<br><a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 صفحة الدبلومات ←</a>`;
-    } else {
-      reply = `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
-    }
-    suggestions = ["سعر الدبلومة 💰", "الاشتراك السنوي ✨", "كورسات 📘"];
-  }
-
-  // ── Courses List ──
-  else if (intent.type === "courses_list") {
-    reply = `📚 عندنا 600+ كورس ومحتوى تعليمي في كل المجالات!<br><br>`;
-    reply += `<a href="${ALL_COURSES_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">📚 تصفح كل الكورسات ←</a><br>`;
-    reply += `<a href="${ALL_DIPLOMAS_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">🎓 تصفح الدبلومات ←</a>`;
-    suggestions = ["فوتوشوب 🎨", "اكسيل 📊", "برمجة 💻"];
-  }
-
-  // ── Subscription ──
-  else if (intent.type === "subscription") {
-    try {
-      reply = await askZiko(message, session, botInstructions,
-        `المستخدم بيسأل عن: اشتراك أو أسعار أو دفع أو طرق دفع
-رابط الاشتراك: ${SUBSCRIPTION_URL}
-رابط طرق الدفع: ${PAYMENTS_URL}`
-      );
-    } catch(e) {
-      reply = `💳 <strong>أسعار الاشتراك:</strong><br><br>✨ سنوي: $59/سنة<br>📅 شهري: $25/شهر<br>📘 كورس منفرد: من $6.99<br>🎓 دبلومة: $29.99<br><br><a href="${SUBSCRIPTION_URL}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">✨ اشترك دلوقتي ←</a>`;
-    }
-    suggestions = ["طرق الدفع 💳", "إيه اللي بياخده الاشتراك؟", "الدبلومات 🎓"];
-  }
-  // ── Support ──
-  else if (intent.type === "support") {
-    try {
-      reply = await askZiko(message, session, botInstructions,
-        `المستخدم عنده مشكلة تقنية أو يحتاج دعم فني
-واتساب الدعم: ${WHATSAPP_LINK}
-مواعيد الدعم: 8ص لـ 2ص`
-      );
-    } catch(e) {
-      reply = `للمساعدة الفنية تواصل معنا: <a href="${WHATSAPP_LINK}" target="_blank" style="color:#e63946;font-weight:700;text-decoration:none">💬 واتساب الدعم ←</a>`;
-    }
-    suggestions = ["أسعار الاشتراك 💳", "كورسات 📘"];
-  }
-
   // ── Clarify ──
-  else if (intent.type === "clarify" || intent.is_ambiguous) {
-    // حفظ الـ audience والـ topic الأصلي من الـ keywords
+  else if (intent.type === "clarify") {
     if (intent.audience) session.audience = intent.audience;
-    // حفظ الموضوع من الـ keywords اللي GPT استخرجها — مش من الرسالة الكاملة
-    if (!session.lastTopic && intent.keywords && intent.keywords.length > 0) {
+    if (intent.keywords && intent.keywords.length > 0 && !session.lastTopic) {
       session.lastTopic = intent.keywords.join(" ");
     }
-    // تسجيل إن سألنا clarify
     session.hadClarify = true;
     session.clarifyCount = (session.clarifyCount || 0) + 1;
 
-    // الـ options دايماً من عندنا — مش من GPT عشان بيرد بالفصحى
-    const msgLower = message.toLowerCase();
-    let clarifyQuestion, clarifyOptions;
-
-    if (/بيت|منزل|بيتي/.test(msgLower)) {
-      clarifyQuestion = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
-      clarifyOptions = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
-    } else if (/شركة|فريق|موظفين/.test(msgLower)) {
-      clarifyQuestion = "عايز تطور فريقك في إيه؟ 😊";
-      clarifyOptions = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
-    } else if (/فلوس|دخل|ربح/.test(msgLower)) {
-      clarifyQuestion = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
-      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
-    } else if (/فريلانس|مستقل/.test(msgLower)) {
-      clarifyQuestion = "عايز تشتغل فريلانس في إيه؟ 😊";
-      clarifyOptions = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
-    } else if (/مجال|اغير|اغيير/.test(msgLower)) {
-      clarifyQuestion = "عايز تنتقل لأنهي مجال؟ 😊";
-      clarifyOptions = ["🎨 تصميم وإبداع", "💻 برمجة وتقنية", "📱 تسويق رقمي", "💼 إدارة أعمال"];
-    } else if (/طالب|طالبة/.test(msgLower)) {
-      clarifyQuestion = "إيه المجال اللي مهتم تتعلمه؟ 😊";
-      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 سوشيال ميديا", "📊 إكسيل وأوفيس"];
-    } else if (/محاسب|مالي|اقتصاد/.test(msgLower)) {
-      clarifyQuestion = "عايز تتعلم إيه في المحاسبة؟ 😊";
-      clarifyOptions = ["📊 إكسيل محاسبي", "💰 قوائم مالية", "🧾 محاسبة متقدمة", "📈 تحليل بيانات"];
-    } else if (/مهندس|هندسة/.test(msgLower)) {
-      clarifyQuestion = "عايز تتطور في إيه؟ 😊";
-      clarifyOptions = ["📐 اوتوكاد وتصميم", "💻 برمجة", "📊 إدارة مشاريع", "🤖 ذكاء اصطناعي"];
-    } else if (intent.clarify_options && intent.clarify_options.length >= 2) {
-      // استخدم options من GPT لو موجودة
-      clarifyQuestion = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
-      clarifyOptions = intent.clarify_options;
-    } else {
-      clarifyQuestion = "عايز تتعلم إيه بالظبط؟ 😊";
-      clarifyOptions = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
-    }
-
-    reply = clarifyQuestion;
-    suggestions = clarifyOptions;
-    options = clarifyOptions;
+    reply = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
+    suggestions = intent.clarify_options && intent.clarify_options.length >= 2
+      ? intent.clarify_options
+      : ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
+    options = suggestions;
   }
 
-  // ── Search ──
-  else if (intent.type === "search") {
-    // كلمات مش من نطاق المنصة — مش هنبحث عنها
-    const outOfScopeWords = ["لابتوب","laptop","نتفليكس","netflix","موبايل","تليفون","ايفون","iphone","سامسونج","سيارة","عقار","وظيفة","job","مطعم","اكل","طبخ","رياضة","كرة"];
-    const msgWords = message.toLowerCase().split(/\s+/);
-    const isOutOfScope = outOfScopeWords.some(w => msgWords.some(m => m.includes(w)));
-    if (isOutOfScope) {
-      reply = `أنا متخصص في الكورسات التعليمية على إيزي تي 😊<br>لو عايز تتعلم مهارة معينة، قولي وأساعدك!`;
-      suggestions = ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
-      // skip to end
-    } else {
+  // ── Course Request (البحث) ──
+  else if (intent.type === "course_request" || intent.needs_courses) {
     let keywords = intent.keywords && intent.keywords.length > 0
       ? intent.keywords
       : prepareSearchTerms(message.split(/\s+/));
 
-    // نشيل كلمات زي "كورس" و"دورة" من الـ keywords
-    const stopWords = new Set(["كورس", "دورة", "دروس", "course", "كورسات", "دبلومة", "دبلومات", "diploma", "ممكن", "عايز", "عاوز", "ابي", "ابغى", "اريد", "محتاج", "ازاى", "ازاي", "كيف", "إزاي"]);
-    keywords = keywords.map(k => k.trim()).filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
-    if (keywords.length === 0) keywords = prepareSearchTerms(message.split(/\s+/)).filter(k => !stopWords.has(k.toLowerCase()));
+    const stopWords = new Set(["كورس", "دورة", "course", "ممكن", "عايز", "محتاج"]);
+    keywords = keywords.filter(k => k.length > 1 && !stopWords.has(k.toLowerCase()));
 
-
-    // لو بعد clarify — أضف الـ lastTopic عشان متخسرش السياق الأصلي
     if (session.lastTopic && session.hadClarify) {
       const topicKws = prepareSearchTerms(session.lastTopic.split(/\s+/));
       topicKws.forEach(k => {
         if (!keywords.some(e => e.toLowerCase() === k.toLowerCase())) keywords.push(k);
       });
-      if (topicKws.length > 0) console.log("Added lastTopic to keywords:", keywords);
     }
 
-    // لو في كلمتين إنجليزيتين متجاورتين في الـ keywords — أضف نسختهم المدمجة
-    const engKws = keywords.filter(k => /^[a-zA-Z]+$/.test(k));
-    if (engKws.length >= 2) {
-      const concatenated = engKws.join('').toLowerCase();
-      if (!keywords.some(k => k.toLowerCase() === concatenated)) {
-        keywords.push(concatenated);
-        console.log(`🔗 Added concatenated: ${concatenated}`);
-      }
-    }
-
-    // الـ audience — من intent أو من الـ session المحفوظة
     const audience = intent.audience || session.audience || null;
-    if (audience) {
-      session.audience = audience; // احتفظ بيها في الـ session
-      console.log(`👥 Audience: ${audience}`);
-    }
-
-    // لو أطفال — أضف keywords مناسبة للأطفال
+    if (audience) session.audience = audience;
     if (audience === "أطفال") {
-      keywords = [...keywords, "scratch", "أطفال", "مبتدئ"];
-      console.log("👧 Kids mode — added scratch/أطفال keywords");
+      keywords = [...keywords, "scratch", "أطفال"];
     }
 
     const results = await performSearch(keywords, [], audience);
-
-    // العنوان — استخدم الـ lastTopic لو موجود، وإلا أول keyword مش عامة
-    const genericWords = new Set(["بصفة", "عامة", "عموما", "عموماً", "general", "تعلم", "اتعلم"]);
-    const cleanKeyword = keywords.find(k => !genericWords.has(k.toLowerCase())) || keywords[0] || message;
-
-    // لو الـ keywords الجديدة مختلفة عن الـ lastTopic — امسح القديم
-    const newTopic = keywords.join(" ");
-    if (session.lastTopic && !session.hadClarify) {
-      const oldNorm = normalizeArabic(session.lastTopic.toLowerCase());
-      const newNorm = normalizeArabic(newTopic.toLowerCase());
-      const overlap = keywords.filter(k => oldNorm.includes(normalizeArabic(k.toLowerCase())));
-      if (overlap.length === 0) {
-        console.log(`🔄 New topic detected — resetting lastTopic from "${session.lastTopic}" to "${newTopic}"`);
-        session.lastTopic = null;
-      }
-    }
-
-    const displayTopic = (!session.hadClarify ? null : session.lastTopic) || intent.keywords?.find(k => !genericWords.has(k.toLowerCase())) || cleanKeyword;
-
+    const displayTopic = keywords[0] || message;
     reply = await formatResults(results, displayTopic, session);
-    session.lastTopic = newTopic;
+
+    session.lastTopic = keywords.join(" ");
     session.lastResults = results;
 
-    // بعد البحث الناجح — امسح الـ history بس احتفظ بـ audience و hadClarify
     if (results.courses.length > 0 || results.diplomas.length > 0) {
       session.history = [];
-      session.hadClarify = false; // reset للمحادثة الجديدة
+      session.hadClarify = false;
       session.clarifyCount = 0;
-      // لا تمسح الـ audience — لو المستخدم سأل تاني نفس الـ audience
-    }
-
-    // اقتراحات بعد النتايج
-    if (results.courses.length > 0 || results.diplomas.length > 0) {
-      suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "الدبلومات 🎓"];
+      suggestions = ["سعر الاشتراك 💳", "كورسات تانية 📘", "دبلومات 🎓"];
     } else {
-      suggestions = ["تصفح كل الكورسات 📚", "الدبلومات 🎓", "اشتراك ✨"];
+      suggestions = ["تصفح الكورسات 📚", "الدبلومات 🎓"];
     }
-    } // end of else (not outOfScope)
   }
 
-  // ── Info / General ──
+  // ── Fallback ──
   else {
-    // لو الرسالة تبان ambiguous — اعرض options بدل ما تروح GPT
-    const msgLower = message.toLowerCase();
-    const isAmbiguous =
-      /^(عايز|عاوز|ابي|محتاج)\s+اتعلم\s*$/.test(message.trim()) ||
-      /بيت|منزل/.test(msgLower) && /اشتغل|اعمل|شغل/.test(msgLower) ||
-      /شركة|فريق|موظفين/.test(msgLower) && /اطور|تطوير|اتعلم/.test(msgLower) ||
-      /فلوس|دخل|ربح/.test(msgLower) && /اتعلم|مهارة/.test(msgLower) ||
-      /فريلانس|مستقل/.test(msgLower) && !intent.keywords?.length;
-
-    if (isAmbiguous) {
-      let q = "عايز تتعلم إيه بالظبط؟ 😊";
-      let opts = ["🎨 تصميم جرافيك", "💻 برمجة", "📱 تسويق رقمي", "📊 إكسيل وأوفيس"];
-
-      if (/بيت|منزل/.test(msgLower)) {
-        q = "عايزة تتعلمي إيه عشان تشتغلي من البيت؟ 😊";
-        opts = ["🎨 تصميم جرافيك", "📱 سوشيال ميديا", "✍️ كتابة محتوى", "💻 برمجة مواقع"];
-      } else if (/شركة|فريق/.test(msgLower)) {
-        q = "عايز تطور فريقك في إيه؟ 😊";
-        opts = ["📊 إكسيل وأوفيس", "📱 تسويق رقمي", "💼 إدارة وقيادة", "💻 مهارات تقنية"];
-      } else if (/فلوس|دخل|ربح/.test(msgLower)) {
-        q = "عايز تتعلم إيه عشان تزود دخلك؟ 😊";
-        opts = ["🎨 تصميم جرافيك", "💻 برمجة وتطبيقات", "📱 سوشيال ميديا", "🛒 تجارة إلكترونية"];
-      } else if (/فريلانس/.test(msgLower)) {
-        q = "عايز تشتغل فريلانس في إيه؟ 😊";
-        opts = ["🎨 تصميم", "💻 برمجة", "✍️ كتابة محتوى", "📱 سوشيال ميديا"];
-      }
-
-      reply = q;
-      suggestions = opts;
-      options = opts;
-      session.hadClarify = true;
-    } else {
-      try {
-        reply = await askZiko(message, session, botInstructions);
-      } catch(e) {
-        reply = "عذراً حصل مشكلة! 😅 حاول تاني أو تواصل معنا.";
-      }
-      suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
-    }
+    reply = await askZiko(message, session, botInstructions);
+    suggestions = ["كورسات 📘", "دبلومات 🎓", "أسعار 💳"];
   }
-  // حفظ الرد في الـ history
+
+  // ══════════════════════════════════════════════════════════
+  // Finalize
+  // ══════════════════════════════════════════════════════════
   session.history.push({ role: "assistant", content: reply.replace(/<[^>]+>/g, " ").substring(0, 200) });
 
-  // 🚫 شيل "سؤال حلو" نهائياً من أي رد
   reply = reply.replace(/سؤال\s*(حلو|ممتاز|رائع|جيد|كويس)[!،\.؟]?\s*/g, "").trim();
-
   reply = finalizeReply(reply);
-  
-  // ── تسجيل المحادثة ──
-  // السؤال - بدون HTML
-  const cleanQuestion = message
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .substring(0, 500);
-  
-  // الرد - بالـ HTML كامل للتنسيق
-  const cleanReply = reply
-    .trim()
-    .substring(0, 5000);  // ✅ نص كامل مع HTML
-  
-  console.log(`📝 Logging - User: ${cleanQuestion.length}ch | Bot: ${cleanReply.length}ch`);
-  
+
+  // ── Log ──
   try {
-    await logChat(sessionId, "user", cleanQuestion, intent?.type || "unknown", {});
-    await logChat(sessionId, "bot", cleanReply, null, {});
-    console.log(`✅ Logged OK`);
+    await logChat(sessionId, "user", message.substring(0, 500), intent?.type || "unknown", {});
+    await logChat(sessionId, "bot", reply.substring(0, 5000), null, {});
   } catch(e) {
     console.error("❌ Log failed:", e.message);
-    logChat(sessionId, "bot", cleanReply, null, {}).catch(() => {});
   }
-  
+
   return { reply, suggestions, options };
 }
 
@@ -1425,7 +1071,6 @@ app.post("/chat", limiter, async (req, res) => {
   }
 });
 
-// Health check
 app.get("/chat/health", (req, res) => {
   res.json({ status: "ok", sessions: sessions.size });
 });
