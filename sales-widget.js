@@ -1314,6 +1314,8 @@ var notifyAutoTimer = null;
 
 var sessionId = null;
 
+var userId = null;
+
 var isRecording = false;
 
 var isSending = false;
@@ -1334,6 +1336,10 @@ var completeStreamFn = null;
 
 try { sessionId = localStorage.getItem("ziko_session") || null; } catch(e) {}
 
+userId = getUserId();
+
+console.log('👤 User ID:', userId);
+
 function wasNotifyShown() {
 
 try {
@@ -1348,6 +1354,114 @@ return (Date.now() - parseInt(lastShown)) < sevenDays;
 function markNotifyShown() {
 
 try { localStorage.setItem(NOTIFY_SHOWN_KEY, Date.now().toString()); } catch(e) {}
+
+}
+
+function generateSmartFingerprint() {
+
+try {
+
+var canvas = document.createElement('canvas');
+
+var ctx = canvas.getContext('2d');
+
+ctx.textBaseline = 'top';
+
+ctx.font = '14px Arial';
+
+ctx.fillText('easyt', 2, 2);
+
+var data = {
+
+ua: navigator.userAgent,
+
+lang: navigator.language,
+
+langs: (navigator.languages || []).join(','),
+
+screen: screen.width + 'x' + screen.height + 'x' + screen.colorDepth,
+
+avail: screen.availWidth + 'x' + screen.availHeight,
+
+platform: navigator.platform,
+
+hw: navigator.hardwareConcurrency || 0,
+
+mem: navigator.deviceMemory || 0,
+
+tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+
+tzo: new Date().getTimezoneOffset(),
+
+canvas: canvas.toDataURL()
+
+};
+
+var str = JSON.stringify(data);
+
+var hash = 0;
+
+for (var i = 0; i < str.length; i++) {
+
+var char = str.charCodeAt(i);
+
+hash = ((hash << 5) - hash) + char;
+
+hash = hash & hash;
+
+}
+
+return 'user_' + Math.abs(hash).toString(36);
+
+} catch(e) {
+
+console.error('Fingerprint error:', e);
+
+return 'user_' + Math.random().toString(36).substring(2, 15);
+
+}
+
+}
+
+function getUserId() {
+
+try {
+
+var stored = localStorage.getItem('easyt-user-id');
+
+if (stored) {
+
+sessionStorage.setItem('easyt-user-id', stored);
+
+return stored;
+
+}
+
+stored = sessionStorage.getItem('easyt-user-id');
+
+if (stored) {
+
+localStorage.setItem('easyt-user-id', stored);
+
+return stored;
+
+}
+
+var newId = generateSmartFingerprint();
+
+localStorage.setItem('easyt-user-id', newId);
+
+sessionStorage.setItem('easyt-user-id', newId);
+
+return newId;
+
+} catch(e) {
+
+console.error('getUserId error:', e);
+
+return 'user_' + Math.random().toString(36).substring(2, 15);
+
+}
 
 }
 
@@ -2144,7 +2258,7 @@ method: "POST",
 
 headers: { "Content-Type": "application/json" },
 
-body: JSON.stringify({ message: sentText, session_id: getSessionId(), image_base64: imgBase64Temp, image_type: imgTypeTemp })
+body: JSON.stringify({ message: sentText, session_id: getSessionId(), user_id: userId, image_base64: imgBase64Temp, image_type: imgTypeTemp })
 
 });
 
@@ -2156,7 +2270,7 @@ method: "POST",
 
 headers: { "Content-Type": "application/json" },
 
-body: JSON.stringify({ message: sentText, session_id: getSessionId() })
+body: JSON.stringify({ message: sentText, session_id: getSessionId(), user_id: userId })
 
 });
 
