@@ -1324,13 +1324,18 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   // 💾 تحميل Memory من Supabase (أول مرة فقط)
   if (userId && !session.memory) {
     const { memory, visit_count } = await loadUserMemory(userId);
-    session.memory = memory;
+    session.memory = memory || {};  // ← تأكد إنها object حتى لو null
     session.visit_count = visit_count;
     session.userId = userId;
     
     if (visit_count > 1) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
     }
+  }
+  
+  // ✅ تأكد إن session.memory موجود دايماً
+  if (!session.memory) {
+    session.memory = {};
   }
   
   // 🎯 تحديد isFirstVisit — لو session جديد ومفيش اسم محفوظ
