@@ -1325,7 +1325,7 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     }
   }
 
-  // 👋 رسالة ترحيب (لو welcome request أو أول زيارة بدون اسم)
+  // 👋 رسالة ترحيب
   const shouldShowWelcome = (
     isWelcome || 
     (session.visit_count === 1 && !session.memory.name && session.history.length === 0)
@@ -1333,6 +1333,19 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
   
   if (shouldShowWelcome) {
     session.isFirstVisit = true;
+    
+    // لو في اسم محفوظ → رحب بالاسم (مش تسأل عنه!)
+    if (session.memory && session.memory.name) {
+      const welcomeMsg = `أهلاً **${session.memory.name}**! 👋<br>ازيك؟ عايز مساعدة في إيه النهارده؟ 😊`;
+      session.history.push({ role: "assistant", content: welcomeMsg });
+      return { 
+        reply: finalizeReply(welcomeMsg), 
+        suggestions: [],
+        options: []
+      };
+    }
+    
+    // لو مفيش اسم → اسأل عنه
     const welcomeMsg = `أهلاً بيك! أنا **زيكو** 🤖 المساعد الذكي في منصة إيزي تي 🎓<br><br>انت اسمك إيه؟ 😊`;
     
     session.history.push({ role: "assistant", content: welcomeMsg });
@@ -1359,10 +1372,10 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
     // جرب تكشف لو الرد فيه اسم
     const nameMatch = message.match(/^(اسمي|انا|اسم[يه]?)\s+(.+)$/i);
     const wordsOnly = message.replace(/[^\u0600-\u06FFa-zA-Z\s]/g, '').trim();
-    const words = wordsOnly.split(/\s+/);
+    const words = wordsOnly.split(/\s+/).filter(w => w.length > 0);
     
     // لو الرد قصير (1-3 كلمات) ومفيهوش كلمات زي "كورس"، "عايز"، إلخ
-    const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل'];
+    const ignoreWords = ['كورس', 'دورة', 'عايز', 'محتاج', 'ازاي', 'كيف', 'فين', 'ايه', 'مين', 'ممكن', 'لو', 'هل', 'عندي', 'عندى'];
     const hasIgnored = ignoreWords.some(w => message.toLowerCase().includes(w));
     
     if (nameMatch && nameMatch[2]) {
@@ -1380,7 +1393,8 @@ async function smartChat(message, sessionId, userId = null, isWelcome = false) {
       
     } else if (words.length >= 1 && words.length <= 3 && !hasIgnored) {
       // رد قصير ومفيهوش كلمات استفهام → يمكن يكون اسم
-      const possibleName = wordsOnly;
+      // ناخد **أول كلمة بس** (مش كل الكلمات)
+      const possibleName = words[0];
       session.memory.name = possibleName;
       await saveUserMemory(session.userId, session.memory);
       
