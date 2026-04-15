@@ -1314,6 +1314,8 @@ var notifyAutoTimer = null;
 
 var sessionId = null;
 
+var rec = null;
+
 var isRecording = false;
 
 var isSending = false;
@@ -2352,7 +2354,7 @@ function setupVoice() {
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!SR || !micBtn) { if (micBtn) micBtn.style.display = "none"; return; }
 
-var rec = new SR();
+rec = new SR();
 rec.lang            = "ar-EG";
 rec.continuous       = true;
 rec.interimResults   = true;
@@ -2363,23 +2365,40 @@ var finalTranscript  = "";
 var silenceTimer     = null;
 var cancelled        = false;
 
-micBtn.addEventListener("click", function () {
+var lastTouchTime = 0;
+
+micBtn.addEventListener("click", function (e) {
+  // منع click لو جاي من touch
+  if (Date.now() - lastTouchTime < 500) return;
   if (isSending) return;
   if (!isRecording) startRec(); else stopAndSend();
 });
+
+// استخدام touchend للموبايل (أقوى من touchstart)
+micBtn.addEventListener("touchend", function (e) {
+  e.preventDefault();
+  lastTouchTime = Date.now(); // تسجيل وقت الـ touch
+  if (isSending) return;
+  if (!isRecording) startRec(); else stopAndSend();
+}, {passive: false});
 
 rec.onresult = function (e) {
   if (cancelled) return;
 
   clearTimeout(silenceTimer);
 
-  var interim = "";
-  for (var i = e.resultIndex; i < e.results.length; i++) {
-    var t = e.results[i][0].transcript;
-    if (e.results[i].isFinal) finalTranscript += t + " ";
-    else interim = t;
+  // ناخد آخر result بس (الأحدث)
+  var lastResult = e.results[e.results.length - 1];
+  var transcript = lastResult[0].transcript;
+  
+  if (lastResult.isFinal) {
+    // لو نهائي - نضيفه على finalTranscript
+    finalTranscript += transcript + " ";
+    zikoInput.value = finalTranscript.trim();
+  } else {
+    // لو مؤقت - نعرضه مع النهائي بدون ما نحفظه
+    zikoInput.value = (finalTranscript + transcript).trim();
   }
-  zikoInput.value = (finalTranscript + interim).trim();
 
   silenceTimer = setTimeout(function () {
     if (isRecording && !cancelled) stopAndSend();
@@ -2388,9 +2407,8 @@ rec.onresult = function (e) {
 
 rec.onend = function () {
   if (cancelled) return;
-  if (isRecording) {
-    try { rec.start(); } catch (ex) { cleanup(); }
-  }
+  // شيلنا الـ auto-restart عشان ميكررش الكلام
+  // لو المستخدم عايز يكمل هيضغط تاني
 };
 
 rec.onerror = function (e) {
@@ -2435,6 +2453,18 @@ function cleanupUI() {
 }
 
 }
+
+// ══════════════════════════════════════════════════════════
+// Heartbeat Check — يتأكد إن الـ event listener لسه شغال
+// ══════════════════════════════════════════════════════════
+setInterval(function() {
+  var btn = document.getElementById('ziko-toggle');
+  if (btn && !btn.onclick && !btn.__hasListener) {
+    console.log('[Ziko] Re-attaching click listener (heartbeat check)');
+    btn.addEventListener('click', toggleChatBox);
+    btn.__hasListener = true;
+  }
+}, 30000); // كل 30 ثانية
 
 // expose للـ GTM
 window.initZiko = initZiko;
