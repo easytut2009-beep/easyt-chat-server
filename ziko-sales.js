@@ -1998,13 +1998,26 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
       } else {
         // fallback: نستخدم الـ why كما هو لكن نخليه أكثر فايدة
         userMessage = result.why
-          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل)/gi, "")
+          // إزالة كل الـ internal patterns
+          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل|سأل|عبّر عن|أظهر)/gi, "")
           .replace(/اهتمامه ب/gi, "")
           .replace(/اهتمام.*?ب/gi, "")
-          .replace(/مما يدل على.*?\./gi, "") // إزالة "مما يدل على رغبته..."
-          .replace(/،\s*مما.*$/gi, "")        // إزالة ", مما يدل..."
+          .replace(/رغبته في/gi, "")
+          .replace(/يريد/gi, "")
+          .replace(/أنه/gi, "")
+          .replace(/مما يدل على.*?\./gi, "")  // إزالة "مما يدل على..."
+          .replace(/،\s*مما.*$/gi, "")           // إزالة ", مما يدل..."
+          .replace(/عن\s+وجود/gi, "")           // إزالة "عن وجود"
+          .replace(/يتعلق ب/gi, "")             // إزالة "يتعلق ب"
+          .replace(/ولكنه (لا يعرف|غير متأكد|مش عارف)/gi, "") // إزالة "ولكنه لا يعرف"
+          .replace(/كيف(ية)?\.?$/gi, "")        // إزالة "كيف" في الآخر
+          .replace(/\s+/g, " ")                 // تنظيف المسافات
+          .replace(/^،\s*/g, "")                // إزالة فاصلة في البداية
+          .replace(/،\s*$/g, "")                // إزالة فاصلة في النهاية
           .trim();
-        if (userMessage.length < 20) {
+        
+        // لو النص بقى قصير جداً أو فاضي → استخدم default
+        if (userMessage.length < 15 || !userMessage) {
           userMessage = "مناسب لمستواك وأهدافك";
         }
       }
@@ -2531,16 +2544,23 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
 
 **مهمتك:**
 اختار أفضل 5 نتائج الأنسب للمستخدم بناءً على:
-1. سياق الحوار
-2. هدف المستخدم (الشغل من البيت → فريلانس = تصميم/تسويق/كتابة، مش روبوت)
-3. مستوى الصعوبة (مبتدئ → ابدأ بالأسهل)
-4. الأكثر عملية وفايدة فورية
+1. **المطابقة الدقيقة:** لو المستخدم قال "ترجمة" → اختار كورسات ترجمة، مش رسم أو تصميم!
+2. سياق الحوار
+3. هدف المستخدم (الشغل من البيت → فريلانس = تصميم/تسويق/كتابة، مش روبوت)
+4. مستوى الصعوبة (مبتدئ → ابدأ بالأسهل)
+5. الأكثر عملية وفايدة فورية
 
 **قواعد مهمة:**
+- ✅ **لو المستخدم طلب موضوع محدد** (ترجمة، محاسبة، تصوير، إلخ) → **لازم** تختار كورسات في نفس الموضوع بالظبط!
+- ✅ لو **مافيش** نتائج تطابق الموضوع المطلوب → ارجع `selected_ids: []` (فاضي)
 - "من البيت" أو "فريلانس" → اختار: Photoshop, تسويق إلكتروني, WordPress, كتابة محتوى
 - **تجنب:** روبوت Arduino, Swift, C#, لغات برمجة متقدمة (إلا لو المستخدم طلبها صراحة)
 - دبلومات أفضل من كورسات منفردة (comprehensive)
 - الأحدث والأكثر طلباً أولاً
+
+**أمثلة:**
+- المستخدم: "فيه كورس عن ترجمة؟" + النتائج: [رسم كرتون, فوتوشوب] → `selected_ids: []` ❌ (مافيش ترجمة!)
+- المستخدم: "عايز أتعلم ترجمة" + النتائج: [ترجمة احترافية, لغة إنجليزية] → `selected_ids: [0, 1]` ✅
 
 ارجع JSON فقط:
 {
@@ -2557,8 +2577,20 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
         }), 2);
         
         const filterResult = JSON.parse(filterResp.choices[0].message.content);
+        const displayTopic = keywords[0] || message;
         
         if (filterResult.selected_ids && Array.isArray(filterResult.selected_ids)) {
+          // لو GPT رجع array فاضي = مافيش نتائج منطقية
+          if (filterResult.selected_ids.length === 0) {
+            console.log(`⚠️ GPT Filter: No relevant results for "${message}"`);
+            console.log(`💡 Reasoning: ${filterResult.reasoning}`);
+            
+            // نرجع رسالة اعتذار بدل عرض نتائج خاطئة
+            reply = `للأسف، مالقيتش كورسات متخصصة في "${displayTopic}" حالياً 😊<br><br>لكن عندنا 600+ كورس في مجالات تانية! عايز أساعدك تلاقي حاجة تانية مناسبة؟<br><br>أو تقدر تتصفح كل الكورسات من هنا: <a href="https://easyt.online/courses" target="_blank" style="color:#e63946;font-weight:700">كل الكورسات 🎓</a>`;
+            
+            return { reply: finalizeReply(reply), suggestions: [] };
+          }
+          
           filteredResults = filterResult.selected_ids
             .filter(id => id >= 0 && id < results.length)
             .map(id => results[id]);
@@ -2573,8 +2605,7 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
     }
     
     const finalResults = filteredResults.length > 0 ? filteredResults : results;
-    const displayTopic = keywords[0] || message;
-    reply = await formatResults(finalResults, displayTopic, session);
+    reply = await formatResults(finalResults, keywords[0] || message, session);
 
     session.lastTopic = keywords.join(" ");
     session.lastResults = finalResults;
