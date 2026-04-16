@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎓 Ziko Guide Widget — المرشد التعليمي
 // ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.2 (Fixed Disappearing Issue)
-// Last Update: April 17, 2026 - 6:00 AM
+// Version: 1.3 (Final Fix - No API Dependency)
+// Last Update: April 17, 2026 - 6:30 AM
 // 
 // 🔧 CRITICAL FIXES:
 // - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
 // - تحسين Smart Heartbeat مع logging أفضل
-// - إضافة console logs للـ debugging
 // - إصلاح مشكلة اختفاء الأيقونة: تحقق مزدوج من URL قبل الإخفاء
 // - حماية ضد SPA navigation المؤقت في Teachable
+// - 🔥 إزالة API dependency من checkContentVisibility (السبب الرئيسي للاختفاء)
+// - الأيقونة تظهر بناءً على URL فقط - لا تعتمد على API response
 // 
 // 📍 Widget Scope:
 // - IDs: #zg-* (green theme)
@@ -494,14 +495,83 @@ function applyBoxSize(w,h){if(!$box||isMob()||snapState!=="free")return;w=Math.m
 function applySavedSize(){var saved=loadChatSize();if(saved)applyBoxSize(saved.w,saved.h);}
 function parseRzDir(code){if(!code)return null;return{top:code.indexOf("n")>-1,bottom:code.indexOf("s")>-1,left:code.indexOf("w")>-1,right:code.indexOf("e")>-1};}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛡️ CRITICAL FIX: فحص الرؤية بدون API dependency
+// ═══════════════════════════════════════════════════════════════════════════
 function checkContentVisibility(){
-if(!/\/courses\//.test(location.pathname)){lockedCourse="";page.course_name="";page.lecture_title="";applyVisibility(false);return;}
-var f=scanPage();if(f.course_name)page.course_name=f.course_name;if(f.lecture_title){page.lecture_title=f.lecture_title;lastLesson=f.lecture_title;}updBanner();
-var cn=page.course_name;if(!cn){applyVisibility(false);return;}
-if(courseCheckCache.hasOwnProperty(cn)){applyVisibility(courseCheckCache[cn]);return;}
-fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn)).then(function(r){return r.json();}).then(function(d){courseCheckCache[cn]=!!d.exists;applyVisibility(!!d.exists);}).catch(function(){applyVisibility(false);});
+var currentPath = location.pathname;
+
+// فحص شامل للـ URL patterns
+var isCoursePage = /\/courses\//.test(currentPath);
+var isLecturePage = /\/lectures\//.test(currentPath);
+var isEnrolledPage = /\/courses\/enrolled/.test(currentPath);
+
+// لو مش في صفحة كورس خالص - اخفي
+if(!isCoursePage && !isLecturePage && !isEnrolledPage){
+console.log("[ZikoGuide] 📍 Not in course page - hiding");
+lockedCourse="";
+page.course_name="";
+page.lecture_title="";
+applyVisibility(false);
+return;
 }
-function applyVisibility(show){if(show&&!contentVisible){contentVisible=true;if(!chatOpen&&$tog)$tog.style.display="block";if(!opened&&!notifyTimer)setTimeout(function(){if(!opened&&contentVisible)showNotify();},2500);}else if(!show){contentVisible=false;if($tog)$tog.style.display="none";if(chatOpen)closeChat();hideNotify();}}
+
+// لو في صفحة كورس - اسكن الصفحة
+console.log("[ZikoGuide] ✅ In course page - checking content");
+var f=scanPage();
+if(f.course_name) page.course_name=f.course_name;
+if(f.lecture_title){
+page.lecture_title=f.lecture_title;
+lastLesson=f.lecture_title;
+}
+updBanner();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔥 CRITICAL FIX: اظهر الأيقونة بدون API check
+// السبب: API check كان بيفشل ويخفي الأيقونة بدون سبب
+// الحل: لو في صفحة كورس → أظهر مباشرة
+// ═══════════════════════════════════════════════════════════════════════════
+applyVisibility(true);
+console.log("[ZikoGuide] 💚 Widget visible");
+
+// Optional: API check للـ analytics فقط (مش للـ visibility)
+var cn = page.course_name;
+if(cn && !courseCheckCache.hasOwnProperty(cn)){
+fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn))
+.then(function(r){return r.json();})
+.then(function(d){
+courseCheckCache[cn]=!!d.exists;
+console.log("[ZikoGuide] 📊 Course check:", cn, "exists:", d.exists);
+})
+.catch(function(err){
+console.log("[ZikoGuide] ⚠️ Course check failed (non-critical):", err);
+// لا تخفي الأيقونة - الـ check ده للـ analytics بس
+});
+}
+}
+
+function applyVisibility(show){
+if(show&&!contentVisible){
+contentVisible=true;
+if(!chatOpen&&$tog){
+$tog.style.display="block";
+console.log("[ZikoGuide] 👁️ Toggle shown");
+}
+if(!opened&&!notifyTimer){
+setTimeout(function(){
+if(!opened&&contentVisible) showNotify();
+},2500);
+}
+}else if(!show){
+contentVisible=false;
+if($tog){
+$tog.style.display="none";
+console.log("[ZikoGuide] 🙈 Toggle hidden");
+}
+if(chatOpen) closeChat();
+hideNotify();
+}
+}
 
 function minimize(side){isMini=true;miniSide=side;$tog.classList.add("zg-mini");var y=getIconPos().y;y=Math.max(0,Math.min(y,window.innerHeight-ICON_MINI));if(side==="left"){$tog.style.left="0px";$tog.style.right="auto";}else{$tog.style.left="auto";$tog.style.right="0px";}$tog.style.top=y+"px";$tog.style.bottom="auto";var p=getIconPos();savePos(p.x,p.y,true,side);}
 function restoreFromMini(){if(!isMini)return;var r=$tog.getBoundingClientRect();isMini=false;miniSide="";$tog.classList.remove("zg-mini");$tog.style.left=r.left+"px";$tog.style.right="auto";$tog.style.top=r.top+"px";$tog.style.bottom="auto";}
