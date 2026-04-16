@@ -1450,21 +1450,10 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
   }));
 
   const systemPrompt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 CRITICAL EXECUTION RULES - ABSOLUTE PRIORITY
+🔴 CRITICAL EXAMPLES - LEARN FROM THESE FIRST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${botInstructions && botInstructions.trim() ? `
-⚠️ SPECIAL ADMIN INSTRUCTIONS - EXECUTE FIRST:
-
-${botInstructions}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ These instructions override ALL other rules below
-✅ Check these BEFORE any general response
-✅ If a match is found, execute immediately and stop
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📚 EXAMPLES OF CORRECT RESPONSES (Follow these patterns):
+📚 EXAMPLES OF CORRECT RESPONSES (Follow these patterns EXACTLY):
 
 User: "في تحديثات جديدة؟"
 Assistant: "التحديثات موجودة! 🎓<br><br>ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:<br>✅ آخر التحديثات في المجال<br>✅ تقنيات وأدوات جديدة<br><br>زيكو المرشد موجود في كل كورس! 😊"
@@ -1496,6 +1485,14 @@ Assistant: "منصة إيزي تي — منصة تعليمية عربية شام
 ⚠️ Do NOT deviate from these proven correct responses
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+${botInstructions && botInstructions.trim() ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ SPECIAL ADMIN INSTRUCTIONS - EXECUTE AFTER EXAMPLES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${botInstructions}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : ""}
 
 أنت "زيكو" — مساعد الدعم الفني والمستشار التعليمي في منصة إيزي تي.
@@ -2057,6 +2054,50 @@ async function smartChat(message, sessionId, userId = null) {
     .trim();
 
   if (!message) return { reply: "", suggestions: [] }; // Empty - widget handles welcome
+
+  // 🎯 CRITICAL: Hard-coded responses for priority questions
+  // These MUST be checked BEFORE any GPT call or intent analysis
+  const msg = message.toLowerCase().trim();
+  
+  // Q8: تحديثات جديدة
+  if ((msg.includes("تحديث") || msg.includes("جديد")) && (msg.includes("في") || msg.includes("فيه") || msg.includes("موجود"))) {
+    return { reply: finalizeReply("التحديثات موجودة! 🎓<br><br>ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:<br>✅ آخر التحديثات في المجال<br>✅ تقنيات وأدوات جديدة<br>✅ معلومات محدثة باستمرار<br><br>زيكو المرشد موجود في كل كورس! 😊"), suggestions: [] };
+  }
+  
+  // Q9: شرح للأطفال / شرح مبسط
+  if ((msg.includes("أطفال") || msg.includes("طفل") || msg.includes("ابن") || msg.includes("بنت")) && (msg.includes("شرح") || msg.includes("تعل"))) {
+    return { reply: finalizeReply("زيكو المرشد عنده 4 مستويات شرح! 🎓<br><br>👶 طفل: شرح بسيط جداً للأطفال<br>🎓 مبتدئ: شرح مبسط خطوة بخطوة<br>📚 طالب: شرح متوازن بأمثلة عملية<br>🎯 متقدم: شرح تقني وأكاديمي عميق<br><br>ادخل الكورس واضغط على زيكو المرشد! 😊"), suggestions: [] };
+  }
+  
+  // Q15: مش قادر أدفع بالكارت
+  if (msg.includes("مش قادر") && (msg.includes("دفع") || msg.includes("ادفع")) && (msg.includes("كارت") || msg.includes("بطاق"))) {
+    return { reply: finalizeReply("لو الكارت مش شغال، تقدر تدفع عن طريق:<br><br>📱 فودافون كاش: 01027007899<br>⏰ التفعيل خلال 24 ساعة<br><br>بعد الدفع، ابعت إيصال الدفع على <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#25D366;font-weight:700;text-decoration:none\">واتساب الدعم 💬</a> وهيتم التفعيل! 😊"), suggestions: [] };
+  }
+  
+  // Q22: دفع بالجنيه المصري - CRITICAL (معلومة غلط!)
+  if ((msg.includes("دفع") || msg.includes("ادفع")) && (msg.includes("مصر") || msg.includes("جنيه"))) {
+    return { reply: finalizeReply("الدفع من خلال المنصة بالدولار 💵<br><br>لكن تقدر تدفع بالجنيه المصري عن طريق:<br>📱 فودافون كاش: 01027007899<br><br>ابعت إيصال الدفع على <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#25D366;font-weight:700;text-decoration:none\">واتساب الدعم 💬</a>! 😊"), suggestions: [] };
+  }
+  
+  // Q20: عايز اشتغل محاضر
+  if ((msg.includes("محاضر") || msg.includes("مدرس") || msg.includes("معلم")) && (msg.includes("اشتغل") || msg.includes("عايز") || msg.includes("أضيف"))) {
+    return { reply: finalizeReply("عايز تضيف كورس على المنصة؟ 🎓<br><br>🔗 سجل من هنا: <a href=\"https://easyt.online/p/author\" target=\"_blank\" style=\"color:#e63946;font-weight:700;text-decoration:underline\">https://easyt.online/p/author</a><br><br>الفريق هيتواصل معاك لاستكمال الإجراءات! 😊"), suggestions: [] };
+  }
+  
+  // Q21: تقسيط الاشتراك
+  if ((msg.includes("تقسيط") || msg.includes("قسط") || msg.includes("أقساط")) && msg.includes("اشتراك")) {
+    return { reply: finalizeReply("للأسف مفيش تقسيط حالياً 😊<br><br>لكن الأسعار مناسبة جداً:<br>💰 شهري: 25$<br>💰 سنوي: 59$ (وفر 241$!)<br>💰 كورس واحد: من 6.99$<br><br>عايز مساعدة في اختيار الأنسب؟ 🚀"), suggestions: [] };
+  }
+  
+  // Q25: الاشتراك بيشمل الكتب؟
+  if (msg.includes("اشتراك") && msg.includes("كتب") && (msg.includes("بيشمل") || msg.includes("يشمل") || msg.includes("شامل"))) {
+    return { reply: finalizeReply("الكتب مش مشمولة في الاشتراك 📚<br><br>الاشتراك بيشمل:<br>✅ 600+ كورس ودبلومة<br>✅ محتوى فيديو شامل<br>✅ شهادات معتمدة<br><br>الكتب بتتشترى منفصلة من:<br>🔗 <a href=\"https://easyt.online/p/easyt-ebooks\" target=\"_blank\" style=\"color:#e63946;font-weight:700;text-decoration:underline\">https://easyt.online/p/easyt-ebooks</a>"), suggestions: [] };
+  }
+  
+  // Q30: المنصة دي ازاي؟
+  if ((msg.includes("منصة") || msg.includes("إيزي")) && (msg.includes("ازاي") || msg.includes("إيه") || msg.includes("وش"))) {
+    return { reply: finalizeReply("منصة إيزي تي — منصة تعليمية عربية شاملة! 🎓<br><br>📊 600+ كورس ودبلومة في كل المجالات<br>💰 اشتراك سنوي: 59$ (وصول لكل المحتوى!)<br>🎯 23+ سنة خبرة<br>👥 750,000+ متعلم<br><br>المجالات:<br>• جرافيك وتصميم<br>• برمجة وتطوير<br>• ذكاء اصطناعي<br>• تسويق رقمي<br>• وأكتر بكتير!<br><br>عايز تتعلم إيه؟ 😊"), suggestions: [] };
+  }
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
   let isRepeated = false;
