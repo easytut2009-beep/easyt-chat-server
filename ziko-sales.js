@@ -1619,13 +1619,24 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
 - واتساب: ${WHATSAPP_LINK}
 - مواعيد: 8ص لـ 10م
 
+════════════════════════════════════════════
+🔴 CRITICAL RULES - MUST FOLLOW
+════════════════════════════════════════════
+
+${botInstructions && botInstructions.trim() ? `
+📋 **تعليمات خاصة من الإدارة (PRIORITY - نفذها بدقة):**
+
+${botInstructions}
+
+⚠️ هذه التعليمات لها الأولوية القصوى - نفذها قبل أي شيء آخر!
+════════════════════════════════════════════
+` : ""}
+
 استخدم <br> للأسطر الجديدة.
 🚨 لما تذكر الدعم:
 <a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">واتساب الدعم 💬</a>
 
-${extraContext ? `══ سياق إضافي ══\n${extraContext}\n` : ""}
-══ تعليمات الأدمن ══
-${botInstructions || "لا توجد تعليمات"}`;
+${extraContext ? `══ سياق إضافي ══\n${extraContext}\n` : ""}`;
 
   const resp = await gptWithRetry(() => openai.chat.completions.create({
     model: "gpt-4o-mini",
