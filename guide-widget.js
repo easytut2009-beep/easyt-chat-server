@@ -1,41 +1,7 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// 🎓 Ziko Guide Widget — المرشد التعليمي
-// ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.6 (Auto-Fix Heartbeat)
-// Last Update: April 17, 2026 - 7:30 AM
-// 
-// 🔧 CRITICAL FIXES:
-// - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
-// - تحسين Smart Heartbeat مع logging أفضل
-// - إصلاح مشكلة اختفاء الأيقونة: تحقق مزدوج من URL قبل الإخفاء
-// - حماية ضد SPA navigation المؤقت في Teachable
-// - 🔥 إزالة API dependency من checkContentVisibility (السبب الرئيسي للاختفاء)
-// - الأيقونة تظهر بناءً على URL فقط - لا تعتمد على API response
-// - 📊 تغيير الحد اليومي: 30 رسالة بدلاً من 15
-// - 🎁 Storage keys v2: كل المستخدمين يبدأوا من جديد بـ 30 رسالة
-// - 🔧 AUTO-FIX Heartbeat: لو الأيقونة اتخفت في صفحة درس → يظهرها تلقائياً
-// - ⚡ Heartbeat كل 5 ثواني (كان 30) للكشف والإصلاح السريع
-// 
-// 📍 Widget Scope:
-// - IDs: #zg-* (green theme)
-// - Pages: /courses/enrolled/*, /lectures/*
-// - GTM: Simple <script> tag injection
-// - Daily Limit: 30 messages (resets at midnight)
-// - Storage: zg_remaining_v2, zg_session_v2 (v2 = clean reset)
-// - Auto-Recovery: Every 5 seconds
-// ═══════════════════════════════════════════════════════════════════════════
-
 (function(){
 "use strict";
-// ═══════════════════════════════════════════════════════════════════════════
-// 🛡️ CRITICAL FIX: استخدام flag منفصل لتجنب التضارب مع Sales Widget
-// ═══════════════════════════════════════════════════════════════════════════
-if(window.__zikoGuideLoaded){
-console.log('[ZikoGuide] Already loaded - skipping duplicate init');
-return;
-}
-window.__zikoGuideLoaded=true;
-console.log('[ZikoGuide] 🟢 Widget initializing...');
+if(window.__zikoLoaded)return;
+window.__zikoLoaded=true;
 
 
 try{var _vp=document.querySelector('meta[name="viewport"]');if(_vp){var _vc=_vp.getAttribute("content")||"";if(_vc.indexOf("viewport-fit")===-1)_vp.setAttribute("content",_vc+",viewport-fit=cover");}}catch(_e){}
@@ -427,8 +393,8 @@ var TOOLS=[
 
 var API="https://easyt-chat-server.onrender.com/api/guide";
 var IMAGE_API="https://easyt-chat-server.onrender.com/chat-image";
-var LIMIT=30;  // ← تم التغيير من 15 إلى 30 رسالة يومياً
-var SK_REM="zg_remaining_v2",SK_SES="zg_session_v2",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";  // ← v2 لإعادة ضبط العداد للجميع (30 رسالة)
+var LIMIT=30;
+var SK_REM="zg_remaining_v2",SK_SES="zg_session_v2",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
 var ICON_W=70,ICON_MINI=36,EDGE_SNAP=25,MAGNET=15,GLOW_ZONE=60;
 var RZ_MIN_W=320,RZ_MIN_H=350,RZ_MAX_W=700,RZ_MAX_H=750;
 var CHAT_SNAP_ZONE=40,CHAT_SNAP_TOP_ZONE=25;
@@ -502,83 +468,14 @@ function applyBoxSize(w,h){if(!$box||isMob()||snapState!=="free")return;w=Math.m
 function applySavedSize(){var saved=loadChatSize();if(saved)applyBoxSize(saved.w,saved.h);}
 function parseRzDir(code){if(!code)return null;return{top:code.indexOf("n")>-1,bottom:code.indexOf("s")>-1,left:code.indexOf("w")>-1,right:code.indexOf("e")>-1};}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🛡️ CRITICAL FIX: فحص الرؤية بدون API dependency
-// ═══════════════════════════════════════════════════════════════════════════
 function checkContentVisibility(){
-var currentPath = location.pathname;
-
-// فحص شامل للـ URL patterns
-var isCoursePage = /\/courses\//.test(currentPath);
-var isLecturePage = /\/lectures\//.test(currentPath);
-var isEnrolledPage = /\/courses\/enrolled/.test(currentPath);
-
-// لو مش في صفحة كورس خالص - اخفي
-if(!isCoursePage && !isLecturePage && !isEnrolledPage){
-console.log("[ZikoGuide] 📍 Not in course page - hiding");
-lockedCourse="";
-page.course_name="";
-page.lecture_title="";
-applyVisibility(false);
-return;
+if(!/\/courses\//.test(location.pathname)){lockedCourse="";page.course_name="";page.lecture_title="";applyVisibility(false);return;}
+var f=scanPage();if(f.course_name)page.course_name=f.course_name;if(f.lecture_title){page.lecture_title=f.lecture_title;lastLesson=f.lecture_title;}updBanner();
+var cn=page.course_name;if(!cn){applyVisibility(false);return;}
+if(courseCheckCache.hasOwnProperty(cn)){applyVisibility(courseCheckCache[cn]);return;}
+fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn)).then(function(r){return r.json();}).then(function(d){courseCheckCache[cn]=!!d.exists;applyVisibility(!!d.exists);}).catch(function(){applyVisibility(false);});
 }
-
-// لو في صفحة كورس - اسكن الصفحة
-console.log("[ZikoGuide] ✅ In course page - checking content");
-var f=scanPage();
-if(f.course_name) page.course_name=f.course_name;
-if(f.lecture_title){
-page.lecture_title=f.lecture_title;
-lastLesson=f.lecture_title;
-}
-updBanner();
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔥 CRITICAL FIX: اظهر الأيقونة بدون API check
-// السبب: API check كان بيفشل ويخفي الأيقونة بدون سبب
-// الحل: لو في صفحة كورس → أظهر مباشرة
-// ═══════════════════════════════════════════════════════════════════════════
-applyVisibility(true);
-console.log("[ZikoGuide] 💚 Widget visible");
-
-// Optional: API check للـ analytics فقط (مش للـ visibility)
-var cn = page.course_name;
-if(cn && !courseCheckCache.hasOwnProperty(cn)){
-fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn))
-.then(function(r){return r.json();})
-.then(function(d){
-courseCheckCache[cn]=!!d.exists;
-console.log("[ZikoGuide] 📊 Course check:", cn, "exists:", d.exists);
-})
-.catch(function(err){
-console.log("[ZikoGuide] ⚠️ Course check failed (non-critical):", err);
-// لا تخفي الأيقونة - الـ check ده للـ analytics بس
-});
-}
-}
-
-function applyVisibility(show){
-if(show&&!contentVisible){
-contentVisible=true;
-if(!chatOpen&&$tog){
-$tog.style.display="block";
-console.log("[ZikoGuide] 👁️ Toggle shown");
-}
-if(!opened&&!notifyTimer){
-setTimeout(function(){
-if(!opened&&contentVisible) showNotify();
-},2500);
-}
-}else if(!show){
-contentVisible=false;
-if($tog){
-$tog.style.display="none";
-console.log("[ZikoGuide] 🙈 Toggle hidden");
-}
-if(chatOpen) closeChat();
-hideNotify();
-}
-}
+function applyVisibility(show){if(show&&!contentVisible){contentVisible=true;if(!chatOpen&&$tog)$tog.style.display="block";if(!opened&&!notifyTimer)setTimeout(function(){if(!opened&&contentVisible)showNotify();},2500);}else if(!show){contentVisible=false;if($tog)$tog.style.display="none";if(chatOpen)closeChat();hideNotify();}}
 
 function minimize(side){isMini=true;miniSide=side;$tog.classList.add("zg-mini");var y=getIconPos().y;y=Math.max(0,Math.min(y,window.innerHeight-ICON_MINI));if(side==="left"){$tog.style.left="0px";$tog.style.right="auto";}else{$tog.style.left="auto";$tog.style.right="0px";}$tog.style.top=y+"px";$tog.style.bottom="auto";var p=getIconPos();savePos(p.x,p.y,true,side);}
 function restoreFromMini(){if(!isMini)return;var r=$tog.getBoundingClientRect();isMini=false;miniSide="";$tog.classList.remove("zg-mini");$tog.style.left=r.left+"px";$tog.style.right="auto";$tog.style.top=r.top+"px";$tog.style.bottom="auto";}
@@ -692,27 +589,6 @@ function saveRem(c){try{localStorage.setItem(SK_REM,JSON.stringify({date:today()
 function checkDateReset(){
 try{
 var r=localStorage.getItem(SK_REM);
-if(!r){
-rem=LIMIT;
-saveRem(LIMIT);
-if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}
-if($send)$send.disabled=false;
-updCtr();
-return;
-}
-var d=JSON.parse(r);
-if(!d||d.date!==today()){
-rem=LIMIT;
-saveRem(LIMIT);
-if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}
-if($send)$send.disabled=false;
-updCtr();
-syncRem();
-}
-}catch(e){}
-}
-try{
-var r=localStorage.getItem(SK_REM);
 if(!r){rem=LIMIT;saveRem(LIMIT);if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}if($send)$send.disabled=false;updCtr();return;}
 var d=JSON.parse(r);
 if(!d||d.date!==today()){
@@ -727,22 +603,7 @@ function syncRem(){fetch(API.replace("/guide","/guide/status")+"?session_id="+en
 
 function hoursUntilMidnight(){var now=new Date();var mid=new Date(now);mid.setHours(24,0,0,0);var diff=mid-now;var h=Math.floor(diff/3600000);var m=Math.floor((diff%3600000)/60000);if(h>0)return h+" ساعة و"+m+" دقيقة";return m+" دقيقة";}
 
-function updCtr(){
-if(!$counter)return;
-$counter.className="";
-$counter.id="zg-counter";
-if(rem<=0){
-$counter.className="zg-zero";
-$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';
-if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}
-if($send)$send.disabled=true;
-}else if(rem<=5){  // ← تم التغيير من 3 إلى 5 (تحذير عند 5 رسائل متبقية)
-$counter.className="zg-low";
-$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 30 رسالة';  // ← تم التغيير من 15 إلى 30
-}else{
-$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 30 رسالة';  // ← تم التغيير من 15 إلى 30
-}
-}
+function updCtr(){if(!$counter)return;$counter.className="";$counter.id="zg-counter";if(rem<=0){$counter.className="zg-zero";$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}if($send)$send.disabled=true;}else if(rem<=5){$counter.className="zg-low";$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 30 رسالة';}else{$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 30 رسالة';}}
 
 function getFingerprint(){
 var nav=window.navigator;
@@ -1849,125 +1710,15 @@ function scanSidebarLesson(){var sels=[".section-item--is-active .item-title",".
 
 function scanPage(){var info={course_name:scanCourseName(),lecture_title:""};var lt=parseLessonTitle();if(lt&&!isBad(lt))info.lecture_title=lt;if(!info.lecture_title){var ct=scanContent();if(ct)info.lecture_title=ct;}if(!info.lecture_title){var sb=scanSidebarLesson();if(sb)info.lecture_title=sb;}info.course_name=(info.course_name||"").substring(0,150).trim();info.lecture_title=(info.lecture_title||"").substring(0,150).trim();if(isBad(info.lecture_title))info.lecture_title="";return info;}
 
-function setupMonitor(){
-var deb=null;
-var lastValidPath = location.pathname; // تتبع آخر مسار صحيح
-
-function handleNav(){
-var nUrl=location.href;
-if(nUrl===lastUrl)return;
-
-var oldL=lastLesson,oldId=lastLecId,newId=lecId(nUrl);
-lastUrl=nUrl;
-lastLecId=newId;
-if(newId&&oldId&&newId===oldId)return;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🛡️ CRITICAL FIX: تحقق مزدوج من الـ URL قبل الإخفاء
-// ═══════════════════════════════════════════════════════════════════════════
-var currentPath = location.pathname;
-var hasCoursesInPath = /\/courses\//.test(currentPath);
-var hasLecturesInPath = /\/lectures\//.test(currentPath);
-var isEnrolledPage = /\/courses\/enrolled/.test(currentPath);
-
-// لو مش في صفحة كورس خالص
-if(!hasCoursesInPath && !hasLecturesInPath && !isEnrolledPage){
-  console.log("[ZikoGuide] ⚠️ Left course page - hiding widget");
-  lockedCourse="";
-  page.course_name="";
-  page.lecture_title="";
-  lastLesson="";
-  applyVisibility(false);
-  return;
-}
-
-// لو في صفحة كورس - حفظ المسار الحالي
-if(hasCoursesInPath || hasLecturesInPath || isEnrolledPage){
-  lastValidPath = currentPath;
-  console.log("[ZikoGuide] ✅ Valid course page detected:", currentPath);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-
-if(scanTmr)clearTimeout(scanTmr);
-var att=0,max=12,found=false;
-
-function doScan(){
-if(found)return;
-att++;
-var f=scanPage();
-if(f.course_name)page.course_name=f.course_name;
-var nt=f.lecture_title||"";
-if(nt&&nt!==oldL){
-found=true;
-page.lecture_title=nt;
-lastLesson=nt;
-updBanner();
+function setupMonitor(){var deb=null;function handleNav(){var nUrl=location.href;if(nUrl===lastUrl)return;var oldL=lastLesson,oldId=lastLecId,newId=lecId(nUrl);lastUrl=nUrl;lastLecId=newId;if(newId&&oldId&&newId===oldId)return;
+if(!/\/courses\//.test(nUrl)){lockedCourse="";page.course_name="";page.lecture_title="";lastLesson="";applyVisibility(false);return;}
+if(scanTmr)clearTimeout(scanTmr);var att=0,max=12,found=false;function doScan(){if(found)return;att++;var f=scanPage();if(f.course_name)page.course_name=f.course_name;var nt=f.lecture_title||"";if(nt&&nt!==oldL){found=true;page.lecture_title=nt;lastLesson=nt;updBanner();
 checkContentVisibility();
-if(opened&&$msgs){
-var os=$msgs.querySelector(".zg-suggestions");
-if(os)os.remove();
-showWelcSugg();
-}
-return;
-}
+if(opened&&$msgs){var os=$msgs.querySelector(".zg-suggestions");if(os)os.remove();showWelcSugg();}return;}
 if(att>=max){checkContentVisibility();return;}
-scanTmr=setTimeout(doScan,att<=3?700:att<=6?1500:2500);
-}
-
-scanTmr=setTimeout(doScan,400);
+scanTmr=setTimeout(doScan,att<=3?700:att<=6?1500:2500);}scanTmr=setTimeout(doScan,400);
 setTimeout(checkContentVisibility,2000);
-}
-
-function debNav(){if(deb)clearTimeout(deb);deb=setTimeout(handleNav,200);}
-
-var oP=history.pushState;
-history.pushState=function(){oP.apply(this,arguments);debNav();};
-
-var oR=history.replaceState;
-history.replaceState=function(){oR.apply(this,arguments);debNav();};
-
-window.addEventListener("popstate",debNav);
-
-var evts=["turbolinks:load","turbo:load","page:load","page:change"];
-for(var ei=0;ei<evts.length;ei++){
-document.addEventListener(evts[ei],debNav);
-}
-
-try{
-var tEl=document.querySelector("title");
-if(tEl){
-var obs=new MutationObserver(debNav);
-obs.observe(tEl,{childList:true,characterData:true,subtree:true});
-}
-}catch(e){}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🛡️ CRITICAL FIX: فحص دوري أكثر ذكاءً
-// ═══════════════════════════════════════════════════════════════════════════
-setInterval(function(){
-var currentHref = location.href;
-var currentPath = location.pathname;
-
-// تحقق مزدوج: لو الـ URL اتغير فعلاً
-if(currentHref !== lastUrl){
-  // لو لسه في صفحة كورس - لا تخفي
-  var stillInCourse = /\/courses\//.test(currentPath) || 
-                      /\/lectures\//.test(currentPath) || 
-                      /\/courses\/enrolled/.test(currentPath);
-  
-  if(stillInCourse){
-    console.log("[ZikoGuide] 🔄 URL changed but still in course - keeping widget visible");
-    lastUrl = currentHref; // تحديث الـ URL بدون إخفاء
-    // لا تستدعي handleNav() عشان ميخفيش الأيقونة
-  } else {
-    console.log("[ZikoGuide] 📍 URL changed and left course - calling handleNav");
-    handleNav();
-  }
-}
-},3000);
-// ═══════════════════════════════════════════════════════════════════════════
-}
+}function debNav(){if(deb)clearTimeout(deb);deb=setTimeout(handleNav,200);}var oP=history.pushState;history.pushState=function(){oP.apply(this,arguments);debNav();};var oR=history.replaceState;history.replaceState=function(){oR.apply(this,arguments);debNav();};window.addEventListener("popstate",debNav);var evts=["turbolinks:load","turbo:load","page:load","page:change"];for(var ei=0;ei<evts.length;ei++){document.addEventListener(evts[ei],debNav);}try{var tEl=document.querySelector("title");if(tEl){var obs=new MutationObserver(debNav);obs.observe(tEl,{childList:true,characterData:true,subtree:true});}}catch(e){}setInterval(function(){if(location.href!==lastUrl)handleNav();},3000);}
 
 function setupVoice(){
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -2170,55 +1921,42 @@ else init();
 window.addEventListener("load",function(){if(!document.getElementById("zg-toggle"))init();});
 
 // ══════════════════════════════════════════════════════════
-// 🔄 Smart Heartbeat — يتأكد إن الأيقونة موجودة ومستجيبة
+// Heartbeat Check — يتأكد إن الأيقونة موجودة ومش frozen
 // ══════════════════════════════════════════════════════════
 setInterval(function(){
 var tog=document.getElementById("zg-toggle");
 if(!tog){
-console.log("[ZikoGuide] ⚠️ Toggle button missing - may have been removed");
+console.log("[ZikoGuide] ⚠️ Toggle missing");
 return;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔥 CRITICAL FIX: لو الأيقونة مخفية في صفحة درس → اظهرها تلقائياً
-// ═══════════════════════════════════════════════════════════════════════════
+// AUTO-FIX: لو مخفية في صفحة درس → اظهرها
 if(tog.style.display==="none"){
-var currentPath = location.pathname;
-var isInLecture = /\/courses\//.test(currentPath) || 
-                  /\/lectures\//.test(currentPath) || 
-                  /\/courses\/enrolled/.test(currentPath);
-
-if(isInLecture){
-  console.log("[ZikoGuide] 🔧 AUTO-FIX: Toggle was hidden in lecture page - showing it!");
-  tog.style.display="block";
-  contentVisible = true;
-} else {
-  console.log("[ZikoGuide] Toggle hidden - normal for non-lecture pages");
-  return;
+var cp=location.pathname;
+var inLec=/\/courses\//.test(cp)||/\/lectures\//.test(cp)||/\/enrolled/.test(cp);
+if(inLec){
+console.log("[ZikoGuide] 🔧 AUTO-FIX: Showing toggle");
+tog.style.display="block";
+contentVisible=true;
+}else{
+return;
 }
 }
-// ═══════════════════════════════════════════════════════════════════════════
 
-// الأيقونة موجودة ومرئية - نتأكد إنها responsive
+// تأكد من responsiveness
 if(!tog.__zgHeartbeat){
 tog.__zgHeartbeat=true;
-console.log("[ZikoGuide] 🔍 Checking responsiveness...");
-// لو في مشكلة في الـ events - reinit
 var testClick=function(){tog.__zgResponsive=true;};
 tog.addEventListener("pointerdown",testClick,{once:true,passive:true});
 setTimeout(function(){
 if(!tog.__zgResponsive){
-console.log("[ZikoGuide] ❌ Widget frozen - re-initializing");
-// تأكد إن الـ flag صحيح
-delete window.__zikoGuideLoaded;
+console.log("[ZikoGuide] Re-initializing frozen widget");
 init();
-}else{
-console.log("[ZikoGuide] ✅ Widget responsive");
 }
 delete tog.__zgResponsive;
 delete tog.__zgHeartbeat;
 },100);
 }
-},5000); // ← تغيير من 30 ثانية إلى 5 ثواني (أسرع في الكشف والإصلاح)
+},5000); // كل 5 ثواني
 
 })();
