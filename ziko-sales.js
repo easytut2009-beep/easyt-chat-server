@@ -1954,9 +1954,11 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
       } else {
         // fallback: نستخدم الـ why كما هو لكن نخليه أكثر فايدة
         userMessage = result.why
-          .replace(/المستخدم (قال|ذكر|أبدى)/gi, "")
-          .replace(/اهتمامه ب/gi, "")  // ← إزالة "اهتمامه ب"
-          .replace(/اهتمام.*?ب/gi, "") // ← إزالة أي variation
+          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل)/gi, "")
+          .replace(/اهتمامه ب/gi, "")
+          .replace(/اهتمام.*?ب/gi, "")
+          .replace(/مما يدل على.*?\./gi, "") // إزالة "مما يدل على رغبته..."
+          .replace(/،\s*مما.*$/gi, "")        // إزالة ", مما يدل..."
           .trim();
         if (userMessage.length < 20) {
           userMessage = "مناسب لمستواك وأهدافك";
