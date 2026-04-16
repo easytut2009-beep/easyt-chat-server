@@ -1,7 +1,7 @@
 (function(){
 "use strict";
-if(window.__zikoLoaded)return;
-window.__zikoLoaded=true;
+if(window.__zikoGuideLoaded)return;
+window.__zikoGuideLoaded=true;
 
 
 try{var _vp=document.querySelector('meta[name="viewport"]');if(_vp){var _vc=_vp.getAttribute("content")||"";if(_vc.indexOf("viewport-fit")===-1)_vp.setAttribute("content",_vc+",viewport-fit=cover");}}catch(_e){}
