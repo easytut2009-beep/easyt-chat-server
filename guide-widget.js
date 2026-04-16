@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎓 Ziko Guide Widget — المرشد التعليمي
 // ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.3 (Final Fix - No API Dependency)
-// Last Update: April 17, 2026 - 6:30 AM
+// Version: 1.4 (30 Messages/Day)
+// Last Update: April 17, 2026 - 6:45 AM
 // 
 // 🔧 CRITICAL FIXES:
 // - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
@@ -11,11 +11,14 @@
 // - حماية ضد SPA navigation المؤقت في Teachable
 // - 🔥 إزالة API dependency من checkContentVisibility (السبب الرئيسي للاختفاء)
 // - الأيقونة تظهر بناءً على URL فقط - لا تعتمد على API response
+// - 📊 تغيير الحد اليومي: 30 رسالة بدلاً من 15
+// - تحذير عند 5 رسائل متبقية بدلاً من 3
 // 
 // 📍 Widget Scope:
 // - IDs: #zg-* (green theme)
 // - Pages: /courses/enrolled/*, /lectures/*
 // - GTM: Simple <script> tag injection
+// - Daily Limit: 30 messages (resets at midnight)
 // ═══════════════════════════════════════════════════════════════════════════
 
 (function(){
@@ -420,7 +423,7 @@ var TOOLS=[
 
 var API="https://easyt-chat-server.onrender.com/api/guide";
 var IMAGE_API="https://easyt-chat-server.onrender.com/chat-image";
-var LIMIT=15;
+var LIMIT=30;  // ← تم التغيير من 15 إلى 30 رسالة يومياً
 var SK_REM="zg_remaining",SK_SES="zg_session",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
 var ICON_W=70,ICON_MINI=36,EDGE_SNAP=25,MAGNET=15,GLOW_ZONE=60;
 var RZ_MIN_W=320,RZ_MIN_H=350,RZ_MAX_W=700,RZ_MAX_H=750;
@@ -699,7 +702,22 @@ function syncRem(){fetch(API.replace("/guide","/guide/status")+"?session_id="+en
 
 function hoursUntilMidnight(){var now=new Date();var mid=new Date(now);mid.setHours(24,0,0,0);var diff=mid-now;var h=Math.floor(diff/3600000);var m=Math.floor((diff%3600000)/60000);if(h>0)return h+" ساعة و"+m+" دقيقة";return m+" دقيقة";}
 
-function updCtr(){if(!$counter)return;$counter.className="";$counter.id="zg-counter";if(rem<=0){$counter.className="zg-zero";$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}if($send)$send.disabled=true;}else if(rem<=3){$counter.className="zg-low";$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 15 رسالة';}else{$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 15 رسالة';}}
+function updCtr(){
+if(!$counter)return;
+$counter.className="";
+$counter.id="zg-counter";
+if(rem<=0){
+$counter.className="zg-zero";
+$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';
+if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}
+if($send)$send.disabled=true;
+}else if(rem<=5){  // ← تم التغيير من 3 إلى 5 (تحذير عند 5 رسائل متبقية)
+$counter.className="zg-low";
+$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 30 رسالة';  // ← تم التغيير من 15 إلى 30
+}else{
+$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 30 رسالة';  // ← تم التغيير من 15 إلى 30
+}
+}
 
 function getFingerprint(){
 var nav=window.navigator;
