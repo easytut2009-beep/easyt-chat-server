@@ -1710,7 +1710,7 @@ function scanSidebarLesson(){var sels=[".section-item--is-active .item-title",".
 function scanPage(){var info={course_name:scanCourseName(),lecture_title:""};var lt=parseLessonTitle();if(lt&&!isBad(lt))info.lecture_title=lt;if(!info.lecture_title){var ct=scanContent();if(ct)info.lecture_title=ct;}if(!info.lecture_title){var sb=scanSidebarLesson();if(sb)info.lecture_title=sb;}info.course_name=(info.course_name||"").substring(0,150).trim();info.lecture_title=(info.lecture_title||"").substring(0,150).trim();if(isBad(info.lecture_title))info.lecture_title="";return info;}
 
 function setupMonitor(){var deb=null;function handleNav(){var nUrl=location.href;if(nUrl===lastUrl)return;var oldL=lastLesson,oldId=lastLecId,newId=lecId(nUrl);lastUrl=nUrl;lastLecId=newId;if(newId&&oldId&&newId===oldId)return;
-if(!/\/courses\//.test(nUrl)){lockedCourse="";page.course_name="";page.lecture_title="";lastLesson="";applyVisibility(false);return;}
+if(!/\/lectures\//.test(nUrl)){lockedCourse="";page.course_name="";page.lecture_title="";lastLesson="";applyVisibility(false);return;}
 if(scanTmr)clearTimeout(scanTmr);var att=0,max=12,found=false;function doScan(){if(found)return;att++;var f=scanPage();if(f.course_name)page.course_name=f.course_name;var nt=f.lecture_title||"";if(nt&&nt!==oldL){found=true;page.lecture_title=nt;lastLesson=nt;updBanner();
 checkContentVisibility();
 if(opened&&$msgs){var os=$msgs.querySelector(".zg-suggestions");if(os)os.remove();showWelcSugg();}return;}
