@@ -265,11 +265,6 @@ async function analyzeIntent(message, history = [], hadClarify = false, isRepeat
 3. **ONE clarifying question MAX** — then show courses
 4. **Infer from context** — don't ask if you can deduce
 5. **Be proactive** — suggest solutions, don't just ask questions
-6. **PAST vs FUTURE tense:**
-   - "اشتريت كتاب" (past) = already bought → type=support
-   - "عايز اشتري كتاب" (future) = wants to buy → type=course_request or guide
-   - "اشتريت كورس" (past) = already bought → type=support
-   - "عايز اشتري كورس" (future) = wants to buy → type=info or guide
 
 ${contextTopic}
 ${languageContext}
@@ -301,8 +296,7 @@ Return ONLY valid JSON:
 
 ═══ type=greeting ═══
 Triggers: "أهلاً", "السلام", "مين أنت", "صباح الخير"
-Reply: ودود + مباشر + سؤال "إزاي أقدر أساعدك؟"
-Note: لا تعرّف نفسك - المستخدم عارفك من رسالة الترحيب
+Reply: ودود + تعريف بزيكو + سؤال "إزاي أقدر أساعدك؟"
 needs_courses: false
 
 ═══ type=defensive ═══
@@ -321,59 +315,6 @@ Examples:
   ❌ "البرنامج مش بيشتغل" (مش واضح أي برنامج)
   ❌ "مشكلة في اللابتوب" (مش مشكلة منصة)
 Reply: حل سريع إن أمكن + تحويل للدعم مع رابط
-needs_courses: false
-
-═══ type=guide_feature ═══
-🎯 **CRITICAL TRIGGER — متى تستخدم هذا النوع:**
-
-Triggers: أي سؤال عن **ميزة موجودة جوه الكورس** في زيكو المرشد التعليمي
-
-**Explicit triggers:**
-- "مافي ترجمة للمصطلحات" / "ترجمة عربي للمصطلحات"
-- "مش فاهم الدرس" / "عايز ملخص"
-- "عايز اختبار" / "عايز تمرين"
-- "في أخطاء شائعة؟"
-- "عايز أحمل الدرس"
-- أي سؤال عن **محتوى** الكورس
-
-**Reply template:**
-"[الميزة] موجودة! 🎓
-
-ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:
-✅ [اسم الميزة المحددة]
-✅ [ميزة ثانية ذات صلة]
-✅ [ميزة ثالثة]
-
-زيكو المرشد موجود في كل كورس وبيساعدك 24/7! 😊
-
-محتاج مساعدة في **اختيار** كورس؟ أنا هنا! 🚀"
-
-**Examples:**
-
-User: "مافي ترجمة للمصطلحات"
-→ type: "guide_feature"
-→ Reply: "المصطلحات موجودة! 🎓
-
-ادخل على أي كورس، اضغط على زيكو المرشد التعليمي، هتلاقي:
-✅ مصطلحات الدرس (ترجمة عربي + إنجليزي لكل مصطلح)
-✅ شرح مفصل لكل مصطلح
-✅ شات مباشر لترجمة أي مصطلح
-
-زيكو المرشد بيساعدك 24/7! 😊
-محتاج مساعدة في اختيار كورس؟ أنا هنا! 🚀"
-
-User: "مش فاهم الدرس"
-→ type: "guide_feature"
-→ Reply: "زيكو المرشد هنا عشان يساعدك! 🎓
-
-ادخل الكورس واضغط على زيكو المرشد، هيقدر:
-✅ يشرحلك بطريقة أخرى
-✅ يعملك ملخص للدرس
-✅ يجاوب على أي سؤال
-✅ 4 مستويات شرح (طفل → متقدم)
-
-محتاج مساعدة في اختيار كورس؟ أنا هنا! 🚀"
-
 needs_courses: false
 
 ═══ type=subscription ═══
@@ -574,259 +515,99 @@ If user already got courses but says:
 → Simplify to 2-3 options ONLY
 → Help them decide with guidance
 
-🎯 **HOW TO GENERATE CLARIFY OPTIONS (NO HARDCODED EXAMPLES!):**
+clarify_question: "سؤال توضيحي مختلف عن سؤال المستخدم"
+clarify_options: [
+  "لغات أجنبية (إنجليزي، فرنسي، ألماني)",
+  "برمجة وتطوير (Python, JavaScript, مواقع)",
+  "تصميم جرافيك (Photoshop, Illustrator)",
+  "تسويق رقمي (فيسبوك، سوشيال ميديا)"
+]
 
-clarify_question: "Ask what field they're interested in"
-
-clarify_options: Generate 3-4 DIVERSE popular categories based on:
-- Most common fields in our platform
-- Mix of categories: Languages, Tech/Programming, Creative/Design, Business/Marketing
-- Each option MUST include 2-3 specific examples in parentheses
-- Examples MUST be real course topics we offer
-- **CRITICAL: Generate COMPLETELY DIFFERENT options each time!**
-
-**Generation Rules:**
-✅ Use variety - don't repeat same patterns
-✅ Each option format: "Category Name (example1، example2، example3)"
-✅ Make options diverse across different fields
-✅ Get creative with category names
-❌ NEVER use same wording twice
-❌ NEVER copy from previous responses
-❌ NO templates, NO patterns, NO repetition!
-
-**Approach:**
-1. Think: What are 4 completely different learning paths?
-2. For EACH path, choose specific tools/topics (not generic words)
-3. Vary the category names creatively
-4. Change the examples every single time
-5. Draw from different areas of the platform
-
-**Why this matters:**
-- User gets these options to DISCOVER what interests them
-- Show them the BREADTH of what we offer
-- Each suggestion should feel fresh and specific
-- Variety helps them explore unexpected paths
-
-**Remember:** 
-NO fixed examples in this prompt! Generate truly dynamic options based on:
-- What courses we actually have
-- What beginners typically need
-- Career-focused vs hobby-focused balance
-- Current market demand
+**Options must be:**
+- ✅ Specific and clear
+- ✅ Include examples in parentheses
+- ❌ NOT generic: "لغات", "تقنية", "تصميم"
+- ✅ YES specific: "لغات أجنبية (إنجليزي)", "برمجة (Python)"
 
 needs_courses: false
 
 ═══════════════════════════════════════════════════════════
-║ 🧠 KEYWORDS EXTRACTION — WORLD-CLASS INTELLIGENT EXTRACTION
+║ 🧠 KEYWORDS EXTRACTION — INTELLIGENT MULTI-KEYWORD
 ═══════════════════════════════════════════════════════════
+1. **حلل الجملة كاملة** — مش كلمة واحدة بس
+2. **اربط المهنة/الصناعة بالمهارات** المطلوبة
+3. **افهم السياق** وراء الطلب
+4. **حل الكلمات الغامضة** بذكاء
+5. **استخرج 3-7 keywords** (مش واحدة!)
 
-🎯 **YOUR MISSION:**
-Extract 5-10 highly relevant keywords that will find the BEST courses for this user.
+📌 **أمثلة الاستخراج الذكي:**
 
-🧠 **THINKING PROCESS (Chain-of-Thought):**
+**مهن محددة (اربط بالأدوات):**
+- "أنا مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي"]
+- "أنا دكتور" → ["إدارة عيادات", "تسويق طبي", "مهارات تواصل", "محاسبة طبية"]
+- "معلمة ابتدائي" → ["تعليم أطفال", "أدوات تعليمية", "إدارة صف", "تربية"]
+- "بشتغل في مطعم" → ["إدارة مطاعم", "محاسبة", "تسويق", "خدمة عملاء"]
+- "محاسب في شركة" → ["excel", "محاسبة مالية", "تحليل مالي", "erp"]
 
-STEP 1: IDENTIFY THE CORE INTENT
-- What is the user trying to achieve?
-- What profession/job/role do they have?
-- What problem are they solving?
-- What goal are they pursuing?
+**أهداف عامة (استنتج المهارات):**
+- "عايز أشتغل من البيت" → ["فريلانس", "تصميم", "برمجة", "كتابة محتوى", "تسويق"]
+- "محتاج دخل إضافي" → ["تجارة إلكترونية", "فريلانس", "استثمار", "تسويق بالعمولة"]
+- "عايز أعمل مشروع صغير" → ["ريادة أعمال", "تسويق", "إدارة أعمال", "تجارة"]
+- "نفسي أبقى مشهور على السوشيال" → ["محتوى", "تصوير", "مونتاج", "سوشيال ميديا"]
 
-STEP 2: MAP TO TOOLS & SKILLS
-- Profession → What software/tools do they need?
-- Goal → What skills will get them there?
-- Problem → What knowledge solves it?
+**سياق مختلط (اجمع كل العناصر):**
+- "عايز أعمل فيديوهات يوتيوب" → ["مونتاج", "premiere", "تصوير", "كتابة محتوى", "يوتيوب"]
+- "محتاج أصمم بوستات للفيسبوك" → ["photoshop", "canva", "تصميم سوشيال", "محتوى مرئي"]
+- "عايز أعمل موقع لشركتي" → ["wordpress", "تصميم مواقع", "سيو", "استضافة"]
+- "بدي أتعلم صناعة المحتوى" → ["كتابة", "تصوير", "مونتاج", "سوشيال ميديا", "محتوى"]
 
-STEP 3: EXPAND WITH SYNONYMS & VARIATIONS
-- Arabic + English terms
-- Brand names + generic terms
-- Formal + colloquial terms
+**كلمات غامضة (حلها بذكاء):**
+- "عايز أتعلم تصميم جداول" → ["excel", "جداول", "تنسيق", "بيانات", "charts"]
+- "محتاج أتعلم الديزاين" → ["تصميم جرافيك", "فوتوشوب", "illustrator"]
+- "عايز أبقى ميديا بايير" → ["facebook ads", "إعلانات", "تسويق رقمي", "تحليل"]
 
-STEP 4: PRIORITIZE BY RELEVANCE
-- Core tools/skills FIRST
-- Supporting skills SECOND
-- General related topics THIRD
+**عمر/مرحلة (اختر المناسب):**
+- "ابني عنده 8 سنين" → ["برمجة للأطفال", "scratch", "روبوت", "تعليم ممتع"]
+- "بنتي في الجامعة" → ["برمجة", "تصميم", "تسويق", "مهارات مهنية"]
 
-STEP 5: VALIDATE
-- Do I have 5-10 keywords? (If less → expand more)
-- Will these keywords find relevant courses? (If no → rethink)
-- Did I miss obvious tools? (If yes → add them)
+**صناعات محددة:**
+- "بشتغل في العقارات" → ["تسويق عقاري", "مبيعات", "تصوير عقارات", "crm"]
+- "عندي محل ملابس" → ["تجارة إلكترونية", "تسويق", "سوشيال ميديا", "تصوير منتجات"]
+- "بشتغل في البنك" → ["excel", "تحليل مالي", "محاسبة", "بيانات"]
 
-═══════════════════════════════════════════════════════════
-📚 **CRITICAL KNOWLEDGE BASE:**
-═══════════════════════════════════════════════════════════
+**لغات برمجة:**
+- "عايز أتعلم Python" → ["python", "بايثون", "برمجة"]
+- "JavaScript للويب" → ["javascript", "js", "مواقع", "web", "html", "css"]
+- "Full Stack Developer" → ["html", "css", "javascript", "php", "node", "مواقع", "backend"]
 
-**PROFESSIONS → TOOLS (PRIORITY ORDER!):**
+**تصميم:**
+- "تصميم جرافيك" → ["جرافيك", "فوتوشوب", "illustrator", "تصميم"]
+- "UI/UX Design" → ["ui", "ux", "figma", "xd", "تصميم واجهات"]
 
-🏗️ **Engineering & Technical:**
-مهندس مدني → 🎯 PRIORITY: ["autocad", "revit", "civil 3d"] + ["هندسة مدنية", "إدارة مشاريع", "رسم هندسي"]
-مهندس معماري → ["autocad", "revit", "3ds max", "عمارة", "رسم معماري"]
-مهندس ميكانيكا → ["autocad", "solidworks", "mechanical design", "هندسة ميكانيكية"]
-مهندس كهرباء → ["autocad electrical", "plc", "كهرباء", "circuits"]
+**تسويق:**
+- "تسويق رقمي" → ["تسويق", "digital marketing", "سوشيال", "إعلانات", "سيو"]
+- "إعلانات فيسبوك" → ["facebook", "فيسبوك", "ads", "إعلانات", "تسويق"]
 
-👨‍⚕️ **Medical:**
-دكتور → ["إدارة عيادات", "تسويق طبي", "محاسبة طبية", "تواصل مع مرضى"]
-صيدلي → ["إدارة صيدليات", "محاسبة", "تسويق"]
+🚫 **أخطاء شائعة — ممنوع!**
+❌ "أنا مهندس مدني" → ["مهندس"] (كلمة واحدة!)
+❌ "بشتغل في مطعم" → ["مطعم"] (ناقص!)
+❌ "عايز أتعلم تصميم جداول" → ["تصميم"] (نسى جداول!)
 
-👨‍🏫 **Education:**
-معلم/معلمة → ["تعليم", "تربية", "إدارة صف", "استراتيجيات تدريس", "kids education"]
-معلمة ابتدائي → ["تعليم أطفال", "إدارة صف", "تربية", "طرق تدريس", "kids activities"]
+✅ **صح:**
+✅ "أنا مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "مشاريع"]
+✅ "بشتغل في مطعم" → ["إدارة مطاعم", "محاسبة", "تسويق"]
+✅ "عايز أتعلم تصميم جداول" → ["excel", "جداول", "تنسيق", "بيانات"]
 
-💼 **Business:**
-محاسب → 🎯 PRIORITY: ["excel", "اكسيل"] + ["محاسبة", "تحليل مالي", "قيود", "erp", "مالية"]
-مدير → ["إدارة", "قيادة", "management", "موارد بشرية", "تخطيط"]
-موظف بنك → ["excel", "تحليل", "بيانات", "محاسبة", "مالية"]
-
-🎨 **Creative:**
-مصمم → ["photoshop", "illustrator", "جرافيك", "تصميم", "فوتوشوب"]
-مصمم داخلي → ["3ds max", "تصميم داخلي", "ديكور", "interior design"]
-
-💻 **Tech:**
-مبرمج → ["python", "javascript", "برمجة", "coding", "programming"]
-مسوّق → ["تسويق", "marketing", "سوشيال ميديا", "إعلانات", "facebook ads"]
-
-🍽️ **Service Industry:**
-صاحب مطعم → ["إدارة مطاعم", "محاسبة", "تسويق", "خدمة عملاء", "food business"]
-صاحب محل → ["إدارة متاجر", "محاسبة", "تسويق", "مبيعات", "retail"]
-
-**GOALS → SKILLS:**
-شغل من البيت → فريلانس, تصميم, برمجة, محتوى, تسويق, كتابة
-دخل إضافي → تجارة إلكترونية, فريلانس, استثمار, تسويق بالعمولة
-مشروع صغير → ريادة أعمال, تسويق, إدارة, تجارة, مشاريع
-مشهور سوشيال → محتوى, تصوير, مونتاج, سوشيال ميديا, يوتيوب
-فيديوهات يوتيوب → مونتاج, premiere, تصوير, محتوى, يوتيوب, video
-موقع ويب → wordpress, تصميم مواقع, html, css, سيو
-
-**VAGUE TERMS → SPECIFIC:**
-"ديزاين" → تصميم جرافيك, فوتوشوب, illustrator, photoshop
-"جداول" → excel, اكسيل, spreadsheet, بيانات, جداول
-"برمجة" → python, javascript, programming, برمجة, coding
-"تسويق" → تسويق رقمي, سوشيال ميديا, إعلانات, facebook, marketing
-"محتوى" → كتابة محتوى, تصوير, مونتاج, سوشيال, content
-
-**AGE/STAGE → CONTENT:**
-طفل 5-10 سنين → scratch, برمجة للأطفال, روبوت, kids coding
-طفل 10-15 سنين → python kids, روبوت, برمجة مبسطة, game design
-جامعي → برمجة, تصميم, تسويق, مهارات مهنية, career
-متقاعد → هوايات, استثمار, مهارات شخصية, تعلم
-
-═══════════════════════════════════════════════════════════
-✅ **EXTRACTION EXAMPLES (Follow This Pattern!):**
-═══════════════════════════════════════════════════════════
-
-Example 1: 🏗️ **CRITICAL: Civil Engineer**
-User: "أنا مهندس مدني محتاج أطور نفسي"
-→ THINKING:
-  Profession: مهندس مدني (Civil Engineer)
-  🎯 ESSENTIAL TOOLS (TOP PRIORITY): AutoCAD, Revit, Civil 3D
-  Why AutoCAD first? → Most fundamental tool for civil engineers
-  Also needed: Project management, technical drawing
-  Arabic+English mix: هندسة مدنية, civil engineering
-→ KEYWORDS: ["autocad", "revit", "civil 3d", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي", "civil engineering", "تصميم إنشائي"]
-→ COUNT: 8 ✅
-→ PRIORITY ORDER: AutoCAD > Revit > Civil 3D > Project Management
-
-🚨 **CRITICAL RULE FOR ENGINEERS:**
-ANY engineering profession → ALWAYS include relevant CAD software FIRST!
-- مهندس مدني → autocad, revit, civil 3d
-- مهندس معماري → autocad, revit, 3ds max
-- مهندس ميكانيكا → autocad, solidworks
-- مهندس كهرباء → autocad electrical
-
-Example 2:
-User: "عايز أشتغل من البيت"
-→ THINKING:
-  Goal: عمل من المنزل = فريلانس
-  Best freelance skills: تصميم (in demand), برمجة (high pay), كتابة (easy start), تسويق (needed), مونتاج
-  Arabic+English: freelance, فريلانس
-→ KEYWORDS: ["فريلانس", "freelance", "تصميم", "design", "برمجة", "programming", "كتابة محتوى", "content writing", "تسويق", "marketing"]
-→ COUNT: 10 ✅
-
-Example 3:
-User: "محتاج أتعلم أعمل جداول"
-→ THINKING:
-  Core: "جداول" = Excel (99% certain!)
-  NOT graphic design tables!
-  Skills: spreadsheet, تنسيق, formulas, charts
-→ KEYWORDS: ["excel", "اكسيل", "جداول", "spreadsheet", "تنسيق بيانات", "معادلات", "charts"]
-→ COUNT: 7 ✅
-
-Example 4:
-User: "عايز أتعلم الديزاين"
-→ THINKING:
-  "ديزاين" vague → assume graphic design (most common)
-  Core tools: Photoshop, Illustrator
-  Related: تصميم جرافيك, تصميم سوشيال
-→ KEYWORDS: ["تصميم جرافيك", "graphic design", "فوتوشوب", "photoshop", "illustrator", "تصميم"]
-→ COUNT: 6 ✅
-
-Example 5:
-User: "ابني عنده 8 سنين عايز أعلمه"
-→ THINKING:
-  Age: 8 years = visual programming (Scratch)
-  NOT text-based coding!
-  Related: روبوت, تعليم ممتع
-→ KEYWORDS: ["scratch", "برمجة للأطفال", "kids coding", "روبوت", "تعليم ممتع", "برمجة مرئية"]
-→ COUNT: 6 ✅
-
-Example 6:
-User: "بشتغل في محل ملابس محتاج أطور المبيعات"
-→ THINKING:
-  Business: retail clothing
-  Problem: improve sales → marketing, online presence
-  Tools: social media, ecommerce, photography
-→ KEYWORDS: ["تجارة إلكترونية", "ecommerce", "تسويق", "marketing", "سوشيال ميديا", "social media", "تصوير منتجات", "product photography", "فيسبوك", "facebook"]
-→ COUNT: 10 ✅
-
-═══════════════════════════════════════════════════════════
-🚨 **CRITICAL RULES:**
-═══════════════════════════════════════════════════════════
-
-1. **ALWAYS extract 5-10 keywords** (NOT 1-3!)
-2. **ALWAYS include Arabic + English** variations
-3. **"جداول" ALWAYS means Excel** (never graphic design!)
-4. **Connect profession to tools** (مهندس → AutoCAD)
-5. **Connect goal to skills** (من البيت → فريلانس)
-6. **Expand vague terms** (ديزاين → فوتوشوب + illustrator)
-7. **Consider user's age/stage** (8 years → Scratch NOT Python)
-8. **Think: "What courses would ACTUALLY help this user?"**
-
-═══════════════════════════════════════════════════════════
-❌ **COMMON MISTAKES — NEVER DO THIS:**
-═══════════════════════════════════════════════════════════
-
-❌ "مهندس مدني" → ["مهندس"] (TOO VAGUE!)
-✅ "مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "مشاريع", "رسم"]
-
-❌ "عايز أتعلم تصميم" → ["تصميم"] (TOO GENERIC!)
-✅ "عايز أتعلم تصميم" → ["فوتوشوب", "photoshop", "illustrator", "تصميم جرافيك"]
-
-❌ "جداول" → ["تصميم", "جداول"] (WRONG DOMAIN!)
-✅ "جداول" → ["excel", "اكسيل", "جداول", "بيانات", "spreadsheet"]
-
-❌ Only 2-3 keywords (NOT ENOUGH!)
-✅ Always 5-10 keywords (COMPREHENSIVE!)
+🎯 **قواعد نهائية:**
+- استخرج **3-7 keywords** على الأقل
+- **اربط المهنة بالأدوات**: مهندس → AutoCAD, دكتور → إدارة عيادات
+- **افهم الهدف**: "من البيت" → فريلانس, "دخل إضافي" → تجارة
+- **حل الغموض**: "جداول" = Excel, "ديزاين" = Photoshop
+- **"جداول" = Excel دايماً** (مش تصميم جرافيك!)
 
 ═══════════════════════════════════════════════════════════
 ║ 🧠 CRITICAL EXAMPLES — User Overwhelmed
 ═══════════════════════════════════════════════════════════
-
-Example 0: Greeting (DON'T introduce yourself again)
-User: "ازيك"
-→ type=greeting
-→ conversational_reply: "أهلاً! 😊 إزاي أقدر أساعدك النهارده؟"
-→ needs_courses: false
-
-User: "السلام عليكم"
-→ type=greeting
-→ conversational_reply: "وعليكم السلام! 🌸 حابب أساعدك في إيه؟"
-→ needs_courses: false
-
-User: "صباح الخير"
-→ type=greeting
-→ conversational_reply: "صباح النور! ☀️ إيه اللي تحب تعرفه؟"
-→ needs_courses: false
-
-🚨 CRITICAL: Never introduce yourself in greeting replies - user already knows you from welcome message!
 
 Example 1: User already got courses but overwhelmed
 User: "عاوز ازود دخلى من البيت"
@@ -1291,157 +1072,32 @@ function normQ(text) {
 function faqSimilarity(q1, q2) {
   const a = normQ(q1);
   const b = normQ(q2);
-  
-  // Exact match
   if (a === b) return 1;
-  
-  // 🎯 DOMAIN-SPECIFIC MATCHING for subscription/cancellation
-  // These are critical FAQ topics that need special handling
-  const subscriptionPatterns = {
-    cancel: ['الغي', 'الغاء', 'الغى', 'ايقاف', 'اوقف', 'cancel', 'stop'],
-    subscription: ['اشتراك', 'subscription', 'عضوية'],
-    payment: ['دفع', 'payment', 'يدفع', 'ادفع'],
-    price: ['سعر', 'اسعار', 'كام', 'price', 'cost'],
-    refund: ['استرداد', 'استرجاع', 'refund', 'return']
-  };
-  
-  // Check if both questions are about the same critical topic
-  let topicMatchBonus = 0;
-  for (const [topic, patterns] of Object.entries(subscriptionPatterns)) {
-    const q1HasTopic = patterns.some(p => a.includes(p));
-    const q2HasTopic = patterns.some(p => b.includes(p));
-    
-    if (q1HasTopic && q2HasTopic) {
-      topicMatchBonus += 0.5; // Big bonus for same topic
-    }
-  }
-  
-  // Extract words (minimum 2 chars to avoid noise)
-  const wordsA = a.split(' ').filter(w => w.length >= 2);
-  const wordsB = b.split(' ').filter(w => w.length >= 2);
-  
-  if (wordsA.length === 0 || wordsB.length === 0) return 0;
-  
-  // Count common words
+  const wa = new Set(a.split(' ').filter(w => w.length > 2));
+  const wb = new Set(b.split(' ').filter(w => w.length > 2));
+  if (wa.size === 0 || wb.size === 0) return 0;
   let common = 0;
-  const setB = new Set(wordsB);
-  
-  wordsA.forEach(wordA => {
-    // Exact match
-    if (setB.has(wordA)) {
-      common++;
-      return;
-    }
-    
-    // Substring match (for word variations)
-    // e.g., "اشتراك" matches "اشتراكي"
-    wordsB.forEach(wordB => {
-      if (wordA.length >= 3 && wordB.length >= 3) {
-        // If one word contains the other (min 3 chars)
-        if (wordA.includes(wordB) || wordB.includes(wordA)) {
-          common += 0.8; // Partial credit
-        }
-      }
-    });
-  });
-  
-  // Calculate similarity
-  const maxSize = Math.max(wordsA.length, wordsB.length);
-  const baseSimilarity = common / maxSize;
-  
-  // Add topic bonus (capped at 1.0)
-  return Math.min(1.0, baseSimilarity + topicMatchBonus);
+  wa.forEach(w => { if (wb.has(w)) common++; });
+  return common / Math.max(wa.size, wb.size);
 }
 
-async function findFAQAnswer(message, threshold = 0.35) {
+async function findFAQAnswer(message, threshold = 0.55) {
   try {
     const faqs = await loadAllFAQs();
     if (!faqs || faqs.length === 0) return null;
-    
     let best = null, bestScore = 0;
-    
     for (const faq of faqs) {
       const score = faqSimilarity(message, faq.question);
-      if (score > bestScore) { 
-        bestScore = score;
-        best = faq;
-      }
+      if (score > bestScore) { bestScore = score; best = faq; }
     }
-    
-    // 🎯 Lower threshold for critical topics
-    const criticalKeywords = ['الغي', 'الغاء', 'cancel', 'استرداد', 'refund'];
-    const isCritical = criticalKeywords.some(k => message.toLowerCase().includes(k));
-    const effectiveThreshold = isCritical ? 0.25 : threshold;
-    
-    if (bestScore >= effectiveThreshold && best) {
-      console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)}, threshold: ${effectiveThreshold})`);
-      
-      // 🎯 Smart FAQ Response - tailor based on user's actual question
-      const smartAnswer = await smartFAQResponse(message, best.answer);
-      return markdownToHtml(smartAnswer);
+    if (bestScore >= threshold && best) {
+      console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)})`);
+      return markdownToHtml(best.answer);
     }
-    
-    // Debug: log near misses
-    if (best && bestScore >= 0.20) {
-      console.log(`⚠️ FAQ near-miss: "${best.question}" (score: ${bestScore.toFixed(2)}, needed: ${effectiveThreshold})`);
-    }
-    
     return null;
   } catch(e) {
     console.error("FAQ match error:", e.message);
     return null;
-  }
-}
-
-// ══════════════════════════════════════════════════════════
-// Smart FAQ Response - Tailor FAQ answer to user's question
-// ══════════════════════════════════════════════════════════
-async function smartFAQResponse(userMessage, faqAnswer) {
-  try {
-    const prompt = `المستخدم سأل: "${userMessage}"
-
-إجابة FAQ:
-${faqAnswer}
-
-🎯 **مهمتك: اجعل الإجابة قصيرة ومباشرة ودقيقة**
-
-**قواعد صارمة:**
-1. ✅ أجب على سؤاله المحدد فقط (لا تضيف معلومات غير مطلوبة!)
-2. ✅ استخدم المعلومات من FAQ فقط (لا تخترع خطوات!)
-3. ✅ لو في خطوات → رقّمها بوضوح
-4. ✅ 3-5 أسطر maximum (إلا لو خطوات كتير)
-5. ❌ لا تذكر "استرداد" إلا لو سأل عنه
-6. ❌ لا تقترح حلول غير موجودة في FAQ
-7. ❌ لا تكرر معلومات - اجب مرة واحدة فقط
-
-**أمثلة:**
-
-User: "مش لاقي الكورسات"
-FAQ: "اختر دوراتي من القائمة الرئيسية..."
-✅ صح: "اختر 'دوراتي' من القائمة الرئيسية هتلاقي كل الكورسات اللي اشتركت فيها.
-        لو المشكلة لسه موجودة، تواصل مع الدعم."
-❌ غلط: "تحقق من حسابك... اذهب للمكتبة... للأسف لا يمكن استرداد..."
-
-User: "ازاى الغى الاشتراك"
-FAQ: "خطوات الإلغاء... + سياسة الاسترداد..."
-✅ صح: "1️⃣ ادخل حسابك
-        2️⃣ البروفايل > إدارة الاشتراك > إلغاء
-        ✅ هيفضل شغال لحد نهاية الفترة"
-❌ غلط: "للأسف الاشتراكات غير قابلة للاسترداد..." (ماسألش عن استرداد!)
-
-**التزم بالقواعد - كن قصيراً ودقيقاً!**`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2, // أقل للدقة
-      max_tokens: 200, // أقل للإيجاز
-      messages: [{ role: "user", content: prompt }]
-    });
-
-    return response.choices[0]?.message?.content?.trim() || faqAnswer;
-  } catch (e) {
-    console.error("Smart FAQ response error:", e.message);
-    return faqAnswer; // Fallback to original
   }
 }
 
@@ -1454,53 +1110,7 @@ async function askZiko(message, session, botInstructions, extraContext = "") {
     content: h.content.substring(0, 300)
   }));
 
-  const systemPrompt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 CRITICAL EXAMPLES - LEARN FROM THESE FIRST
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📚 EXAMPLES OF CORRECT RESPONSES (Follow these patterns EXACTLY):
-
-User: "في تحديثات جديدة؟"
-Assistant: "التحديثات موجودة! 🎓<br><br>ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:<br>✅ آخر التحديثات في المجال<br>✅ تقنيات وأدوات جديدة<br><br>زيكو المرشد موجود في كل كورس! 😊"
-
-User: "عايز شرح مبسط للأطفال"
-Assistant: "زيكو المرشد عنده 4 مستويات شرح! 🎓<br><br>👶 طفل: شرح بسيط جداً<br>🎓 مبتدئ: خطوة بخطوة<br>📚 طالب: بأمثلة عملية<br>🎯 متقدم: تقني وعميق<br><br>ادخل الكورس واضغط على زيكو المرشد! 😊"
-
-User: "مش قادر أدفع بالكارت"
-Assistant: "لو الكارت مش شغال، تقدر تدفع عن طريق:<br><br>📱 فودافون كاش: 01027007899<br>⏰ التفعيل خلال 24 ساعة<br><br>بعد الدفع، ابعت إيصال الدفع على الواتساب وهيتم التفعيل! 😊"
-
-User: "ممكن أدفع بالجنيه المصري؟"
-Assistant: "الدفع من خلال المنصة بالدولار 💵<br><br>لكن تقدر تدفع بالجنيه المصري عن طريق:<br>📱 فودافون كاش: 01027007899<br><br>ابعت إيصال الدفع على الواتساب! 😊"
-
-User: "عايز اشتغل محاضر عندكم"
-Assistant: "عايز تضيف كورس على المنصة؟ 🎓<br><br>🔗 سجل من هنا: https://easyt.online/p/author<br><br>الفريق هيتواصل معاك لاستكمال الإجراءات! 😊"
-
-User: "ينفع أقسط الاشتراك؟"
-Assistant: "للأسف مفيش تقسيط حالياً 😊<br><br>لكن الأسعار مناسبة جداً:<br>💰 شهري: 25$<br>💰 سنوي: 59$ (وفر 241$!)<br>💰 كورس واحد: من 6.99$<br><br>عايز مساعدة في اختيار الأنسب؟ 🚀"
-
-User: "الاشتراك بيشمل الكتب؟"
-Assistant: "الكتب مش مشمولة في الاشتراك 📚<br><br>الاشتراك بيشمل:<br>✅ 600+ كورس ودبلومة<br>✅ محتوى فيديو شامل<br>✅ شهادات معتمدة<br><br>الكتب بتتشترى منفصلة من:<br>🔗 https://easyt.online/p/easyt-ebooks"
-
-User: "المنصة دي ازاي؟"
-Assistant: "منصة إيزي تي — منصة تعليمية عربية شاملة! 🎓<br><br>📊 600+ كورس ودبلومة في كل المجالات<br>💰 اشتراك سنوي: 59$ (وصول لكل المحتوى!)<br>🎯 23+ سنة خبرة<br>👥 750,000+ متعلم<br><br>المجالات:<br>• جرافيك وتصميم<br>• برمجة وتطوير<br>• ذكاء اصطناعي<br>• تسويق رقمي<br>• وأكتر بكتير!<br><br>عايز تتعلم إيه؟ 😊"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ CRITICAL: Match user questions to these patterns FIRST
-⚠️ If similar question found, follow the EXACT response pattern
-⚠️ Do NOT deviate from these proven correct responses
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${botInstructions && botInstructions.trim() ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ SPECIAL ADMIN INSTRUCTIONS - EXECUTE AFTER EXAMPLES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${botInstructions}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-` : ""}
-
-أنت "زيكو" — مساعد الدعم الفني والمستشار التعليمي في منصة إيزي تي.
+  const systemPrompt = `أنت "زيكو" — مساعد الدعم الفني والمستشار التعليمي في منصة إيزي تي.
 
 🎯 **شخصيتك:**
 - مساعد دعم فني ومستشار — **مش بائع كورسات**
@@ -1530,104 +1140,8 @@ ${botInstructions}
 → "Photoshop بياخد موارد كتير — جرب:<br>• قلل الـ History States من Edit > Preferences<br>• زود الـ RAM المخصص للبرنامج<br>• قفل البرامج التانية وانت شغال<br><br>عايز تحترف Photoshop؟ عندنا كورسات من الصفر! 🎨"
 
 **3. الفرق بينك وبين زيكو المرشد التعليمي:**
-
-🎯 **أنت (زيكو المساعد):** بتساعد المستخدم يختار الكورسات المناسبة
-🎓 **زيكو المرشد التعليمي:** موجود جوه كل كورس وكل دبلومة، بيساعد في الفهم والتطبيق
-
-════════════════════════════════════════════
-📚 **إمكانيات زيكو المرشد التعليمي:**
-════════════════════════════════════════════
-
-لما المستخدم يدخل أي كورس أو دبلومة، هيلاقي **زيكو المرشد التعليمي** 
-اللي بيقدر يساعده في:
-
-**🧠 فهم المحتوى:**
-
-1️⃣ **ملخص الدرس**
-   - إنفوجراف مرئي + ملخص مفصل
-   - ملخص منظم لكل موضوعات الدرس في نقاط واضحة
-
-2️⃣ **شرح بطريقة أخرى**
-   - لو مش فاهم الشرح، زيكو يعيد الشرح بأسلوب مختلف
-   - أمثلة جديدة وطرق تفكير مختلفة
-
-3️⃣ **مصطلحات الدرس** 📖
-   - قاموس كامل لكل المصطلحات التقنية
-   - ترجمة عربي + إنجليزي لكل مصطلح
-   - شرح مبسط لكل مصطلح
-   - **من قائمة أدوات زيكو → اختار "مصطلحات الدرس"**
-
-**✅ تقييم وتطبيق:**
-
-4️⃣ **اختبار تفاعلي**
-   - اختبارات متعددة الخيارات (5-15 سؤال)
-   - يقيّم فهمك ويديك درجة فورية
-   - شرح للإجابة الصحيحة بعد كل سؤال
-
-5️⃣ **تمرين عملي**
-   - تمارين عملية للتطبيق
-   - مشاريع صغيرة لتطبيق ما تعلمته
-
-6️⃣ **أسئلة تحليلية**
-   - أسئلة مفتوحة تحتاج تفكير
-   - زي أسئلة الامتحانات الحقيقية
-
-**📡 معلومات إضافية:**
-
-7️⃣ **أخطاء شائعة**
-   - أكثر الأخطاء اللي بيقع فيها الطلاب
-   - إزاي تتجنبها
-
-8️⃣ **آخر التحديثات**
-   - أحدث المستجدات في الموضوع ده
-   - تقنيات وأدوات جديدة
-
-9️⃣ **تحميل موارد الدرس**
-   - PDF شامل بكل محتوى الدرس
-   - للمذاكرة أوفلاين
-
-**💬 الشات المباشر مع زيكو:**
-
-🔟 **اسأل أي سؤال**
-   - زيكو يفهم محتوى الدرس ويقدر يجاوب على أي سؤال
-   - يشرح، يوضح، يدي أمثلة، يترجم مصطلحات
-
-1️⃣1️⃣ **مستويات الشرح** (4 مستويات):
-   - 👶 **طفل:** شرح بسيط جداً للأطفال
-   - 🎓 **مبتدئ:** شرح مبسط خطوة بخطوة
-   - 📚 **طالب:** شرح متوازن بأمثلة عملية
-   - 🎯 **متقدم:** شرح تقني وأكاديمي عميق
-
-════════════════════════════════════════════
-🎯 **متى توجه المستخدم لزيكو المرشد:**
-════════════════════════════════════════════
-
-لو المستخدم سأل عن:
-❌ "في ترجمة عربي للمصطلحات؟"
-❌ "عايز أختبر نفسي"
-❌ "مش فاهم الدرس"
-❌ "عايز ملخص"
-❌ "في تمارين؟"
-❌ "عايز أطبق اللي اتعلمته"
-❌ أي سؤال عن **محتوى** الكورس
-
-→ **وجهه لزيكو المرشد التعليمي:**
-
-"زيكو المرشد التعليمي موجود جوه كل كورس! 🎓
-
-ادخل على الكورس اللي عايز تتعلمه، هتلاقي أيقونة زيكو.
-اضغط عليها وهيساعدك في:
-
-✅ مصطلحات الدرس (ترجمة عربي لكل المصطلحات)
-✅ ملخص الدرس
-✅ اختبارات تفاعلية
-✅ تمارين عملية
-✅ شرح بطريقة أخرى
-✅ إجابة أي سؤال عن الدرس
-
-محتاج مساعدة في **اختيار** كورس؟ أنا هنا! 😊"
-
-════════════════════════════════════════════
+لو المستخدم سأل سؤال تعليمي عن محتوى كورس:
+→ "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊<br><br>لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل!<br><br>لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀"
 
 **4. الأسئلة خارج نطاق المنصة:**
 لو سؤال عام (مثلاً: "مين بنى الأهرامات؟" أو "إيه Claude؟")
@@ -1645,22 +1159,6 @@ ${botInstructions}
 - تأسست 2003 — 23 سنة خبرة
 - 750,000+ متعلم
 
-🎓 **معلومات مهمة عن الدبلومات والكورسات:**
-- الدبلومة = مجموعة كورسات مرتبطة ببعضها
-- الدبلومة **مش** كورس منفرد — هي وعاء بيجمع عدة كورسات
-- لما المستخدم يشترك في دبلومة، **مش هيلاقي اسم "الدبلومة"** في حسابه
-- بدل كده **هيلاقي كل الكورسات** اللي جوه الدبلومة ظاهرة بشكل منفرد
-
-📱 **الوصول للكورسات بعد الاشتراك:**
-1. تأكد إنك عامل تسجيل دخول بنفس الإيميل اللي اشتركت بيه
-2. اضغط على "دوراتي" من القائمة الرئيسية (أو My Courses بالإنجليزي)
-3. هتلاقي كل الكورسات اللي اشتركت فيها (سواء من اشتراك، دبلومة، أو كورس منفرد)
-4. لو اشتريت دبلومة → هتلاقي كورساتها ظاهرة في "دوراتي" (مش اسم الدبلومة نفسه)
-
-⏰ **مهم:** 
-- لو اشتريت بكريدت كارد → التفعيل فوري
-- لو اشتريت بفودافون كاش/انستاباي → ممكن ياخد لحد 24 ساعة
-
 ══ طرق الدفع ══
 - كريدت كارد → تفعيل فوري ✅
 - فودافون كاش: 01027007899 → التفعيل خلال 24 ساعة
@@ -1674,7 +1172,9 @@ ${botInstructions}
 🚨 لما تذكر الدعم:
 <a href="${WHATSAPP_LINK}" target="_blank" style="color:#25D366;font-weight:700;text-decoration:none">واتساب الدعم 💬</a>
 
-${extraContext ? `══ سياق إضافي ══\n${extraContext}\n` : ""}`;
+${extraContext ? `══ سياق إضافي ══\n${extraContext}\n` : ""}
+══ تعليمات الأدمن ══
+${botInstructions || "لا توجد تعليمات"}`;
 
   const resp = await gptWithRetry(() => openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -2002,31 +1502,8 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
         userMessage = "هتتعلم الأدوات والتقنيات اللي المحترفين بيستخدموها";
       } else {
         // fallback: نستخدم الـ why كما هو لكن نخليه أكثر فايدة
-        userMessage = result.why
-          // إزالة كل الـ internal patterns
-          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل|سأل|عبّر عن|أظهر|يبحث عن)/gi, "")
-          .replace(/اهتمامه ب/gi, "")
-          .replace(/اهتمام.*?ب/gi, "")
-          .replace(/رغبته في/gi, "")
-          .replace(/يريد/gi, "")
-          .replace(/أنه/gi, "")
-          .replace(/يبحث عن/gi, "")              // NEW
-          .replace(/مما يدل على.*?\./gi, "")  // إزالة "مما يدل على..."
-          .replace(/،\s*مما.*$/gi, "")           // إزالة ", مما يدل..."
-          .replace(/عن\s+وجود/gi, "")           // إزالة "عن وجود"
-          .replace(/يتعلق ب/gi, "")             // إزالة "يتعلق ب"
-          .replace(/ولكنه (لا يعرف|غير متأكد|مش عارف)/gi, "") // إزالة "ولكنه لا يعرف"
-          .replace(/كيف(ية)?\.?$/gi, "")        // إزالة "كيف" في الآخر
-          .replace(/^كورس\s+/gi, "")            // NEW - إزالة "كورس" في البداية
-          .replace(/\s+كورس$/gi, "")            // NEW - إزالة "كورس" في النهاية
-          .replace(/^ال/gi, "")                 // NEW - إزالة "ال" في البداية
-          .replace(/\s+/g, " ")                 // تنظيف المسافات
-          .replace(/^،\s*/g, "")                // إزالة فاصلة في البداية
-          .replace(/،\s*$/g, "")                // إزالة فاصلة في النهاية
-          .trim();
-        
-        // لو النص بقى قصير جداً أو فاضي → استخدم default
-        if (userMessage.length < 15 || !userMessage) {
+        userMessage = result.why.replace(/المستخدم (قال|ذكر|أبدى)/gi, "").trim();
+        if (userMessage.length < 20) {
           userMessage = "مناسب لمستواك وأهدافك";
         }
       }
@@ -2075,61 +1552,7 @@ async function smartChat(message, sessionId, userId = null) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!message) return { reply: "", suggestions: [] }; // Empty - widget handles welcome
-
-  // 🎯 CRITICAL: Hard-coded responses for priority questions
-  // These MUST be checked BEFORE any GPT call or intent analysis
-  const msg = message.toLowerCase().trim();
-  
-  // Q8: تحديثات جديدة
-  if ((msg.includes("تحديث") || msg.includes("جديد")) && (msg.includes("في") || msg.includes("فيه") || msg.includes("موجود"))) {
-    return { reply: finalizeReply("التحديثات موجودة! 🎓<br><br>ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:<br>✅ آخر التحديثات في المجال<br>✅ تقنيات وأدوات جديدة<br>✅ معلومات محدثة باستمرار<br><br>زيكو المرشد موجود في كل كورس! 😊"), suggestions: [] };
-  }
-  
-  // Q9: شرح للأطفال / شرح مبسط
-  if ((msg.includes("أطفال") || msg.includes("طفل") || msg.includes("ابن") || msg.includes("بنت")) && (msg.includes("شرح") || msg.includes("تعل"))) {
-    return { reply: finalizeReply("زيكو المرشد عنده 4 مستويات شرح! 🎓<br><br>👶 طفل: شرح بسيط جداً للأطفال<br>🎓 مبتدئ: شرح مبسط خطوة بخطوة<br>📚 طالب: شرح متوازن بأمثلة عملية<br>🎯 متقدم: شرح تقني وأكاديمي عميق<br><br>ادخل الكورس واضغط على زيكو المرشد! 😊"), suggestions: [] };
-  }
-  
-  // Q15: مش قادر أدفع بالكارت
-  if (msg.includes("مش قادر") && (msg.includes("دفع") || msg.includes("ادفع")) && (msg.includes("كارت") || msg.includes("بطاق"))) {
-    return { reply: finalizeReply("لو الكارت مش شغال، تقدر تدفع عن طريق:<br><br>📱 فودافون كاش: 01027007899<br>⏰ التفعيل خلال 24 ساعة<br><br>بعد الدفع، ابعت إيصال الدفع على <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#25D366;font-weight:700;text-decoration:none\">واتساب الدعم 💬</a> وهيتم التفعيل! 😊"), suggestions: [] };
-  }
-  
-  // Q22: دفع بالجنيه المصري - CRITICAL (معلومة غلط!)
-  if ((msg.includes("دفع") || msg.includes("ادفع")) && (msg.includes("مصر") || msg.includes("جنيه"))) {
-    return { reply: finalizeReply("الدفع من خلال المنصة بالدولار 💵<br><br>لكن تقدر تدفع بالجنيه المصري عن طريق:<br>📱 فودافون كاش: 01027007899<br><br>ابعت إيصال الدفع على <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#25D366;font-weight:700;text-decoration:none\">واتساب الدعم 💬</a>! 😊"), suggestions: [] };
-  }
-  
-  // Q20: عايز اشتغل محاضر
-  if ((msg.includes("محاضر") || msg.includes("مدرس") || msg.includes("معلم")) && (msg.includes("اشتغل") || msg.includes("عايز") || msg.includes("أضيف"))) {
-    return { reply: finalizeReply("عايز تضيف كورس على المنصة؟ 🎓<br><br>🔗 سجل من هنا: <a href=\"https://easyt.online/p/author\" target=\"_blank\" style=\"color:#e63946;font-weight:700;text-decoration:underline\">https://easyt.online/p/author</a><br><br>الفريق هيتواصل معاك لاستكمال الإجراءات! 😊"), suggestions: [] };
-  }
-  
-  // Q21: تقسيط الاشتراك
-  if ((msg.includes("تقسيط") || msg.includes("قسط") || msg.includes("أقساط")) && msg.includes("اشتراك")) {
-    return { reply: finalizeReply("للأسف مفيش تقسيط حالياً 😊<br><br>لكن الأسعار مناسبة جداً:<br>💰 شهري: 25$<br>💰 سنوي: 59$ (وفر 241$!)<br>💰 كورس واحد: من 6.99$<br><br>عايز مساعدة في اختيار الأنسب؟ 🚀"), suggestions: [] };
-  }
-  
-  // Q25: الاشتراك بيشمل الكتب؟
-  if (msg.includes("اشتراك") && msg.includes("كتب") && (msg.includes("بيشمل") || msg.includes("يشمل") || msg.includes("شامل"))) {
-    return { reply: finalizeReply("الكتب مش مشمولة في الاشتراك 📚<br><br>الاشتراك بيشمل:<br>✅ 600+ كورس ودبلومة<br>✅ محتوى فيديو شامل<br>✅ شهادات معتمدة<br><br>الكتب بتتشترى منفصلة من:<br>🔗 <a href=\"https://easyt.online/p/easyt-ebooks\" target=\"_blank\" style=\"color:#e63946;font-weight:700;text-decoration:underline\">https://easyt.online/p/easyt-ebooks</a>"), suggestions: [] };
-  }
-  
-  // Q30: المنصة دي ازاي؟
-  if ((msg.includes("منصة") || msg.includes("إيزي")) && (msg.includes("ازاي") || msg.includes("إيه") || msg.includes("وش"))) {
-    return { reply: finalizeReply("منصة إيزي تي — منصة تعليمية عربية شاملة! 🎓<br><br>📊 600+ كورس ودبلومة في كل المجالات<br>💰 اشتراك سنوي: 59$ (وصول لكل المحتوى!)<br>🎯 23+ سنة خبرة<br>👥 750,000+ متعلم<br><br>المجالات:<br>• جرافيك وتصميم<br>• برمجة وتطوير<br>• ذكاء اصطناعي<br>• تسويق رقمي<br>• وأكتر بكتير!<br><br>عايز تتعلم إيه؟ 😊"), suggestions: [] };
-  }
-  
-  // Q17: اشتريت كتاب ومش عارف فين
-  if ((msg.includes("اشتريت") || msg.includes("اشترت")) && msg.includes("كتاب") && (msg.includes("فين") || msg.includes("لاقي") || msg.includes("موجود"))) {
-    return { reply: finalizeReply("أهلاً بيك! 😊<br><br>عشان توصل للكتاب اللي اشتريته:<br>1️⃣ ادخل على \"دوراتي\" من حسابك على منصة إيزي تي<br>2️⃣ هتلاقي الكتاب موجود هناك وتقدر تنزله 📚<br><br>لو دخلت على \"دوراتي\" ومش لاقي الكتاب، تواصل مع فريق الدعم الفني وهيساعدوك فوراً! 🙏<br>📞 واتساب الدعم الفني ← <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#e63946;font-weight:600;text-decoration:underline\">على الواتساب 💬</a>"), suggestions: [] };
-  }
-  
-  // Q24: عايز اشتري كورس معين بس مش عارف ازاي
-  if ((msg.includes("اشتري") || msg.includes("شراء")) && msg.includes("كورس") && (msg.includes("ازاي") || msg.includes("كيف") || msg.includes("طريقة"))) {
-    return { reply: finalizeReply("أهلاً بيك! 🎉<br><br>لشراء كورس معين، اتبع الخطوات دي:<br><br>1️⃣ ادخل على موقع إيزي تي: <a href=\"https://easyt.online\" target=\"_blank\" style=\"color:#e63946;font-weight:600;text-decoration:underline\">easyt.online</a><br>2️⃣ ابحث عن الكورس اللي عايز تشتريه<br>3️⃣ اضغط على الكورس عشان تفتح صفحة التفاصيل<br>4️⃣ اضغط على زر \"اشترك الآن\" أو \"شراء\"<br>5️⃣ اختر طريقة الدفع المناسبة ليك<br>6️⃣ بعد الدفع، هتستلم تأكيد على الإيميل<br><br>لو محتاج مساعدة في أي خطوة، أنا هنا! 😊"), suggestions: [] };
-  }
+  if (!message) return { reply: "أهلاً! 👋 بتدور على إيه النهارده؟", suggestions: [] };
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
   let isRepeated = false;
@@ -2182,11 +1605,6 @@ async function smartChat(message, sessionId, userId = null) {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
   }
 
-  // ── Guide Feature (redirect to Educational Guide) ──
-  else if (intent.type === "guide_feature") {
-    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
-  }
-
   // ── Educational Content ──
   else if (intent.type === "educational_content") {
     reply = intent.conversational_reply || "أنا زيكو — بساعدك تختار الكورسات المناسبة 😊<br><br>لو عندك سؤال عن محتوى كورس معين، لازم تدخل جوه الكورس وتكلم **زيكو المرشد التعليمي** — هو اللي يقدر يشرحلك بالتفصيل!<br><br>لو محتاج مساعدة في اختيار كورس، أنا هنا 🚀";
@@ -2201,25 +1619,10 @@ async function smartChat(message, sessionId, userId = null) {
 حاول تساعده بحل سريع لو ممكن، وإلا وجهه للدعم.
 
 **حلول سريعة شائعة:**
-
-🎓 **مش شايف الكورسات/الدبلومة:**
-1. تأكد إنك عامل تسجيل دخول بنفس الإيميل اللي اشتركت بيه
-2. اضغط "دوراتي" (أو My Courses) من القائمة الرئيسية
-3. **مهم:** الدبلومة مش هتظهر باسمها — هتلاقي كورساتها اللي جواها ظاهرة بشكل منفرد
-4. لو اشتريت بفودافون كاش/انستاباي → ممكن ياخد لحد 24 ساعة للتفعيل
-5. لو لسه مش ظاهرة → تواصل مع الدعم
-
-📺 **الفيديو مش شغال:**
-- جرب متصفح Chrome
-- امسح الكاش والكوكيز
-- تأكد من التحديث الأخير للمتصفح
-
-💳 **مش قادر ادفع بالكارت:**
-- جرب فودافون كاش (01027007899) أو انستاباي كبديل
-
-🔒 **الكورس بيتقفل:**
-- اعمل refresh للصفحة
-- أو جرب متصفح تاني
+- "مش شايف الكورسات" → اضغط "دوراتي" من القائمة + تأكد من نفس الإيميل
+- "الفيديو مش شغال" → جرب Chrome + امسح الكاش
+- "مش قادر ادفع بالكارت" → جرب فودافون كاش أو انستاباي
+- "الكورس بيتقفل" → refresh الصفحة أو جرب متصفح تاني
 
 لو الحل السريع مانفعش أو المشكلة معقدة → حوّل للدعم:
 واتساب الدعم: ${WHATSAPP_LINK}
@@ -2262,7 +1665,7 @@ async function smartChat(message, sessionId, userId = null) {
 3. اسأله: "عايز تشوفها؟" أو "حابب أوريك تفاصيلها؟"
 
 **مش تعرض كورسات — بس نصيحة + سؤال!**`);
-    // No hardcoded suggestions - let GPT decide in conversational_reply
+    suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر", "عايز أعرف أكتر"];
   }
 
   // ── Diplomas List ──
@@ -2397,10 +1800,12 @@ async function smartChat(message, sessionId, userId = null) {
 3. اسأله: "عايز تشوفها؟"
 
 **مش تعرض الدبلومة — بس اقتراح + سؤال!**`);
-      // No hardcoded suggestions - let GPT decide
+      suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر"];
     } else {
       reply = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
-      suggestions = intent.clarify_options || []; // No hardcoded fallback
+      suggestions = intent.clarify_options && intent.clarify_options.length >= 2
+        ? intent.clarify_options
+        : ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
     }
     options = suggestions;
   }
@@ -2563,27 +1968,26 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
 
 **مهمتك:**
 اختار أفضل 5 نتائج الأنسب للمستخدم بناءً على:
-1. **المطابقة الدقيقة:** لو المستخدم قال "ترجمة" → اختار كورسات ترجمة، مش رسم أو تصميم!
+1. **مدى الصلة:** هل النتائج دي **فعلاً** عن الموضوع اللي المستخدم بيسأل عنه؟
 2. سياق الحوار
 3. هدف المستخدم (الشغل من البيت → فريلانس = تصميم/تسويق/كتابة، مش روبوت)
 4. مستوى الصعوبة (مبتدئ → ابدأ بالأسهل)
-5. الأكثر عملية وفايدة فورية
 
-**قواعد مهمة:**
-- ✅ **لو المستخدم طلب موضوع محدد** (ترجمة، محاسبة، تصوير، إلخ) → **لازم** تختار كورسات في نفس الموضوع بالظبط!
-- ✅ لو **مافيش** نتائج تطابق الموضوع المطلوب → ارجع 'selected_ids: []' (فاضي)
+**قواعد حاسمة:**
+- **لو مفيش أي نتيجة ليها علاقة مباشرة** → ارجع selected_ids فاضية []
+- "ترجمة" ≠ "رسم شخصيات" → مالهمش علاقة! ارجع []
 - "من البيت" أو "فريلانس" → اختار: Photoshop, تسويق إلكتروني, WordPress, كتابة محتوى
 - **تجنب:** روبوت Arduino, Swift, C#, لغات برمجة متقدمة (إلا لو المستخدم طلبها صراحة)
 - دبلومات أفضل من كورسات منفردة (comprehensive)
-- الأحدث والأكثر طلباً أولاً
 
-**أمثلة:**
-- المستخدم: "فيه كورس عن ترجمة؟" + النتائج: [رسم كرتون, فوتوشوب] → 'selected_ids: []' ❌ (مافيش ترجمة!)
-- المستخدم: "عايز أتعلم ترجمة" + النتائج: [ترجمة احترافية, لغة إنجليزية] → 'selected_ids: [0, 1]' ✅
+**مثال:**
+- User: "فيه كورس عن ترجمة؟"
+- Results: ["رسم شخصيات", "Photoshop", "Excel"]
+- ✅ الرد الصح: selected_ids = [] (مفيش كورس ترجمة!)
 
 ارجع JSON فقط:
 {
-  "selected_ids": [0, 3, 5, 12, 8],
+  "selected_ids": [0, 3, 5, 12, 8] أو [] لو مفيش علاقة,
   "reasoning": "short explanation in Arabic"
 }`;
 
@@ -2596,50 +2000,20 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
         }), 2);
         
         const filterResult = JSON.parse(filterResp.choices[0].message.content);
-        const displayTopic = keywords[0] || message;
         
         if (filterResult.selected_ids && Array.isArray(filterResult.selected_ids)) {
-          // لو GPT رجع array فاضي = مافيش نتائج منطقية
+          // ✅ لو GPT رجع [] → معناه مفيش نتائج مناسبة
           if (filterResult.selected_ids.length === 0) {
-            console.log(`⚠️ GPT Filter: No relevant results for "${message}"`);
+            console.log(`❌ GPT Filter: NO relevant results found`);
             console.log(`💡 Reasoning: ${filterResult.reasoning}`);
+            filteredResults = []; // مفيش نتائج
+          } else {
+            filteredResults = filterResult.selected_ids
+              .filter(id => id >= 0 && id < results.length)
+              .map(id => results[id]);
             
-            // نرجع رسالة اعتذار بدل عرض نتائج خاطئة
-            reply = `للأسف، مالقيتش كورسات متخصصة في "${displayTopic}" حالياً 😊<br><br>لكن عندنا 600+ كورس في مجالات تانية! عايز أساعدك تلاقي حاجة تانية مناسبة؟<br><br>أو تقدر تتصفح كل الكورسات من هنا: <a href="https://easyt.online/courses" target="_blank" style="color:#e63946;font-weight:700">كل الكورسات 🎓</a>`;
-            
-            return { reply: finalizeReply(reply), suggestions: [] };
-          }
-          
-          filteredResults = filterResult.selected_ids
-            .filter(id => id >= 0 && id < results.length)
-            .map(id => results[id]);
-          
-          console.log(`✅ GPT Filter: Selected ${filteredResults.length} most relevant`);
-          console.log(`💡 Reasoning: ${filterResult.reasoning}`);
-          
-          // 🔍 VALIDATION CHECK: تأكد إن النتائج منطقية
-          // لو المستخدم سأل عن موضوع محدد ومافيش تطابق → ارجع apology
-          if (filteredResults.length > 0 && keywords.length > 0) {
-            const mainKeyword = keywords[0].toLowerCase();
-            const firstResult = filteredResults[0];
-            const resultTitle = (firstResult.item.title + " " + (firstResult.item.subtitle || "")).toLowerCase();
-            
-            // لو الكلمة المفتاحية الأساسية مش موجودة في أول نتيجة
-            // ومافيش أي تشابه → يبقى النتائج غلط
-            const keywordInTitle = resultTitle.includes(mainKeyword);
-            const keywordLength = mainKeyword.length;
-            
-            if (!keywordInTitle && keywordLength > 3) {
-              // Check if it's a specific topic query (not general)
-              const msgLower = message.toLowerCase();
-              const isSpecificQuery = msgLower.includes("كورس") || msgLower.includes("فيه") || msgLower.includes("عن");
-              
-              if (isSpecificQuery) {
-                console.log(`⚠️ Validation Failed: "${mainKeyword}" not found in results`);
-                reply = `للأسف، مالقيتش كورسات متخصصة في "${keywords[0]}" حالياً 😊<br><br>لكن عندنا 600+ كورس في مجالات تانية! عايز أساعدك تلاقي حاجة تانية مناسبة؟<br><br>أو تقدر تتصفح كل الكورسات من هنا: <a href="https://easyt.online/courses" target="_blank" style="color:#e63946;font-weight:700">كل الكورسات 🎓</a>`;
-                return { reply: finalizeReply(reply), suggestions: [] };
-              }
-            }
+            console.log(`✅ GPT Filter: Selected ${filteredResults.length} most relevant`);
+            console.log(`💡 Reasoning: ${filterResult.reasoning}`);
           }
         }
       } catch (e) {
@@ -2649,7 +2023,8 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
     }
     
     const finalResults = filteredResults.length > 0 ? filteredResults : results;
-    reply = await formatResults(finalResults, keywords[0] || message, session);
+    const displayTopic = keywords[0] || message;
+    reply = await formatResults(finalResults, displayTopic, session);
 
     session.lastTopic = keywords.join(" ");
     session.lastResults = finalResults;
@@ -2704,41 +2079,19 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
 // Routes
 // ══════════════════════════════════════════════════════════
 app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id, user_id } = req.body;
-  
-  // ✅ Check for session_id first
-  if (!session_id) {
-    return res.status(400).json({ error: "Missing session_id" });
+  const { message, session_id, user_id } = req.body;  // ✅ إضافة user_id
+  if (!message || !session_id) {
+    return res.status(400).json({ error: "Missing message or session_id" });
   }
-  
-  // ✅ Handle empty/whitespace-only messages gracefully
-  if (!message || message.trim() === '') {
-    return res.json({
-      reply: "مفيش مشكلة! 😊 ممكن تسألني عن أي حاجة تحب تتعلمها؟",
-      suggestions: [],
-      options: []
-    });
-  }
-  
-  // ✅ Handle emoji-only messages
-  const emojiOnlyPattern = /^[\p{Emoji}\s]+$/u;
-  if (emojiOnlyPattern.test(message.trim())) {
-    return res.json({
-      reply: "😊 أهلاً! حابب أساعدك في إيه النهارده؟",
-      suggestions: [],
-      options: []
-    });
-  }
-  
   try {
-    // ✅ تمرير user_id لـ smartChat (optional)
+    // ✅ تمرير user_id لـ smartChat (optional — لو مفيش هيبقى null)
     const result = await smartChat(message.trim(), session_id, user_id || null);
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
     res.json({
       reply: "عذراً، حصل خطأ تقني! 😅 حاول تاني أو تواصل معنا.",
-      suggestions: [],
+      suggestions: ["تواصل معنا 💬"],
     });
   }
 });
