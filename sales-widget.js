@@ -1280,7 +1280,7 @@ alt="زيكو" />
 
 <div id="ziko-footer">
 
-<div class="ziko-powered">Ziko V2.7 — Powered by easyT</div>
+<div class="ziko-powered">Ziko V3.0 — Powered by easyT</div>
 
 </div>
 
