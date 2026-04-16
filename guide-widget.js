@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎓 Ziko Guide Widget — المرشد التعليمي
 // ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.4 (30 Messages/Day)
-// Last Update: April 17, 2026 - 6:45 AM
+// Version: 1.5 (30 Messages - Clean Reset)
+// Last Update: April 17, 2026 - 7:00 AM
 // 
 // 🔧 CRITICAL FIXES:
 // - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
@@ -12,13 +12,14 @@
 // - 🔥 إزالة API dependency من checkContentVisibility (السبب الرئيسي للاختفاء)
 // - الأيقونة تظهر بناءً على URL فقط - لا تعتمد على API response
 // - 📊 تغيير الحد اليومي: 30 رسالة بدلاً من 15
-// - تحذير عند 5 رسائل متبقية بدلاً من 3
+// - 🎁 Storage keys v2: كل المستخدمين يبدأوا من جديد بـ 30 رسالة
 // 
 // 📍 Widget Scope:
 // - IDs: #zg-* (green theme)
 // - Pages: /courses/enrolled/*, /lectures/*
 // - GTM: Simple <script> tag injection
 // - Daily Limit: 30 messages (resets at midnight)
+// - Storage: zg_remaining_v2, zg_session_v2 (v2 = clean reset)
 // ═══════════════════════════════════════════════════════════════════════════
 
 (function(){
@@ -424,7 +425,7 @@ var TOOLS=[
 var API="https://easyt-chat-server.onrender.com/api/guide";
 var IMAGE_API="https://easyt-chat-server.onrender.com/chat-image";
 var LIMIT=30;  // ← تم التغيير من 15 إلى 30 رسالة يومياً
-var SK_REM="zg_remaining",SK_SES="zg_session",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
+var SK_REM="zg_remaining_v2",SK_SES="zg_session_v2",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";  // ← v2 لإعادة ضبط العداد للجميع (30 رسالة)
 var ICON_W=70,ICON_MINI=36,EDGE_SNAP=25,MAGNET=15,GLOW_ZONE=60;
 var RZ_MIN_W=320,RZ_MIN_H=350,RZ_MAX_W=700,RZ_MAX_H=750;
 var CHAT_SNAP_ZONE=40,CHAT_SNAP_TOP_ZONE=25;
@@ -686,6 +687,27 @@ function loadRem(){try{var r=localStorage.getItem(SK_REM);if(!r)return;var d=JSO
 function saveRem(c){try{localStorage.setItem(SK_REM,JSON.stringify({date:today(),count:c}));}catch(e){}}
 
 function checkDateReset(){
+try{
+var r=localStorage.getItem(SK_REM);
+if(!r){
+rem=LIMIT;
+saveRem(LIMIT);
+if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}
+if($send)$send.disabled=false;
+updCtr();
+return;
+}
+var d=JSON.parse(r);
+if(!d||d.date!==today()){
+rem=LIMIT;
+saveRem(LIMIT);
+if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}
+if($send)$send.disabled=false;
+updCtr();
+syncRem();
+}
+}catch(e){}
+}
 try{
 var r=localStorage.getItem(SK_REM);
 if(!r){rem=LIMIT;saveRem(LIMIT);if($inp){$inp.disabled=false;$inp.placeholder="اسأل عن أي حاجة في الدرس...";}if($send)$send.disabled=false;updCtr();return;}
