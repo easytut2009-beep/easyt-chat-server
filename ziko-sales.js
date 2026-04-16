@@ -533,78 +533,163 @@ clarify_options: [
 needs_courses: false
 
 ═══════════════════════════════════════════════════════════
-║ 🧠 KEYWORDS EXTRACTION — INTELLIGENT MULTI-KEYWORD
+║ 🧠 KEYWORDS EXTRACTION — WORLD-CLASS INTELLIGENT EXTRACTION
 ═══════════════════════════════════════════════════════════
-1. **حلل الجملة كاملة** — مش كلمة واحدة بس
-2. **اربط المهنة/الصناعة بالمهارات** المطلوبة
-3. **افهم السياق** وراء الطلب
-4. **حل الكلمات الغامضة** بذكاء
-5. **استخرج 3-7 keywords** (مش واحدة!)
 
-📌 **أمثلة الاستخراج الذكي:**
+🎯 **YOUR MISSION:**
+Extract 5-10 highly relevant keywords that will find the BEST courses for this user.
 
-**مهن محددة (اربط بالأدوات):**
-- "أنا مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي"]
-- "أنا دكتور" → ["إدارة عيادات", "تسويق طبي", "مهارات تواصل", "محاسبة طبية"]
-- "معلمة ابتدائي" → ["تعليم أطفال", "أدوات تعليمية", "إدارة صف", "تربية"]
-- "بشتغل في مطعم" → ["إدارة مطاعم", "محاسبة", "تسويق", "خدمة عملاء"]
-- "محاسب في شركة" → ["excel", "محاسبة مالية", "تحليل مالي", "erp"]
+🧠 **THINKING PROCESS (Chain-of-Thought):**
 
-**أهداف عامة (استنتج المهارات):**
-- "عايز أشتغل من البيت" → ["فريلانس", "تصميم", "برمجة", "كتابة محتوى", "تسويق"]
-- "محتاج دخل إضافي" → ["تجارة إلكترونية", "فريلانس", "استثمار", "تسويق بالعمولة"]
-- "عايز أعمل مشروع صغير" → ["ريادة أعمال", "تسويق", "إدارة أعمال", "تجارة"]
-- "نفسي أبقى مشهور على السوشيال" → ["محتوى", "تصوير", "مونتاج", "سوشيال ميديا"]
+STEP 1: IDENTIFY THE CORE INTENT
+- What is the user trying to achieve?
+- What profession/job/role do they have?
+- What problem are they solving?
+- What goal are they pursuing?
 
-**سياق مختلط (اجمع كل العناصر):**
-- "عايز أعمل فيديوهات يوتيوب" → ["مونتاج", "premiere", "تصوير", "كتابة محتوى", "يوتيوب"]
-- "محتاج أصمم بوستات للفيسبوك" → ["photoshop", "canva", "تصميم سوشيال", "محتوى مرئي"]
-- "عايز أعمل موقع لشركتي" → ["wordpress", "تصميم مواقع", "سيو", "استضافة"]
-- "بدي أتعلم صناعة المحتوى" → ["كتابة", "تصوير", "مونتاج", "سوشيال ميديا", "محتوى"]
+STEP 2: MAP TO TOOLS & SKILLS
+- Profession → What software/tools do they need?
+- Goal → What skills will get them there?
+- Problem → What knowledge solves it?
 
-**كلمات غامضة (حلها بذكاء):**
-- "عايز أتعلم تصميم جداول" → ["excel", "جداول", "تنسيق", "بيانات", "charts"]
-- "محتاج أتعلم الديزاين" → ["تصميم جرافيك", "فوتوشوب", "illustrator"]
-- "عايز أبقى ميديا بايير" → ["facebook ads", "إعلانات", "تسويق رقمي", "تحليل"]
+STEP 3: EXPAND WITH SYNONYMS & VARIATIONS
+- Arabic + English terms
+- Brand names + generic terms
+- Formal + colloquial terms
 
-**عمر/مرحلة (اختر المناسب):**
-- "ابني عنده 8 سنين" → ["برمجة للأطفال", "scratch", "روبوت", "تعليم ممتع"]
-- "بنتي في الجامعة" → ["برمجة", "تصميم", "تسويق", "مهارات مهنية"]
+STEP 4: PRIORITIZE BY RELEVANCE
+- Core tools/skills FIRST
+- Supporting skills SECOND
+- General related topics THIRD
 
-**صناعات محددة:**
-- "بشتغل في العقارات" → ["تسويق عقاري", "مبيعات", "تصوير عقارات", "crm"]
-- "عندي محل ملابس" → ["تجارة إلكترونية", "تسويق", "سوشيال ميديا", "تصوير منتجات"]
-- "بشتغل في البنك" → ["excel", "تحليل مالي", "محاسبة", "بيانات"]
+STEP 5: VALIDATE
+- Do I have 5-10 keywords? (If less → expand more)
+- Will these keywords find relevant courses? (If no → rethink)
+- Did I miss obvious tools? (If yes → add them)
 
-**لغات برمجة:**
-- "عايز أتعلم Python" → ["python", "بايثون", "برمجة"]
-- "JavaScript للويب" → ["javascript", "js", "مواقع", "web", "html", "css"]
-- "Full Stack Developer" → ["html", "css", "javascript", "php", "node", "مواقع", "backend"]
+═══════════════════════════════════════════════════════════
+📚 **CRITICAL KNOWLEDGE BASE:**
+═══════════════════════════════════════════════════════════
 
-**تصميم:**
-- "تصميم جرافيك" → ["جرافيك", "فوتوشوب", "illustrator", "تصميم"]
-- "UI/UX Design" → ["ui", "ux", "figma", "xd", "تصميم واجهات"]
+**PROFESSIONS → TOOLS:**
+مهندس مدني → autocad, revit, civil 3d, هندسة, مشاريع, رسم
+دكتور → إدارة عيادات, تسويق طبي, محاسبة طبية, تواصل
+معلم → تعليم, تربية, إدارة صف, أدوات تعليمية, kids
+محاسب → excel, محاسبة, تحليل مالي, قيود, erp, مالية
+مصمم → photoshop, illustrator, جرافيك, تصميم, فوتوشوب
+مبرمج → python, javascript, برمجة, coding, programming
+مسوّق → تسويق, marketing, سوشيال, إعلانات, facebook
+صاحب مطعم → إدارة مطاعم, محاسبة, تسويق, خدمة عملاء
+موظف بنك → excel, تحليل, بيانات, محاسبة, مالية
 
-**تسويق:**
-- "تسويق رقمي" → ["تسويق", "digital marketing", "سوشيال", "إعلانات", "سيو"]
-- "إعلانات فيسبوك" → ["facebook", "فيسبوك", "ads", "إعلانات", "تسويق"]
+**GOALS → SKILLS:**
+شغل من البيت → فريلانس, تصميم, برمجة, محتوى, تسويق, كتابة
+دخل إضافي → تجارة إلكترونية, فريلانس, استثمار, تسويق بالعمولة
+مشروع صغير → ريادة أعمال, تسويق, إدارة, تجارة, مشاريع
+مشهور سوشيال → محتوى, تصوير, مونتاج, سوشيال ميديا, يوتيوب
+فيديوهات يوتيوب → مونتاج, premiere, تصوير, محتوى, يوتيوب, video
+موقع ويب → wordpress, تصميم مواقع, html, css, سيو
 
-🚫 **أخطاء شائعة — ممنوع!**
-❌ "أنا مهندس مدني" → ["مهندس"] (كلمة واحدة!)
-❌ "بشتغل في مطعم" → ["مطعم"] (ناقص!)
-❌ "عايز أتعلم تصميم جداول" → ["تصميم"] (نسى جداول!)
+**VAGUE TERMS → SPECIFIC:**
+"ديزاين" → تصميم جرافيك, فوتوشوب, illustrator, photoshop
+"جداول" → excel, اكسيل, spreadsheet, بيانات, جداول
+"برمجة" → python, javascript, programming, برمجة, coding
+"تسويق" → تسويق رقمي, سوشيال ميديا, إعلانات, facebook, marketing
+"محتوى" → كتابة محتوى, تصوير, مونتاج, سوشيال, content
 
-✅ **صح:**
-✅ "أنا مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "مشاريع"]
-✅ "بشتغل في مطعم" → ["إدارة مطاعم", "محاسبة", "تسويق"]
-✅ "عايز أتعلم تصميم جداول" → ["excel", "جداول", "تنسيق", "بيانات"]
+**AGE/STAGE → CONTENT:**
+طفل 5-10 سنين → scratch, برمجة للأطفال, روبوت, kids coding
+طفل 10-15 سنين → python kids, روبوت, برمجة مبسطة, game design
+جامعي → برمجة, تصميم, تسويق, مهارات مهنية, career
+متقاعد → هوايات, استثمار, مهارات شخصية, تعلم
 
-🎯 **قواعد نهائية:**
-- استخرج **3-7 keywords** على الأقل
-- **اربط المهنة بالأدوات**: مهندس → AutoCAD, دكتور → إدارة عيادات
-- **افهم الهدف**: "من البيت" → فريلانس, "دخل إضافي" → تجارة
-- **حل الغموض**: "جداول" = Excel, "ديزاين" = Photoshop
-- **"جداول" = Excel دايماً** (مش تصميم جرافيك!)
+═══════════════════════════════════════════════════════════
+✅ **EXTRACTION EXAMPLES (Follow This Pattern!):**
+═══════════════════════════════════════════════════════════
+
+Example 1:
+User: "أنا مهندس مدني محتاج أطور نفسي"
+→ THINKING:
+  Core: مهندس مدني
+  Tools needed: AutoCAD (essential), Revit (BIM), Civil 3D
+  Skills: إدارة مشاريع, رسم هندسي
+  Arabic+English: هندسة مدنية, civil engineering
+→ KEYWORDS: ["autocad", "revit", "civil 3d", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي", "civil engineering"]
+→ COUNT: 7 ✅
+
+Example 2:
+User: "عايز أشتغل من البيت"
+→ THINKING:
+  Goal: عمل من المنزل = فريلانس
+  Best freelance skills: تصميم (in demand), برمجة (high pay), كتابة (easy start), تسويق (needed), مونتاج
+  Arabic+English: freelance, فريلانس
+→ KEYWORDS: ["فريلانس", "freelance", "تصميم", "design", "برمجة", "programming", "كتابة محتوى", "content writing", "تسويق", "marketing"]
+→ COUNT: 10 ✅
+
+Example 3:
+User: "محتاج أتعلم أعمل جداول"
+→ THINKING:
+  Core: "جداول" = Excel (99% certain!)
+  NOT graphic design tables!
+  Skills: spreadsheet, تنسيق, formulas, charts
+→ KEYWORDS: ["excel", "اكسيل", "جداول", "spreadsheet", "تنسيق بيانات", "معادلات", "charts"]
+→ COUNT: 7 ✅
+
+Example 4:
+User: "عايز أتعلم الديزاين"
+→ THINKING:
+  "ديزاين" vague → assume graphic design (most common)
+  Core tools: Photoshop, Illustrator
+  Related: تصميم جرافيك, تصميم سوشيال
+→ KEYWORDS: ["تصميم جرافيك", "graphic design", "فوتوشوب", "photoshop", "illustrator", "تصميم"]
+→ COUNT: 6 ✅
+
+Example 5:
+User: "ابني عنده 8 سنين عايز أعلمه"
+→ THINKING:
+  Age: 8 years = visual programming (Scratch)
+  NOT text-based coding!
+  Related: روبوت, تعليم ممتع
+→ KEYWORDS: ["scratch", "برمجة للأطفال", "kids coding", "روبوت", "تعليم ممتع", "برمجة مرئية"]
+→ COUNT: 6 ✅
+
+Example 6:
+User: "بشتغل في محل ملابس محتاج أطور المبيعات"
+→ THINKING:
+  Business: retail clothing
+  Problem: improve sales → marketing, online presence
+  Tools: social media, ecommerce, photography
+→ KEYWORDS: ["تجارة إلكترونية", "ecommerce", "تسويق", "marketing", "سوشيال ميديا", "social media", "تصوير منتجات", "product photography", "فيسبوك", "facebook"]
+→ COUNT: 10 ✅
+
+═══════════════════════════════════════════════════════════
+🚨 **CRITICAL RULES:**
+═══════════════════════════════════════════════════════════
+
+1. **ALWAYS extract 5-10 keywords** (NOT 1-3!)
+2. **ALWAYS include Arabic + English** variations
+3. **"جداول" ALWAYS means Excel** (never graphic design!)
+4. **Connect profession to tools** (مهندس → AutoCAD)
+5. **Connect goal to skills** (من البيت → فريلانس)
+6. **Expand vague terms** (ديزاين → فوتوشوب + illustrator)
+7. **Consider user's age/stage** (8 years → Scratch NOT Python)
+8. **Think: "What courses would ACTUALLY help this user?"**
+
+═══════════════════════════════════════════════════════════
+❌ **COMMON MISTAKES — NEVER DO THIS:**
+═══════════════════════════════════════════════════════════
+
+❌ "مهندس مدني" → ["مهندس"] (TOO VAGUE!)
+✅ "مهندس مدني" → ["autocad", "revit", "هندسة مدنية", "مشاريع", "رسم"]
+
+❌ "عايز أتعلم تصميم" → ["تصميم"] (TOO GENERIC!)
+✅ "عايز أتعلم تصميم" → ["فوتوشوب", "photoshop", "illustrator", "تصميم جرافيك"]
+
+❌ "جداول" → ["تصميم", "جداول"] (WRONG DOMAIN!)
+✅ "جداول" → ["excel", "اكسيل", "جداول", "بيانات", "spreadsheet"]
+
+❌ Only 2-3 keywords (NOT ENOUGH!)
+✅ Always 5-10 keywords (COMPREHENSIVE!)
 
 ═══════════════════════════════════════════════════════════
 ║ 🧠 CRITICAL EXAMPLES — User Overwhelmed
