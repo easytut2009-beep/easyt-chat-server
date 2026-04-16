@@ -1552,7 +1552,7 @@ async function smartChat(message, sessionId, userId = null) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!message) return { reply: "أهلاً! 👋 بتدور على إيه النهارده؟", suggestions: [] };
+  if (!message) return { reply: "", suggestions: [] }; // Empty - widget handles welcome
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
   let isRepeated = false;
@@ -1665,7 +1665,7 @@ async function smartChat(message, sessionId, userId = null) {
 3. اسأله: "عايز تشوفها؟" أو "حابب أوريك تفاصيلها؟"
 
 **مش تعرض كورسات — بس نصيحة + سؤال!**`);
-    suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر", "عايز أعرف أكتر"];
+    // No hardcoded suggestions - let GPT decide in conversational_reply
   }
 
   // ── Diplomas List ──
@@ -1800,12 +1800,10 @@ async function smartChat(message, sessionId, userId = null) {
 3. اسأله: "عايز تشوفها؟"
 
 **مش تعرض الدبلومة — بس اقتراح + سؤال!**`);
-      suggestions = ["أيوه عايز أشوف", "لأ خليني أفكر"];
+      // No hardcoded suggestions - let GPT decide
     } else {
       reply = intent.clarify_question || "عايز تتعلم إيه بالظبط؟ 😊";
-      suggestions = intent.clarify_options && intent.clarify_options.length >= 2
-        ? intent.clarify_options
-        : ["🎨 تصميم", "💻 برمجة", "📱 تسويق", "📊 إكسيل"];
+      suggestions = intent.clarify_options || []; // No hardcoded fallback
     }
     options = suggestions;
   }
@@ -2078,7 +2076,7 @@ app.post("/chat", limiter, async (req, res) => {
     console.error("❌ Chat error:", e.message);
     res.json({
       reply: "عذراً، حصل خطأ تقني! 😅 حاول تاني أو تواصل معنا.",
-      suggestions: ["تواصل معنا 💬"],
+      suggestions: [], // No hardcoded suggestions
     });
   }
 });
