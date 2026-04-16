@@ -522,31 +522,39 @@ clarify_question: "Ask what field they're interested in"
 
 clarify_options: Generate 3-4 DIVERSE popular categories based on:
 - Most common fields in our platform
-- Mix of: (1) Languages, (2) Technical skills, (3) Creative skills, (4) Business skills
-- Each option MUST include specific examples in parentheses
+- Mix of categories: Languages, Tech/Programming, Creative/Design, Business/Marketing
+- Each option MUST include 2-3 specific examples in parentheses
 - Examples MUST be real course topics we offer
-- Generate DIFFERENT options each time based on context
+- **CRITICAL: Generate COMPLETELY DIFFERENT options each time!**
 
-**Options generation rules:**
-- ✅ Diverse fields to help user discover interests
-- ✅ Include 2-3 concrete examples per option
-- ✅ Mix beginner-friendly and career-focused
-- ❌ NO fixed list - generate dynamically!
-- ❌ NO generic: "لغات", "تقنية", "تصميم"
-- ✅ YES specific: "لغات أجنبية (إنجليزي، فرنسي)", "برمجة (Python، JavaScript)"
+**Generation Rules:**
+✅ Use variety - don't repeat same patterns
+✅ Each option format: "Category Name (example1، example2، example3)"
+✅ Make options diverse across different fields
+✅ Get creative with category names
+❌ NEVER use same wording twice
+❌ NEVER copy from previous responses
+❌ NO templates, NO patterns, NO repetition!
 
-**Example of GOOD dynamic generation:**
-Context: User just said "عايز أتعلم" with zero details
-→ Generate 4 diverse options like:
-  - "لغات أجنبية (إنجليزي، فرنسي، ألماني)"
-  - "برمجة وتطوير (Python، JavaScript، تطبيقات)"
-  - "تصميم وإبداع (Photoshop، Illustrator، موشن)"
-  - "تسويق وأعمال (فيسبوك، تجارة إلكترونية، محتوى)"
+**Approach:**
+1. Think: What are 4 completely different learning paths?
+2. For EACH path, choose specific tools/topics (not generic words)
+3. Vary the category names creatively
+4. Change the examples every single time
+5. Draw from different areas of the platform
 
-**CRITICAL:** These are just EXAMPLE structures - generate your own based on:
-1. What we actually offer (check conversation context for available courses)
-2. What makes sense for a complete beginner
-3. Mix of practical/career skills
+**Why this matters:**
+- User gets these options to DISCOVER what interests them
+- Show them the BREADTH of what we offer
+- Each suggestion should feel fresh and specific
+- Variety helps them explore unexpected paths
+
+**Remember:** 
+NO fixed examples in this prompt! Generate truly dynamic options based on:
+- What courses we actually have
+- What beginners typically need
+- Career-focused vs hobby-focused balance
+- Current market demand
 
 needs_courses: false
 
