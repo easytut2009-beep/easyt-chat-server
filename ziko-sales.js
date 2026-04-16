@@ -335,11 +335,11 @@ conversational_reply: رد ودود + سؤال ذكي لفهم احتياجه
 needs_courses: false
 🚨 **مهم:** المستخدم بيحكي — **استمع + اسأل** — متعرضش كورسات
 
-type=recommend: المستخدم عبّر عن رغبة في التعلم لكن مش طلب مباشر
-مثال: "عايز أتعلم X"، "محتاج أطور نفسي"، "نفسي أبقى X"
-conversational_reply: نصيحة + اقتراح + سؤال "عايز تشوفها؟"
+type=recommend: المستخدم عبّر عن رغبة **عامة** في التعلم بدون تحديد موضوع واضح
+مثال: "محتاج أطور نفسي"، "عايز أتعلم حاجة جديدة"، "نفسي أبقى أحسن"
+conversational_reply: نصيحة عامة + سؤال توضيحي
 needs_courses: false
-🚨 **مهم:** ننصح ونقترح — لكن **مانعرضش** كورسات إلا لو المستخدم طلب
+🚨 **مهم:** استخدم ده **فقط** للطلبات العامة جداً بدون موضوع محدد
 
 type=diplomas_list: طلب قائمة الدبلومات
 مثال: "إيه الدبلومات الموجودة؟"، "وريني الدبلومات"
@@ -359,26 +359,44 @@ type=courses_list: طلب تصفح كل الكورسات
 مثال: "وريني كل الكورسات"
 needs_courses: false
 
-type=course_request: طلب **مباشر** لعرض الكورسات
-مثال: "فين أتعلم؟"، "وريني الكورسات"، "عندكم كورسات؟"، "ممكن تديني؟"، "موجود عندكم؟"
+type=course_request: طلب لعرض كورسات — سواء **مباشر** أو **غير مباشر**
+مثال: 
+- "فين أتعلم X؟" ✅
+- "وريني كورسات X" ✅
+- "عندكم X؟" ✅
+- "عايز أتعلم X" (X = موضوع محدد) ✅
+- "محتاج X" (X = موضوع محدد) ✅
+- "عايز كورس Python" ✅
+- "في كورسات عن التسويق؟" ✅
 
-⚠️ **مهم جداً — الفرق بين الرغبة والطلب:**
+⚠️ **مهم جداً — متى نستخدم course_request:**
 
-✅ **طلب مباشر** (type=course_request):
-- "فين أتعلم X؟"
-- "وريني كورسات X"
-- "عندكم X؟"
-- "ممكن تديني X؟"
-- "موجود عندكم X؟"
-- "عايز أشوف الكورسات"
+✅ **course_request** (اعرض كورسات):
+- "عايز أتعلم Python" → موضوع محدد ✅
+- "محتاج JavaScript للويب" → موضوع محدد ✅
+- "عايز أتعلم Photoshop بس" → موضوع محدد ✅
+- "فين أتعلم X؟" → طلب مباشر ✅
+- "وريني كورسات X" → طلب مباشر ✅
+- "عندكم X؟" → طلب مباشر ✅
+- "ممكن تديني X؟" → طلب مباشر ✅
+- "موجود عندكم X؟" → طلب مباشر ✅
+- "عايز أشوف الكورسات" → طلب مباشر ✅
+- "برمجة تطبيقات Android" → موضوع محدد ✅
+- "Full Stack Developer" → موضوع محدد ✅
+- "تصميم جرافيك" → موضوع محدد ✅
 
-❌ **مش طلب مباشر** (type=conversational أو clarify):
-- "عايز أتعلم X" → conversational
-- "محتاج أطور نفسي في X" → conversational
-- "نفسي أبقى X" → conversational
-- "عايز أبدأ في X" → conversational
+❌ **مش course_request** (لا تعرض كورسات):
+- "هل Python تصنع تطبيقات؟" → type=info (سؤال معلوماتي)
+- "Python ولا JavaScript أحسن؟" → type=comparison (مقارنة)
+- "أنا مشترك معاكم" → type=conversational (كلام شخصي)
+- "اللغة صعبة شوية" → type=conversational (كلام شخصي)
+- "عايز أتعلم" (بدون تحديد إيه) → type=clarify (غامض)
+- "محتاج أطور نفسي" (بدون تحديد في إيه) → type=clarify (غامض)
+- "نفسي أبقى أحسن" (بدون موضوع محدد) → type=conversational (عام جداً)
 
-**القاعدة:** لو مفيش كلمة طلب صريحة (فين، وريني، عندكم، ممكن) → مش course_request
+**القاعدة الذهبية:**
+🎯 لو المستخدم ذكر **موضوع محدد** (Python, Photoshop, تسويق, Excel, إلخ) → type=course_request
+❌ لو الطلب **عام جداً** بدون موضوع → type=clarify أو conversational
 
 type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في التعلم بدون تحديد
 مثال: "عايز أتعلم" (بدون ذكر إيه)، "محتاج مساعدة" (بدون تحديد)، "بدور على حاجة" (مش واضح إيه)
@@ -393,15 +411,19 @@ needs_courses: false
 ══ الفرق المهم جداً ══
 
 ❌ **مش course_request**:
-- "هل Python تصنع تطبيقات؟" → type=info
-- "Python ولا JavaScript أحسن؟" → type=comparison
-- "أنا مشترك معاكم" → type=conversational
-- "اللغة صعبة شوية" → type=conversational
+- "هل Python تصنع تطبيقات؟" → type=info (سؤال معلوماتي)
+- "Python ولا JavaScript أحسن؟" → type=comparison (مقارنة)
+- "أنا مشترك معاكم" → type=conversational (كلام شخصي)
+- "اللغة صعبة شوية" → type=conversational (كلام شخصي)
 
-✅ **course_request**:
-- "عايز كورس Python" → type=course_request
-- "فين أتعلم Photoshop؟" → type=course_request
-- "في كورسات عن التسويق؟" → type=course_request
+✅ **course_request** (اعرض كورسات فوراً):
+- "عايز أتعلم Python" → type=course_request ✅
+- "محتاج JavaScript" → type=course_request ✅
+- "برمجة Android" → type=course_request ✅
+- "تصميم جرافيك" → type=course_request ✅
+- "عايز كورس Python" → type=course_request ✅
+- "فين أتعلم Photoshop؟" → type=course_request ✅
+- "في كورسات عن التسويق؟" → type=course_request ✅
 
 ══ قواعد الـ keywords (مهم جداً!) ══
 
