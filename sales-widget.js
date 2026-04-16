@@ -1803,47 +1803,9 @@ setTimeout(function() {
 
 function showWelcome() {
 
-// الترحيب من الباك إند (فيه سؤال الاسم للمستخدمين الجدد)
+addMessage('أهلاً بيك! 👋 أنا <strong>زيكو</strong> مساعدك الذكي في منصة إيزي تي. بتدور على إيه النهارده؟', "bot");
 
-showTyping();
-
-fetch(ZIKO_SERVER, {
-
-method: "POST",
-
-headers: { "Content-Type": "application/json" },
-
-body: JSON.stringify({ message: "", session_id: getSessionId(), user_id: sessionId, is_welcome: true })
-
-})
-
-.then(function(res) { return res.json(); })
-
-.then(function(data) {
-
-hideTyping();
-
-if (data.reply) {
-
-addMessage(data.reply, "bot", function() {
-
-if (data.options && data.options.length > 0) showSuggestions(data.options);
-
-else if (data.suggestions && data.suggestions.length > 0) showSuggestions(data.suggestions);
-
-});
-
-}
-
-})
-
-.catch(function(e) {
-
-hideTyping();
-
-console.error("Welcome error:", e);
-
-});
+setTimeout(function() { showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]); scrollBot(); }, 500);
 
 }
 
