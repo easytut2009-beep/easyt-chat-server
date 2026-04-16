@@ -2443,13 +2443,13 @@ function shouldShowSalesWidget() {
   // ❌ BLOCKED pages - لا تظهر في هذه الصفحات أبداً
   const blockedPages = [
     '/courses/enrolled',   // صفحات الكورسات المشترك فيها (فيها Guide Widget)
-    '/lecture',            // صفحات المحاضرات (فيها Guide Widget)
+    '/lecture',            // صفحات المحاضرات القديمة (فيها Guide Widget)
     '/admin',              // صفحات الأدمن
     '/dashboard',          // Dashboard
     '/account'             // Account settings
   ];
   
-  // تحقق من الصفحات الممنوعة
+  // تحقق من الصفحات الممنوعة أولاً
   for (let blocked of blockedPages) {
     if (path.startsWith(blocked)) {
       console.log('[Ziko Sales] ❌ Blocked page - not showing');
@@ -2457,28 +2457,78 @@ function shouldShowSalesWidget() {
     }
   }
   
-  // ✅ ALLOWED pages - السماح في هذه الصفحات
-  const allowedPages = [
-    '/',                    // الصفحة الرئيسية
-    '/courses',            // صفحة كل الكورسات
-    '/p/',                 // صفحات الكورسات/الدبلومات (/p/course-name)
-    '/blog',               // المدونة
-    '/search',             // البحث
-    '/categories'          // التصنيفات
+  // ❌ CRITICAL: منع أي URL فيه "/lectures/" (صفحات الدروس)
+  if (path.includes('/lectures/')) {
+    console.log('[Ziko Sales] ❌ Lecture page detected - not showing');
+    return false;
+  }
+  
+  // ✅ ALLOWED pages - السماح في هذه الصفحات فقط
+  // نستخدم exact match للصفحة الرئيسية
+  if (path === '/') {
+    console.log('[Ziko Sales] ✅ Allowed page (home) - showing widget');
+    return true;
+  }
+  
+  // للصفحات الأخرى نستخدم startsWith
+  const allowedPrefixes = [
+    '/courses',     // صفحة كل الكورسات (بس مش الدروس نفسها)
+    '/p/',          // صفحات الكورسات/الدبلومات
+    '/blog',        // المدونة
+    '/search',      // البحث
+    '/categories'   // التصنيفات
   ];
   
   // تحقق من الصفحات المسموحة
-  for (let allowed of allowedPages) {
-    if (path === allowed || path.startsWith(allowed)) {
+  for (let allowed of allowedPrefixes) {
+    if (path.startsWith(allowed)) {
       console.log('[Ziko Sales] ✅ Allowed page - showing widget');
       return true;
     }
   }
   
-  // Default: لا تظهر في الصفحات الأخرى
+  // Default: لا تظهر في أي صفحة تانية
   console.log('[Ziko Sales] ⚠️ Unknown page - not showing by default');
   return false;
 }
+
+// ══════════════════════════════════════════════════════════
+// 👁️ Dynamic Show/Hide — للـ SPA (Teachable)
+// ══════════════════════════════════════════════════════════
+function checkAndToggleWidget() {
+  var toggleBtn = document.getElementById('ziko-toggle');
+  var chatBox = document.getElementById('ziko-chat-box');
+  var notify = document.getElementById('ziko-notify');
+  
+  if (shouldShowSalesWidget()) {
+    // أظهر الويدجت
+    if (toggleBtn) toggleBtn.style.display = 'block';
+    console.log('[Ziko Sales] Widget shown');
+  } else {
+    // اخفي الويدجت
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    if (chatBox) {
+      chatBox.style.display = 'none';
+      chatBox.classList.remove('ziko-visible');
+    }
+    if (notify) {
+      notify.classList.remove('ziko-notify-visible');
+    }
+    console.log('[Ziko Sales] Widget hidden');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// 🔄 Page Change Monitor — راقب تغيير الصفحة في Teachable
+// ══════════════════════════════════════════════════════════
+var currentPath = window.location.pathname;
+setInterval(function() {
+  if (window.location.pathname !== currentPath) {
+    currentPath = window.location.pathname;
+    console.log('[Ziko Sales] Page changed to:', currentPath);
+    checkAndToggleWidget();
+  }
+}, 500); // كل نص ثانية (سريع عشان Teachable SPA)
 
 // ══════════════════════════════════════════════════════════
 // 🚀 Auto-initialization — فقط في الصفحات المسموحة
@@ -2497,6 +2547,20 @@ if (shouldShowSalesWidget()) {
 // expose للـ GTM (للتحكم اليدوي إن لزم)
 window.initZiko = initZiko;
 window.shouldShowSalesWidget = shouldShowSalesWidget;
+
+// ══════════════════════════════════════════════════════════
+// 🛡️ Safe GTM Wrapper — يمنع التهيئة في الصفحات الممنوعة
+// ══════════════════════════════════════════════════════════
+window.initZikoSafe = function() {
+  console.log('[Ziko Sales] GTM called initZikoSafe()');
+  
+  if (shouldShowSalesWidget()) {
+    console.log('[Ziko Sales] ✅ Page allowed - initializing...');
+    initZiko();
+  } else {
+    console.log('[Ziko Sales] ❌ Page blocked - NOT initializing');
+  }
+};
 
 })();
 </script>
