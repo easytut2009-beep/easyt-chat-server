@@ -1287,7 +1287,7 @@ function faqSimilarity(q1, q2) {
   return Math.min(1.0, baseSimilarity + topicMatchBonus);
 }
 
-async function findFAQAnswer(message, threshold = 0.35) { // ← خفضناه من 0.40 لـ 0.35
+async function findFAQAnswer(message, threshold = 0.35) {
   try {
     const faqs = await loadAllFAQs();
     if (!faqs || faqs.length === 0) return null;
@@ -1309,7 +1309,10 @@ async function findFAQAnswer(message, threshold = 0.35) { // ← خفضناه م
     
     if (bestScore >= effectiveThreshold && best) {
       console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)}, threshold: ${effectiveThreshold})`);
-      return markdownToHtml(best.answer);
+      
+      // 🎯 Smart FAQ Response - tailor based on user's actual question
+      const smartAnswer = await smartFAQResponse(message, best.answer);
+      return markdownToHtml(smartAnswer);
     }
     
     // Debug: log near misses
@@ -1321,6 +1324,75 @@ async function findFAQAnswer(message, threshold = 0.35) { // ← خفضناه م
   } catch(e) {
     console.error("FAQ match error:", e.message);
     return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// Smart FAQ Response - Tailor FAQ answer to user's question
+// ══════════════════════════════════════════════════════════
+async function smartFAQResponse(userMessage, faqAnswer) {
+  try {
+    const prompt = `المستخدم سأل: "${userMessage}"
+لدينا إجابة FAQ كاملة، لكن نريد تقديمها بشكل ذكي ومتدرج.
+
+الإجابة الكاملة من FAQ:
+${faqAnswer}
+
+🎯 **مهمتك:**
+1. **افهم السؤال الحقيقي:** هل يسأل عن إلغاء؟ استرداد؟ طريقة الدفع؟
+2. **ابدأ بالجواب المباشر:** أجب على سؤاله المحدد أولاً
+3. **إذا كانت الإجابة "لا يمكن":** قدّمها بلطف مع البديل
+4. **الخطوات:** إذا كانت هناك خطوات، نسّقها بوضوح
+5. **معلومات إضافية:** أضف معلومات مهمة لكن بعد الإجابة الرئيسية
+
+**أمثلة على التحسين:**
+
+❌ سيء:
+"لا يمكن استرداد قيمة الاشتراك، حيث إن الاشتراكات تتجدد تلقائيًا..."
+
+✅ أفضل (لو سأل عن استرداد):
+"للأسف الاشتراكات غير قابلة للاسترداد حسب سياستنا 😔
+
+لكن يمكنك إلغاء الاشتراك عشان ما يتجددش تلقائياً:
+1️⃣ ادخل على حسابك
+2️⃣ صورة البروفايل > إدارة الاشتراك
+3️⃣ اضغط إلغاء الاشتراك
+
+✅ هيفضل شغال لحد نهاية الفترة المدفوعة
+✅ مش هيتجدد تلقائياً بعد كده"
+
+✅ أفضل (لو سأل عن إلغاء):
+"أكيد! تقدر تلغي الاشتراك بسهولة:
+
+1️⃣ ادخل على حسابك
+2️⃣ صورة البروفايل > إدارة الاشتراك  
+3️⃣ اضغط إلغاء الاشتراك
+
+✅ هيفضل معاك لحد نهاية الفترة المدفوعة
+✅ مش هيتجدد تلقائياً
+
+💡 ملحوظة: الاشتراكات غير قابلة للاسترداد، لكن ممكن تستفيد من الفترة المتبقية"
+
+**القواعد:**
+- ابدأ بالإجابة على السؤال المحدد
+- لو "لا يمكن" → قدّمها بلطف + اعرض البديل
+- رقّم الخطوات بوضوح
+- استخدم إيموجي بسيطة للوضوح
+- خلّي الرد ودي ومش صادم
+
+أعد صياغة الإجابة بناءً على سؤال المستخدم:`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      max_tokens: 400,
+      messages: [{ role: "user", content: prompt }]
+    });
+
+    return response.choices[0]?.message?.content?.trim() || faqAnswer;
+  } catch (e) {
+    console.error("Smart FAQ response error:", e.message);
+    return faqAnswer; // Fallback to original
   }
 }
 
