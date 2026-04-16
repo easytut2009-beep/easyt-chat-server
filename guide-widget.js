@@ -1,7 +1,7 @@
 (function(){
 "use strict";
-if(window.__zikoGuideLoaded)return;
-window.__zikoGuideLoaded=true;
+if(window.__zikoLoaded)return;
+window.__zikoLoaded=true;
 
 
 try{var _vp=document.querySelector('meta[name="viewport"]');if(_vp){var _vc=_vp.getAttribute("content")||"";if(_vc.indexOf("viewport-fit")===-1)_vp.setAttribute("content",_vc+",viewport-fit=cover");}}catch(_e){}
@@ -394,7 +394,7 @@ var TOOLS=[
 var API="https://easyt-chat-server.onrender.com/api/guide";
 var IMAGE_API="https://easyt-chat-server.onrender.com/chat-image";
 var LIMIT=30;
-var SK_REM="zg_remaining_v2",SK_SES="zg_session_v2",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
+var SK_REM="zg_remaining",SK_SES="zg_session",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
 var ICON_W=70,ICON_MINI=36,EDGE_SNAP=25,MAGNET=15,GLOW_ZONE=60;
 var RZ_MIN_W=320,RZ_MIN_H=350,RZ_MAX_W=700,RZ_MAX_H=750;
 var CHAT_SNAP_ZONE=40,CHAT_SNAP_TOP_ZONE=25;
@@ -603,7 +603,7 @@ function syncRem(){fetch(API.replace("/guide","/guide/status")+"?session_id="+en
 
 function hoursUntilMidnight(){var now=new Date();var mid=new Date(now);mid.setHours(24,0,0,0);var diff=mid-now;var h=Math.floor(diff/3600000);var m=Math.floor((diff%3600000)/60000);if(h>0)return h+" ساعة و"+m+" دقيقة";return m+" دقيقة";}
 
-function updCtr(){if(!$counter)return;$counter.className="";$counter.id="zg-counter";if(rem<=0){$counter.className="zg-zero";$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}if($send)$send.disabled=true;}else if(rem<=5){$counter.className="zg-low";$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 30 رسالة';}else{$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 30 رسالة';}}
+function updCtr(){if(!$counter)return;$counter.className="";$counter.id="zg-counter";if(rem<=0){$counter.className="zg-zero";$counter.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg> خلصت الرسائل — باقي '+hoursUntilMidnight()+' للتجديد';if($inp){$inp.disabled=true;$inp.placeholder="خلصت رسائلك... استنى "+hoursUntilMidnight();}if($send)$send.disabled=true;}else if(rem<=3){$counter.className="zg-low";$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> متبقي: '+rem+' / 30 رسالة';}else{$counter.innerHTML='<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> متبقي: '+rem+' / 30 رسالة';}}
 
 function getFingerprint(){
 var nav=window.navigator;
@@ -1925,27 +1925,11 @@ window.addEventListener("load",function(){if(!document.getElementById("zg-toggle
 // ══════════════════════════════════════════════════════════
 setInterval(function(){
 var tog=document.getElementById("zg-toggle");
-if(!tog){
-console.log("[ZikoGuide] ⚠️ Toggle missing");
-return;
-}
-
-// AUTO-FIX: لو مخفية في صفحة درس → اظهرها
-if(tog.style.display==="none"){
-var cp=location.pathname;
-var inLec=/\/courses\//.test(cp)||/\/lectures\//.test(cp)||/\/enrolled/.test(cp);
-if(inLec){
-console.log("[ZikoGuide] 🔧 AUTO-FIX: Showing toggle");
-tog.style.display="block";
-contentVisible=true;
-}else{
-return;
-}
-}
-
-// تأكد من responsiveness
+if(tog&&tog.style.display!=="none"){
+// الأيقونة موجودة - نتأكد إنها responsive
 if(!tog.__zgHeartbeat){
 tog.__zgHeartbeat=true;
+// لو في مشكلة في الـ events - reinit
 var testClick=function(){tog.__zgResponsive=true;};
 tog.addEventListener("pointerdown",testClick,{once:true,passive:true});
 setTimeout(function(){
@@ -1954,9 +1938,9 @@ console.log("[ZikoGuide] Re-initializing frozen widget");
 init();
 }
 delete tog.__zgResponsive;
-delete tog.__zgHeartbeat;
 },100);
 }
-},5000); // كل 5 ثواني
+}
+},30000); // كل 30 ثانية
 
 })();
