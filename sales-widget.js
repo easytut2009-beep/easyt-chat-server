@@ -2425,15 +2425,78 @@ setInterval(function() {
   if (btn) {
     // تحقق لو الـ listener موجود
     if (!btn.__hasClickListener) {
-      console.log('[Ziko] Re-attaching click listener');
+      console.log('[Ziko Sales] Re-attaching click listener');
       btn.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); openChat(); }, true);
       btn.__hasClickListener = true;
     }
   }
 }, 30000); // كل 30 ثانية
 
-// expose للـ GTM
+// ══════════════════════════════════════════════════════════
+// 🎯 Page Check — Ziko Sales Widget ONLY on specific pages
+// ══════════════════════════════════════════════════════════
+function shouldShowSalesWidget() {
+  const path = window.location.pathname.toLowerCase();
+  
+  console.log('[Ziko Sales] Checking page:', path);
+  
+  // ❌ BLOCKED pages - لا تظهر في هذه الصفحات أبداً
+  const blockedPages = [
+    '/courses/enrolled',   // صفحات الكورسات المشترك فيها (فيها Guide Widget)
+    '/lecture',            // صفحات المحاضرات (فيها Guide Widget)
+    '/admin',              // صفحات الأدمن
+    '/dashboard',          // Dashboard
+    '/account'             // Account settings
+  ];
+  
+  // تحقق من الصفحات الممنوعة
+  for (let blocked of blockedPages) {
+    if (path.startsWith(blocked)) {
+      console.log('[Ziko Sales] ❌ Blocked page - not showing');
+      return false;
+    }
+  }
+  
+  // ✅ ALLOWED pages - السماح في هذه الصفحات
+  const allowedPages = [
+    '/',                    // الصفحة الرئيسية
+    '/courses',            // صفحة كل الكورسات
+    '/p/',                 // صفحات الكورسات/الدبلومات (/p/course-name)
+    '/blog',               // المدونة
+    '/search',             // البحث
+    '/categories'          // التصنيفات
+  ];
+  
+  // تحقق من الصفحات المسموحة
+  for (let allowed of allowedPages) {
+    if (path === allowed || path.startsWith(allowed)) {
+      console.log('[Ziko Sales] ✅ Allowed page - showing widget');
+      return true;
+    }
+  }
+  
+  // Default: لا تظهر في الصفحات الأخرى
+  console.log('[Ziko Sales] ⚠️ Unknown page - not showing by default');
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════
+// 🚀 Auto-initialization — فقط في الصفحات المسموحة
+// ══════════════════════════════════════════════════════════
+if (shouldShowSalesWidget()) {
+  console.log('[Ziko Sales] Initializing widget...');
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initZiko);
+  } else {
+    initZiko();
+  }
+} else {
+  console.log('[Ziko Sales] Widget not initialized (page not allowed)');
+}
+
+// expose للـ GTM (للتحكم اليدوي إن لزم)
 window.initZiko = initZiko;
+window.shouldShowSalesWidget = shouldShowSalesWidget;
 
 })();
 </script>
