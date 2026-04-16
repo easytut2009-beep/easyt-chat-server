@@ -1,13 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎓 Ziko Guide Widget — المرشد التعليمي
 // ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.1 (Fixed Conflict)
-// Last Update: April 17, 2026
+// Version: 1.2 (Fixed Disappearing Issue)
+// Last Update: April 17, 2026 - 6:00 AM
 // 
 // 🔧 CRITICAL FIXES:
 // - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
 // - تحسين Smart Heartbeat مع logging أفضل
 // - إضافة console logs للـ debugging
+// - إصلاح مشكلة اختفاء الأيقونة: تحقق مزدوج من URL قبل الإخفاء
+// - حماية ضد SPA navigation المؤقت في Teachable
 // 
 // 📍 Widget Scope:
 // - IDs: #zg-* (green theme)
@@ -1734,15 +1736,125 @@ function scanSidebarLesson(){var sels=[".section-item--is-active .item-title",".
 
 function scanPage(){var info={course_name:scanCourseName(),lecture_title:""};var lt=parseLessonTitle();if(lt&&!isBad(lt))info.lecture_title=lt;if(!info.lecture_title){var ct=scanContent();if(ct)info.lecture_title=ct;}if(!info.lecture_title){var sb=scanSidebarLesson();if(sb)info.lecture_title=sb;}info.course_name=(info.course_name||"").substring(0,150).trim();info.lecture_title=(info.lecture_title||"").substring(0,150).trim();if(isBad(info.lecture_title))info.lecture_title="";return info;}
 
-function setupMonitor(){var deb=null;function handleNav(){var nUrl=location.href;if(nUrl===lastUrl)return;var oldL=lastLesson,oldId=lastLecId,newId=lecId(nUrl);lastUrl=nUrl;lastLecId=newId;if(newId&&oldId&&newId===oldId)return;
-if(!/\/courses\//.test(nUrl)){lockedCourse="";page.course_name="";page.lecture_title="";lastLesson="";applyVisibility(false);return;}
-if(scanTmr)clearTimeout(scanTmr);var att=0,max=12,found=false;function doScan(){if(found)return;att++;var f=scanPage();if(f.course_name)page.course_name=f.course_name;var nt=f.lecture_title||"";if(nt&&nt!==oldL){found=true;page.lecture_title=nt;lastLesson=nt;updBanner();
+function setupMonitor(){
+var deb=null;
+var lastValidPath = location.pathname; // تتبع آخر مسار صحيح
+
+function handleNav(){
+var nUrl=location.href;
+if(nUrl===lastUrl)return;
+
+var oldL=lastLesson,oldId=lastLecId,newId=lecId(nUrl);
+lastUrl=nUrl;
+lastLecId=newId;
+if(newId&&oldId&&newId===oldId)return;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛡️ CRITICAL FIX: تحقق مزدوج من الـ URL قبل الإخفاء
+// ═══════════════════════════════════════════════════════════════════════════
+var currentPath = location.pathname;
+var hasCoursesInPath = /\/courses\//.test(currentPath);
+var hasLecturesInPath = /\/lectures\//.test(currentPath);
+var isEnrolledPage = /\/courses\/enrolled/.test(currentPath);
+
+// لو مش في صفحة كورس خالص
+if(!hasCoursesInPath && !hasLecturesInPath && !isEnrolledPage){
+  console.log("[ZikoGuide] ⚠️ Left course page - hiding widget");
+  lockedCourse="";
+  page.course_name="";
+  page.lecture_title="";
+  lastLesson="";
+  applyVisibility(false);
+  return;
+}
+
+// لو في صفحة كورس - حفظ المسار الحالي
+if(hasCoursesInPath || hasLecturesInPath || isEnrolledPage){
+  lastValidPath = currentPath;
+  console.log("[ZikoGuide] ✅ Valid course page detected:", currentPath);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+
+if(scanTmr)clearTimeout(scanTmr);
+var att=0,max=12,found=false;
+
+function doScan(){
+if(found)return;
+att++;
+var f=scanPage();
+if(f.course_name)page.course_name=f.course_name;
+var nt=f.lecture_title||"";
+if(nt&&nt!==oldL){
+found=true;
+page.lecture_title=nt;
+lastLesson=nt;
+updBanner();
 checkContentVisibility();
-if(opened&&$msgs){var os=$msgs.querySelector(".zg-suggestions");if(os)os.remove();showWelcSugg();}return;}
+if(opened&&$msgs){
+var os=$msgs.querySelector(".zg-suggestions");
+if(os)os.remove();
+showWelcSugg();
+}
+return;
+}
 if(att>=max){checkContentVisibility();return;}
-scanTmr=setTimeout(doScan,att<=3?700:att<=6?1500:2500);}scanTmr=setTimeout(doScan,400);
+scanTmr=setTimeout(doScan,att<=3?700:att<=6?1500:2500);
+}
+
+scanTmr=setTimeout(doScan,400);
 setTimeout(checkContentVisibility,2000);
-}function debNav(){if(deb)clearTimeout(deb);deb=setTimeout(handleNav,200);}var oP=history.pushState;history.pushState=function(){oP.apply(this,arguments);debNav();};var oR=history.replaceState;history.replaceState=function(){oR.apply(this,arguments);debNav();};window.addEventListener("popstate",debNav);var evts=["turbolinks:load","turbo:load","page:load","page:change"];for(var ei=0;ei<evts.length;ei++){document.addEventListener(evts[ei],debNav);}try{var tEl=document.querySelector("title");if(tEl){var obs=new MutationObserver(debNav);obs.observe(tEl,{childList:true,characterData:true,subtree:true});}}catch(e){}setInterval(function(){if(location.href!==lastUrl)handleNav();},3000);}
+}
+
+function debNav(){if(deb)clearTimeout(deb);deb=setTimeout(handleNav,200);}
+
+var oP=history.pushState;
+history.pushState=function(){oP.apply(this,arguments);debNav();};
+
+var oR=history.replaceState;
+history.replaceState=function(){oR.apply(this,arguments);debNav();};
+
+window.addEventListener("popstate",debNav);
+
+var evts=["turbolinks:load","turbo:load","page:load","page:change"];
+for(var ei=0;ei<evts.length;ei++){
+document.addEventListener(evts[ei],debNav);
+}
+
+try{
+var tEl=document.querySelector("title");
+if(tEl){
+var obs=new MutationObserver(debNav);
+obs.observe(tEl,{childList:true,characterData:true,subtree:true});
+}
+}catch(e){}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛡️ CRITICAL FIX: فحص دوري أكثر ذكاءً
+// ═══════════════════════════════════════════════════════════════════════════
+setInterval(function(){
+var currentHref = location.href;
+var currentPath = location.pathname;
+
+// تحقق مزدوج: لو الـ URL اتغير فعلاً
+if(currentHref !== lastUrl){
+  // لو لسه في صفحة كورس - لا تخفي
+  var stillInCourse = /\/courses\//.test(currentPath) || 
+                      /\/lectures\//.test(currentPath) || 
+                      /\/courses\/enrolled/.test(currentPath);
+  
+  if(stillInCourse){
+    console.log("[ZikoGuide] 🔄 URL changed but still in course - keeping widget visible");
+    lastUrl = currentHref; // تحديث الـ URL بدون إخفاء
+    // لا تستدعي handleNav() عشان ميخفيش الأيقونة
+  } else {
+    console.log("[ZikoGuide] 📍 URL changed and left course - calling handleNav");
+    handleNav();
+  }
+}
+},3000);
+// ═══════════════════════════════════════════════════════════════════════════
+}
 
 function setupVoice(){
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
