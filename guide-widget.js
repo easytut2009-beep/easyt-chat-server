@@ -1,7 +1,31 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎓 Ziko Guide Widget — المرشد التعليمي
+// ═══════════════════════════════════════════════════════════════════════════
+// Version: 1.1 (Fixed Conflict)
+// Last Update: April 17, 2026
+// 
+// 🔧 CRITICAL FIXES:
+// - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
+// - تحسين Smart Heartbeat مع logging أفضل
+// - إضافة console logs للـ debugging
+// 
+// 📍 Widget Scope:
+// - IDs: #zg-* (green theme)
+// - Pages: /courses/enrolled/*, /lectures/*
+// - GTM: Simple <script> tag injection
+// ═══════════════════════════════════════════════════════════════════════════
+
 (function(){
 "use strict";
-if(window.__zikoLoaded)return;
-window.__zikoLoaded=true;
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛡️ CRITICAL FIX: استخدام flag منفصل لتجنب التضارب مع Sales Widget
+// ═══════════════════════════════════════════════════════════════════════════
+if(window.__zikoGuideLoaded){
+console.log('[ZikoGuide] Already loaded - skipping duplicate init');
+return;
+}
+window.__zikoGuideLoaded=true;
+console.log('[ZikoGuide] 🟢 Widget initializing...');
 
 
 try{var _vp=document.querySelector('meta[name="viewport"]');if(_vp){var _vc=_vp.getAttribute("content")||"";if(_vc.indexOf("viewport-fit")===-1)_vp.setAttribute("content",_vc+",viewport-fit=cover");}}catch(_e){}
@@ -1921,25 +1945,37 @@ else init();
 window.addEventListener("load",function(){if(!document.getElementById("zg-toggle"))init();});
 
 // ══════════════════════════════════════════════════════════
-// Heartbeat Check — يتأكد إن الأيقونة موجودة ومش frozen
+// 🔄 Smart Heartbeat — يتأكد إن الأيقونة موجودة ومستجيبة
 // ══════════════════════════════════════════════════════════
 setInterval(function(){
 var tog=document.getElementById("zg-toggle");
-if(tog&&tog.style.display!=="none"){
-// الأيقونة موجودة - نتأكد إنها responsive
+if(!tog){
+console.log("[ZikoGuide] ⚠️ Toggle button missing - may have been removed");
+return;
+}
+if(tog.style.display==="none"){
+console.log("[ZikoGuide] Toggle hidden - normal for non-lecture pages");
+return;
+}
+// الأيقونة موجودة ومرئية - نتأكد إنها responsive
 if(!tog.__zgHeartbeat){
 tog.__zgHeartbeat=true;
+console.log("[ZikoGuide] 🔍 Checking responsiveness...");
 // لو في مشكلة في الـ events - reinit
 var testClick=function(){tog.__zgResponsive=true;};
 tog.addEventListener("pointerdown",testClick,{once:true,passive:true});
 setTimeout(function(){
 if(!tog.__zgResponsive){
-console.log("[ZikoGuide] Re-initializing frozen widget");
+console.log("[ZikoGuide] ❌ Widget frozen - re-initializing");
+// تأكد إن الـ flag صحيح
+delete window.__zikoGuideLoaded;
 init();
+}else{
+console.log("[ZikoGuide] ✅ Widget responsive");
 }
 delete tog.__zgResponsive;
+delete tog.__zgHeartbeat;
 },100);
-}
 }
 },30000); // كل 30 ثانية
 
