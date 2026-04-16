@@ -1926,9 +1926,7 @@ async function runAnimation() {
   card.classList.remove("ztip-card-glow");
   card.classList.add("ztip-card-shake");
 
-  await delay(700);
-  showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]);
-  scrollBot();
+  // No hardcoded suggestions - removed to keep dynamic only
 }
 
 runAnimation();
@@ -2056,31 +2054,7 @@ zikoMessages.appendChild(wrapper); scrollBot();
 
 }
 
-function showContextSuggestions(userMsg, botReply) {
-
-var lower = (userMsg + " " + botReply).toLowerCase();
-
-if (lower.includes("اشتراك") || lower.includes("سعر") || lower.includes("عرض"))
-
-showSuggestions(["طرق الدفع", "تجديد الاشتراك", "فودافون كاش"]);
-
-else if (lower.includes("دفع") || lower.includes("فودافون") || lower.includes("انستا"))
-
-showSuggestions(["رفع الإيصال", "وقت التفعيل", "تواصل مع الدعم"]);
-
-else if (lower.includes("كورس") || lower.includes("دورة") || lower.includes("تعلم"))
-
-showSuggestions(["أسعار الاشتراك", "الدبلومات", "كل الدورات"]);
-
-else if (lower.includes("دبلوم"))
-
-showSuggestions(["أسعار الاشتراك", "كل الدورات"]);
-
-else
-
-showSuggestions(["عايز اتعلم", "أسعار الاشتراك", "الدبلومات", "طرق الدفع"]);
-
-}
+// showContextSuggestions removed - all suggestions now come from GPT backend
 
 function completeStreamingIfActive() {
 
@@ -2179,9 +2153,8 @@ if (data.options && data.options.length > 0) {
     showSuggestions(data.suggestions);
   });
 } else {
-  addMessage(data.reply, "bot", function() {
-    showContextSuggestions(sentText || "صورة", data.reply);
-  });
+  addMessage(data.reply, "bot");
+  // No fallback suggestions - backend decides everything
 }
 
 } catch (err) {
