@@ -1999,18 +1999,22 @@ async function buildContextAwareResponse(results, responseData, maxItems) {
         // fallback: نستخدم الـ why كما هو لكن نخليه أكثر فايدة
         userMessage = result.why
           // إزالة كل الـ internal patterns
-          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل|سأل|عبّر عن|أظهر)/gi, "")
+          .replace(/المستخدم (قال|ذكر|أبدى|طلب|يسأل|سأل|عبّر عن|أظهر|يبحث عن)/gi, "")
           .replace(/اهتمامه ب/gi, "")
           .replace(/اهتمام.*?ب/gi, "")
           .replace(/رغبته في/gi, "")
           .replace(/يريد/gi, "")
           .replace(/أنه/gi, "")
+          .replace(/يبحث عن/gi, "")              // NEW
           .replace(/مما يدل على.*?\./gi, "")  // إزالة "مما يدل على..."
           .replace(/،\s*مما.*$/gi, "")           // إزالة ", مما يدل..."
           .replace(/عن\s+وجود/gi, "")           // إزالة "عن وجود"
           .replace(/يتعلق ب/gi, "")             // إزالة "يتعلق ب"
           .replace(/ولكنه (لا يعرف|غير متأكد|مش عارف)/gi, "") // إزالة "ولكنه لا يعرف"
           .replace(/كيف(ية)?\.?$/gi, "")        // إزالة "كيف" في الآخر
+          .replace(/^كورس\s+/gi, "")            // NEW - إزالة "كورس" في البداية
+          .replace(/\s+كورس$/gi, "")            // NEW - إزالة "كورس" في النهاية
+          .replace(/^ال/gi, "")                 // NEW - إزالة "ال" في البداية
           .replace(/\s+/g, " ")                 // تنظيف المسافات
           .replace(/^،\s*/g, "")                // إزالة فاصلة في البداية
           .replace(/،\s*$/g, "")                // إزالة فاصلة في النهاية
@@ -2597,6 +2601,30 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
           
           console.log(`✅ GPT Filter: Selected ${filteredResults.length} most relevant`);
           console.log(`💡 Reasoning: ${filterResult.reasoning}`);
+          
+          // 🔍 VALIDATION CHECK: تأكد إن النتائج منطقية
+          // لو المستخدم سأل عن موضوع محدد ومافيش تطابق → ارجع apology
+          if (filteredResults.length > 0 && keywords.length > 0) {
+            const mainKeyword = keywords[0].toLowerCase();
+            const firstResult = filteredResults[0];
+            const resultTitle = (firstResult.item.title + " " + (firstResult.item.subtitle || "")).toLowerCase();
+            
+            // لو الكلمة المفتاحية الأساسية مش موجودة في أول نتيجة
+            // ومافيش أي تشابه → يبقى النتائج غلط
+            const keywordInTitle = resultTitle.includes(mainKeyword);
+            const keywordLength = mainKeyword.length;
+            
+            if (!keywordInTitle && keywordLength > 3) {
+              // Check if it's a specific topic query (not general)
+              const isSpecificQuery = msg.includes("كورس") || msg.includes("فيه") || msg.includes("عن");
+              
+              if (isSpecificQuery) {
+                console.log(`⚠️ Validation Failed: "${mainKeyword}" not found in results`);
+                reply = `للأسف، مالقيتش كورسات متخصصة في "${keywords[0]}" حالياً 😊<br><br>لكن عندنا 600+ كورس في مجالات تانية! عايز أساعدك تلاقي حاجة تانية مناسبة؟<br><br>أو تقدر تتصفح كل الكورسات من هنا: <a href="https://easyt.online/courses" target="_blank" style="color:#e63946;font-weight:700">كل الكورسات 🎓</a>`;
+                return { reply: finalizeReply(reply), suggestions: [] };
+              }
+            }
+          }
         }
       } catch (e) {
         console.error("⚠️ GPT Filter failed, using original results:", e.message);
