@@ -1229,6 +1229,27 @@ function faqSimilarity(q1, q2) {
   // Exact match
   if (a === b) return 1;
   
+  // 🎯 DOMAIN-SPECIFIC MATCHING for subscription/cancellation
+  // These are critical FAQ topics that need special handling
+  const subscriptionPatterns = {
+    cancel: ['الغي', 'الغاء', 'الغى', 'ايقاف', 'اوقف', 'cancel', 'stop'],
+    subscription: ['اشتراك', 'subscription', 'عضوية'],
+    payment: ['دفع', 'payment', 'يدفع', 'ادفع'],
+    price: ['سعر', 'اسعار', 'كام', 'price', 'cost'],
+    refund: ['استرداد', 'استرجاع', 'refund', 'return']
+  };
+  
+  // Check if both questions are about the same critical topic
+  let topicMatchBonus = 0;
+  for (const [topic, patterns] of Object.entries(subscriptionPatterns)) {
+    const q1HasTopic = patterns.some(p => a.includes(p));
+    const q2HasTopic = patterns.some(p => b.includes(p));
+    
+    if (q1HasTopic && q2HasTopic) {
+      topicMatchBonus += 0.5; // Big bonus for same topic
+    }
+  }
+  
   // Extract words (minimum 2 chars to avoid noise)
   const wordsA = a.split(' ').filter(w => w.length >= 2);
   const wordsB = b.split(' ').filter(w => w.length >= 2);
@@ -1260,22 +1281,42 @@ function faqSimilarity(q1, q2) {
   
   // Calculate similarity
   const maxSize = Math.max(wordsA.length, wordsB.length);
-  return common / maxSize;
+  const baseSimilarity = common / maxSize;
+  
+  // Add topic bonus (capped at 1.0)
+  return Math.min(1.0, baseSimilarity + topicMatchBonus);
 }
 
-async function findFAQAnswer(message, threshold = 0.40) { // ← خفضناه من 0.55 لـ 0.40
+async function findFAQAnswer(message, threshold = 0.35) { // ← خفضناه من 0.40 لـ 0.35
   try {
     const faqs = await loadAllFAQs();
     if (!faqs || faqs.length === 0) return null;
+    
     let best = null, bestScore = 0;
+    
     for (const faq of faqs) {
       const score = faqSimilarity(message, faq.question);
-      if (score > bestScore) { bestScore = score; best = faq; }
+      if (score > bestScore) { 
+        bestScore = score;
+        best = faq;
+      }
     }
-    if (bestScore >= threshold && best) {
-      console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)})`);
+    
+    // 🎯 Lower threshold for critical topics
+    const criticalKeywords = ['الغي', 'الغاء', 'cancel', 'استرداد', 'refund'];
+    const isCritical = criticalKeywords.some(k => message.toLowerCase().includes(k));
+    const effectiveThreshold = isCritical ? 0.25 : threshold;
+    
+    if (bestScore >= effectiveThreshold && best) {
+      console.log(`📋 FAQ match: "${best.question}" (score: ${bestScore.toFixed(2)}, threshold: ${effectiveThreshold})`);
       return markdownToHtml(best.answer);
     }
+    
+    // Debug: log near misses
+    if (best && bestScore >= 0.20) {
+      console.log(`⚠️ FAQ near-miss: "${best.question}" (score: ${bestScore.toFixed(2)}, needed: ${effectiveThreshold})`);
+    }
+    
     return null;
   } catch(e) {
     console.error("FAQ match error:", e.message);
