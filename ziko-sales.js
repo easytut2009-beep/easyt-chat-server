@@ -1938,13 +1938,85 @@ async function smartChat(message, sessionId, userId = null) {
     }
 
     const results = await performSearch(keywords, [], audience);
+    
+    // 🧠 GPT SMART FILTER — Select most relevant courses
+    let filteredResults = results;
+    
+    if (results.length > 5) {
+      console.log(`🧠 GPT Smart Filter: ${results.length} results → selecting best matches...`);
+      
+      try {
+        const courseList = results.slice(0, 20).map((r, i) => ({
+          id: i,
+          title: r.item.title,
+          subtitle: r.item.subtitle || "",
+          domain: r.item.domain || "",
+          isDiploma: r.isDiploma || false
+        }));
+        
+        const filterPrompt = `أنت خبير في اختيار الكورسات المناسبة للمستخدمين.
+
+المستخدم قال: "${message}"
+
+الـ Keywords المستخرجة: ${keywords.join(", ")}
+
+السياق:
+${session.history.slice(-2).map(h => `${h.role}: ${h.content.substring(0, 100)}`).join("\n")}
+
+النتائج المتاحة (${courseList.length} نتيجة):
+${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "(كورس)"}`).join("\n")}
+
+**مهمتك:**
+اختار أفضل 5 نتائج الأنسب للمستخدم بناءً على:
+1. سياق الحوار
+2. هدف المستخدم (الشغل من البيت → فريلانس = تصميم/تسويق/كتابة، مش روبوت)
+3. مستوى الصعوبة (مبتدئ → ابدأ بالأسهل)
+4. الأكثر عملية وفايدة فورية
+
+**قواعد مهمة:**
+- "من البيت" أو "فريلانس" → اختار: Photoshop, تسويق إلكتروني, WordPress, كتابة محتوى
+- **تجنب:** روبوت Arduino, Swift, C#, لغات برمجة متقدمة (إلا لو المستخدم طلبها صراحة)
+- دبلومات أفضل من كورسات منفردة (comprehensive)
+- الأحدث والأكثر طلباً أولاً
+
+ارجع JSON فقط:
+{
+  "selected_ids": [0, 3, 5, 12, 8],
+  "reasoning": "short explanation in Arabic"
+}`;
+
+        const filterResp = await gptWithRetry(() => openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          temperature: 0.3,
+          max_tokens: 300,
+          messages: [{ role: "user", content: filterPrompt }],
+          response_format: { type: "json_object" }
+        }), 2);
+        
+        const filterResult = JSON.parse(filterResp.choices[0].message.content);
+        
+        if (filterResult.selected_ids && Array.isArray(filterResult.selected_ids)) {
+          filteredResults = filterResult.selected_ids
+            .filter(id => id >= 0 && id < results.length)
+            .map(id => results[id]);
+          
+          console.log(`✅ GPT Filter: Selected ${filteredResults.length} most relevant`);
+          console.log(`💡 Reasoning: ${filterResult.reasoning}`);
+        }
+      } catch (e) {
+        console.error("⚠️ GPT Filter failed, using original results:", e.message);
+        filteredResults = results.slice(0, 5);
+      }
+    }
+    
+    const finalResults = filteredResults.length > 0 ? filteredResults : results;
     const displayTopic = keywords[0] || message;
-    reply = await formatResults(results, displayTopic, session);
+    reply = await formatResults(finalResults, displayTopic, session);
 
     session.lastTopic = keywords.join(" ");
-    session.lastResults = results;
+    session.lastResults = finalResults;
 
-    if (results.courses.length > 0 || results.diplomas.length > 0) {
+    if (finalResults.courses.length > 0 || finalResults.diplomas.length > 0) {
       session.history = [];
       session.hadClarify = false;
       session.clarifyCount = 0;
