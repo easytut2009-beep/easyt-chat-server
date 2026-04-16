@@ -1537,18 +1537,7 @@ async function smartChat(message, sessionId, userId = null) {
     session.visit_count = visit_count;
     session.userId = userId;
     
-    // 👋 رسالة ترحيب بسيطة للزوار الجدد
-    if (visit_count === 1 && session.history.length === 0) {
-      const welcomeMsg = `أهلاً بيك! 👋<br><br>أنا **زيكو** 🤖 المساعد الذكي في منصة **إيزي تي** 🎓<br><br>إزاي أقدر أساعدك النهارده؟ 😊`;
-      
-      session.history.push({ role: "assistant", content: welcomeMsg });
-      
-      return { 
-        reply: finalizeReply(welcomeMsg), 
-        suggestions: [],
-        options: []
-      };
-    }
+    // Welcome message handled by widget - no need here
     
     if (visit_count > 1) {
       console.log(`🎉 Welcome back! Visit #${visit_count}`);
