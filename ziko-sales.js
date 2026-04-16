@@ -2616,7 +2616,8 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
             
             if (!keywordInTitle && keywordLength > 3) {
               // Check if it's a specific topic query (not general)
-              const isSpecificQuery = msg.includes("كورس") || msg.includes("فيه") || msg.includes("عن");
+              const msgLower = message.toLowerCase();
+              const isSpecificQuery = msgLower.includes("كورس") || msgLower.includes("فيه") || msgLower.includes("عن");
               
               if (isSpecificQuery) {
                 console.log(`⚠️ Validation Failed: "${mainKeyword}" not found in results`);
