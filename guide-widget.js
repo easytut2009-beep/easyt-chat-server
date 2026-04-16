@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎓 Ziko Guide Widget — المرشد التعليمي
 // ═══════════════════════════════════════════════════════════════════════════
-// Version: 1.5 (30 Messages - Clean Reset)
-// Last Update: April 17, 2026 - 7:00 AM
+// Version: 1.6 (Auto-Fix Heartbeat)
+// Last Update: April 17, 2026 - 7:30 AM
 // 
 // 🔧 CRITICAL FIXES:
 // - استخدام __zikoGuideLoaded بدلاً من __zikoLoaded (منع التضارب مع Sales Widget)
@@ -13,6 +13,8 @@
 // - الأيقونة تظهر بناءً على URL فقط - لا تعتمد على API response
 // - 📊 تغيير الحد اليومي: 30 رسالة بدلاً من 15
 // - 🎁 Storage keys v2: كل المستخدمين يبدأوا من جديد بـ 30 رسالة
+// - 🔧 AUTO-FIX Heartbeat: لو الأيقونة اتخفت في صفحة درس → يظهرها تلقائياً
+// - ⚡ Heartbeat كل 5 ثواني (كان 30) للكشف والإصلاح السريع
 // 
 // 📍 Widget Scope:
 // - IDs: #zg-* (green theme)
@@ -20,6 +22,7 @@
 // - GTM: Simple <script> tag injection
 // - Daily Limit: 30 messages (resets at midnight)
 // - Storage: zg_remaining_v2, zg_session_v2 (v2 = clean reset)
+// - Auto-Recovery: Every 5 seconds
 // ═══════════════════════════════════════════════════════════════════════════
 
 (function(){
@@ -2175,10 +2178,27 @@ if(!tog){
 console.log("[ZikoGuide] ⚠️ Toggle button missing - may have been removed");
 return;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔥 CRITICAL FIX: لو الأيقونة مخفية في صفحة درس → اظهرها تلقائياً
+// ═══════════════════════════════════════════════════════════════════════════
 if(tog.style.display==="none"){
-console.log("[ZikoGuide] Toggle hidden - normal for non-lecture pages");
-return;
+var currentPath = location.pathname;
+var isInLecture = /\/courses\//.test(currentPath) || 
+                  /\/lectures\//.test(currentPath) || 
+                  /\/courses\/enrolled/.test(currentPath);
+
+if(isInLecture){
+  console.log("[ZikoGuide] 🔧 AUTO-FIX: Toggle was hidden in lecture page - showing it!");
+  tog.style.display="block";
+  contentVisible = true;
+} else {
+  console.log("[ZikoGuide] Toggle hidden - normal for non-lecture pages");
+  return;
 }
+}
+// ═══════════════════════════════════════════════════════════════════════════
+
 // الأيقونة موجودة ومرئية - نتأكد إنها responsive
 if(!tog.__zgHeartbeat){
 tog.__zgHeartbeat=true;
@@ -2199,6 +2219,6 @@ delete tog.__zgResponsive;
 delete tog.__zgHeartbeat;
 },100);
 }
-},30000); // كل 30 ثانية
+},5000); // ← تغيير من 30 ثانية إلى 5 ثواني (أسرع في الكشف والإصلاح)
 
 })();
