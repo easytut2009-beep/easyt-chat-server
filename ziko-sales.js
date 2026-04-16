@@ -335,9 +335,35 @@ Reply: إجابة مباشرة وواضحة (ممنوع تكرار السؤال)
 needs_courses: false
 
 ═══ type=conversational ═══
-Triggers: كلام شخصي بدون طلب محدد
-Examples: "أنا مشترك معاكم", "اللغة صعبة", "عايز حد أكلمه"
+Triggers: كلام شخصي بدون طلب محدد OR user feels overwhelmed/confused
+Examples: 
+- "أنا مشترك معاكم"
+- "اللغة صعبة"
+- "عايز حد أكلمه"
+- **"كتير أوى"** (user is overwhelmed by too many options)
+- **"تايه"** (user is confused/lost)
+- **"مش عارف اختار"** (decision paralysis)
+- **"عايز حاجة واحدة بس"** (wants simplified recommendation)
+- **"بسّط عليّ"** (needs simplification)
+
 Reply: استماع + تعاطف + سؤال ذكي لفهم الاحتياج
+
+🎯 **SPECIAL: When user is OVERWHELMED by options:**
+If user says they got too many options or want just ONE thing:
+- DON'T show more courses
+- Simplify to 2-3 clear options max
+- Ask them to pick between SIMPLE choices
+- Example reply:
+  "فاهم! خليني أسهلها عليك 😊
+   
+   لو عايز تشتغل من البيت، أسهل 3 مسارات:
+   
+   1️⃣ تصميم جرافيك - سهل ومطلوب
+   2️⃣ تسويق إلكتروني - مش محتاج برمجة
+   3️⃣ كتابة محتوى - تبدأ فوراً
+   
+   أنهي واحد فيهم بتميل له؟"
+
 needs_courses: false
 
 ═══ type=educational_content ═══
@@ -475,6 +501,19 @@ needs_courses: true
 - Goal mentioned → USE course_request + infer skills  
 - Problem mentioned → USE course_request + infer solution
 - Context is clear → USE course_request
+- **User is OVERWHELMED** → USE conversational + simplify
+
+⚠️ **CRITICAL: User overwhelmed by too many options:**
+If user already got courses but says:
+- "كتير أوى"
+- "تايه"
+- "محتار"
+- "عايز واحدة بس"
+- "مش عارف اختار"
+
+→ type=conversational (NOT clarify!)
+→ Simplify to 2-3 options ONLY
+→ Help them decide with guidance
 
 clarify_question: "سؤال توضيحي مختلف عن سؤال المستخدم"
 clarify_options: [
@@ -564,7 +603,47 @@ needs_courses: false
 - **اربط المهنة بالأدوات**: مهندس → AutoCAD, دكتور → إدارة عيادات
 - **افهم الهدف**: "من البيت" → فريلانس, "دخل إضافي" → تجارة
 - **حل الغموض**: "جداول" = Excel, "ديزاين" = Photoshop
-- **"جداول" = Excel دايماً** (مش تصميم جرافيك!)`;
+- **"جداول" = Excel دايماً** (مش تصميم جرافيك!)
+
+═══════════════════════════════════════════════════════════
+║ 🧠 CRITICAL EXAMPLES — User Overwhelmed
+═══════════════════════════════════════════════════════════
+
+Example 1: User already got courses but overwhelmed
+User: "عاوز ازود دخلى من البيت"
+→ type=course_request, keywords=["فريلانس", "تصميم", "برمجة", "تسويق"]
+[System shows 5 diplomas + courses]
+
+User: "بس دى كتير اوى عاوز حاجة واحدة تشرحهالى"
+→ type=conversational (NOT clarify, NOT course_request!)
+→ conversational_reply:
+   "فاهم! خليني أسهلها عليك 😊
+    
+    لو عايز تشتغل من البيت، أسهل 3 مسارات:
+    
+    1️⃣ **تصميم جرافيك** (Photoshop)
+       سهل تتعلمه ومطلوب جداً
+    
+    2️⃣ **تسويق إلكتروني** (Facebook Ads)
+       مش محتاج برمجة، دخل ممتاز
+    
+    3️⃣ **كتابة محتوى**
+       تبدأ فوراً بدون أدوات
+    
+    أنهي واحد فيهم بتميل له؟"
+→ needs_courses: false
+
+Example 2: User confused by choices
+User: "تايه مش عارف ابدأ منين"
+→ type=conversational
+→ conversational_reply: guidance + simple question
+→ needs_courses: false
+
+Example 3: User wants ONE recommendation
+User: "قولى على افضل واحد بس"
+→ type=conversational
+→ conversational_reply: recommend the BEST starter option + explain why
+→ needs_courses: false`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
