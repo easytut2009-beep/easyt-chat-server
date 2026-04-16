@@ -2531,18 +2531,12 @@ setInterval(function() {
 }, 500); // كل نص ثانية (سريع عشان Teachable SPA)
 
 // ══════════════════════════════════════════════════════════
-// 🚀 Auto-initialization — فقط في الصفحات المسموحة
+// 🚀 CRITICAL FIX: تأخير Init لحد ما نتأكد من الصفحة
 // ══════════════════════════════════════════════════════════
-if (shouldShowSalesWidget()) {
-  console.log('[Ziko Sales] Initializing widget...');
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initZiko);
-  } else {
-    initZiko();
-  }
-} else {
-  console.log('[Ziko Sales] Widget not initialized (page not allowed)');
-}
+// ❌ مش هنعمل auto-init هنا - عشان ميظهرش في الصفحات الممنوعة
+// ✅ GTM هيستدعي الويدجت - والويدجت هيتحقق بنفسه
+
+console.log('[Ziko Sales] Widget loaded - waiting for GTM or manual init...');
 
 // expose للـ GTM (للتحكم اليدوي إن لزم)
 window.initZiko = initZiko;
@@ -2557,6 +2551,8 @@ window.initZikoSafe = function() {
   if (shouldShowSalesWidget()) {
     console.log('[Ziko Sales] ✅ Page allowed - initializing...');
     initZiko();
+    // ابدأ المراقبة بعد Init
+    setTimeout(checkAndToggleWidget, 1000);
   } else {
     console.log('[Ziko Sales] ❌ Page blocked - NOT initializing');
   }
