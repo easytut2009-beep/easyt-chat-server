@@ -1176,16 +1176,45 @@ function normQ(text) {
 function faqSimilarity(q1, q2) {
   const a = normQ(q1);
   const b = normQ(q2);
+  
+  // Exact match
   if (a === b) return 1;
-  const wa = new Set(a.split(' ').filter(w => w.length > 2));
-  const wb = new Set(b.split(' ').filter(w => w.length > 2));
-  if (wa.size === 0 || wb.size === 0) return 0;
+  
+  // Extract words (minimum 2 chars to avoid noise)
+  const wordsA = a.split(' ').filter(w => w.length >= 2);
+  const wordsB = b.split(' ').filter(w => w.length >= 2);
+  
+  if (wordsA.length === 0 || wordsB.length === 0) return 0;
+  
+  // Count common words
   let common = 0;
-  wa.forEach(w => { if (wb.has(w)) common++; });
-  return common / Math.max(wa.size, wb.size);
+  const setB = new Set(wordsB);
+  
+  wordsA.forEach(wordA => {
+    // Exact match
+    if (setB.has(wordA)) {
+      common++;
+      return;
+    }
+    
+    // Substring match (for word variations)
+    // e.g., "اشتراك" matches "اشتراكي"
+    wordsB.forEach(wordB => {
+      if (wordA.length >= 3 && wordB.length >= 3) {
+        // If one word contains the other (min 3 chars)
+        if (wordA.includes(wordB) || wordB.includes(wordA)) {
+          common += 0.8; // Partial credit
+        }
+      }
+    });
+  });
+  
+  // Calculate similarity
+  const maxSize = Math.max(wordsA.length, wordsB.length);
+  return common / maxSize;
 }
 
-async function findFAQAnswer(message, threshold = 0.55) {
+async function findFAQAnswer(message, threshold = 0.40) { // ← خفضناه من 0.55 لـ 0.40
   try {
     const faqs = await loadAllFAQs();
     if (!faqs || faqs.length === 0) return null;
