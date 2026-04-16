@@ -265,6 +265,11 @@ async function analyzeIntent(message, history = [], hadClarify = false, isRepeat
 3. **ONE clarifying question MAX** — then show courses
 4. **Infer from context** — don't ask if you can deduce
 5. **Be proactive** — suggest solutions, don't just ask questions
+6. **PAST vs FUTURE tense:**
+   - "اشتريت كتاب" (past) = already bought → type=support
+   - "عايز اشتري كتاب" (future) = wants to buy → type=course_request or guide
+   - "اشتريت كورس" (past) = already bought → type=support
+   - "عايز اشتري كورس" (future) = wants to buy → type=info or guide
 
 ${contextTopic}
 ${languageContext}
@@ -2114,6 +2119,16 @@ async function smartChat(message, sessionId, userId = null) {
   // Q30: المنصة دي ازاي؟
   if ((msg.includes("منصة") || msg.includes("إيزي")) && (msg.includes("ازاي") || msg.includes("إيه") || msg.includes("وش"))) {
     return { reply: finalizeReply("منصة إيزي تي — منصة تعليمية عربية شاملة! 🎓<br><br>📊 600+ كورس ودبلومة في كل المجالات<br>💰 اشتراك سنوي: 59$ (وصول لكل المحتوى!)<br>🎯 23+ سنة خبرة<br>👥 750,000+ متعلم<br><br>المجالات:<br>• جرافيك وتصميم<br>• برمجة وتطوير<br>• ذكاء اصطناعي<br>• تسويق رقمي<br>• وأكتر بكتير!<br><br>عايز تتعلم إيه؟ 😊"), suggestions: [] };
+  }
+  
+  // Q17: اشتريت كتاب ومش عارف فين
+  if ((msg.includes("اشتريت") || msg.includes("اشترت")) && msg.includes("كتاب") && (msg.includes("فين") || msg.includes("لاقي") || msg.includes("موجود"))) {
+    return { reply: finalizeReply("أهلاً بيك! 😊<br><br>عشان توصل للكتاب اللي اشتريته:<br>1️⃣ ادخل على \"دوراتي\" من حسابك على منصة إيزي تي<br>2️⃣ هتلاقي الكتاب موجود هناك وتقدر تنزله 📚<br><br>لو دخلت على \"دوراتي\" ومش لاقي الكتاب، تواصل مع فريق الدعم الفني وهيساعدوك فوراً! 🙏<br>📞 واتساب الدعم الفني ← <a href=\"https://wa.me/201027007899\" target=\"_blank\" style=\"color:#e63946;font-weight:600;text-decoration:underline\">على الواتساب 💬</a>"), suggestions: [] };
+  }
+  
+  // Q24: عايز اشتري كورس معين بس مش عارف ازاي
+  if ((msg.includes("اشتري") || msg.includes("شراء")) && msg.includes("كورس") && (msg.includes("ازاي") || msg.includes("كيف") || msg.includes("طريقة"))) {
+    return { reply: finalizeReply("أهلاً بيك! 🎉<br><br>لشراء كورس معين، اتبع الخطوات دي:<br><br>1️⃣ ادخل على موقع إيزي تي: <a href=\"https://easyt.online\" target=\"_blank\" style=\"color:#e63946;font-weight:600;text-decoration:underline\">easyt.online</a><br>2️⃣ ابحث عن الكورس اللي عايز تشتريه<br>3️⃣ اضغط على الكورس عشان تفتح صفحة التفاصيل<br>4️⃣ اضغط على زر \"اشترك الآن\" أو \"شراء\"<br>5️⃣ اختر طريقة الدفع المناسبة ليك<br>6️⃣ بعد الدفع، هتستلم تأكيد على الإيميل<br><br>لو محتاج مساعدة في أي خطوة، أنا هنا! 😊"), suggestions: [] };
   }
 
   // 🔍 كشف التكرار — لو المستخدم كرر نفس الرسالة
