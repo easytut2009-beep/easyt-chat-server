@@ -1385,6 +1385,14 @@ requestAnimationFrame(function() { zikoMessages.scrollTop = zikoMessages.scrollH
 
 function initZiko() {
 
+// 🛡️ CRITICAL: فحص فوري - لو الصفحة ممنوعة مش نكمل!
+if (!shouldShowSalesWidget()) {
+  console.log('[Ziko Sales] ❌ initZiko called on blocked page - ABORTING!');
+  return; // ❌ نوقف فوراً
+}
+
+console.log('[Ziko Sales] ✅ initZiko starting on allowed page...');
+
 toggleBtn = document.getElementById("ziko-toggle");
 
 chatBox = document.getElementById("ziko-chat-box");
