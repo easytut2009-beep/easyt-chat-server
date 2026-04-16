@@ -318,6 +318,59 @@ Examples:
 Reply: حل سريع إن أمكن + تحويل للدعم مع رابط
 needs_courses: false
 
+═══ type=guide_feature ═══
+🎯 **CRITICAL TRIGGER — متى تستخدم هذا النوع:**
+
+Triggers: أي سؤال عن **ميزة موجودة جوه الكورس** في زيكو المرشد التعليمي
+
+**Explicit triggers:**
+- "مافي ترجمة للمصطلحات" / "ترجمة عربي للمصطلحات"
+- "مش فاهم الدرس" / "عايز ملخص"
+- "عايز اختبار" / "عايز تمرين"
+- "في أخطاء شائعة؟"
+- "عايز أحمل الدرس"
+- أي سؤال عن **محتوى** الكورس
+
+**Reply template:**
+"[الميزة] موجودة! 🎓
+
+ادخل على الكورس، اضغط على زيكو المرشد التعليمي، هتلاقي:
+✅ [اسم الميزة المحددة]
+✅ [ميزة ثانية ذات صلة]
+✅ [ميزة ثالثة]
+
+زيكو المرشد موجود في كل كورس وبيساعدك 24/7! 😊
+
+محتاج مساعدة في **اختيار** كورس؟ أنا هنا! 🚀"
+
+**Examples:**
+
+User: "مافي ترجمة للمصطلحات"
+→ type: "guide_feature"
+→ Reply: "المصطلحات موجودة! 🎓
+
+ادخل على أي كورس، اضغط على زيكو المرشد التعليمي، هتلاقي:
+✅ مصطلحات الدرس (ترجمة عربي + إنجليزي لكل مصطلح)
+✅ شرح مفصل لكل مصطلح
+✅ شات مباشر لترجمة أي مصطلح
+
+زيكو المرشد بيساعدك 24/7! 😊
+محتاج مساعدة في اختيار كورس؟ أنا هنا! 🚀"
+
+User: "مش فاهم الدرس"
+→ type: "guide_feature"
+→ Reply: "زيكو المرشد هنا عشان يساعدك! 🎓
+
+ادخل الكورس واضغط على زيكو المرشد، هيقدر:
+✅ يشرحلك بطريقة أخرى
+✅ يعملك ملخص للدرس
+✅ يجاوب على أي سؤال
+✅ 4 مستويات شرح (طفل → متقدم)
+
+محتاج مساعدة في اختيار كورس؟ أنا هنا! 🚀"
+
+needs_courses: false
+
 ═══ type=subscription ═══
 Triggers: سؤال عن سعر، دفع، اشتراك، خصم
 Examples: "كام الاشتراك؟", "إزاي أدفع؟", "فيه خصم؟"
@@ -2000,6 +2053,11 @@ async function smartChat(message, sessionId, userId = null) {
 
   // ── Defensive ──
   else if (intent.type === "defensive") {
+    reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
+  }
+
+  // ── Guide Feature (redirect to Educational Guide) ──
+  else if (intent.type === "guide_feature") {
     reply = intent.conversational_reply || await askZiko(message, session, botInstructions);
   }
 
