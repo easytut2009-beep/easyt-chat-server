@@ -187,6 +187,27 @@ function formatDiplomaCard(diploma) {
 // ══════════════════════════════════════════════════════════
 async function analyzeIntent(message, history = [], hadClarify = false, isRepeated = false) {
   const lastMessages = history.slice(-4).map(h => `${h.role}: ${h.content}`).join("\n");
+  
+  // استخراج الموضوع الأساسي من المحادثة
+  let contextTopic = "";
+  if (history.length >= 2) {
+    const recentHistory = history.slice(-6);
+    const contextKeywords = [];
+    
+    recentHistory.forEach(msg => {
+      const content = msg.content.toLowerCase();
+      // استخراج كلمات مهمة
+      if (content.includes('جداول') || content.includes('جدول')) contextKeywords.push('جداول', 'excel');
+      if (content.includes('تصوير')) contextKeywords.push('تصوير', 'photography');
+      if (content.includes('برمجة') || content.includes('python') || content.includes('java')) contextKeywords.push('برمجة');
+      if (content.includes('تصميم') && (content.includes('جرافيك') || content.includes('فوتوشوب'))) contextKeywords.push('جرافيك', 'photoshop');
+      if (content.includes('تسويق')) contextKeywords.push('تسويق', 'marketing');
+    });
+    
+    if (contextKeywords.length > 0) {
+      contextTopic = `📌 **سياق المحادثة:** الموضوع الأساسي هو: ${contextKeywords.join(', ')}\nلو المستخدم قال "أيوه عايز أشوف" أو "نعم" → استخدم keywords من السياق مش كلمات عامة`;
+    }
+  }
 
   const prompt = `أنت محلل نوايا ذكي لزيكو — مساعد الدعم والمساعدة في منصة إيزي تي التعليمية العربية.
 
@@ -199,11 +220,23 @@ async function analyzeIntent(message, history = [], hadClarify = false, isRepeat
 - لو المستخدم سأل سؤال واضح → اجب عليه مباشرة
 - لو مش واضح → اسأل سؤال توضيحي **مختلف** + options
 - **ممنوع** تعيد صياغة نفس السؤال
+- **ممنوع تسأل أكثر من مرة** — لو المستخدم وضح الموضوع (مثل "جداول بيانات") → اعرض الكورسات فوراً
+
+🛑 **قاعدة Clarify الذكي:**
+لو المستخدم قال حاجة من دي → اعتبرها واضحة وعرض كورسات (type=course_request):
+- "جداول بيانات" → excel
+- "جداول" + أي توضيح → excel
+- أي موضوع واضح بعد سؤال واحد → عرض مباشر
+
+❌ **ممنوع تسأل 3-4 أسئلة متتالية!**
+✅ سؤال واحد بس → لو المستخدم رد → عرض فوراً
 
 مثال خطأ:
 - مستخدم: "الدبلومة فيها كل الدورات؟"
 - ❌ رد خطأ: "هل الدبلومة تشمل كل الدورات؟"
 - ✅ رد صح: "أيوه، الدبلومة لما تشتريها بتاخد كل الدورات اللي جواها"
+
+${contextTopic}
 
 المستخدم كتب: "${message}"
 ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
@@ -239,11 +272,15 @@ type=greeting: تحية أو سؤال عن زيكو
 conversational_reply: رد ودود يعرّف بنفسه ويسأل كيف يساعد
 needs_courses: false
 
-type=defensive: رسالة استفزازية أو اتهام
-مثال: "انت هكر؟"، "انت روبوت؟"، "انت غبي؟"، "انت نصاب؟"
-conversational_reply: رد ذكي وودود يوضح هوية زيكو + عرض مساعدة
+type=defensive: رسالة استفزازية أو اتهام أو شتيمة أو انزعاج
+مثال: "انت هكر؟"، "انت روبوت؟"، "انت غبي؟"، "انت نصاب؟"، "انت مال امك"، "كسمك"
+conversational_reply: رد **ذكي وهادئ** يوضح إن زيكو مساعد + يعتذر لو في مشكلة + يعرض مساعدة حقيقية
 needs_courses: false
-🚨 **مهم:** المستخدم بيختبر زيكو — الرد لازم يكون ذكي ومحترم
+🚨 **مهم جداً:** 
+- لو المستخدم زعلان/منزعج → اعتذر أولاً + اسأل عن المشكلة
+- لو بيختبر زيكو → رد ذكي ومحترم
+- **ممنوع رد جاف!** → استخدم تعاطف وذكاء عاطفي
+- مثال رد ذكي: "أعتذر لو كان في حاجة ضايقتك 😔 أنا زيكو، موجود هنا عشان أساعدك. إيه اللي حصل؟"
 
 type=educational_content: سؤال تعليمي عن محتوى كورس معين
 مثال: "ما دلالات الخطوط؟"، "إزاي أعمل X في الدرس؟"، "مش فاهم النقطة دي"
@@ -406,6 +443,9 @@ needs_courses: false
 
 **أعمال:**
 - "Excel متقدم" → ["excel", "اكسيل", "vba", "dashboard"]
+- "تصميم جداول" → ["excel", "اكسيل", "جداول", "spreadsheet"]  ⭐ مهم!
+- "جداول بيانات" → ["excel", "اكسيل", "جداول", "بيانات"]  ⭐ مهم!
+- "جداول" (أي سياق) → ["excel", "اكسيل", "جداول"]  ⭐ مهم!
 - "إدارة أعمال" → ["إدارة", "أعمال", "management"]
 - "محاسبة" → ["محاسبة", "accounting", "مالية"]
 
@@ -417,13 +457,16 @@ needs_courses: false
 ❌ "Python" → ["برمجة", "تطوير"] (نسى python!)
 ❌ "Photoshop" → ["تصميم", "جرافيك"] (نسى photoshop!)
 ❌ "Excel متقدم" → ["متقدم"] (نسى excel!)
+❌ "تصميم جداول" → ["تصميم"] (نسى جداول! المفروض excel!)
 ❌ "Java" → ["c++", "برمجة"] (غلط تماماً!)
 
 🎯 **قواعد إضافية:**
 - لو المستخدم ذكر **أداة محددة** (Photoshop, Excel, Python) → حطها في الـ keywords بالظبط
 - لو ذكر **لغة برمجة** → حط اسمها بالإنجليزي + العربي
 - لو ذكر **مجال عام** → حط أدواته الشائعة
-- **أولوية للكلمات المحددة** على العامة`;
+- **أولوية للكلمات المحددة** على العامة
+- **"جداول" = Excel دايماً** (مش تصميم جرافيك!)
+- **"تصميم جداول" = Excel** (مش Photoshop!)`;
 
   try {
     const resp = await gptWithRetry(() => openai.chat.completions.create({
