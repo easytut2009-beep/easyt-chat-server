@@ -394,7 +394,7 @@ var TOOLS=[
 var API="https://easyt-chat-server.onrender.com/api/guide";
 var IMAGE_API="https://easyt-chat-server.onrender.com/chat-image";
 var LIMIT=30;
-var SK_REM="zg_remaining",SK_SES="zg_session",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
+var SK_REM="zg_remaining_v2",SK_SES="zg_session_v2",SK_POS="zg_position",SK_TIP="zg_drag_tip_shown",SK_SIZE="zg_chat_size";
 var ICON_W=70,ICON_MINI=36,EDGE_SNAP=25,MAGNET=15,GLOW_ZONE=60;
 var RZ_MIN_W=320,RZ_MIN_H=350,RZ_MAX_W=700,RZ_MAX_H=750;
 var CHAT_SNAP_ZONE=40,CHAT_SNAP_TOP_ZONE=25;
