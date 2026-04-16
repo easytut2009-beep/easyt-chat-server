@@ -469,11 +469,10 @@ function applySavedSize(){var saved=loadChatSize();if(saved)applyBoxSize(saved.w
 function parseRzDir(code){if(!code)return null;return{top:code.indexOf("n")>-1,bottom:code.indexOf("s")>-1,left:code.indexOf("w")>-1,right:code.indexOf("e")>-1};}
 
 function checkContentVisibility(){
-if(!/\/courses\//.test(location.pathname)){lockedCourse="";page.course_name="";page.lecture_title="";applyVisibility(false);return;}
+if(!/\/lectures\//.test(location.pathname)){lockedCourse="";page.course_name="";page.lecture_title="";applyVisibility(false);return;}
 var f=scanPage();if(f.course_name)page.course_name=f.course_name;if(f.lecture_title){page.lecture_title=f.lecture_title;lastLesson=f.lecture_title;}updBanner();
-var cn=page.course_name;if(!cn){applyVisibility(true);return;}
-if(courseCheckCache.hasOwnProperty(cn)){applyVisibility(courseCheckCache[cn]);return;}
-fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn)).then(function(r){return r.json();}).then(function(d){courseCheckCache[cn]=!!d.exists;applyVisibility(!!d.exists);}).catch(function(){applyVisibility(true);});
+applyVisibility(true);
+var cn=page.course_name;if(cn&&!courseCheckCache.hasOwnProperty(cn)){fetch(API.replace("/guide","/guide/check-course")+"?course_name="+encodeURIComponent(cn)).then(function(r){return r.json();}).then(function(d){courseCheckCache[cn]=!!d.exists;}).catch(function(){});}
 }
 function applyVisibility(show){if(show&&!contentVisible){contentVisible=true;if(!chatOpen&&$tog)$tog.style.display="block";if(!opened&&!notifyTimer)setTimeout(function(){if(!opened&&contentVisible)showNotify();},2500);}else if(!show){contentVisible=false;if($tog)$tog.style.display="none";if(chatOpen)closeChat();hideNotify();}}
 
