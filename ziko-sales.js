@@ -516,19 +516,37 @@ If user already got courses but says:
 → Simplify to 2-3 options ONLY
 → Help them decide with guidance
 
-clarify_question: "سؤال توضيحي مختلف عن سؤال المستخدم"
-clarify_options: [
-  "لغات أجنبية (إنجليزي، فرنسي، ألماني)",
-  "برمجة وتطوير (Python, JavaScript, مواقع)",
-  "تصميم جرافيك (Photoshop, Illustrator)",
-  "تسويق رقمي (فيسبوك، سوشيال ميديا)"
-]
+🎯 **HOW TO GENERATE CLARIFY OPTIONS (NO HARDCODED EXAMPLES!):**
 
-**Options must be:**
-- ✅ Specific and clear
-- ✅ Include examples in parentheses
-- ❌ NOT generic: "لغات", "تقنية", "تصميم"
-- ✅ YES specific: "لغات أجنبية (إنجليزي)", "برمجة (Python)"
+clarify_question: "Ask what field they're interested in"
+
+clarify_options: Generate 3-4 DIVERSE popular categories based on:
+- Most common fields in our platform
+- Mix of: (1) Languages, (2) Technical skills, (3) Creative skills, (4) Business skills
+- Each option MUST include specific examples in parentheses
+- Examples MUST be real course topics we offer
+- Generate DIFFERENT options each time based on context
+
+**Options generation rules:**
+- ✅ Diverse fields to help user discover interests
+- ✅ Include 2-3 concrete examples per option
+- ✅ Mix beginner-friendly and career-focused
+- ❌ NO fixed list - generate dynamically!
+- ❌ NO generic: "لغات", "تقنية", "تصميم"
+- ✅ YES specific: "لغات أجنبية (إنجليزي، فرنسي)", "برمجة (Python، JavaScript)"
+
+**Example of GOOD dynamic generation:**
+Context: User just said "عايز أتعلم" with zero details
+→ Generate 4 diverse options like:
+  - "لغات أجنبية (إنجليزي، فرنسي، ألماني)"
+  - "برمجة وتطوير (Python، JavaScript، تطبيقات)"
+  - "تصميم وإبداع (Photoshop، Illustrator، موشن)"
+  - "تسويق وأعمال (فيسبوك، تجارة إلكترونية، محتوى)"
+
+**CRITICAL:** These are just EXAMPLE structures - generate your own based on:
+1. What we actually offer (check conversation context for available courses)
+2. What makes sense for a complete beginner
+3. Mix of practical/career skills
 
 needs_courses: false
 
@@ -571,16 +589,38 @@ STEP 5: VALIDATE
 📚 **CRITICAL KNOWLEDGE BASE:**
 ═══════════════════════════════════════════════════════════
 
-**PROFESSIONS → TOOLS:**
-مهندس مدني → autocad, revit, civil 3d, هندسة, مشاريع, رسم
-دكتور → إدارة عيادات, تسويق طبي, محاسبة طبية, تواصل
-معلم → تعليم, تربية, إدارة صف, أدوات تعليمية, kids
-محاسب → excel, محاسبة, تحليل مالي, قيود, erp, مالية
-مصمم → photoshop, illustrator, جرافيك, تصميم, فوتوشوب
-مبرمج → python, javascript, برمجة, coding, programming
-مسوّق → تسويق, marketing, سوشيال, إعلانات, facebook
-صاحب مطعم → إدارة مطاعم, محاسبة, تسويق, خدمة عملاء
-موظف بنك → excel, تحليل, بيانات, محاسبة, مالية
+**PROFESSIONS → TOOLS (PRIORITY ORDER!):**
+
+🏗️ **Engineering & Technical:**
+مهندس مدني → 🎯 PRIORITY: ["autocad", "revit", "civil 3d"] + ["هندسة مدنية", "إدارة مشاريع", "رسم هندسي"]
+مهندس معماري → ["autocad", "revit", "3ds max", "عمارة", "رسم معماري"]
+مهندس ميكانيكا → ["autocad", "solidworks", "mechanical design", "هندسة ميكانيكية"]
+مهندس كهرباء → ["autocad electrical", "plc", "كهرباء", "circuits"]
+
+👨‍⚕️ **Medical:**
+دكتور → ["إدارة عيادات", "تسويق طبي", "محاسبة طبية", "تواصل مع مرضى"]
+صيدلي → ["إدارة صيدليات", "محاسبة", "تسويق"]
+
+👨‍🏫 **Education:**
+معلم/معلمة → ["تعليم", "تربية", "إدارة صف", "استراتيجيات تدريس", "kids education"]
+معلمة ابتدائي → ["تعليم أطفال", "إدارة صف", "تربية", "طرق تدريس", "kids activities"]
+
+💼 **Business:**
+محاسب → 🎯 PRIORITY: ["excel", "اكسيل"] + ["محاسبة", "تحليل مالي", "قيود", "erp", "مالية"]
+مدير → ["إدارة", "قيادة", "management", "موارد بشرية", "تخطيط"]
+موظف بنك → ["excel", "تحليل", "بيانات", "محاسبة", "مالية"]
+
+🎨 **Creative:**
+مصمم → ["photoshop", "illustrator", "جرافيك", "تصميم", "فوتوشوب"]
+مصمم داخلي → ["3ds max", "تصميم داخلي", "ديكور", "interior design"]
+
+💻 **Tech:**
+مبرمج → ["python", "javascript", "برمجة", "coding", "programming"]
+مسوّق → ["تسويق", "marketing", "سوشيال ميديا", "إعلانات", "facebook ads"]
+
+🍽️ **Service Industry:**
+صاحب مطعم → ["إدارة مطاعم", "محاسبة", "تسويق", "خدمة عملاء", "food business"]
+صاحب محل → ["إدارة متاجر", "محاسبة", "تسويق", "مبيعات", "retail"]
 
 **GOALS → SKILLS:**
 شغل من البيت → فريلانس, تصميم, برمجة, محتوى, تسويق, كتابة
@@ -607,15 +647,24 @@ STEP 5: VALIDATE
 ✅ **EXTRACTION EXAMPLES (Follow This Pattern!):**
 ═══════════════════════════════════════════════════════════
 
-Example 1:
+Example 1: 🏗️ **CRITICAL: Civil Engineer**
 User: "أنا مهندس مدني محتاج أطور نفسي"
 → THINKING:
-  Core: مهندس مدني
-  Tools needed: AutoCAD (essential), Revit (BIM), Civil 3D
-  Skills: إدارة مشاريع, رسم هندسي
-  Arabic+English: هندسة مدنية, civil engineering
-→ KEYWORDS: ["autocad", "revit", "civil 3d", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي", "civil engineering"]
-→ COUNT: 7 ✅
+  Profession: مهندس مدني (Civil Engineer)
+  🎯 ESSENTIAL TOOLS (TOP PRIORITY): AutoCAD, Revit, Civil 3D
+  Why AutoCAD first? → Most fundamental tool for civil engineers
+  Also needed: Project management, technical drawing
+  Arabic+English mix: هندسة مدنية, civil engineering
+→ KEYWORDS: ["autocad", "revit", "civil 3d", "هندسة مدنية", "إدارة مشاريع", "رسم هندسي", "civil engineering", "تصميم إنشائي"]
+→ COUNT: 8 ✅
+→ PRIORITY ORDER: AutoCAD > Revit > Civil 3D > Project Management
+
+🚨 **CRITICAL RULE FOR ENGINEERS:**
+ANY engineering profession → ALWAYS include relevant CAD software FIRST!
+- مهندس مدني → autocad, revit, civil 3d
+- مهندس معماري → autocad, revit, 3ds max
+- مهندس ميكانيكا → autocad, solidworks
+- مهندس كهرباء → autocad electrical
 
 Example 2:
 User: "عايز أشتغل من البيت"
@@ -2197,19 +2246,41 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
 // Routes
 // ══════════════════════════════════════════════════════════
 app.post("/chat", limiter, async (req, res) => {
-  const { message, session_id, user_id } = req.body;  // ✅ إضافة user_id
-  if (!message || !session_id) {
-    return res.status(400).json({ error: "Missing message or session_id" });
+  const { message, session_id, user_id } = req.body;
+  
+  // ✅ Check for session_id first
+  if (!session_id) {
+    return res.status(400).json({ error: "Missing session_id" });
   }
+  
+  // ✅ Handle empty/whitespace-only messages gracefully
+  if (!message || message.trim() === '') {
+    return res.json({
+      reply: "مفيش مشكلة! 😊 ممكن تسألني عن أي حاجة تحب تتعلمها؟",
+      suggestions: [],
+      options: []
+    });
+  }
+  
+  // ✅ Handle emoji-only messages
+  const emojiOnlyPattern = /^[\p{Emoji}\s]+$/u;
+  if (emojiOnlyPattern.test(message.trim())) {
+    return res.json({
+      reply: "😊 أهلاً! حابب أساعدك في إيه النهارده؟",
+      suggestions: [],
+      options: []
+    });
+  }
+  
   try {
-    // ✅ تمرير user_id لـ smartChat (optional — لو مفيش هيبقى null)
+    // ✅ تمرير user_id لـ smartChat (optional)
     const result = await smartChat(message.trim(), session_id, user_id || null);
     res.json(result);
   } catch (e) {
     console.error("❌ Chat error:", e.message);
     res.json({
       reply: "عذراً، حصل خطأ تقني! 😅 حاول تاني أو تواصل معنا.",
-      suggestions: [], // No hardcoded suggestions
+      suggestions: [],
     });
   }
 });
