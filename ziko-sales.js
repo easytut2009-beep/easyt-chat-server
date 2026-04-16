@@ -202,11 +202,33 @@ async function analyzeIntent(message, history = [], hadClarify = false, isRepeat
       if (content.includes('برمجة') || content.includes('python') || content.includes('java')) contextKeywords.push('برمجة');
       if (content.includes('تصميم') && (content.includes('جرافيك') || content.includes('فوتوشوب'))) contextKeywords.push('جرافيك', 'photoshop');
       if (content.includes('تسويق')) contextKeywords.push('تسويق', 'marketing');
+      
+      // كشف "لغات" في السياق
+      if (content.includes('تقنية') || content.includes('برمجة') || content.includes('تطوير')) {
+        contextKeywords.push('context=programming');
+      }
+      if (content.includes('أجنبية') || content.includes('إنجليزي') || content.includes('فرنسي')) {
+        contextKeywords.push('context=languages');
+      }
     });
     
     if (contextKeywords.length > 0) {
       contextTopic = `📌 **سياق المحادثة:** الموضوع الأساسي هو: ${contextKeywords.join(', ')}\nلو المستخدم قال "أيوه عايز أشوف" أو "نعم" → استخدم keywords من السياق مش كلمات عامة`;
     }
+  }
+  
+  // كشف ذكي لكلمة "لغات" المنفردة
+  const messageLower = message.toLowerCase().trim();
+  let languageContext = "";
+  if (messageLower === 'لغات' || messageLower === 'لغة') {
+    languageContext = `
+⚠️ **تحذير مهم:** المستخدم كتب "لغات" فقط — دي كلمة غامضة!
+- لو السياق السابق كان عن "برمجة" أو "تقنية" → يقصد لغات برمجة
+- لو مفيش سياق → **افترض** إنه يقصد **لغات أجنبية** (إنجليزي، فرنسي)
+- ⚠️ **مهم:** لو مش متأكد → اسأل سؤال توضيحي:
+  "تقصد لغات برمجة (Python, JavaScript) ولا لغات أجنبية (إنجليزي، فرنسي)؟"
+  options: ["لغات أجنبية (إنجليزي، فرنسي)", "لغات برمجة (Python, JavaScript)"]
+`;
   }
 
   const prompt = `أنت محلل نوايا ذكي لزيكو — مساعد الدعم والمساعدة في منصة إيزي تي التعليمية العربية.
@@ -237,6 +259,7 @@ async function analyzeIntent(message, history = [], hadClarify = false, isRepeat
 - ✅ رد صح: "أيوه، الدبلومة لما تشتريها بتاخد كل الدورات اللي جواها"
 
 ${contextTopic}
+${languageContext}
 
 المستخدم كتب: "${message}"
 ${lastMessages ? `\nسياق المحادثة:\n${lastMessages}` : ""}
@@ -403,10 +426,26 @@ type=clarify: طلب عام جداً محتاج توضيح، أو رغبة في 
 clarify_question: "سؤال توضيحي **مختلف** عن سؤال المستخدم"
 clarify_options: ["خيار1", "خيار2", "خيار3", "خيار4"]
 needs_courses: false
-🚨 **مهم:** 
+🚨 **مهم جداً — Options واضحة ومحددة:** 
 - استخدم clarify **فقط** لو السؤال **غامض جداً**
 - لو السؤال واضح (حتى لو عام) → اجب مباشرة (type=info أو conversational)
 - ممنوع تعيد صياغة سؤال المستخدم — اسأل سؤال **توضيحي مختلف**
+- **Options لازم تكون محددة ومش غامضة:**
+  - ✅ صح: "لغات أجنبية (إنجليزي، فرنسي)"
+  - ❌ غلط: "لغات" (غامض — برمجة ولا أجنبي؟)
+  - ✅ صح: "برمجة وتطوير مواقع"
+  - ❌ غلط: "تقنية" (عام جداً)
+  - ✅ صح: "تصميم جرافيك وفوتوشوب"
+  - ❌ غلط: "تصميم" (معماري ولا جرافيك؟)
+
+**أمثلة Options صحيحة:**
+"عايز أتعلم" →
+options: [
+  "لغات أجنبية (إنجليزي، فرنسي، ألماني)",
+  "برمجة وتطوير (Python, JavaScript, مواقع)",
+  "تصميم جرافيك (Photoshop, Illustrator)",
+  "تسويق رقمي (فيسبوك، سوشيال ميديا)"
+]
 
 ══ الفرق المهم جداً ══
 
