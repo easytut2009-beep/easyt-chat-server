@@ -3787,11 +3787,11 @@ async function runEnrollmentsSync(courseIds) {
             raw_data: e
           }));
 
-          // Filter out rows with null teachable_user_id (NOT NULL constraint)
-          const validRows = rows.filter(r => r.teachable_user_id !== null);
+          // Filter out rows with null enrollment_id or user_id (required)
+          const validRows = rows.filter(r => r.enrollment_id !== null && r.teachable_user_id !== null);
           const skipped = rows.length - validRows.length;
           if (skipped > 0) {
-            console.warn(`[Enrollments] Course ${courseId}: skipped ${skipped} rows with null user_id`);
+            console.warn(`[Enrollments] Course ${courseId}: skipped ${skipped} rows with null id or user_id`);
           }
 
           // Insert in batches
@@ -3800,7 +3800,7 @@ async function runEnrollmentsSync(courseIds) {
             const { error } = await supabase
               .from("teachable_enrollments")
               .upsert(batch, {
-                onConflict: "teachable_user_id,course_id",
+                onConflict: "enrollment_id",
                 ignoreDuplicates: false
               });
 
