@@ -2118,6 +2118,71 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
    🆕 FIX #40: getAllLessonChunks — gets ALL chunks for a lesson
    ══════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════
+   🆕 Teachable API Integration
+   ══════════════════════════════════════════════════════════ */
+
+const TEACHABLE_API_BASE = "https://developers.teachable.com/v1";
+const TEACHABLE_SCHOOL_SUBDOMAIN = "easytut";
+
+async function teachableRequest(endpoint, options = {}) {
+  const apiKey = process.env.TEACHABLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("TEACHABLE_API_KEY not configured in environment");
+  }
+
+  const url = `${TEACHABLE_API_BASE}${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "accept": "application/json",
+      "apiKey": apiKey,
+      ...(options.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Teachable API ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+// Test endpoint — يتأكد إن الـ API Key شغال
+app.get("/api/admin/teachable/test", adminAuth, async (req, res) => {
+  try {
+    const startTime = Date.now();
+    const data = await teachableRequest("/users?per=5&page=1");
+    const duration = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      message: "✅ Teachable API connection working!",
+      duration_ms: duration,
+      school_subdomain: TEACHABLE_SCHOOL_SUBDOMAIN,
+      sample_count: data.users ? data.users.length : 0,
+      total_users_available: data.meta?.total || "unknown",
+      sample_user: data.users && data.users[0] ? {
+        id: data.users[0].id,
+        name: data.users[0].name,
+        email: data.users[0].email,
+      } : null,
+      api_response_keys: Object.keys(data),
+    });
+
+  } catch (error) {
+    console.error("❌ Teachable test failed:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      hint: error.message.includes("TEACHABLE_API_KEY") 
+        ? "تأكد إن TEACHABLE_API_KEY موجود في Render Environment Variables"
+        : "ممكن الـ API Key غلط أو انتهت صلاحيته"
+    });
+  }
+});
+
 /* ═══ Static Widget Files ═══ */
 app.get("/sales-widget.js", (req, res) => {
   res.setHeader("Content-Type", "text/html");
