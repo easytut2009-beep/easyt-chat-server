@@ -2484,6 +2484,364 @@ app.post("/api/admin/teachable/sync-stop", adminAuth, (req, res) => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════
+   🆕 Teachable Sync — Subscriptions / Enrollments / Transactions
+   ══════════════════════════════════════════════════════════ */
+
+// إضافة state للأنواع الجديدة
+syncState.subscriptions = createInitialSyncState();
+syncState.enrollments = createInitialSyncState();
+syncState.transactions = createInitialSyncState();
+
+function createInitialSyncState() {
+  return {
+    running: false,
+    startedAt: null,
+    currentPage: 0,
+    totalPages: 0,
+    totalProcessed: 0,
+    totalAdded: 0,
+    totalUpdated: 0,
+    totalFailed: 0,
+    errors: [],
+    syncLogId: null,
+    shouldStop: false,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Mappers — تحويل من Teachable لـ Supabase
+// ─────────────────────────────────────────────────────────────
+
+function mapEnrollment(enr, courseInfo = {}) {
+  return {
+    enrollment_id: enr.id,
+    teachable_user_id: enr.user_id || enr.user?.id,
+    user_email: ((enr.user?.email) || "").toLowerCase().trim(),
+    course_id: enr.course_id,
+    course_name: courseInfo.name || enr.course?.name || null,
+    enrolled_at: enr.enrolled_at || enr.created_at || null,
+    completed_at: enr.completed_at || null,
+    percent_complete: enr.percent_complete || 0,
+    completed_lecture_count: enr.completed_lecture_count || 0,
+    completed_lecture_ids: Array.isArray(enr.completed_lecture_ids) 
+      ? enr.completed_lecture_ids.filter(x => x !== null) 
+      : [],
+    is_active: enr.is_active !== false,
+    has_full_access: enr.has_full_access || false,
+    expires_at: enr.expires_at || enr.access_limited_at || null,
+    raw_data: enr,
+  };
+}
+
+function mapTransaction(trans) {
+  return {
+    transaction_id: trans.id,
+    teachable_user_id: trans.user_id || trans.user?.id,
+    user_email: ((trans.user?.email) || trans.email || "").toLowerCase().trim(),
+    product_id: trans.product_id ? String(trans.product_id) : null,
+    product_name: trans.product?.name || trans.product_name || null,
+    product_type: trans.product_type || trans.type || null,
+    amount: parseFloat(trans.final_price || trans.amount || 0),
+    currency: trans.currency || "USD",
+    status: trans.status || "succeeded",
+    payment_gateway: trans.payment_gateway || trans.gateway || null,
+    transaction_date: trans.purchased_at || trans.created_at || null,
+    refunded_at: trans.refunded_at || null,
+    raw_data: trans,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helper: تحديث sync log
+// ─────────────────────────────────────────────────────────────
+
+async function updateSyncLog(state, finalStatus = null) {
+  if (!state.syncLogId) return;
+  
+  const updates = {
+    records_processed: state.totalProcessed,
+    records_added: state.totalAdded,
+    records_failed: state.totalFailed,
+  };
+  
+  if (finalStatus) {
+    updates.status = finalStatus;
+    updates.completed_at = new Date().toISOString();
+    updates.duration_seconds = state.startedAt 
+      ? Math.floor((Date.now() - new Date(state.startedAt).getTime()) / 1000)
+      : null;
+    if (state.errors.length > 0) {
+      updates.error_details = { errors: state.errors.slice(-10) };
+    }
+  }
+  
+  try {
+    await supabase
+      .from("teachable_sync_log")
+      .update(updates)
+      .eq("id", state.syncLogId);
+  } catch (e) {
+    console.error("⚠️ Failed to update sync log:", e.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Generic Sync Runner — يشتغل لأي entity
+// ─────────────────────────────────────────────────────────────
+
+async function runGenericSync(config) {
+  const { 
+    entityType,        // 'enrollments' | 'transactions'
+    apiEndpoint,       // مثلاً '/enrollments'
+    tableName,         // مثلاً 'teachable_enrollments'
+    mapper,            // function لتحويل البيانات
+    conflictKey,       // عمود الـ unique key للـ upsert
+  } = config;
+
+  const state = syncState[entityType];
+  const PER_PAGE = 25;
+  const DELAY_MS = 1000;
+  const MAX_RETRIES = 3;
+
+  console.log(`\n🚀 Starting Teachable ${entityType} sync...`);
+
+  // إنشاء sync log
+  try {
+    const { data: logData } = await supabase
+      .from("teachable_sync_log")
+      .insert({
+        sync_type: "initial",
+        entity_type: entityType,
+        status: "running",
+        metadata: { per_page: PER_PAGE, delay_ms: DELAY_MS },
+      })
+      .select("id")
+      .single();
+    if (logData) state.syncLogId = logData.id;
+  } catch (e) {
+    console.error("⚠️ Failed to create sync log:", e.message);
+  }
+
+  try {
+    // الصفحة الأولى عشان نعرف العدد الكلي
+    const firstPage = await teachableRequest(`${apiEndpoint}?per=${PER_PAGE}&page=1`);
+    
+    // اسم الـ field في الـ response (enrollments / transactions / etc)
+    const dataKey = Object.keys(firstPage).find(k => Array.isArray(firstPage[k]));
+    if (!dataKey) {
+      throw new Error(`No data array found in response. Keys: ${Object.keys(firstPage).join(', ')}`);
+    }
+
+    const totalRecords = firstPage.meta?.total || 0;
+    state.totalPages = Math.ceil(totalRecords / PER_PAGE);
+    
+    console.log(`📊 Total ${entityType}: ${totalRecords} | Pages: ${state.totalPages} | Data key: ${dataKey}`);
+
+    // معالجة الصفحة الأولى
+    if (firstPage[dataKey] && firstPage[dataKey].length > 0) {
+      const result = await saveBatch(firstPage[dataKey], mapper, tableName, conflictKey);
+      state.totalProcessed += firstPage[dataKey].length;
+      state.totalAdded += result.added;
+      state.totalFailed += result.failed;
+      state.currentPage = 1;
+      console.log(`✅ Page 1/${state.totalPages} | Added: ${result.added}`);
+    }
+
+    // باقي الصفحات
+    for (let page = 2; page <= state.totalPages; page++) {
+      if (state.shouldStop) {
+        console.log(`🛑 ${entityType} sync stopped`);
+        break;
+      }
+
+      state.currentPage = page;
+      await sleep(DELAY_MS);
+
+      let pageData = null;
+      let attempt = 0;
+      while (attempt < MAX_RETRIES && !pageData) {
+        try {
+          pageData = await teachableRequest(`${apiEndpoint}?per=${PER_PAGE}&page=${page}`);
+        } catch (e) {
+          attempt++;
+          console.error(`⚠️ ${entityType} page ${page} attempt ${attempt}: ${e.message}`);
+          if (attempt < MAX_RETRIES) await sleep(3000 * attempt);
+        }
+      }
+
+      if (!pageData || !pageData[dataKey]) {
+        state.errors.push({ page, error: "Failed after retries" });
+        state.totalFailed += PER_PAGE;
+        continue;
+      }
+
+      const result = await saveBatch(pageData[dataKey], mapper, tableName, conflictKey);
+      state.totalProcessed += pageData[dataKey].length;
+      state.totalAdded += result.added;
+      state.totalFailed += result.failed;
+
+      if (page % 20 === 0 || page === state.totalPages) {
+        console.log(`✅ ${entityType} ${page}/${state.totalPages} | Total: ${state.totalProcessed} | Added: ${state.totalAdded}`);
+        await updateSyncLog(state);
+      }
+    }
+
+    const finalStatus = state.shouldStop ? "partial" : "success";
+    console.log(`\n🎉 ${entityType} sync ${finalStatus}!`);
+    console.log(`   Processed: ${state.totalProcessed} | Added: ${state.totalAdded} | Failed: ${state.totalFailed}`);
+    await updateSyncLog(state, finalStatus);
+
+  } catch (error) {
+    console.error(`❌ Fatal ${entityType} sync error:`, error.message);
+    state.errors.push({ fatal: true, error: error.message });
+    await updateSyncLog(state, "failed");
+  } finally {
+    state.running = false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Generic batch saver
+// ─────────────────────────────────────────────────────────────
+
+async function saveBatch(items, mapper, tableName, conflictKey) {
+  if (!items || items.length === 0) return { added: 0, failed: 0 };
+
+  const mapped = items
+    .filter(item => item && item.id)
+    .map(item => mapper(item));
+
+  if (mapped.length === 0) return { added: 0, failed: items.length };
+
+  try {
+    const { error } = await supabase
+      .from(tableName)
+      .upsert(mapped, { onConflict: conflictKey, ignoreDuplicates: false });
+
+    if (error) {
+      console.error(`❌ Upsert error in ${tableName}:`, error.message);
+      return { added: 0, failed: mapped.length };
+    }
+    return { added: mapped.length, failed: items.length - mapped.length };
+  } catch (e) {
+    console.error(`❌ Batch save failed for ${tableName}:`, e.message);
+    return { added: 0, failed: mapped.length };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Endpoints — Enrollments
+// ─────────────────────────────────────────────────────────────
+
+app.post("/api/admin/teachable/sync-enrollments", adminAuth, async (req, res) => {
+  if (syncState.enrollments.running) {
+    return res.status(409).json({
+      success: false,
+      error: "Enrollments sync already running",
+      current_page: syncState.enrollments.currentPage,
+      total_pages: syncState.enrollments.totalPages,
+    });
+  }
+
+  syncState.enrollments = createInitialSyncState();
+  syncState.enrollments.running = true;
+  syncState.enrollments.startedAt = new Date().toISOString();
+
+  runGenericSync({
+    entityType: "enrollments",
+    apiEndpoint: "/enrollments",
+    tableName: "teachable_enrollments",
+    mapper: mapEnrollment,
+    conflictKey: "enrollment_id",
+  }).catch(e => {
+    console.error("❌ Uncaught enrollments error:", e);
+    syncState.enrollments.running = false;
+  });
+
+  res.json({
+    success: true,
+    message: "✅ Enrollments sync started in background",
+    startedAt: syncState.enrollments.startedAt,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Endpoints — Transactions
+// ─────────────────────────────────────────────────────────────
+
+app.post("/api/admin/teachable/sync-transactions", adminAuth, async (req, res) => {
+  if (syncState.transactions.running) {
+    return res.status(409).json({
+      success: false,
+      error: "Transactions sync already running",
+      current_page: syncState.transactions.currentPage,
+      total_pages: syncState.transactions.totalPages,
+    });
+  }
+
+  syncState.transactions = createInitialSyncState();
+  syncState.transactions.running = true;
+  syncState.transactions.startedAt = new Date().toISOString();
+
+  runGenericSync({
+    entityType: "transactions",
+    apiEndpoint: "/transactions",
+    tableName: "teachable_transactions",
+    mapper: mapTransaction,
+    conflictKey: "transaction_id",
+  }).catch(e => {
+    console.error("❌ Uncaught transactions error:", e);
+    syncState.transactions.running = false;
+  });
+
+  res.json({
+    success: true,
+    message: "✅ Transactions sync started in background",
+    startedAt: syncState.transactions.startedAt,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Status endpoint مُحسّن — يعرض كل الـ syncs
+// ─────────────────────────────────────────────────────────────
+
+app.get("/api/admin/teachable/sync-all-status", adminAuth, (req, res) => {
+  const buildStatus = (state) => ({
+    running: state.running,
+    startedAt: state.startedAt,
+    current_page: state.currentPage,
+    total_pages: state.totalPages,
+    progress_percent: state.totalPages > 0 
+      ? Math.floor((state.currentPage / state.totalPages) * 100) 
+      : 0,
+    total_processed: state.totalProcessed,
+    total_added: state.totalAdded,
+    total_failed: state.totalFailed,
+  });
+
+  res.json({
+    users: buildStatus(syncState.users),
+    enrollments: buildStatus(syncState.enrollments),
+    transactions: buildStatus(syncState.transactions),
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Stop all syncs
+// ─────────────────────────────────────────────────────────────
+
+app.post("/api/admin/teachable/sync-stop-all", adminAuth, (req, res) => {
+  syncState.users.shouldStop = true;
+  syncState.enrollments.shouldStop = true;
+  syncState.transactions.shouldStop = true;
+  
+  res.json({
+    success: true,
+    message: "🛑 Stop signal sent to all running syncs",
+  });
+});
+
 // Endpoint: إحصائيات عامة للمستخدمين في Supabase
 app.get("/api/admin/teachable/stats", adminAuth, async (req, res) => {
   try {
@@ -2491,20 +2849,466 @@ app.get("/api/admin/teachable/stats", adminAuth, async (req, res) => {
       .from("teachable_users")
       .select("*", { count: "exact", head: true });
 
+    const { count: enrollmentsCount } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    const { count: transactionsCount } = await supabase
+      .from("teachable_transactions")
+      .select("*", { count: "exact", head: true });
+
     const { data: recentSyncs } = await supabase
       .from("teachable_sync_log")
       .select("*")
       .order("started_at", { ascending: false })
-      .limit(5);
+      .limit(10);
 
     res.json({
       success: true,
-      supabase_users_count: usersCount || 0,
+      counts: {
+        users: usersCount || 0,
+        enrollments: enrollmentsCount || 0,
+        transactions: transactionsCount || 0,
+      },
       recent_syncs: recentSyncs || [],
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+/* ══════════════════════════════════════════════════════════
+   🆕 Chunked Users Sync — يتجاوز حد الـ 10,000
+   ══════════════════════════════════════════════════════════ */
+
+// State جديد للـ chunked sync
+syncState.usersChunked = createInitialSyncState();
+syncState.usersChunked.currentChunk = "";
+syncState.usersChunked.completedChunks = [];
+
+// Endpoint: حذف كل البيانات القديمة عشان نبدأ من جديد
+app.post("/api/admin/teachable/reset-users", adminAuth, async (req, res) => {
+  if (syncState.users.running || syncState.usersChunked.running) {
+    return res.status(409).json({
+      success: false,
+      error: "لا يمكن المسح أثناء وجود sync شغال. أوقف الـ sync الأول."
+    });
+  }
+
+  try {
+    const { error: usersError } = await supabase
+      .from("teachable_users")
+      .delete()
+      .gte("teachable_user_id", 0); // delete all
+
+    if (usersError) throw usersError;
+
+    res.json({
+      success: true,
+      message: "✅ تم حذف كل المستخدمين. جاهز للسحب من جديد.",
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Helper: محاولة سحب chunk بفلتر محدد
+async function syncChunk(chunkLabel, queryParam, state) {
+  const PER_PAGE = 100; // الحد الأقصى المسموح
+  const DELAY_MS = 700;
+  const MAX_RETRIES = 3;
+  const MAX_PAGES_PER_CHUNK = 99; // أقل من 100 عشان نتجنب حد الـ 10000
+
+  console.log(`\n📦 Starting chunk: ${chunkLabel}`);
+  state.currentChunk = chunkLabel;
+
+  let chunkAdded = 0;
+  let chunkProcessed = 0;
+  let chunkFailed = 0;
+  let totalChunkRecords = 0;
+  let stoppedDueToLimit = false;
+
+  // الصفحة الأولى عشان نعرف العدد
+  let firstPage = null;
+  let attempt = 0;
+  while (attempt < MAX_RETRIES && !firstPage) {
+    try {
+      firstPage = await teachableRequest(`/users?per=${PER_PAGE}&page=1${queryParam}`);
+    } catch (e) {
+      attempt++;
+      console.error(`⚠️ Chunk ${chunkLabel} first page attempt ${attempt}: ${e.message}`);
+      if (attempt < MAX_RETRIES) await sleep(2000 * attempt);
+    }
+  }
+
+  if (!firstPage || !firstPage.users) {
+    console.error(`❌ Chunk ${chunkLabel} failed completely`);
+    state.errors.push({ chunk: chunkLabel, error: "Failed to fetch first page" });
+    return { added: 0, processed: 0, failed: 0, total: 0, stoppedDueToLimit: false };
+  }
+
+  totalChunkRecords = firstPage.meta?.total || 0;
+  const totalChunkPages = Math.ceil(totalChunkRecords / PER_PAGE);
+
+  console.log(`   Total in chunk: ${totalChunkRecords} (${totalChunkPages} pages)`);
+
+  // تحذير لو chunk فيه أكتر من 10000
+  if (totalChunkRecords > 10000) {
+    console.warn(`   ⚠️ Chunk ${chunkLabel} has ${totalChunkRecords} records (>10000) — will only get first 10000`);
+    stoppedDueToLimit = true;
+  }
+
+  // حفظ الصفحة الأولى
+  if (firstPage.users.length > 0) {
+    const result = await saveBatchToSupabase(firstPage.users);
+    chunkProcessed += firstPage.users.length;
+    chunkAdded += result.added;
+    chunkFailed += result.failed;
+    state.totalProcessed += firstPage.users.length;
+    state.totalAdded += result.added;
+    state.totalFailed += result.failed;
+  }
+
+  // باقي الصفحات
+  const maxPages = Math.min(totalChunkPages, MAX_PAGES_PER_CHUNK);
+
+  for (let page = 2; page <= maxPages; page++) {
+    if (state.shouldStop) {
+      console.log(`🛑 Stopped during chunk ${chunkLabel}`);
+      break;
+    }
+
+    await sleep(DELAY_MS);
+    state.currentPage = page;
+
+    let pageData = null;
+    attempt = 0;
+    while (attempt < MAX_RETRIES && !pageData) {
+      try {
+        pageData = await teachableRequest(`/users?per=${PER_PAGE}&page=${page}${queryParam}`);
+      } catch (e) {
+        attempt++;
+        if (e.message.includes("max_result_limit_reached")) {
+          console.warn(`   ⚠️ Hit 10K limit at page ${page}`);
+          stoppedDueToLimit = true;
+          return { added: chunkAdded, processed: chunkProcessed, failed: chunkFailed, total: totalChunkRecords, stoppedDueToLimit };
+        }
+        if (attempt < MAX_RETRIES) await sleep(2000 * attempt);
+      }
+    }
+
+    if (!pageData || !pageData.users) {
+      chunkFailed += PER_PAGE;
+      state.totalFailed += PER_PAGE;
+      continue;
+    }
+
+    const result = await saveBatchToSupabase(pageData.users);
+    chunkProcessed += pageData.users.length;
+    chunkAdded += result.added;
+    chunkFailed += result.failed;
+    state.totalProcessed += pageData.users.length;
+    state.totalAdded += result.added;
+    state.totalFailed += result.failed;
+
+    if (page % 20 === 0) {
+      console.log(`   Page ${page}/${maxPages} | Added: ${chunkAdded} | Total so far: ${state.totalAdded}`);
+    }
+  }
+
+  console.log(`✅ Chunk ${chunkLabel} done | Added: ${chunkAdded} | Total: ${totalChunkRecords}`);
+  state.completedChunks.push({ label: chunkLabel, added: chunkAdded, total: totalChunkRecords });
+
+  return { added: chunkAdded, processed: chunkProcessed, failed: chunkFailed, total: totalChunkRecords, stoppedDueToLimit };
+}
+
+// Background: سحب كل المستخدمين بالـ chunks
+async function runChunkedUsersSync() {
+  const state = syncState.usersChunked;
+  console.log("\n🚀 Starting CHUNKED users sync (bypass 10K limit)...");
+
+  // إنشاء sync log
+  try {
+    const { data: logData } = await supabase
+      .from("teachable_sync_log")
+      .insert({
+        sync_type: "initial",
+        entity_type: "users_chunked",
+        status: "running",
+        metadata: { strategy: "alphabetical_chunks" },
+      })
+      .select("id")
+      .single();
+    if (logData) state.syncLogId = logData.id;
+  } catch (e) {
+    console.error("⚠️ sync log error:", e.message);
+  }
+
+  // قائمة الـ chunks: حروف انجليزية + أرقام + رموز عربية
+  // كل chunk بيجيب المستخدمين اللي اسمهم/إيميلهم بيحتوي على الحرف ده
+  const chunks = [
+    // الأرقام (عشان الإيميلات اللي فيها أرقام)
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    // الحروف الإنجليزية
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
+    "u", "v", "w", "x", "y", "z",
+  ];
+
+  try {
+    for (const chunk of chunks) {
+      if (state.shouldStop) {
+        console.log("🛑 Chunked sync stopped");
+        break;
+      }
+
+      const queryParam = `&name_or_email_cont=${encodeURIComponent(chunk)}`;
+      await syncChunk(`contains_${chunk}`, queryParam, state);
+
+      // تحديث الـ log
+      await updateSyncLog(state);
+    }
+
+    const finalStatus = state.shouldStop ? "partial" : "success";
+    console.log(`\n🎉 Chunked users sync ${finalStatus}!`);
+    console.log(`   Total added: ${state.totalAdded}`);
+    console.log(`   Total chunks: ${state.completedChunks.length}`);
+
+    await updateSyncLog(state, finalStatus);
+  } catch (error) {
+    console.error("❌ Fatal chunked sync error:", error.message);
+    state.errors.push({ fatal: true, error: error.message });
+    await updateSyncLog(state, "failed");
+  } finally {
+    state.running = false;
+  }
+}
+
+// Endpoint: بدء السحب الـ chunked
+app.post("/api/admin/teachable/sync-users-chunked", adminAuth, async (req, res) => {
+  if (syncState.usersChunked.running) {
+    return res.status(409).json({
+      success: false,
+      error: "Chunked users sync already running",
+      current_chunk: syncState.usersChunked.currentChunk,
+      total_processed: syncState.usersChunked.totalProcessed,
+    });
+  }
+
+  // Reset state
+  syncState.usersChunked = createInitialSyncState();
+  syncState.usersChunked.currentChunk = "";
+  syncState.usersChunked.completedChunks = [];
+  syncState.usersChunked.running = true;
+  syncState.usersChunked.startedAt = new Date().toISOString();
+
+  runChunkedUsersSync().catch(e => {
+    console.error("❌ Uncaught chunked sync error:", e);
+    syncState.usersChunked.running = false;
+  });
+
+  res.json({
+    success: true,
+    message: "✅ Chunked users sync started in background",
+    startedAt: syncState.usersChunked.startedAt,
+    strategy: "Splits 91K users into 36 chunks (0-9, a-z) using name_or_email_cont filter",
+    estimated_duration_minutes: 60,
+  });
+});
+
+// Endpoint: متابعة السحب الـ chunked
+app.get("/api/admin/teachable/sync-users-chunked-status", adminAuth, (req, res) => {
+  const state = syncState.usersChunked;
+  res.json({
+    running: state.running,
+    startedAt: state.startedAt,
+    current_chunk: state.currentChunk,
+    completed_chunks_count: state.completedChunks.length,
+    total_chunks: 36,
+    total_processed: state.totalProcessed,
+    total_added: state.totalAdded,
+    total_failed: state.totalFailed,
+    completed_chunks: state.completedChunks,
+    errors_count: state.errors.length,
+    recent_errors: state.errors.slice(-5),
+  });
+});
+
+/* ══════════════════════════════════════════════════════════
+   🆕 User Enrichment — جلب التفاصيل الكاملة للمستخدم الواحد
+   ══════════════════════════════════════════════════════════ */
+
+syncState.enrichment = createInitialSyncState();
+syncState.enrichment.totalUsers = 0;
+
+// Helper: جلب وتحديث user واحد بالتفاصيل الكاملة
+async function enrichSingleUser(userId) {
+  try {
+    const data = await teachableRequest(`/users/${userId}`);
+    const user = data.user || data;
+    
+    if (!user || !user.id) return { success: false, reason: "No user data" };
+
+    const updateData = {
+      name: user.name || null,
+      signup_date: user.signed_up_at || user.created_at || null,
+      last_signin: user.last_sign_in_at || null,
+      signin_count: user.sign_in_count || 0,
+      tags: Array.isArray(user.tags) ? user.tags : [],
+      custom_fields: user.custom_fields || null,
+      raw_data: user, // نحدّث بالبيانات الكاملة
+      last_synced_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("teachable_users")
+      .update(updateData)
+      .eq("teachable_user_id", userId);
+
+    if (error) return { success: false, reason: error.message };
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: e.message };
+  }
+}
+
+// Background: enrichment لكل المستخدمين (أو فقط اللي عندهم purchases)
+async function runEnrichmentSync(onlyActive = true) {
+  const state = syncState.enrichment;
+  const DELAY_MS = 600;
+
+  console.log(`\n🚀 Starting user enrichment (onlyActive=${onlyActive})...`);
+
+  try {
+    // جلب الـ user IDs من Supabase
+    let query = supabase
+      .from("teachable_users")
+      .select("teachable_user_id")
+      .is("signup_date", null); // فقط اللي لسه ما اتعملش enrich
+
+    const { data: users, error } = await query.limit(50000);
+
+    if (error) throw error;
+    if (!users || users.length === 0) {
+      console.log("✅ No users to enrich");
+      state.running = false;
+      return;
+    }
+
+    state.totalUsers = users.length;
+    console.log(`📊 Will enrich ${users.length} users`);
+
+    // إنشاء sync log
+    try {
+      const { data: logData } = await supabase
+        .from("teachable_sync_log")
+        .insert({
+          sync_type: "enrichment",
+          entity_type: "users_details",
+          status: "running",
+          metadata: { total_users: users.length, only_active: onlyActive },
+        })
+        .select("id")
+        .single();
+      if (logData) state.syncLogId = logData.id;
+    } catch (e) {
+      console.error("⚠️ sync log error:", e.message);
+    }
+
+    let processed = 0;
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const u of users) {
+      if (state.shouldStop) {
+        console.log("🛑 Enrichment stopped");
+        break;
+      }
+
+      const result = await enrichSingleUser(u.teachable_user_id);
+      processed++;
+      
+      if (result.success) {
+        succeeded++;
+      } else {
+        failed++;
+        if (failed <= 10) {
+          state.errors.push({ user_id: u.teachable_user_id, reason: result.reason });
+        }
+      }
+
+      state.totalProcessed = processed;
+      state.totalAdded = succeeded;
+      state.totalFailed = failed;
+
+      // Log every 100 users
+      if (processed % 100 === 0) {
+        const pct = ((processed / users.length) * 100).toFixed(1);
+        console.log(`   Enriched: ${processed}/${users.length} (${pct}%) | Success: ${succeeded} | Failed: ${failed}`);
+        await updateSyncLog(state);
+      }
+
+      await sleep(DELAY_MS);
+    }
+
+    const finalStatus = state.shouldStop ? "partial" : "success";
+    console.log(`\n🎉 Enrichment ${finalStatus}!`);
+    console.log(`   Processed: ${processed} | Succeeded: ${succeeded} | Failed: ${failed}`);
+    await updateSyncLog(state, finalStatus);
+
+  } catch (error) {
+    console.error("❌ Fatal enrichment error:", error.message);
+    state.errors.push({ fatal: true, error: error.message });
+    await updateSyncLog(state, "failed");
+  } finally {
+    state.running = false;
+  }
+}
+
+// Endpoint: بدء الـ enrichment
+app.post("/api/admin/teachable/enrich-users", adminAuth, async (req, res) => {
+  if (syncState.enrichment.running) {
+    return res.status(409).json({
+      success: false,
+      error: "Enrichment already running",
+      progress: `${syncState.enrichment.totalProcessed}/${syncState.enrichment.totalUsers}`,
+    });
+  }
+
+  syncState.enrichment = createInitialSyncState();
+  syncState.enrichment.totalUsers = 0;
+  syncState.enrichment.running = true;
+  syncState.enrichment.startedAt = new Date().toISOString();
+
+  runEnrichmentSync(false).catch(e => {
+    console.error("❌ Uncaught enrichment error:", e);
+    syncState.enrichment.running = false;
+  });
+
+  res.json({
+    success: true,
+    message: "✅ User enrichment started in background",
+    startedAt: syncState.enrichment.startedAt,
+    note: "هيجلب التفاصيل الكاملة (تواريخ، tags، إلخ) لكل user من Teachable",
+  });
+});
+
+// Endpoint: متابعة الـ enrichment
+app.get("/api/admin/teachable/enrich-status", adminAuth, (req, res) => {
+  const state = syncState.enrichment;
+  res.json({
+    running: state.running,
+    startedAt: state.startedAt,
+    total_users: state.totalUsers,
+    processed: state.totalProcessed,
+    succeeded: state.totalAdded,
+    failed: state.totalFailed,
+    progress_percent: state.totalUsers > 0 
+      ? Math.floor((state.totalProcessed / state.totalUsers) * 100) 
+      : 0,
+    errors_count: state.errors.length,
+    recent_errors: state.errors.slice(-5),
+  });
 });
 
 /* ═══ Static Widget Files ═══ */
