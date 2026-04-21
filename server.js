@@ -3821,7 +3821,8 @@ app.post("/api/admin/teachable/sync-enrollments/retry-large/stop", async (req, r
 
 /**
  * Retry sync for large courses using date ranges
- * Splits each course into 2-year chunks to stay under 10K limit
+ * Uses adaptive splitting: starts with 2-year chunks, 
+ * falls back to 6-month, then 3-month, then 1-month when max_limit hit
  */
 async function runEnrollmentsRetryLarge(courseIds) {
   const S = syncState.enrollmentsRetry;
@@ -3830,8 +3831,8 @@ async function runEnrollmentsRetryLarge(courseIds) {
   const DELAY_BETWEEN_CHUNKS = 500;
   const BATCH_INSERT_SIZE = 50;
 
-  // Date ranges - 2-year chunks from 2018 to now
-  const dateRanges = [
+  // Initial date ranges - 2-year chunks
+  const initialRanges = [
     { start: "2018-01-01", end: "2020-01-01", label: "2018-2019" },
     { start: "2020-01-01", end: "2022-01-01", label: "2020-2021" },
     { start: "2022-01-01", end: "2024-01-01", label: "2022-2023" },
@@ -3839,7 +3840,172 @@ async function runEnrollmentsRetryLarge(courseIds) {
     { start: "2025-07-01", end: "2026-05-01", label: "2025-H2-2026" }
   ];
 
-  console.log(`[EnrollmentsRetry] 🚀 Starting retry for ${courseIds.length} large courses`);
+  /**
+   * Split a date range in half
+   */
+  function splitRange(range) {
+    const startDate = new Date(range.start);
+    const endDate = new Date(range.end);
+    const midTime = (startDate.getTime() + endDate.getTime()) / 2;
+    const midDate = new Date(midTime);
+    const midIso = midDate.toISOString().split("T")[0];
+
+    return [
+      { 
+        start: range.start, 
+        end: midIso, 
+        label: `${range.label}-part1 (${range.start} to ${midIso})`
+      },
+      { 
+        start: midIso, 
+        end: range.end, 
+        label: `${range.label}-part2 (${midIso} to ${range.end})`
+      }
+    ];
+  }
+
+  /**
+   * Fetch enrollments for a specific course and date range
+   * Returns { success, limitHit, enrollmentsAdded }
+   */
+  async function fetchRange(courseId, range, courseName) {
+    let page = 1;
+    let hasMore = true;
+    let enrollmentsAdded = 0;
+    let limitHit = false;
+
+    while (hasMore && !S.stopRequested) {
+      try {
+        const url = `/courses/${courseId}/enrollments?page=${page}&per=${PER_PAGE}&enrolled_after=${range.start}&enrolled_before=${range.end}`;
+        const data = await teachableFetchWithRetry(url);
+        const enrollments = data.enrollments || [];
+
+        if (!enrollments.length) {
+          hasMore = false;
+          break;
+        }
+
+        const rows = enrollments.map(e => ({
+          teachable_user_id: e.user_id || null,
+          user_email: e.user?.email || null,
+          course_id: courseId,
+          course_name: courseName || null,
+          enrolled_at: e.enrolled_at || null,
+          completed_at: e.completed_at || null,
+          percent_complete: e.percent_complete || 0,
+          is_active: e.is_active ?? true,
+          expires_at: e.expires_at || null,
+          raw_data: e
+        })).filter(r => r.teachable_user_id !== null);
+
+        // Dedup within batch
+        const dedupMap = new Map();
+        for (const row of rows) {
+          const key = `${row.teachable_user_id}_${row.course_id}`;
+          const existing = dedupMap.get(key);
+          if (!existing) {
+            dedupMap.set(key, row);
+          } else {
+            const existingDate = existing.enrolled_at ? new Date(existing.enrolled_at) : new Date(0);
+            const newDate = row.enrolled_at ? new Date(row.enrolled_at) : new Date(0);
+            if (newDate > existingDate) dedupMap.set(key, row);
+          }
+        }
+        const dedupedRows = Array.from(dedupMap.values());
+
+        // Upsert batches
+        for (let i = 0; i < dedupedRows.length; i += BATCH_INSERT_SIZE) {
+          const batch = dedupedRows.slice(i, i + BATCH_INSERT_SIZE);
+          const { error } = await supabase
+            .from("teachable_enrollments")
+            .upsert(batch, {
+              onConflict: "teachable_user_id,course_id",
+              ignoreDuplicates: false
+            });
+
+          if (!error) {
+            S.enrollmentsCreated += batch.length;
+            enrollmentsAdded += batch.length;
+          } else {
+            S.errors.push({
+              at: new Date().toISOString(),
+              courseId,
+              range: range.label,
+              page,
+              error: error.message
+            });
+          }
+        }
+
+        if (enrollments.length < PER_PAGE) {
+          hasMore = false;
+        } else {
+          page++;
+          await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
+        }
+      } catch (err) {
+        // Check if this is a max_result_limit error
+        const errMsg = err.message || "";
+        if (errMsg.includes("max_result_limit_reached") || errMsg.includes("10000")) {
+          console.warn(`[EnrollmentsRetry] ⚠️ Range "${range.label}" hit 10K limit at page ${page} - will split`);
+          limitHit = true;
+          hasMore = false;
+          break;
+        }
+
+        // Other errors - log and stop this range
+        S.errors.push({
+          at: new Date().toISOString(),
+          courseId,
+          range: range.label,
+          page,
+          error: errMsg
+        });
+        console.error(`[EnrollmentsRetry] Error in ${range.label} page ${page}: ${errMsg}`);
+        hasMore = false;
+      }
+    }
+
+    return { success: !limitHit, limitHit, enrollmentsAdded };
+  }
+
+  /**
+   * Process a range - if it hits 10K limit, recursively split it
+   * Maximum depth: 5 levels (so 2 years → 1 year → 6 months → 3 months → ~1.5 months → ~3 weeks)
+   */
+  async function processRangeRecursive(courseId, range, courseName, depth = 0) {
+    const MAX_DEPTH = 5;
+
+    if (depth > MAX_DEPTH) {
+      console.warn(`[EnrollmentsRetry] ⚠️ Max depth reached for range ${range.label}, skipping`);
+      S.errors.push({
+        at: new Date().toISOString(),
+        courseId,
+        range: range.label,
+        error: "Max split depth reached - range still too large"
+      });
+      return;
+    }
+
+    if (S.stopRequested) return;
+
+    S.currentRange = `${courseId}: ${range.label}${depth > 0 ? ` [depth ${depth}]` : ""}`;
+    S.lastUpdate = new Date().toISOString();
+    console.log(`[EnrollmentsRetry]   📅 ${range.label} ${depth > 0 ? `(split depth ${depth})` : ""}`);
+
+    const result = await fetchRange(courseId, range, courseName);
+
+    if (result.limitHit) {
+      // Range was too large - split and retry both halves
+      console.log(`[EnrollmentsRetry]   ⚡ Splitting ${range.label}...`);
+      const [range1, range2] = splitRange(range);
+      await processRangeRecursive(courseId, range1, courseName, depth + 1);
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_CHUNKS));
+      await processRangeRecursive(courseId, range2, courseName, depth + 1);
+    }
+  }
+
+  console.log(`[EnrollmentsRetry] 🚀 Starting adaptive retry for ${courseIds.length} large courses`);
 
   // Get course names upfront
   const { data: courses } = await supabase
@@ -3862,113 +4028,26 @@ async function runEnrollmentsRetryLarge(courseIds) {
       const courseId = courseIds[idx];
       S.currentCourseIndex = idx;
       S.currentCourse = courseId;
-      S.lastUpdate = new Date().toISOString();
+      const courseName = courseNameMap[courseId] || "Unknown";
+      const courseStartCount = S.enrollmentsCreated;
 
-      console.log(`[EnrollmentsRetry] 📚 Course ${courseId} (${courseNameMap[courseId] || "Unknown"})`);
-      let courseTotal = 0;
+      console.log(`[EnrollmentsRetry] 📚 Course ${courseId} (${courseName})`);
 
-      // Process each date range for this course
-      for (const range of dateRanges) {
+      // Process each initial range with adaptive splitting
+      for (const range of initialRanges) {
         if (S.stopRequested) break;
-
-        S.currentRange = `${courseId}: ${range.label}`;
-        console.log(`[EnrollmentsRetry]   📅 Range: ${range.label}`);
-
-        let page = 1;
-        let hasMore = true;
-
-        while (hasMore && !S.stopRequested) {
-          try {
-            const url = `/courses/${courseId}/enrollments?page=${page}&per=${PER_PAGE}&enrolled_after=${range.start}&enrolled_before=${range.end}`;
-            const data = await teachableFetchWithRetry(url);
-            const enrollments = data.enrollments || [];
-
-            if (!enrollments.length) {
-              hasMore = false;
-              break;
-            }
-
-            const rows = enrollments.map(e => ({
-              teachable_user_id: e.user_id || null,
-              user_email: e.user?.email || null,
-              course_id: courseId,
-              course_name: courseNameMap[courseId] || null,
-              enrolled_at: e.enrolled_at || null,
-              completed_at: e.completed_at || null,
-              percent_complete: e.percent_complete || 0,
-              is_active: e.is_active ?? true,
-              expires_at: e.expires_at || null,
-              raw_data: e
-            })).filter(r => r.teachable_user_id !== null);
-
-            // Dedup within batch
-            const dedupMap = new Map();
-            for (const row of rows) {
-              const key = `${row.teachable_user_id}_${row.course_id}`;
-              const existing = dedupMap.get(key);
-              if (!existing) {
-                dedupMap.set(key, row);
-              } else {
-                const existingDate = existing.enrolled_at ? new Date(existing.enrolled_at) : new Date(0);
-                const newDate = row.enrolled_at ? new Date(row.enrolled_at) : new Date(0);
-                if (newDate > existingDate) dedupMap.set(key, row);
-              }
-            }
-            const dedupedRows = Array.from(dedupMap.values());
-
-            // Upsert batches
-            for (let i = 0; i < dedupedRows.length; i += BATCH_INSERT_SIZE) {
-              const batch = dedupedRows.slice(i, i + BATCH_INSERT_SIZE);
-              const { error } = await supabase
-                .from("teachable_enrollments")
-                .upsert(batch, {
-                  onConflict: "teachable_user_id,course_id",
-                  ignoreDuplicates: false
-                });
-
-              if (!error) {
-                S.enrollmentsCreated += batch.length;
-                courseTotal += batch.length;
-              } else {
-                S.errors.push({
-                  at: new Date().toISOString(),
-                  courseId,
-                  range: range.label,
-                  page,
-                  error: error.message
-                });
-              }
-            }
-
-            if (enrollments.length < PER_PAGE) {
-              hasMore = false;
-            } else {
-              page++;
-              await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
-            }
-          } catch (err) {
-            S.errors.push({
-              at: new Date().toISOString(),
-              courseId,
-              range: range.label,
-              page,
-              error: err.message
-            });
-            console.error(`[EnrollmentsRetry] Error in ${range.label} page ${page}: ${err.message}`);
-            hasMore = false;
-          }
-        }
-
+        await processRangeRecursive(courseId, range, courseName, 0);
         await new Promise(r => setTimeout(r, DELAY_BETWEEN_CHUNKS));
       }
 
+      const courseTotal = S.enrollmentsCreated - courseStartCount;
       S.processed++;
-      console.log(`[EnrollmentsRetry] ✅ Course ${courseId}: ${courseTotal} total enrollments (cumulative ${S.enrollmentsCreated})`);
+      console.log(`[EnrollmentsRetry] ✅ Course ${courseId}: +${courseTotal} enrollments (total now ${S.enrollmentsCreated})`);
     }
 
     S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
     S.completedAt = new Date().toISOString();
-    console.log(`[EnrollmentsRetry] 🏁 Done! Total: ${S.enrollmentsCreated} enrollments`);
+    console.log(`[EnrollmentsRetry] 🏁 Done! Total: ${S.enrollmentsCreated} enrollments, ${S.errors.length} errors`);
   } catch (err) {
     S.status = "failed";
     S.completedAt = new Date().toISOString();
