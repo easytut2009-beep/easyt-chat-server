@@ -3022,10 +3022,14 @@ async function syncChunk(chunkLabel, queryParam, state) {
   return { added: chunkAdded, processed: chunkProcessed, failed: chunkFailed, total: totalChunkRecords, stoppedDueToLimit };
 }
 
-// Background: سحب كل المستخدمين بالـ chunks
+// Background: سحب كل المستخدمين باستخدام search_after (الطريقة الرسمية لتجاوز حد 10K)
 async function runChunkedUsersSync() {
   const state = syncState.usersChunked;
-  console.log("\n🚀 Starting CHUNKED users sync (bypass 10K limit)...");
+  const PER_PAGE = 100;
+  const DELAY_MS = 700;
+  const MAX_RETRIES = 3;
+  
+  console.log("\n🚀 Starting users sync with search_after pagination...");
 
   // إنشاء sync log
   try {
@@ -3033,9 +3037,9 @@ async function runChunkedUsersSync() {
       .from("teachable_sync_log")
       .insert({
         sync_type: "initial",
-        entity_type: "users_chunked",
+        entity_type: "users_search_after",
         status: "running",
-        metadata: { strategy: "alphabetical_chunks" },
+        metadata: { strategy: "search_after_pagination", per_page: PER_PAGE },
       })
       .select("id")
       .single();
@@ -3044,57 +3048,141 @@ async function runChunkedUsersSync() {
     console.error("⚠️ sync log error:", e.message);
   }
 
-  // الاستراتيجية الصحيحة: تقسيم بالتاريخ (شهر بشهر)
-  // كل شهر بيكون فيه عدد محدود من المستخدمين (مفيش chunk هيتجاوز 10K)
-  // المنصة بدأت 2018، فهنبدأ من هناك حتى دلوقتي
-  const chunks = [];
-  const startYear = 2018;
-  const endYear = new Date().getUTCFullYear();
-  
-  for (let year = startYear; year <= endYear; year++) {
-    for (let month = 0; month < 12; month++) {
-      // متخطّاش الشهور المستقبلية
-      const chunkDate = new Date(Date.UTC(year, month, 1));
-      if (chunkDate > new Date()) break;
-      
-      // start: أول يوم في الشهر
-      const startDate = new Date(Date.UTC(year, month, 1)).toISOString().split('T')[0];
-      // end: أول يوم في الشهر التالي (exclusive)
-      const endDate = new Date(Date.UTC(year, month + 1, 1)).toISOString().split('T')[0];
-      
-      chunks.push({
-        label: `${year}-${String(month + 1).padStart(2, '0')}`,
-        startDate,
-        endDate,
-      });
-    }
-  }
-  
-  console.log(`📅 Will sync ${chunks.length} monthly chunks (${chunks[0].label} to ${chunks[chunks.length - 1].label})`);
-
   try {
-    for (const chunk of chunks) {
+    let searchAfter = null;
+    let batchNumber = 0;
+    let totalSeen = 0;
+    let lastBatchSize = 0;
+
+    while (true) {
       if (state.shouldStop) {
-        console.log("🛑 Chunked sync stopped");
+        console.log("🛑 Sync stopped by user");
         break;
       }
 
-      // الفلتر بالتاريخ
-      const queryParam = `&signed_up_after=${chunk.startDate}&signed_up_before=${chunk.endDate}`;
-      await syncChunk(chunk.label, queryParam, state);
+      batchNumber++;
+      
+      // كل دفعة من 10K بنسحبها صفحة صفحة (100 صفحة × 100 user)
+      const batchLabel = `batch_${batchNumber}` + (searchAfter ? `_after_${searchAfter}` : "_first");
+      state.currentChunk = batchLabel;
+      
+      console.log(`\n📦 Starting batch ${batchNumber}${searchAfter ? ` (search_after=${searchAfter})` : ' (first batch)'}`);
 
-      // تحديث الـ log
+      let batchAdded = 0;
+      let batchProcessed = 0;
+      let lastUserId = null;
+      let pagesInBatch = 0;
+      let hitLimit = false;
+
+      // كل batch لازم يكون أقل من 10K (يعني max 99 صفحة × 100)
+      const MAX_PAGES_PER_BATCH = 99;
+
+      for (let page = 1; page <= MAX_PAGES_PER_BATCH; page++) {
+        if (state.shouldStop) break;
+
+        if (page > 1) await sleep(DELAY_MS);
+        state.currentPage = page;
+
+        // بناء الـ URL
+        let queryUrl = `/users?per=${PER_PAGE}&page=${page}`;
+        if (searchAfter !== null) {
+          queryUrl += `&search_after=${searchAfter}`;
+        }
+
+        let pageData = null;
+        let attempt = 0;
+        while (attempt < MAX_RETRIES && !pageData) {
+          try {
+            pageData = await teachableRequest(queryUrl);
+          } catch (e) {
+            attempt++;
+            if (e.message.includes("max_result_limit_reached")) {
+              console.warn(`   ⚠️ Hit 10K limit at page ${page} — switching to next batch`);
+              hitLimit = true;
+              break;
+            }
+            console.error(`   ⚠️ Page ${page} attempt ${attempt}: ${e.message}`);
+            if (attempt < MAX_RETRIES) await sleep(2000 * attempt);
+          }
+        }
+
+        if (hitLimit) break;
+        
+        if (!pageData || !pageData.users || pageData.users.length === 0) {
+          console.log(`   ✅ No more users at page ${page} — done!`);
+          break;
+        }
+
+        // حفظ المستخدمين
+        const result = await saveBatchToSupabase(pageData.users);
+        batchProcessed += pageData.users.length;
+        batchAdded += result.added;
+        state.totalProcessed += pageData.users.length;
+        state.totalAdded += result.added;
+        state.totalFailed += result.failed;
+
+        // حفظ آخر user ID للاستخدام في search_after
+        const lastUser = pageData.users[pageData.users.length - 1];
+        if (lastUser && lastUser.id) {
+          lastUserId = lastUser.id;
+        }
+
+        pagesInBatch = page;
+
+        // Log every 20 pages
+        if (page % 20 === 0) {
+          console.log(`   Page ${page} | Batch added: ${batchAdded} | Total added: ${state.totalAdded}`);
+          await updateSyncLog(state);
+        }
+
+        // لو الصفحة دي رجعت أقل من PER_PAGE → ده آخر صفحة
+        if (pageData.users.length < PER_PAGE) {
+          console.log(`   ✅ Last page reached (${pageData.users.length} users)`);
+          break;
+        }
+      }
+
+      console.log(`✅ Batch ${batchNumber} done | Pages: ${pagesInBatch} | Added: ${batchAdded} | Last User ID: ${lastUserId}`);
+      
+      state.completedChunks.push({
+        label: batchLabel,
+        added: batchAdded,
+        total: batchProcessed,
+        pages: pagesInBatch,
+        last_user_id: lastUserId,
+      });
+
+      totalSeen += batchProcessed;
+      lastBatchSize = batchProcessed;
+
+      // شروط الإيقاف:
+      // 1. لو الـ batch ده ما حصلش على 10K = خلصنا
+      // 2. لو ما عندناش lastUserId
+      if (!hitLimit && batchProcessed < 9900) {
+        console.log("\n🎉 Sync complete! Last batch was less than full.");
+        break;
+      }
+      
+      if (!lastUserId) {
+        console.log("\n⚠️ No last user ID — stopping");
+        break;
+      }
+
+      // الـ batch التالي
+      searchAfter = lastUserId;
       await updateSyncLog(state);
+      await sleep(DELAY_MS);
     }
 
     const finalStatus = state.shouldStop ? "partial" : "success";
-    console.log(`\n🎉 Chunked users sync ${finalStatus}!`);
+    console.log(`\n🎉 Users sync ${finalStatus}!`);
+    console.log(`   Total batches: ${state.completedChunks.length}`);
     console.log(`   Total added: ${state.totalAdded}`);
-    console.log(`   Total chunks: ${state.completedChunks.length}`);
+    console.log(`   Total processed: ${state.totalProcessed}`);
 
     await updateSyncLog(state, finalStatus);
   } catch (error) {
-    console.error("❌ Fatal chunked sync error:", error.message);
+    console.error("❌ Fatal sync error:", error.message);
     state.errors.push({ fatal: true, error: error.message });
     await updateSyncLog(state, "failed");
   } finally {
@@ -3129,34 +3217,33 @@ app.post("/api/admin/teachable/sync-users-chunked", adminAuth, async (req, res) 
     success: true,
     message: "✅ Chunked users sync started in background",
     startedAt: syncState.usersChunked.startedAt,
-    strategy: "Splits users into monthly chunks (2018-now) using signed_up_after/before filter — bypasses 10K limit",
-    estimated_duration_minutes: 90,
-    total_chunks: "~100 monthly chunks",
+    strategy: "Uses search_after pagination (Teachable's official method to bypass 10K limit). Sequential batches of ~10K each.",
+    estimated_duration_minutes: 60,
+    expected_batches: "~10 batches × 10K users each = 91K total",
   });
 });
 
-// Endpoint: متابعة السحب الـ chunked
+// Endpoint: متابعة السحب
 app.get("/api/admin/teachable/sync-users-chunked-status", adminAuth, (req, res) => {
   const state = syncState.usersChunked;
   
-  // حساب العدد الكلي للـ chunks ديناميكياً (شهور من 2018 لحد دلوقتي)
-  const now = new Date();
-  const startYear = 2018;
-  const totalChunks = ((now.getUTCFullYear() - startYear) * 12) + (now.getUTCMonth() + 1);
+  // متوقع 10 batches تقريباً (91K / 10K)
+  const expectedBatches = 10;
   
   res.json({
     running: state.running,
     startedAt: state.startedAt,
-    current_chunk: state.currentChunk,
-    completed_chunks_count: state.completedChunks.length,
-    total_chunks: totalChunks,
-    progress_percent: totalChunks > 0 
-      ? Math.floor((state.completedChunks.length / totalChunks) * 100) 
+    current_batch: state.currentChunk,
+    current_page_in_batch: state.currentPage,
+    completed_batches_count: state.completedChunks.length,
+    expected_batches: expectedBatches,
+    progress_percent: state.completedChunks.length > 0
+      ? Math.min(99, Math.floor((state.completedChunks.length / expectedBatches) * 100))
       : 0,
     total_processed: state.totalProcessed,
     total_added: state.totalAdded,
     total_failed: state.totalFailed,
-    completed_chunks: state.completedChunks,
+    completed_batches: state.completedChunks,
     errors_count: state.errors.length,
     recent_errors: state.errors.slice(-5),
   });
