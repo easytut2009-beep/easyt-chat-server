@@ -3720,6 +3720,263 @@ app.post("/api/admin/teachable/sync-enrollments/stop", async (req, res) => {
   }
 });
 
+/**
+ * Retry large courses that hit the 10K limit
+ * Uses date ranges to get enrollments in chunks of <10K
+ */
+app.post("/api/admin/teachable/sync-enrollments/retry-large", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.enrollments?.status === "running") {
+      return res.status(400).json({ error: "Regular enrollments sync is running. Stop it first." });
+    }
+
+    // Find courses that had max_result_limit_reached errors
+    const { data: logs } = await supabase
+      .from("teachable_sync_log")
+      .select("details")
+      .eq("sync_type", "sync_enrollments")
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    // Allow user to specify course IDs manually via body
+    let courseIds = req.body?.course_ids || [];
+    if (!Array.isArray(courseIds) || !courseIds.length) {
+      return res.status(400).json({
+        error: "Send course_ids in body, e.g., { course_ids: [1456290, 1514828, 1573081] }"
+      });
+    }
+
+    syncState.enrollmentsRetry = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      courseIds,
+      currentCourseIndex: 0,
+      currentCourse: null,
+      currentRange: null,
+      processed: 0,
+      total: courseIds.length,
+      enrollmentsCreated: 0,
+      errors: [],
+      stopRequested: false,
+      lastUpdate: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      message: "Large courses retry started in background",
+      courses: courseIds
+    });
+
+    runEnrollmentsRetryLarge(courseIds).catch(err => {
+      console.error("[EnrollmentsRetry] Fatal:", err);
+      syncState.enrollmentsRetry.status = "failed";
+      syncState.enrollmentsRetry.completedAt = new Date().toISOString();
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-enrollments/retry-large/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const S = syncState.enrollmentsRetry;
+    if (!S) return res.json({ success: true, state: null, message: "No retry running" });
+
+    const { count } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    const elapsedMs = S.startedAt ? Date.now() - new Date(S.startedAt).getTime() : 0;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+
+    res.json({
+      success: true,
+      state: S,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      database_count: count || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-enrollments/retry-large/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    if (syncState.enrollmentsRetry) {
+      syncState.enrollmentsRetry.stopRequested = true;
+    }
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Retry sync for large courses using date ranges
+ * Splits each course into 2-year chunks to stay under 10K limit
+ */
+async function runEnrollmentsRetryLarge(courseIds) {
+  const S = syncState.enrollmentsRetry;
+  const PER_PAGE = 100;
+  const DELAY_BETWEEN_PAGES = 200;
+  const DELAY_BETWEEN_CHUNKS = 500;
+  const BATCH_INSERT_SIZE = 50;
+
+  // Date ranges - 2-year chunks from 2018 to now
+  const dateRanges = [
+    { start: "2018-01-01", end: "2020-01-01", label: "2018-2019" },
+    { start: "2020-01-01", end: "2022-01-01", label: "2020-2021" },
+    { start: "2022-01-01", end: "2024-01-01", label: "2022-2023" },
+    { start: "2024-01-01", end: "2025-07-01", label: "2024-H1-2025" },
+    { start: "2025-07-01", end: "2026-05-01", label: "2025-H2-2026" }
+  ];
+
+  console.log(`[EnrollmentsRetry] 🚀 Starting retry for ${courseIds.length} large courses`);
+
+  // Get course names upfront
+  const { data: courses } = await supabase
+    .from("teachable_courses")
+    .select("teachable_course_id, name")
+    .in("teachable_course_id", courseIds);
+
+  const courseNameMap = {};
+  for (const c of courses || []) {
+    courseNameMap[c.teachable_course_id] = c.name;
+  }
+
+  try {
+    for (let idx = 0; idx < courseIds.length; idx++) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        break;
+      }
+
+      const courseId = courseIds[idx];
+      S.currentCourseIndex = idx;
+      S.currentCourse = courseId;
+      S.lastUpdate = new Date().toISOString();
+
+      console.log(`[EnrollmentsRetry] 📚 Course ${courseId} (${courseNameMap[courseId] || "Unknown"})`);
+      let courseTotal = 0;
+
+      // Process each date range for this course
+      for (const range of dateRanges) {
+        if (S.stopRequested) break;
+
+        S.currentRange = `${courseId}: ${range.label}`;
+        console.log(`[EnrollmentsRetry]   📅 Range: ${range.label}`);
+
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore && !S.stopRequested) {
+          try {
+            const url = `/courses/${courseId}/enrollments?page=${page}&per=${PER_PAGE}&enrolled_after=${range.start}&enrolled_before=${range.end}`;
+            const data = await teachableFetchWithRetry(url);
+            const enrollments = data.enrollments || [];
+
+            if (!enrollments.length) {
+              hasMore = false;
+              break;
+            }
+
+            const rows = enrollments.map(e => ({
+              teachable_user_id: e.user_id || null,
+              user_email: e.user?.email || null,
+              course_id: courseId,
+              course_name: courseNameMap[courseId] || null,
+              enrolled_at: e.enrolled_at || null,
+              completed_at: e.completed_at || null,
+              percent_complete: e.percent_complete || 0,
+              is_active: e.is_active ?? true,
+              expires_at: e.expires_at || null,
+              raw_data: e
+            })).filter(r => r.teachable_user_id !== null);
+
+            // Dedup within batch
+            const dedupMap = new Map();
+            for (const row of rows) {
+              const key = `${row.teachable_user_id}_${row.course_id}`;
+              const existing = dedupMap.get(key);
+              if (!existing) {
+                dedupMap.set(key, row);
+              } else {
+                const existingDate = existing.enrolled_at ? new Date(existing.enrolled_at) : new Date(0);
+                const newDate = row.enrolled_at ? new Date(row.enrolled_at) : new Date(0);
+                if (newDate > existingDate) dedupMap.set(key, row);
+              }
+            }
+            const dedupedRows = Array.from(dedupMap.values());
+
+            // Upsert batches
+            for (let i = 0; i < dedupedRows.length; i += BATCH_INSERT_SIZE) {
+              const batch = dedupedRows.slice(i, i + BATCH_INSERT_SIZE);
+              const { error } = await supabase
+                .from("teachable_enrollments")
+                .upsert(batch, {
+                  onConflict: "teachable_user_id,course_id",
+                  ignoreDuplicates: false
+                });
+
+              if (!error) {
+                S.enrollmentsCreated += batch.length;
+                courseTotal += batch.length;
+              } else {
+                S.errors.push({
+                  at: new Date().toISOString(),
+                  courseId,
+                  range: range.label,
+                  page,
+                  error: error.message
+                });
+              }
+            }
+
+            if (enrollments.length < PER_PAGE) {
+              hasMore = false;
+            } else {
+              page++;
+              await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
+            }
+          } catch (err) {
+            S.errors.push({
+              at: new Date().toISOString(),
+              courseId,
+              range: range.label,
+              page,
+              error: err.message
+            });
+            console.error(`[EnrollmentsRetry] Error in ${range.label} page ${page}: ${err.message}`);
+            hasMore = false;
+          }
+        }
+
+        await new Promise(r => setTimeout(r, DELAY_BETWEEN_CHUNKS));
+      }
+
+      S.processed++;
+      console.log(`[EnrollmentsRetry] ✅ Course ${courseId}: ${courseTotal} total enrollments (cumulative ${S.enrollmentsCreated})`);
+    }
+
+    S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
+    S.completedAt = new Date().toISOString();
+    console.log(`[EnrollmentsRetry] 🏁 Done! Total: ${S.enrollmentsCreated} enrollments`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({ at: new Date().toISOString(), error: err.message, fatal: true });
+    console.error("[EnrollmentsRetry] FATAL:", err);
+  }
+}
+
 async function runEnrollmentsSync(courseIds) {
   const S = syncState.enrollments;
   const PER_PAGE = 100;
@@ -4077,6 +4334,511 @@ app.get("/guide-widget.js", (req, res) => {
 
 /* ═══ Register Routes ═══ */
 /* ═══ Start Server ═══ */
+/* ══════════════════════════════════════════════════════════
+   TEACHABLE WEBHOOKS
+   ══════════════════════════════════════════════════════════ */
+
+/**
+ * Main Webhook Receiver
+ * Receives events from Teachable and dispatches to handlers
+ */
+app.post("/api/webhooks/teachable", async (req, res) => {
+  // Teachable sends events as an array: [{ type, id, object, ... }]
+  // OR sometimes as a single object - handle both
+  const events = Array.isArray(req.body) ? req.body : [req.body];
+
+  if (!events.length) {
+    return res.status(400).json({ error: "No events received" });
+  }
+
+  // Always respond 200 immediately so Teachable doesn't retry
+  // Process events in the background
+  res.status(200).json({
+    success: true,
+    received: events.length,
+    message: "Events queued for processing"
+  });
+
+  // Process events asynchronously
+  for (const event of events) {
+    processWebhookEvent(event).catch(err => {
+      console.error(`[Webhook] Fatal error processing event:`, err.message);
+    });
+  }
+});
+
+/**
+ * Process a single webhook event
+ * - Save to webhook_events table
+ * - Dispatch to appropriate handler
+ * - Mark as processed
+ */
+async function processWebhookEvent(event) {
+  if (!event || !event.type) {
+    console.warn("[Webhook] Invalid event - missing type:", event);
+    return;
+  }
+
+  const eventType = event.type;
+  const hookEventId = event.hook_event_id || null;
+
+  console.log(`[Webhook] 📥 Received: ${eventType} (hook_event_id: ${hookEventId})`);
+
+  // 1. Save raw event to webhook_events table (dedup via hook_event_id)
+  let logId = null;
+  try {
+    const { data, error } = await supabase
+      .from("webhook_events")
+      .upsert({
+        event_type: eventType,
+        hook_event_id: hookEventId,
+        payload: event,
+        processed: false
+      }, {
+        onConflict: "hook_event_id",
+        ignoreDuplicates: false
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(`[Webhook] Failed to log event: ${error.message}`);
+      return;
+    }
+    logId = data?.id;
+  } catch (err) {
+    console.error(`[Webhook] Log error:`, err.message);
+    return;
+  }
+
+  // 2. Dispatch to handler
+  try {
+    const obj = event.object || {};
+
+    switch (eventType) {
+      case "User.created":
+      case "User.updated":
+      case "User.subscribe_to_marketing_emails":
+      case "User.unsubscribe_from_marketing_emails":
+        await handleUserEvent(obj, eventType);
+        break;
+
+      case "Sale.created":
+        await handleSaleCreated(obj);
+        break;
+
+      case "Sale.subscription_canceled":
+        await handleSubscriptionCanceled(obj);
+        break;
+
+      case "Transaction.created":
+        await handleTransactionCreated(obj);
+        break;
+
+      case "Transaction.refunded":
+        await handleTransactionRefunded(obj);
+        break;
+
+      case "Enrollment.created":
+        await handleEnrollmentCreated(obj);
+        break;
+
+      case "Enrollment.completed":
+        await handleEnrollmentCompleted(obj);
+        break;
+
+      case "Enrollment.disabled":
+        await handleEnrollmentDisabled(obj);
+        break;
+
+      default:
+        console.log(`[Webhook] ℹ️ Event type not handled: ${eventType}`);
+    }
+
+    // Mark as processed
+    if (logId) {
+      await supabase
+        .from("webhook_events")
+        .update({
+          processed: true,
+          processed_at: new Date().toISOString()
+        })
+        .eq("id", logId);
+    }
+
+    console.log(`[Webhook] ✅ Processed: ${eventType}`);
+  } catch (err) {
+    console.error(`[Webhook] ❌ Handler error for ${eventType}:`, err.message);
+    if (logId) {
+      await supabase
+        .from("webhook_events")
+        .update({
+          processing_error: err.message,
+          processed_at: new Date().toISOString()
+        })
+        .eq("id", logId);
+    }
+  }
+}
+
+/* ═══ Event Handlers ═══ */
+
+async function handleUserEvent(user, eventType) {
+  if (!user.id) return;
+
+  const userData = {
+    teachable_user_id: user.id,
+    email: user.email?.toLowerCase() || null,
+    name: user.name || null,
+    role: user.role || "student",
+    signin_count: user.sign_in_count || 0,
+    last_signin: user.last_sign_in_at || null,
+    phone_number: user.phone_number || null,
+    unsubscribed: user.unsubscribe_from_marketing_emails || false,
+    raw_data: user,
+    last_synced_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  // For User.created, add signup_date
+  if (eventType === "User.created") {
+    userData.signup_date = new Date().toISOString();
+  }
+
+  const { error } = await supabase
+    .from("teachable_users")
+    .upsert(userData, {
+      onConflict: "teachable_user_id",
+      ignoreDuplicates: false
+    });
+
+  if (error) throw new Error(`User upsert failed: ${error.message}`);
+}
+
+async function handleSaleCreated(sale) {
+  // Sale.created doesn't create a transaction directly,
+  // but we log it in webhook_events for visibility.
+  // The actual transaction comes via Transaction.created.
+  console.log(`[Webhook] Sale.created: user=${sale.user_id}, course=${sale.course?.id}, price=${sale.final_price || sale.price}`);
+}
+
+async function handleSubscriptionCanceled(sale) {
+  if (!sale.user_id) return;
+
+  // Update the subscription to cancelled
+  const { error } = await supabase
+    .from("teachable_subscriptions")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq("teachable_user_id", sale.user_id)
+    .eq("status", "active");
+
+  if (error) {
+    console.error(`[Webhook] Subscription cancel failed: ${error.message}`);
+  } else {
+    console.log(`[Webhook] Subscription cancelled for user=${sale.user_id}`);
+  }
+}
+
+async function handleTransactionCreated(txn) {
+  if (!txn.id) return;
+
+  // Teachable API amounts are in cents
+  const amountInDollars = (txn.final_price || 0) / 100;
+
+  const txnData = {
+    transaction_id: txn.id,
+    teachable_user_id: txn.user_id || null,
+    user_email: txn.user?.email?.toLowerCase() || null,
+    product_id: txn.sale?.product?.id ? txn.sale.product.id.toString() : null,
+    product_name: txn.sale?.product?.name || null,
+    product_type: txn.sale?.product?.is_recurring ? "subscription" : "course",
+    amount: amountInDollars,
+    currency: txn.currency || "USD",
+    status: txn.status || "paid",
+    payment_gateway: txn.stripe_charge_token ? "stripe" : (txn.paypal_payment_id ? "paypal" : null),
+    transaction_date: txn.purchased_at || null,
+    refunded_at: null,
+    raw_data: txn
+  };
+
+  const { error } = await supabase
+    .from("teachable_transactions")
+    .upsert(txnData, {
+      onConflict: "transaction_id",
+      ignoreDuplicates: false
+    });
+
+  if (error) throw new Error(`Transaction insert failed: ${error.message}`);
+
+  // If this is a subscription transaction, update/create subscription
+  if (txnData.product_type === "subscription" && txn.user_id) {
+    await syncSubscriptionFromTransaction(txn, txnData);
+  }
+}
+
+async function handleTransactionRefunded(txn) {
+  if (!txn.id) return;
+
+  const { error } = await supabase
+    .from("teachable_transactions")
+    .update({
+      status: "refunded",
+      refunded_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq("transaction_id", txn.id);
+
+  if (error) throw new Error(`Transaction refund update failed: ${error.message}`);
+}
+
+/**
+ * Helper: Create/update subscription from a transaction
+ */
+async function syncSubscriptionFromTransaction(txn, txnData) {
+  const SUBSCRIPTION_PRODUCT_IDS = [
+    '3389406', '2853142', '3745174', '4486167',
+    '3902295', '5240323', '6687780'
+  ];
+
+  const isKnownSubscription = SUBSCRIPTION_PRODUCT_IDS.includes(txnData.product_id);
+  if (!isKnownSubscription && !txnData.product_type === "subscription") return;
+
+  const subData = {
+    teachable_user_id: txn.user_id,
+    user_email: txnData.user_email,
+    product_id: txnData.product_id,
+    product_name: txnData.product_name,
+    plan_type: txnData.product_id === '6687780' ? 'yearly_current' : 'yearly_legacy',
+    status: 'active',
+    amount: txnData.amount,
+    currency: txnData.currency,
+    started_at: txnData.transaction_date,
+    expires_at: txnData.transaction_date ? 
+      new Date(new Date(txnData.transaction_date).getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() 
+      : null,
+    raw_data: txn,
+    updated_at: new Date().toISOString()
+  };
+
+  await supabase
+    .from("teachable_subscriptions")
+    .upsert(subData, {
+      onConflict: "teachable_user_id",
+      ignoreDuplicates: false
+    });
+}
+
+async function handleEnrollmentCreated(enrollment) {
+  if (!enrollment.user_id || !enrollment.course_id) return;
+
+  const enrollmentData = {
+    enrollment_id: enrollment.id || null,
+    teachable_user_id: enrollment.user_id,
+    user_email: enrollment.user?.email?.toLowerCase() || null,
+    course_id: enrollment.course_id,
+    course_name: enrollment.course?.name || null,
+    enrolled_at: enrollment.enrolled_at || enrollment.created_at || null,
+    completed_at: enrollment.completed_at || null,
+    percent_complete: enrollment.percent_complete || 0,
+    is_active: enrollment.is_active ?? true,
+    has_full_access: enrollment.has_full_access ?? false,
+    expires_at: enrollment.expires_at || null,
+    raw_data: enrollment
+  };
+
+  const { error } = await supabase
+    .from("teachable_enrollments")
+    .upsert(enrollmentData, {
+      onConflict: "teachable_user_id,course_id",
+      ignoreDuplicates: false
+    });
+
+  if (error) throw new Error(`Enrollment insert failed: ${error.message}`);
+
+  // Update user's course_count
+  await updateUserCourseCount(enrollment.user_id);
+}
+
+async function handleEnrollmentCompleted(enrollment) {
+  if (!enrollment.user_id || !enrollment.course_id) return;
+
+  const { error } = await supabase
+    .from("teachable_enrollments")
+    .update({
+      completed_at: new Date().toISOString(),
+      percent_complete: 100,
+      updated_at: new Date().toISOString()
+    })
+    .eq("teachable_user_id", enrollment.user_id)
+    .eq("course_id", enrollment.course_id);
+
+  if (error) throw new Error(`Enrollment complete update failed: ${error.message}`);
+}
+
+async function handleEnrollmentDisabled(enrollment) {
+  if (!enrollment.user_id || !enrollment.course_id) return;
+
+  const { error } = await supabase
+    .from("teachable_enrollments")
+    .update({
+      is_active: false,
+      updated_at: new Date().toISOString()
+    })
+    .eq("teachable_user_id", enrollment.user_id)
+    .eq("course_id", enrollment.course_id);
+
+  if (error) throw new Error(`Enrollment disable update failed: ${error.message}`);
+
+  // Update user's course_count
+  await updateUserCourseCount(enrollment.user_id);
+}
+
+/**
+ * Helper: Update course_count and has_ziko_access in teachable_users
+ */
+async function updateUserCourseCount(userId) {
+  try {
+    const { count } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true })
+      .eq("teachable_user_id", userId)
+      .eq("is_active", true);
+
+    const courseCount = count || 0;
+    // If user has 330+ courses, they have ziko_access (subscription)
+    const hasZikoAccess = courseCount >= 330;
+
+    await supabase
+      .from("teachable_users")
+      .update({
+        course_count: courseCount,
+        has_ziko_access: hasZikoAccess,
+        updated_at: new Date().toISOString()
+      })
+      .eq("teachable_user_id", userId);
+  } catch (err) {
+    console.error(`[Webhook] Failed to update course_count for user ${userId}:`, err.message);
+  }
+}
+
+/* ═══ Webhook Admin Endpoints ═══ */
+
+/**
+ * GET /api/webhooks/events
+ * View received webhook events (admin only)
+ */
+app.get("/api/webhooks/events", async (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const eventType = req.query.type || null;
+  const processed = req.query.processed; // 'true', 'false', or undefined
+
+  let query = supabase
+    .from("webhook_events")
+    .select("id, event_type, hook_event_id, processed, processing_error, received_at, processed_at")
+    .order("received_at", { ascending: false })
+    .limit(limit);
+
+  if (eventType) query = query.eq("event_type", eventType);
+  if (processed === "true") query = query.eq("processed", true);
+  if (processed === "false") query = query.eq("processed", false);
+
+  const { data, error } = await query;
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, count: data.length, events: data });
+});
+
+/**
+ * GET /api/webhooks/stats
+ * Get webhook processing statistics
+ */
+app.get("/api/webhooks/stats", async (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { data: byType } = await supabase
+    .from("webhook_events")
+    .select("event_type, processed, processing_error");
+
+  const stats = {};
+  for (const e of byType || []) {
+    if (!stats[e.event_type]) {
+      stats[e.event_type] = { total: 0, processed: 0, failed: 0 };
+    }
+    stats[e.event_type].total++;
+    if (e.processed && !e.processing_error) stats[e.event_type].processed++;
+    if (e.processing_error) stats[e.event_type].failed++;
+  }
+
+  const totals = {
+    total: byType?.length || 0,
+    processed: byType?.filter(e => e.processed && !e.processing_error).length || 0,
+    failed: byType?.filter(e => e.processing_error).length || 0,
+    pending: byType?.filter(e => !e.processed && !e.processing_error).length || 0
+  };
+
+  res.json({ success: true, totals, by_type: stats });
+});
+
+/**
+ * POST /api/webhooks/retry
+ * Retry failed webhook events
+ */
+app.post("/api/webhooks/retry", async (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { data: failed, error } = await supabase
+    .from("webhook_events")
+    .select("*")
+    .not("processing_error", "is", null)
+    .limit(100);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({
+    success: true,
+    message: `Retrying ${failed.length} failed events in background`,
+    count: failed.length
+  });
+
+  // Process in background
+  for (const event of failed) {
+    // Clear the error and retry
+    await supabase
+      .from("webhook_events")
+      .update({ processing_error: null })
+      .eq("id", event.id);
+
+    await processWebhookEvent(event.payload).catch(err => {
+      console.error(`[Webhook Retry] Error:`, err.message);
+    });
+  }
+});
+
+/**
+ * GET /api/webhooks/test
+ * Quick health check for webhook endpoint
+ */
+app.get("/api/webhooks/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Webhook endpoint is alive",
+    timestamp: new Date().toISOString(),
+    server: "easyt-chat-server"
+  });
+});
+
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
