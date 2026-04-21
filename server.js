@@ -3764,21 +3764,13 @@ async function runEnrollmentsSync(courseIds) {
 
           const enrollments = data.enrollments || [];
 
-          // DEBUG: Log first enrollment shape on first call
-          if (page === 1 && enrollments.length > 0 && S.processed === 0) {
-            console.log(`[Enrollments] 🔍 DEBUG - Sample enrollment from course ${courseId}:`);
-            console.log(JSON.stringify(enrollments[0], null, 2));
-            console.log(`[Enrollments] 🔍 DEBUG - Available fields:`, Object.keys(enrollments[0]));
-          }
-
           if (!enrollments.length) {
             hasMoreInCourse = false;
             break;
           }
 
-          // Transform using CORRECT schema
+          // Transform using CORRECT schema - Teachable API only returns: user_id, enrolled_at, completed_at, percent_complete, expires_at
           const rows = enrollments.map(e => ({
-            enrollment_id: e.enrollment_id || e.id || null,
             teachable_user_id: e.user_id || e.user?.id || null,
             user_email: e.user?.email || e.email || null,
             course_id: courseId,
@@ -3786,33 +3778,25 @@ async function runEnrollmentsSync(courseIds) {
             enrolled_at: e.enrolled_at || e.created_at || null,
             completed_at: e.completed_at || null,
             percent_complete: e.percent_complete || 0,
-            completed_lecture_count: e.completed_lecture_count || 0,
-            completed_lecture_ids: e.completed_lecture_ids || null,
             is_active: e.is_active ?? true,
-            has_full_access: e.has_full_access ?? false,
             expires_at: e.expires_at || null,
             raw_data: e
           }));
 
-          // Filter out rows with null enrollment_id or user_id (required)
-          const validRows = rows.filter(r => r.enrollment_id !== null && r.teachable_user_id !== null);
+          // Filter out rows with null user_id (required for conflict)
+          const validRows = rows.filter(r => r.teachable_user_id !== null);
           const skipped = rows.length - validRows.length;
           if (skipped > 0) {
-            console.warn(`[Enrollments] Course ${courseId} page ${page}: skipped ${skipped} rows with null id or user_id`);
-            // Show raw keys from one skipped row for debugging
-            if (rows.length > 0 && validRows.length === 0) {
-              console.warn(`[Enrollments] All rows skipped! Sample row fields:`, Object.keys(rows[0].raw_data));
-              console.warn(`[Enrollments] Sample raw_data:`, JSON.stringify(rows[0].raw_data).slice(0, 500));
-            }
+            console.warn(`[Enrollments] Course ${courseId} page ${page}: skipped ${skipped} rows with null user_id`);
           }
 
-          // Insert in batches
+          // Insert in batches using user+course unique constraint
           for (let i = 0; i < validRows.length; i += BATCH_INSERT_SIZE) {
             const batch = validRows.slice(i, i + BATCH_INSERT_SIZE);
             const { error } = await supabase
               .from("teachable_enrollments")
               .upsert(batch, {
-                onConflict: "enrollment_id",
+                onConflict: "teachable_user_id,course_id",
                 ignoreDuplicates: false
               });
 
