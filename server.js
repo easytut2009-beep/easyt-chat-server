@@ -3790,9 +3790,31 @@ async function runEnrollmentsSync(courseIds) {
             console.warn(`[Enrollments] Course ${courseId} page ${page}: skipped ${skipped} rows with null user_id`);
           }
 
+          // Deduplicate by (user_id, course_id) - keep most recent enrollment
+          const dedupeMap = new Map();
+          for (const row of validRows) {
+            const key = `${row.teachable_user_id}_${row.course_id}`;
+            const existing = dedupeMap.get(key);
+            if (!existing) {
+              dedupeMap.set(key, row);
+            } else {
+              // Keep the row with the latest enrolled_at, or the one with completed_at
+              const existingDate = existing.enrolled_at ? new Date(existing.enrolled_at) : new Date(0);
+              const newDate = row.enrolled_at ? new Date(row.enrolled_at) : new Date(0);
+              if (newDate > existingDate) {
+                dedupeMap.set(key, row);
+              }
+            }
+          }
+          const dedupedRows = Array.from(dedupeMap.values());
+          const deduped = validRows.length - dedupedRows.length;
+          if (deduped > 0) {
+            console.log(`[Enrollments] Course ${courseId} page ${page}: deduplicated ${deduped} duplicate rows`);
+          }
+
           // Insert in batches using user+course unique constraint
-          for (let i = 0; i < validRows.length; i += BATCH_INSERT_SIZE) {
-            const batch = validRows.slice(i, i + BATCH_INSERT_SIZE);
+          for (let i = 0; i < dedupedRows.length; i += BATCH_INSERT_SIZE) {
+            const batch = dedupedRows.slice(i, i + BATCH_INSERT_SIZE);
             const { error } = await supabase
               .from("teachable_enrollments")
               .upsert(batch, {
