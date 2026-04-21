@@ -13,7 +13,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
+a
 /* ═══ OpenAI + Supabase ═══ */
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -3187,12 +3187,15 @@ async function runTransactionsSync() {
   const PER_PAGE = 100;
   const DELAY_BETWEEN_PAGES = 500;
   const BATCH_INSERT_SIZE = 50;
+  const MAX_EMPTY_PAGES = 3; // Stop after 3 consecutive empty pages
 
   await logSync("sync_transactions", "started", {});
 
   try {
     let page = 1;
     let hasMore = true;
+    let emptyPagesInRow = 0;
+    let totalPages = null;
 
     while (hasMore) {
       if (S.stopRequested) {
@@ -3210,33 +3213,62 @@ async function runTransactionsSync() {
 
       const transactions = data.transactions || [];
 
-      if (!transactions.length) {
-        hasMore = false;
-        break;
+      // Set total and totalPages on first page
+      if (page === 1) {
+        if (data.meta?.total) S.total = data.meta.total;
+        if (data.meta?.number_of_pages) totalPages = data.meta.number_of_pages;
+        if (data.meta?.total_pages) totalPages = data.meta.total_pages;
+        console.log(`[Transactions] Total: ${S.total}, Pages: ${totalPages}`);
       }
 
-      if (page === 1 && data.meta?.total) {
-        S.total = data.meta.total;
+      // Handle empty page (might be temporary API issue)
+      if (!transactions.length) {
+        emptyPagesInRow++;
+        console.log(`[Transactions] Empty page ${page} (${emptyPagesInRow}/${MAX_EMPTY_PAGES})`);
+
+        if (emptyPagesInRow >= MAX_EMPTY_PAGES) {
+          console.log(`[Transactions] Stopping after ${MAX_EMPTY_PAGES} empty pages`);
+          hasMore = false;
+          break;
+        }
+
+        // Skip and try next page
+        page++;
+        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES * 2));
+        continue;
       }
+
+      // Reset empty counter
+      emptyPagesInRow = 0;
 
       // Transform and insert
-      const rows = transactions.map(t => ({
-        transaction_id: t.id,
-        teachable_user_id: t.user?.id || null,
-        user_email: t.user?.email || t.email || null,
-        amount: t.final_price || t.amount || 0,
-        currency: t.currency || "USD",
-        status: t.status || "completed",
-        product_id: String(t.product?.id || t.product_id || ""),
-        product_name: t.product?.name || t.product_name || null,
-        product_type: t.product?.type || t.product_type || "course",
-        payment_gateway: t.payment_gateway || null,
-        transaction_date: t.purchased_at || t.created_at || null,
-        refunded_at: t.refunded_at || null,
-        raw_data: t
-      }));
+      const rows = transactions.map(t => {
+        // Amount: Teachable returns in cents, convert to dollars
+        const amountInCents = t.final_price ?? t.charge ?? t.amount ?? 0;
+        const amountInDollars = amountInCents / 100;
+
+        // Transaction date: use purchased_at or created_at
+        const txDate = t.purchased_at || t.created_at || null;
+
+        return {
+          transaction_id: t.id,
+          teachable_user_id: t.user_id || t.user?.id || null,
+          user_email: t.user?.email || t.email || null,
+          amount: amountInDollars,
+          currency: t.currency || "USD",
+          status: t.status || "paid",
+          product_id: String(t.pricing_plan_id || t.product?.id || t.product_id || ""),
+          product_name: t.product?.name || t.product_name || null,
+          product_type: t.product?.type || t.product_type || null,
+          payment_gateway: t.payment_gateway || null,
+          transaction_date: txDate,
+          refunded_at: t.refunded_at || null,
+          raw_data: t
+        };
+      });
 
       // Insert in smaller batches
+      let pageInserted = 0;
       for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
         const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
         const { error } = await supabase
@@ -3249,14 +3281,31 @@ async function runTransactionsSync() {
             page,
             error: error.message
           });
+          console.error(`[Transactions] Insert error page ${page}:`, error.message);
         } else {
           S.transactionsCreated += batch.length;
+          pageInserted += batch.length;
         }
       }
 
       S.processed += transactions.length;
+      console.log(`[Transactions] Page ${page}: ${transactions.length} fetched, ${pageInserted} saved. Total: ${S.processed}/${S.total}`);
 
-      if (transactions.length < PER_PAGE) {
+      // Decide if we should continue
+      // Stop conditions:
+      // 1. Reached total pages (if known)
+      // 2. Processed equal/more than total (if known)
+      // 3. Got less than PER_PAGE (likely last page) - but only if no totalPages known
+
+      if (totalPages && page >= totalPages) {
+        console.log(`[Transactions] Reached final page ${page}/${totalPages}`);
+        hasMore = false;
+      } else if (S.total && S.processed >= S.total) {
+        console.log(`[Transactions] Reached total count ${S.processed}/${S.total}`);
+        hasMore = false;
+      } else if (!totalPages && !S.total && transactions.length < PER_PAGE) {
+        // Only use this as stop condition if we don't have meta info
+        console.log(`[Transactions] Partial page and no meta, stopping`);
         hasMore = false;
       } else {
         page++;
@@ -3270,6 +3319,7 @@ async function runTransactionsSync() {
       processed: S.processed,
       created: S.transactionsCreated
     });
+    console.log(`[Transactions] ✅ Completed: ${S.transactionsCreated} transactions saved`);
 
   } catch (err) {
     S.status = "failed";
@@ -3279,6 +3329,7 @@ async function runTransactionsSync() {
       error: err.message,
       fatal: true
     });
+    console.error(`[Transactions] Fatal error:`, err);
   }
 }
 
