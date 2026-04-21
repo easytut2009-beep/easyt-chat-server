@@ -2325,6 +2325,42 @@ const syncState = {
     currentLecture: null,
     lastUpdate: null,
     stopRequested: false
+  },
+  transactions: {
+    status: "idle",
+    startedAt: null,
+    completedAt: null,
+    currentPage: 0,
+    processed: 0,
+    total: 0,
+    transactionsCreated: 0,
+    errors: [],
+    lastUpdate: null,
+    stopRequested: false
+  },
+  enrollments: {
+    status: "idle",
+    startedAt: null,
+    completedAt: null,
+    currentPage: 0,
+    processed: 0,
+    total: 0,
+    enrollmentsCreated: 0,
+    errors: [],
+    lastUpdate: null,
+    stopRequested: false
+  },
+  subscriptions: {
+    status: "idle",
+    startedAt: null,
+    completedAt: null,
+    currentPage: 0,
+    processed: 0,
+    total: 0,
+    subscriptionsCreated: 0,
+    errors: [],
+    lastUpdate: null,
+    stopRequested: false
   }
 };
 
@@ -3058,6 +3094,573 @@ app.get("/api/admin/teachable/sync-overview", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/* ═══════════════════════════════════════════════════════════════════
+   TRANSACTIONS / ENROLLMENTS / SUBSCRIPTIONS SYNC
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ═══════════════════════════════════════════════════════════════════
+// [1] TRANSACTIONS SYNC
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/sync-transactions/start", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.transactions.status === "running") {
+      return res.status(409).json({
+        error: "Transactions sync already running",
+        state: syncState.transactions
+      });
+    }
+
+    syncState.transactions = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      processed: 0,
+      total: 0,
+      transactionsCreated: 0,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false
+    };
+
+    runTransactionsSync().catch(err => {
+      console.error("[SyncTransactions] Fatal:", err);
+      syncState.transactions.status = "failed";
+      syncState.transactions.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: "Transactions sync started in background.",
+      started_at: syncState.transactions.startedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-transactions/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const s = syncState.transactions;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+
+    const { count: dbCount } = await supabase
+      .from("teachable_transactions")
+      .select("*", { count: "exact", head: true });
+
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      database_count: dbCount || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-transactions/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    syncState.transactions.stopRequested = true;
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function runTransactionsSync() {
+  const S = syncState.transactions;
+  const PER_PAGE = 100;
+  const DELAY_BETWEEN_PAGES = 500;
+  const BATCH_INSERT_SIZE = 50;
+
+  await logSync("sync_transactions", "started", {});
+
+  try {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        return;
+      }
+
+      S.currentPage = page;
+      S.lastUpdate = new Date().toISOString();
+
+      const data = await teachableFetchWithRetry(
+        `/transactions?page=${page}&per=${PER_PAGE}`
+      );
+
+      const transactions = data.transactions || [];
+
+      if (!transactions.length) {
+        hasMore = false;
+        break;
+      }
+
+      if (page === 1 && data.meta?.total) {
+        S.total = data.meta.total;
+      }
+
+      // Transform and insert
+      const rows = transactions.map(t => ({
+        transaction_id: t.id,
+        teachable_user_id: t.user?.id || null,
+        user_email: t.user?.email || t.email || null,
+        amount: t.final_price || t.amount || 0,
+        currency: t.currency || "USD",
+        status: t.status || "completed",
+        product_id: String(t.product?.id || t.product_id || ""),
+        product_name: t.product?.name || t.product_name || null,
+        product_type: t.product?.type || t.product_type || "course",
+        payment_gateway: t.payment_gateway || null,
+        transaction_date: t.purchased_at || t.created_at || null,
+        refunded_at: t.refunded_at || null,
+        raw_data: t
+      }));
+
+      // Insert in smaller batches
+      for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
+        const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
+        const { error } = await supabase
+          .from("teachable_transactions")
+          .upsert(batch, { onConflict: "transaction_id", ignoreDuplicates: false });
+
+        if (error) {
+          S.errors.push({
+            at: new Date().toISOString(),
+            page,
+            error: error.message
+          });
+        } else {
+          S.transactionsCreated += batch.length;
+        }
+      }
+
+      S.processed += transactions.length;
+
+      if (transactions.length < PER_PAGE) {
+        hasMore = false;
+      } else {
+        page++;
+        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
+      }
+    }
+
+    S.status = "completed";
+    S.completedAt = new Date().toISOString();
+    await logSync("sync_transactions", "completed", {
+      processed: S.processed,
+      created: S.transactionsCreated
+    });
+
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [2] ENROLLMENTS SYNC
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/sync-enrollments/start", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.enrollments.status === "running") {
+      return res.status(409).json({
+        error: "Enrollments sync already running",
+        state: syncState.enrollments
+      });
+    }
+
+    // Get course IDs to iterate
+    const { data: courses, error: coursesErr } = await supabase
+      .from("teachable_courses")
+      .select("teachable_course_id");
+
+    if (coursesErr) throw coursesErr;
+
+    syncState.enrollments = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      processed: 0,
+      total: courses.length,
+      enrollmentsCreated: 0,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false,
+      currentCourse: null
+    };
+
+    runEnrollmentsSync(courses.map(c => c.teachable_course_id)).catch(err => {
+      console.error("[SyncEnrollments] Fatal:", err);
+      syncState.enrollments.status = "failed";
+      syncState.enrollments.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: "Enrollments sync started in background.",
+      total_courses: courses.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-enrollments/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const s = syncState.enrollments;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+
+    const { count: dbCount } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      progress_percent: s.total > 0 ? ((s.processed / s.total) * 100).toFixed(1) : "0.0",
+      database_count: dbCount || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-enrollments/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    syncState.enrollments.stopRequested = true;
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function runEnrollmentsSync(courseIds) {
+  const S = syncState.enrollments;
+  const PER_PAGE = 100;
+  const DELAY_BETWEEN_COURSES = 300;
+  const BATCH_INSERT_SIZE = 50;
+
+  await logSync("sync_enrollments", "started", { total_courses: courseIds.length });
+
+  try {
+    for (const courseId of courseIds) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        return;
+      }
+
+      S.currentCourse = courseId;
+      S.lastUpdate = new Date().toISOString();
+
+      let page = 1;
+      let hasMoreInCourse = true;
+
+      while (hasMoreInCourse) {
+        if (S.stopRequested) break;
+
+        try {
+          const data = await teachableFetchWithRetry(
+            `/courses/${courseId}/enrollments?page=${page}&per=${PER_PAGE}`
+          );
+
+          const enrollments = data.enrollments || [];
+
+          if (!enrollments.length) {
+            hasMoreInCourse = false;
+            break;
+          }
+
+          const rows = enrollments.map(e => ({
+            teachable_user_id: e.user?.id || e.user_id || null,
+            user_email: e.user?.email || e.email || null,
+            teachable_course_id: courseId,
+            enrolled_at: e.enrolled_at || e.created_at || null,
+            completed_at: e.completed_at || null,
+            percent_complete: e.percent_complete || 0,
+            last_activity_at: e.last_activity_at || null,
+            raw_data: e
+          }));
+
+          for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
+            const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
+            const { error } = await supabase
+              .from("teachable_enrollments")
+              .upsert(batch, {
+                onConflict: "teachable_user_id,teachable_course_id",
+                ignoreDuplicates: false
+              });
+
+            if (!error) {
+              S.enrollmentsCreated += batch.length;
+            } else {
+              S.errors.push({
+                at: new Date().toISOString(),
+                courseId,
+                error: error.message
+              });
+            }
+          }
+
+          if (enrollments.length < PER_PAGE) {
+            hasMoreInCourse = false;
+          } else {
+            page++;
+          }
+        } catch (err) {
+          S.errors.push({
+            at: new Date().toISOString(),
+            courseId,
+            page,
+            error: err.message
+          });
+          hasMoreInCourse = false;
+        }
+      }
+
+      S.processed++;
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_COURSES));
+    }
+
+    S.status = "completed";
+    S.completedAt = new Date().toISOString();
+    await logSync("sync_enrollments", "completed", {
+      processed: S.processed,
+      created: S.enrollmentsCreated
+    });
+
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [3] SUBSCRIPTIONS SYNC
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/sync-subscriptions/start", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.subscriptions.status === "running") {
+      return res.status(409).json({
+        error: "Subscriptions sync already running",
+        state: syncState.subscriptions
+      });
+    }
+
+    syncState.subscriptions = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      processed: 0,
+      total: 0,
+      subscriptionsCreated: 0,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false
+    };
+
+    runSubscriptionsSync().catch(err => {
+      console.error("[SyncSubscriptions] Fatal:", err);
+      syncState.subscriptions.status = "failed";
+      syncState.subscriptions.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: "Subscriptions sync started in background.",
+      started_at: syncState.subscriptions.startedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-subscriptions/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const s = syncState.subscriptions;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+
+    const { count: dbCount } = await supabase
+      .from("teachable_subscriptions")
+      .select("*", { count: "exact", head: true });
+
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      database_count: dbCount || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-subscriptions/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    syncState.subscriptions.stopRequested = true;
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function runSubscriptionsSync() {
+  const S = syncState.subscriptions;
+  const PER_PAGE = 100;
+  const DELAY_BETWEEN_PAGES = 500;
+  const BATCH_INSERT_SIZE = 50;
+
+  await logSync("sync_subscriptions", "started", {});
+
+  try {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        return;
+      }
+
+      S.currentPage = page;
+      S.lastUpdate = new Date().toISOString();
+
+      const data = await teachableFetchWithRetry(
+        `/subscriptions?page=${page}&per=${PER_PAGE}`
+      );
+
+      const subscriptions = data.subscriptions || [];
+
+      if (!subscriptions.length) {
+        hasMore = false;
+        break;
+      }
+
+      if (page === 1 && data.meta?.total) {
+        S.total = data.meta.total;
+      }
+
+      const rows = subscriptions.map(sub => ({
+        subscription_id: sub.id,
+        teachable_user_id: sub.user?.id || sub.user_id || null,
+        user_email: sub.user?.email || sub.email || null,
+        product_id: String(sub.product?.id || sub.product_id || ""),
+        product_name: sub.product?.name || sub.product_name || null,
+        plan: sub.plan || sub.interval || null,
+        status: sub.status || "active",
+        started_at: sub.started_at || sub.created_at || null,
+        next_billing_at: sub.next_billing_at || null,
+        cancelled_at: sub.cancelled_at || null,
+        expires_at: sub.expires_at || null,
+        amount: sub.amount || 0,
+        currency: sub.currency || "USD",
+        raw_data: sub
+      }));
+
+      for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
+        const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
+        const { error } = await supabase
+          .from("teachable_subscriptions")
+          .upsert(batch, { onConflict: "subscription_id", ignoreDuplicates: false });
+
+        if (!error) {
+          S.subscriptionsCreated += batch.length;
+        } else {
+          S.errors.push({
+            at: new Date().toISOString(),
+            page,
+            error: error.message
+          });
+        }
+      }
+
+      S.processed += subscriptions.length;
+
+      if (subscriptions.length < PER_PAGE) {
+        hasMore = false;
+      } else {
+        page++;
+        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
+      }
+    }
+
+    S.status = "completed";
+    S.completedAt = new Date().toISOString();
+    await logSync("sync_subscriptions", "completed", {
+      processed: S.processed,
+      created: S.subscriptionsCreated
+    });
+
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+  }
+}
 
 /* ═══ Static Widget Files ═══ */
 app.get("/sales-widget.js", (req, res) => {
