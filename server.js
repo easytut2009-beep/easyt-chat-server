@@ -2289,6 +2289,776 @@ app.get("/api/admin/teachable/inspect-lecture", async (req, res) => {
   }
 });
 
+/* ══════════════════════════════════════════════════════════════════════
+   🚀 Teachable Courses Sync System (Background Processing)
+   سحب كل الكورسات + Sections + Lectures (الأساسيات)
+   ══════════════════════════════════════════════════════════════════════ */
+
+// ═══ State Management (في الذاكرة — سيرفر واحد) ═══
+const syncState = {
+  courses: {
+    status: "idle",          // idle | running | completed | failed | stopped
+    startedAt: null,
+    completedAt: null,
+    currentPage: 0,
+    totalPages: 0,
+    processed: 0,
+    total: 0,
+    coursesCreated: 0,
+    sectionsCreated: 0,
+    lecturesCreated: 0,
+    errors: [],
+    currentCourse: null,
+    lastUpdate: null,
+    stopRequested: false
+  },
+  lectureDetails: {
+    status: "idle",
+    startedAt: null,
+    completedAt: null,
+    processed: 0,
+    total: 0,
+    lecturesUpdated: 0,
+    attachmentsCreated: 0,
+    videosFound: 0,
+    errors: [],
+    currentLecture: null,
+    lastUpdate: null,
+    stopRequested: false
+  }
+};
+
+// ═══ Helpers ═══
+
+// Sleep helper
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Safe trim
+function safeTrim(val) {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  return s.length > 0 ? s : null;
+}
+
+// Safe integer
+function safeInt(val) {
+  if (val === null || val === undefined || val === "") return null;
+  const n = parseInt(val, 10);
+  return isNaN(n) ? null : n;
+}
+
+// Retry logic لـ Teachable API (لو حصل 429 أو 5xx)
+async function teachableFetchWithRetry(endpoint, maxRetries = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const url = `${TEACHABLE_API_BASE}${endpoint}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          apiKey: process.env.TEACHABLE_API_KEY
+        }
+      });
+
+      // Rate limit — استنى وجرب تاني
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get("retry-after") || "5", 10);
+        console.log(`[Teachable] Rate limit hit. Waiting ${retryAfter}s...`);
+        await wait(retryAfter * 1000);
+        continue;
+      }
+
+      // Server error — retry
+      if (response.status >= 500 && response.status < 600) {
+        console.log(`[Teachable] Server error ${response.status}, attempt ${attempt}/${maxRetries}`);
+        await wait(attempt * 2000);
+        continue;
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Teachable API ${response.status}: ${text.slice(0, 200)}`);
+      }
+
+      return await response.json();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await wait(attempt * 1500);
+      }
+    }
+  }
+  throw lastError || new Error("Max retries exceeded");
+}
+
+// Log للـ sync_log table
+async function logSync(operation, status, details) {
+  try {
+    await supabase.from("teachable_sync_log").insert({
+      operation,
+      status,
+      details: details || {},
+      created_at: new Date().toISOString()
+    });
+  } catch (e) {
+    // silent fail — مفيش فايدة نرجع error هنا
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// [1] START: بدء سحب الكورسات (Background)
+// POST /api/admin/teachable/sync-courses/start?admin=PASSWORD
+// ─────────────────────────────────────────────────────────────────
+app.post("/api/admin/teachable/sync-courses/start", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.courses.status === "running") {
+      return res.status(409).json({
+        error: "Sync already running",
+        state: syncState.courses
+      });
+    }
+
+    // Reset state
+    syncState.courses = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      totalPages: 0,
+      processed: 0,
+      total: 0,
+      coursesCreated: 0,
+      sectionsCreated: 0,
+      lecturesCreated: 0,
+      errors: [],
+      currentCourse: null,
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false
+    };
+
+    // شغّل في الخلفية (مش بننتظر)
+    runCoursesSync().catch(err => {
+      console.error("[SyncCourses] Fatal error:", err);
+      syncState.courses.status = "failed";
+      syncState.courses.errors.push({
+        at: new Date().toISOString(),
+        error: err.message
+      });
+    });
+
+    // رجّع الـ response فوراً
+    res.json({
+      success: true,
+      message: "Sync started in background. Use /status to check progress.",
+      started_at: syncState.courses.startedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// [2] STATUS: متابعة التقدم
+// GET /api/admin/teachable/sync-courses/status?admin=PASSWORD
+// ─────────────────────────────────────────────────────────────────
+app.get("/api/admin/teachable/sync-courses/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const s = syncState.courses;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+
+    const rate = elapsedSec > 0 ? (s.processed / elapsedSec).toFixed(2) : "0";
+    const remaining = s.total > 0 ? s.total - s.processed : 0;
+    const etaSec = rate > 0 ? Math.round(remaining / parseFloat(rate)) : null;
+
+    // جيب الإحصائيات من الداتابيز
+    const [coursesCount, sectionsCount, lecturesCount] = await Promise.all([
+      supabase.from("teachable_courses").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_sections").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_lectures").select("*", { count: "exact", head: true })
+    ]);
+
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      rate_per_second: rate,
+      eta_seconds: etaSec,
+      eta_readable: etaSec ? `${Math.floor(etaSec / 60)}m ${etaSec % 60}s` : null,
+      progress_percent: s.total > 0 ? ((s.processed / s.total) * 100).toFixed(1) : "0.0",
+      database_counts: {
+        courses: coursesCount.count || 0,
+        sections: sectionsCount.count || 0,
+        lectures: lecturesCount.count || 0
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// [3] STOP: إيقاف السحب
+// POST /api/admin/teachable/sync-courses/stop?admin=PASSWORD
+// ─────────────────────────────────────────────────────────────────
+app.post("/api/admin/teachable/sync-courses/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.courses.status !== "running") {
+      return res.json({
+        success: true,
+        message: "Not currently running",
+        state: syncState.courses
+      });
+    }
+
+    syncState.courses.stopRequested = true;
+    res.json({
+      success: true,
+      message: "Stop requested. Will halt after current page.",
+      state: syncState.courses
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// الوظيفة الأساسية: سحب كل الكورسات
+// ─────────────────────────────────────────────────────────────────
+async function runCoursesSync() {
+  const S = syncState.courses;
+  const PER_PAGE = 20;
+  const DELAY_BETWEEN_COURSES = 300; // ms — يحترم Rate Limit
+  const DELAY_BETWEEN_PAGES = 1000;
+
+  await logSync("sync_courses", "started", { started_at: S.startedAt });
+
+  try {
+    // الخطوة 1: جيب أول صفحة لمعرفة total
+    const firstPage = await teachableFetchWithRetry(`/courses?per=${PER_PAGE}&page=1`);
+    const meta = firstPage.meta || {};
+    S.total = meta.total || 0;
+    S.totalPages = meta.number_of_pages || 1;
+
+    console.log(`[SyncCourses] Total: ${S.total} courses, ${S.totalPages} pages`);
+
+    // الخطوة 2: اتمشى على كل الصفحات
+    for (let page = 1; page <= S.totalPages; page++) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        await logSync("sync_courses", "stopped", { processed: S.processed });
+        return;
+      }
+
+      S.currentPage = page;
+      S.lastUpdate = new Date().toISOString();
+
+      const pageData = page === 1
+        ? firstPage
+        : await teachableFetchWithRetry(`/courses?per=${PER_PAGE}&page=${page}`);
+
+      const courses = pageData.courses || [];
+
+      // الخطوة 3: لكل كورس، جيب التفاصيل واحفظه
+      for (const courseStub of courses) {
+        if (S.stopRequested) break;
+
+        try {
+          S.currentCourse = { id: courseStub.id, name: courseStub.name };
+
+          // جيب التفاصيل الكاملة (مع lecture_sections)
+          const detailRes = await teachableFetchWithRetry(`/courses/${courseStub.id}`);
+          const course = detailRes.course || detailRes;
+
+          // احفظ الكورس
+          const authorBio = course.author_bio || {};
+          const courseRow = {
+            teachable_course_id: course.id,
+            name: safeTrim(course.name) || "Unnamed Course",
+            heading: safeTrim(course.heading),
+            description: course.description || null,
+            image_url: safeTrim(course.image_url),
+            is_published: course.is_published !== false,
+            author_name: safeTrim(authorBio.name),
+            author_bio: authorBio.bio || null,
+            author_image_url: safeTrim(authorBio.profile_image_url),
+            author_user_id: safeInt(authorBio.user_id),
+            total_sections: (course.lecture_sections || []).length,
+            total_lectures: (course.lecture_sections || []).reduce(
+              (sum, sec) => sum + (sec.lectures || []).length, 0
+            ),
+            raw_data: course,
+            synced_at: new Date().toISOString()
+          };
+
+          const { error: courseErr } = await supabase
+            .from("teachable_courses")
+            .upsert(courseRow, { onConflict: "teachable_course_id" });
+
+          if (courseErr) {
+            throw new Error(`Course upsert failed: ${courseErr.message}`);
+          }
+          S.coursesCreated++;
+
+          // احفظ الـ sections و lectures
+          const sections = course.lecture_sections || [];
+          for (const section of sections) {
+            const sectionRow = {
+              teachable_section_id: section.id,
+              course_id: course.id,
+              name: safeTrim(section.name),
+              position: safeInt(section.position),
+              is_published: section.is_published !== false,
+              total_lectures: (section.lectures || []).length
+            };
+
+            const { error: secErr } = await supabase
+              .from("teachable_sections")
+              .upsert(sectionRow, { onConflict: "teachable_section_id" });
+
+            if (secErr) {
+              console.error(`[SyncCourses] Section ${section.id} failed:`, secErr.message);
+              continue;
+            }
+            S.sectionsCreated++;
+
+            // Lectures (بدون تفاصيل — بس الـ IDs والترتيب)
+            const lectures = section.lectures || [];
+            if (lectures.length > 0) {
+              const lectureRows = lectures.map(lec => ({
+                teachable_lecture_id: lec.id,
+                course_id: course.id,
+                section_id: section.id,
+                position: safeInt(lec.position),
+                is_published: lec.is_published !== false,
+                details_fetched: false
+              }));
+
+              const { error: lecErr } = await supabase
+                .from("teachable_lectures")
+                .upsert(lectureRows, { onConflict: "teachable_lecture_id" });
+
+              if (lecErr) {
+                console.error(`[SyncCourses] Lectures batch failed:`, lecErr.message);
+              } else {
+                S.lecturesCreated += lectureRows.length;
+              }
+            }
+          }
+
+          S.processed++;
+          S.lastUpdate = new Date().toISOString();
+
+          // Delay بين الكورسات (احترام Rate Limit)
+          await wait(DELAY_BETWEEN_COURSES);
+        } catch (err) {
+          S.errors.push({
+            at: new Date().toISOString(),
+            course_id: courseStub.id,
+            course_name: courseStub.name,
+            error: err.message
+          });
+          console.error(`[SyncCourses] Course ${courseStub.id} error:`, err.message);
+          // كمّل للكورس اللي بعده
+        }
+      }
+
+      // Delay بين الصفحات
+      if (page < S.totalPages) {
+        await wait(DELAY_BETWEEN_PAGES);
+      }
+    }
+
+    // اكتمل
+    S.status = "completed";
+    S.completedAt = new Date().toISOString();
+    S.currentCourse = null;
+
+    await logSync("sync_courses", "completed", {
+      processed: S.processed,
+      courses_created: S.coursesCreated,
+      sections_created: S.sectionsCreated,
+      lectures_created: S.lecturesCreated,
+      errors_count: S.errors.length
+    });
+
+    console.log(`[SyncCourses] ✅ Completed: ${S.processed}/${S.total}`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+    await logSync("sync_courses", "failed", { error: err.message });
+    throw err;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   🎬 Lecture Details Sync (سحب تفاصيل كل درس + المرفقات/الفيديوهات)
+   ══════════════════════════════════════════════════════════════════════ */
+
+// ─────────────────────────────────────────────────────────────────
+// [1] START: بدء سحب تفاصيل الدروس
+// POST /api/admin/teachable/sync-lectures/start?admin=PASSWORD
+// ─────────────────────────────────────────────────────────────────
+app.post("/api/admin/teachable/sync-lectures/start", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.lectureDetails.status === "running") {
+      return res.status(409).json({
+        error: "Lecture sync already running",
+        state: syncState.lectureDetails
+      });
+    }
+
+    // جيب عدد الدروس اللي محتاجة سحب
+    const { count: pending } = await supabase
+      .from("teachable_lectures")
+      .select("*", { count: "exact", head: true })
+      .eq("details_fetched", false);
+
+    if (!pending || pending === 0) {
+      return res.json({
+        success: true,
+        message: "No lectures pending. Run courses sync first, or all lectures already fetched.",
+        pending: 0
+      });
+    }
+
+    // Reset state
+    syncState.lectureDetails = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      processed: 0,
+      total: pending,
+      lecturesUpdated: 0,
+      attachmentsCreated: 0,
+      videosFound: 0,
+      errors: [],
+      currentLecture: null,
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false
+    };
+
+    runLectureDetailsSync().catch(err => {
+      console.error("[SyncLectures] Fatal:", err);
+      syncState.lectureDetails.status = "failed";
+      syncState.lectureDetails.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: "Lecture details sync started in background.",
+      total_lectures: pending,
+      estimated_time_minutes: Math.round((pending * 1.2) / 60)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// [2] STATUS: متابعة سحب الدروس
+// ─────────────────────────────────────────────────────────────────
+app.get("/api/admin/teachable/sync-lectures/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const s = syncState.lectureDetails;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+    const rate = elapsedSec > 0 ? (s.processed / elapsedSec).toFixed(2) : "0";
+    const remaining = s.total > 0 ? s.total - s.processed : 0;
+    const etaSec = rate > 0 ? Math.round(remaining / parseFloat(rate)) : null;
+
+    const [fetchedCount, attachmentsCount, videosCount] = await Promise.all([
+      supabase.from("teachable_lectures").select("*", { count: "exact", head: true }).eq("details_fetched", true),
+      supabase.from("teachable_attachments").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_attachments").select("*", { count: "exact", head: true }).eq("kind", "video")
+    ]);
+
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      rate_per_second: rate,
+      eta_seconds: etaSec,
+      eta_readable: etaSec ? `${Math.floor(etaSec / 60)}m ${etaSec % 60}s` : null,
+      progress_percent: s.total > 0 ? ((s.processed / s.total) * 100).toFixed(1) : "0.0",
+      database_counts: {
+        lectures_fetched: fetchedCount.count || 0,
+        total_attachments: attachmentsCount.count || 0,
+        total_videos: videosCount.count || 0
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// [3] STOP: إيقاف سحب الدروس
+// ─────────────────────────────────────────────────────────────────
+app.post("/api/admin/teachable/sync-lectures/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.lectureDetails.status !== "running") {
+      return res.json({
+        success: true,
+        message: "Not currently running",
+        state: syncState.lectureDetails
+      });
+    }
+
+    syncState.lectureDetails.stopRequested = true;
+    res.json({
+      success: true,
+      message: "Stop requested. Will halt after current batch.",
+      state: syncState.lectureDetails
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// الوظيفة الأساسية: سحب تفاصيل الدروس
+// ─────────────────────────────────────────────────────────────────
+async function runLectureDetailsSync() {
+  const S = syncState.lectureDetails;
+  const BATCH_SIZE = 50;         // نجيب 50 درس من DB في المرة
+  const DELAY_BETWEEN_LECTURES = 400; // ms
+  const MAX_ATTEMPTS_PER_LECTURE = 2;
+
+  await logSync("sync_lectures", "started", { total: S.total });
+
+  try {
+    let hasMore = true;
+
+    while (hasMore) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        await logSync("sync_lectures", "stopped", { processed: S.processed });
+        return;
+      }
+
+      // جيب دفعة من الدروس اللي لسه مش متسحبة تفاصيلها
+      const { data: lectures, error: fetchErr } = await supabase
+        .from("teachable_lectures")
+        .select("teachable_lecture_id, course_id, fetch_attempts")
+        .eq("details_fetched", false)
+        .lt("fetch_attempts", MAX_ATTEMPTS_PER_LECTURE)
+        .order("teachable_lecture_id", { ascending: true })
+        .limit(BATCH_SIZE);
+
+      if (fetchErr) {
+        throw new Error(`Fetch batch failed: ${fetchErr.message}`);
+      }
+
+      if (!lectures || lectures.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // لكل درس
+      for (const lec of lectures) {
+        if (S.stopRequested) break;
+
+        S.currentLecture = {
+          id: lec.teachable_lecture_id,
+          course_id: lec.course_id
+        };
+        S.lastUpdate = new Date().toISOString();
+
+        try {
+          // جيب التفاصيل الكاملة من API
+          const detail = await teachableFetchWithRetry(
+            `/courses/${lec.course_id}/lectures/${lec.teachable_lecture_id}`
+          );
+          const lecture = detail.lecture || detail;
+          const attachments = lecture.attachments || [];
+
+          // حدّث الـ lecture بالاسم والـ counts
+          const hasVideo = attachments.some(a => a.kind === "video");
+          const { error: updErr } = await supabase
+            .from("teachable_lectures")
+            .update({
+              name: safeTrim(lecture.name),
+              attachments_count: attachments.length,
+              has_video: hasVideo,
+              details_fetched: true,
+              details_fetched_at: new Date().toISOString(),
+              fetch_attempts: (lec.fetch_attempts || 0) + 1,
+              last_error: null
+            })
+            .eq("teachable_lecture_id", lec.teachable_lecture_id);
+
+          if (updErr) {
+            throw new Error(`Lecture update failed: ${updErr.message}`);
+          }
+          S.lecturesUpdated++;
+
+          // احفظ الـ attachments
+          if (attachments.length > 0) {
+            const attachmentRows = attachments.map(att => ({
+              teachable_attachment_id: att.id,
+              lecture_id: lec.teachable_lecture_id,
+              course_id: lec.course_id,
+              kind: safeTrim(att.kind),
+              name: safeTrim(att.name),
+              url: safeTrim(att.url),
+              text: att.text || null,
+              position: safeInt(att.position),
+              file_size: safeInt(att.file_size) || 0,
+              file_extension: safeTrim(att.file_extension),
+              raw_data: att
+            }));
+
+            const { error: attErr } = await supabase
+              .from("teachable_attachments")
+              .upsert(attachmentRows, { onConflict: "teachable_attachment_id" });
+
+            if (attErr) {
+              console.error(`[SyncLectures] Attachments upsert failed:`, attErr.message);
+            } else {
+              S.attachmentsCreated += attachmentRows.length;
+              S.videosFound += attachmentRows.filter(a => a.kind === "video").length;
+            }
+          }
+
+          S.processed++;
+          await wait(DELAY_BETWEEN_LECTURES);
+        } catch (err) {
+          // سجّل المحاولة + الخطأ
+          await supabase
+            .from("teachable_lectures")
+            .update({
+              fetch_attempts: (lec.fetch_attempts || 0) + 1,
+              last_error: err.message.slice(0, 500)
+            })
+            .eq("teachable_lecture_id", lec.teachable_lecture_id);
+
+          S.errors.push({
+            at: new Date().toISOString(),
+            lecture_id: lec.teachable_lecture_id,
+            error: err.message
+          });
+
+          // أبقي الـ errors array صغير
+          if (S.errors.length > 50) {
+            S.errors = S.errors.slice(-50);
+          }
+
+          S.processed++; // نعتبره processed عشان ما نقفش عليه
+        }
+      }
+    }
+
+    S.status = "completed";
+    S.completedAt = new Date().toISOString();
+    S.currentLecture = null;
+
+    await logSync("sync_lectures", "completed", {
+      processed: S.processed,
+      lectures_updated: S.lecturesUpdated,
+      attachments_created: S.attachmentsCreated,
+      videos_found: S.videosFound,
+      errors_count: S.errors.length
+    });
+
+    console.log(`[SyncLectures] ✅ Completed: ${S.processed} lectures`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+    await logSync("sync_lectures", "failed", { error: err.message });
+    throw err;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// [OVERVIEW]: نظرة شاملة على الـ sync + الداتابيز
+// GET /api/admin/teachable/sync-overview?admin=PASSWORD
+// ─────────────────────────────────────────────────────────────────
+app.get("/api/admin/teachable/sync-overview", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const [
+      usersCount,
+      coursesCount,
+      coursesPublished,
+      sectionsCount,
+      lecturesCount,
+      lecturesFetched,
+      attachmentsCount,
+      videosCount
+    ] = await Promise.all([
+      supabase.from("teachable_users").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_courses").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_courses").select("*", { count: "exact", head: true }).eq("is_published", true),
+      supabase.from("teachable_sections").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_lectures").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_lectures").select("*", { count: "exact", head: true }).eq("details_fetched", true),
+      supabase.from("teachable_attachments").select("*", { count: "exact", head: true }),
+      supabase.from("teachable_attachments").select("*", { count: "exact", head: true }).eq("kind", "video")
+    ]);
+
+    res.json({
+      success: true,
+      database: {
+        users: usersCount.count || 0,
+        courses: {
+          total: coursesCount.count || 0,
+          published: coursesPublished.count || 0,
+          unpublished: (coursesCount.count || 0) - (coursesPublished.count || 0)
+        },
+        sections: sectionsCount.count || 0,
+        lectures: {
+          total: lecturesCount.count || 0,
+          details_fetched: lecturesFetched.count || 0,
+          pending: (lecturesCount.count || 0) - (lecturesFetched.count || 0)
+        },
+        attachments: {
+          total: attachmentsCount.count || 0,
+          videos: videosCount.count || 0
+        }
+      },
+      active_syncs: {
+        courses: syncState.courses.status,
+        lecture_details: syncState.lectureDetails.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ═══ Static Widget Files ═══ */
 app.get("/sales-widget.js", (req, res) => {
   res.setHeader("Content-Type", "text/html");
