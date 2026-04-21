@@ -3187,6 +3187,177 @@ app.post("/api/admin/teachable/sync-transactions/stop", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// RETRY endpoint: Re-sync a specific date range with smaller chunks
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/sync-transactions/retry", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const start = req.query.start || req.body?.start;
+    const end = req.query.end || req.body?.end;
+    const split = req.query.split || req.body?.split || "monthly"; // 'monthly' or 'quarterly'
+
+    if (!start || !end) {
+      return res.status(400).json({
+        error: "start and end dates are required (ISO8601 format)",
+        example: "?start=2024-07-01T00:00:00Z&end=2024-12-31T23:59:59Z&split=monthly"
+      });
+    }
+
+    if (syncState.transactions.status === "running") {
+      return res.status(400).json({
+        error: "Another sync is currently running",
+        state: syncState.transactions
+      });
+    }
+
+    // Generate sub-chunks based on split type
+    const monthsPerSubChunk = split === "quarterly" ? 3 : 1;
+    const subChunks = generateDateChunks(
+      new Date(start),
+      new Date(end),
+      monthsPerSubChunk
+    );
+
+    syncState.transactions = {
+      status: "running",
+      mode: "retry",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      processed: 0,
+      total: 0,
+      transactionsCreated: 0,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false,
+      totalChunks: subChunks.length,
+      chunksCompleted: 0,
+      chunksFailed: 0,
+      currentChunk: null,
+      chunks: [],
+      retryRange: { start, end, split }
+    };
+
+    runRetryTransactions(subChunks).catch(err => {
+      console.error("[RetryTransactions] Fatal:", err);
+      syncState.transactions.status = "failed";
+      syncState.transactions.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Retry started with ${subChunks.length} sub-chunks (${split})`,
+      sub_chunks: subChunks.map(c => ({ start: c.start, end: c.end })),
+      started_at: syncState.transactions.startedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function runRetryTransactions(subChunks) {
+  const S = syncState.transactions;
+  const PER_PAGE = 100;
+  const DELAY_BETWEEN_PAGES = 400;
+  const DELAY_BETWEEN_CHUNKS = 1000;
+  const BATCH_INSERT_SIZE = 50;
+  const SAFE_LIMIT_PER_CHUNK = 9500;
+
+  await logSync("sync_transactions_retry", "started", { subChunksCount: subChunks.length });
+
+  try {
+    console.log(`[Retry] Starting retry with ${subChunks.length} sub-chunks`);
+
+    for (let i = 0; i < subChunks.length; i++) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        S.completedAt = new Date().toISOString();
+        return;
+      }
+
+      const chunk = subChunks[i];
+      S.currentChunk = {
+        index: i + 1,
+        total: subChunks.length,
+        start: chunk.start,
+        end: chunk.end,
+        processed: 0
+      };
+
+      console.log(`[Retry] Sub-chunk ${i + 1}/${subChunks.length}: ${chunk.start.slice(0, 10)} → ${chunk.end.slice(0, 10)}`);
+
+      try {
+        const result = await syncTransactionsChunk(
+          chunk.start,
+          chunk.end,
+          PER_PAGE,
+          DELAY_BETWEEN_PAGES,
+          BATCH_INSERT_SIZE,
+          SAFE_LIMIT_PER_CHUNK,
+          S
+        );
+
+        S.chunks.push({
+          index: i + 1,
+          start: chunk.start,
+          end: chunk.end,
+          processed: result.processed,
+          created: result.created,
+          status: "completed"
+        });
+        S.chunksCompleted++;
+
+        console.log(`[Retry] ✓ Sub-chunk ${i + 1}: ${result.created} saved`);
+      } catch (chunkErr) {
+        console.error(`[Retry] ✗ Sub-chunk ${i + 1} failed:`, chunkErr.message);
+        S.chunks.push({
+          index: i + 1,
+          start: chunk.start,
+          end: chunk.end,
+          status: "failed",
+          error: chunkErr.message
+        });
+        S.chunksFailed++;
+        S.errors.push({
+          at: new Date().toISOString(),
+          chunk: `${chunk.start} → ${chunk.end}`,
+          error: chunkErr.message
+        });
+      }
+
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_CHUNKS));
+    }
+
+    S.status = S.chunksFailed === 0 ? "completed" : "completed_with_errors";
+    S.completedAt = new Date().toISOString();
+    S.currentChunk = null;
+
+    await logSync("sync_transactions_retry", "completed", {
+      created: S.transactionsCreated,
+      chunks_completed: S.chunksCompleted,
+      chunks_failed: S.chunksFailed
+    });
+
+    console.log(`[Retry] ✅ DONE. Saved: ${S.transactionsCreated}. ${S.chunksCompleted} ok, ${S.chunksFailed} failed`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({
+      at: new Date().toISOString(),
+      error: err.message,
+      fatal: true
+    });
+    console.error(`[Retry] Fatal error:`, err);
+  }
+}
+
 async function runTransactionsSync() {
   const S = syncState.transactions;
   const PER_PAGE = 100;
