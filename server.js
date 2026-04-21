@@ -3764,6 +3764,13 @@ async function runEnrollmentsSync(courseIds) {
 
           const enrollments = data.enrollments || [];
 
+          // DEBUG: Log first enrollment shape on first call
+          if (page === 1 && enrollments.length > 0 && S.processed === 0) {
+            console.log(`[Enrollments] 🔍 DEBUG - Sample enrollment from course ${courseId}:`);
+            console.log(JSON.stringify(enrollments[0], null, 2));
+            console.log(`[Enrollments] 🔍 DEBUG - Available fields:`, Object.keys(enrollments[0]));
+          }
+
           if (!enrollments.length) {
             hasMoreInCourse = false;
             break;
@@ -3771,7 +3778,7 @@ async function runEnrollmentsSync(courseIds) {
 
           // Transform using CORRECT schema
           const rows = enrollments.map(e => ({
-            enrollment_id: e.id || null,
+            enrollment_id: e.enrollment_id || e.id || null,
             teachable_user_id: e.user_id || e.user?.id || null,
             user_email: e.user?.email || e.email || null,
             course_id: courseId,
@@ -3791,7 +3798,12 @@ async function runEnrollmentsSync(courseIds) {
           const validRows = rows.filter(r => r.enrollment_id !== null && r.teachable_user_id !== null);
           const skipped = rows.length - validRows.length;
           if (skipped > 0) {
-            console.warn(`[Enrollments] Course ${courseId}: skipped ${skipped} rows with null id or user_id`);
+            console.warn(`[Enrollments] Course ${courseId} page ${page}: skipped ${skipped} rows with null id or user_id`);
+            // Show raw keys from one skipped row for debugging
+            if (rows.length > 0 && validRows.length === 0) {
+              console.warn(`[Enrollments] All rows skipped! Sample row fields:`, Object.keys(rows[0].raw_data));
+              console.warn(`[Enrollments] Sample raw_data:`, JSON.stringify(rows[0].raw_data).slice(0, 500));
+            }
           }
 
           // Insert in batches
