@@ -3044,16 +3044,33 @@ async function runChunkedUsersSync() {
     console.error("⚠️ sync log error:", e.message);
   }
 
-  // قائمة الـ chunks: حروف انجليزية + أرقام + رموز عربية
-  // كل chunk بيجيب المستخدمين اللي اسمهم/إيميلهم بيحتوي على الحرف ده
-  const chunks = [
-    // الأرقام (عشان الإيميلات اللي فيها أرقام)
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-    // الحروف الإنجليزية
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
-    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
-    "u", "v", "w", "x", "y", "z",
-  ];
+  // الاستراتيجية الصحيحة: تقسيم بالتاريخ (شهر بشهر)
+  // كل شهر بيكون فيه عدد محدود من المستخدمين (مفيش chunk هيتجاوز 10K)
+  // المنصة بدأت 2018، فهنبدأ من هناك حتى دلوقتي
+  const chunks = [];
+  const startYear = 2018;
+  const endYear = new Date().getUTCFullYear();
+  
+  for (let year = startYear; year <= endYear; year++) {
+    for (let month = 0; month < 12; month++) {
+      // متخطّاش الشهور المستقبلية
+      const chunkDate = new Date(Date.UTC(year, month, 1));
+      if (chunkDate > new Date()) break;
+      
+      // start: أول يوم في الشهر
+      const startDate = new Date(Date.UTC(year, month, 1)).toISOString().split('T')[0];
+      // end: أول يوم في الشهر التالي (exclusive)
+      const endDate = new Date(Date.UTC(year, month + 1, 1)).toISOString().split('T')[0];
+      
+      chunks.push({
+        label: `${year}-${String(month + 1).padStart(2, '0')}`,
+        startDate,
+        endDate,
+      });
+    }
+  }
+  
+  console.log(`📅 Will sync ${chunks.length} monthly chunks (${chunks[0].label} to ${chunks[chunks.length - 1].label})`);
 
   try {
     for (const chunk of chunks) {
@@ -3062,8 +3079,9 @@ async function runChunkedUsersSync() {
         break;
       }
 
-      const queryParam = `&name_or_email_cont=${encodeURIComponent(chunk)}`;
-      await syncChunk(`contains_${chunk}`, queryParam, state);
+      // الفلتر بالتاريخ
+      const queryParam = `&signed_up_after=${chunk.startDate}&signed_up_before=${chunk.endDate}`;
+      await syncChunk(chunk.label, queryParam, state);
 
       // تحديث الـ log
       await updateSyncLog(state);
@@ -3111,20 +3129,30 @@ app.post("/api/admin/teachable/sync-users-chunked", adminAuth, async (req, res) 
     success: true,
     message: "✅ Chunked users sync started in background",
     startedAt: syncState.usersChunked.startedAt,
-    strategy: "Splits 91K users into 36 chunks (0-9, a-z) using name_or_email_cont filter",
-    estimated_duration_minutes: 60,
+    strategy: "Splits users into monthly chunks (2018-now) using signed_up_after/before filter — bypasses 10K limit",
+    estimated_duration_minutes: 90,
+    total_chunks: "~100 monthly chunks",
   });
 });
 
 // Endpoint: متابعة السحب الـ chunked
 app.get("/api/admin/teachable/sync-users-chunked-status", adminAuth, (req, res) => {
   const state = syncState.usersChunked;
+  
+  // حساب العدد الكلي للـ chunks ديناميكياً (شهور من 2018 لحد دلوقتي)
+  const now = new Date();
+  const startYear = 2018;
+  const totalChunks = ((now.getUTCFullYear() - startYear) * 12) + (now.getUTCMonth() + 1);
+  
   res.json({
     running: state.running,
     startedAt: state.startedAt,
     current_chunk: state.currentChunk,
     completed_chunks_count: state.completedChunks.length,
-    total_chunks: 36,
+    total_chunks: totalChunks,
+    progress_percent: totalChunks > 0 
+      ? Math.floor((state.completedChunks.length / totalChunks) * 100) 
+      : 0,
     total_processed: state.totalProcessed,
     total_added: state.totalAdded,
     total_failed: state.totalFailed,
