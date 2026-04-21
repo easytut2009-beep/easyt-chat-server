@@ -3820,6 +3820,250 @@ app.post("/api/admin/teachable/sync-enrollments/retry-large/stop", async (req, r
 });
 
 /**
+ * FIX ENROLLMENTS - Uses user-based filtering to bypass 10K limit
+ * Strategy: Pull users in batches, then fetch their enrollments
+ */
+app.post("/api/admin/teachable/fix-course-enrollments", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.fixCourse?.status === "running") {
+      return res.status(400).json({ error: "Fix course sync already running" });
+    }
+
+    const courseIds = req.body?.course_ids || [];
+    if (!Array.isArray(courseIds) || !courseIds.length) {
+      return res.status(400).json({
+        error: "Send course_ids in body, e.g., { course_ids: [1456290, 1514828] }"
+      });
+    }
+
+    // Allow user to provide specific user_ids to scan (MUCH faster!)
+    const customUserIds = req.body?.user_ids || null;
+
+    syncState.fixCourse = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      courseIds,
+      currentCourseIndex: 0,
+      currentCourse: null,
+      currentAction: null,
+      processed: 0,
+      total: customUserIds ? customUserIds.length : 0,
+      usersScanned: 0,
+      enrollmentsAdded: 0,
+      errors: [],
+      stopRequested: false,
+      customUserIds,
+      lastUpdate: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      message: customUserIds 
+        ? `Fix course sync started - scanning ${customUserIds.length} provided users` 
+        : "Fix course sync started - scanning all users",
+      courses: courseIds,
+      users_to_scan: customUserIds ? customUserIds.length : "all"
+    });
+
+    runFixCourseEnrollments(courseIds, customUserIds).catch(err => {
+      console.error("[FixCourse] Fatal:", err);
+      syncState.fixCourse.status = "failed";
+      syncState.fixCourse.completedAt = new Date().toISOString();
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/fix-course-enrollments/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const S = syncState.fixCourse;
+    if (!S) return res.json({ success: true, state: null });
+
+    const { count } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    const elapsedMs = S.startedAt ? Date.now() - new Date(S.startedAt).getTime() : 0;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+
+    res.json({
+      success: true,
+      state: S,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      database_count: count || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/fix-course-enrollments/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    if (syncState.fixCourse) {
+      syncState.fixCourse.stopRequested = true;
+    }
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Fix course enrollments by scanning users
+ * For each user in teachable_users, check if they're enrolled in the target courses
+ * Uses the /users/{id} endpoint which returns full enrollment data
+ */
+async function runFixCourseEnrollments(courseIds, customUserIds = null) {
+  const S = syncState.fixCourse;
+  const BATCH_SIZE = 500;
+  const DELAY_BETWEEN_USERS = 150;
+
+  const courseIdSet = new Set(courseIds.map(id => parseInt(id)));
+
+  // Get course names
+  const { data: courses } = await supabase
+    .from("teachable_courses")
+    .select("teachable_course_id, name")
+    .in("teachable_course_id", courseIds);
+
+  const courseNameMap = {};
+  for (const c of courses || []) {
+    courseNameMap[c.teachable_course_id] = c.name;
+  }
+
+  try {
+    let allUserIds;
+
+    if (customUserIds && customUserIds.length > 0) {
+      // Use the provided user IDs (MUCH faster!)
+      allUserIds = customUserIds.map(id => parseInt(id));
+      console.log(`[FixCourse] ✅ Using ${allUserIds.length} provided user IDs`);
+      S.currentAction = `Using ${allUserIds.length} provided user IDs`;
+    } else {
+      // Load all user IDs from Supabase (slow)
+      console.log("[FixCourse] 📥 Loading all user IDs from Supabase...");
+      S.currentAction = "Loading users from Supabase";
+      S.lastUpdate = new Date().toISOString();
+
+      allUserIds = [];
+      let offset = 0;
+      while (true) {
+        if (S.stopRequested) break;
+        const { data, error } = await supabase
+          .from("teachable_users")
+          .select("teachable_user_id")
+          .order("teachable_user_id", { ascending: true })
+          .range(offset, offset + 999);
+
+        if (error || !data || data.length === 0) break;
+        allUserIds.push(...data.map(u => u.teachable_user_id));
+        if (data.length < 1000) break;
+        offset += 1000;
+      }
+
+      console.log(`[FixCourse] ✅ Loaded ${allUserIds.length} users`);
+    }
+
+    S.total = allUserIds.length;
+
+    // For each user, fetch their enrollments and add missing ones for target courses
+    for (let i = 0; i < allUserIds.length; i++) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        break;
+      }
+
+      const userId = allUserIds[i];
+      S.usersScanned = i + 1;
+      S.currentAction = `Scanning user ${userId} (${i + 1}/${allUserIds.length})`;
+
+      // Update lastUpdate every 50 users
+      if (i % 50 === 0) {
+        S.lastUpdate = new Date().toISOString();
+        console.log(`[FixCourse] Progress: ${i + 1}/${allUserIds.length} users, ${S.enrollmentsAdded} enrollments added`);
+      }
+
+      try {
+        const userData = await teachableFetchWithRetry(`/users/${userId}`);
+        const enrollments = userData.courses || userData.enrollments || [];
+
+        // Filter for target courses
+        const targetEnrollments = enrollments.filter(e => {
+          const cid = e.course_id || e.id || e.course?.id;
+          return courseIdSet.has(parseInt(cid));
+        });
+
+        if (targetEnrollments.length === 0) continue;
+
+        // Build rows
+        const rows = targetEnrollments.map(e => {
+          const cid = parseInt(e.course_id || e.id || e.course?.id);
+          return {
+            teachable_user_id: userId,
+            user_email: userData.email || null,
+            course_id: cid,
+            course_name: courseNameMap[cid] || e.course?.name || null,
+            enrolled_at: e.enrolled_at || e.created_at || null,
+            completed_at: e.completed_at || null,
+            percent_complete: e.percent_complete || 0,
+            is_active: e.is_active ?? true,
+            has_full_access: e.has_full_access ?? false,
+            expires_at: e.expires_at || null,
+            raw_data: e
+          };
+        });
+
+        // Upsert
+        const { error } = await supabase
+          .from("teachable_enrollments")
+          .upsert(rows, {
+            onConflict: "teachable_user_id,course_id",
+            ignoreDuplicates: false
+          });
+
+        if (!error) {
+          S.enrollmentsAdded += rows.length;
+        } else {
+          S.errors.push({
+            at: new Date().toISOString(),
+            userId,
+            error: error.message
+          });
+        }
+
+        // Rate limit
+        await new Promise(r => setTimeout(r, DELAY_BETWEEN_USERS));
+      } catch (err) {
+        S.errors.push({
+          at: new Date().toISOString(),
+          userId,
+          error: err.message
+        });
+        // Continue to next user
+      }
+    }
+
+    S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
+    S.completedAt = new Date().toISOString();
+    S.currentAction = "Done";
+    console.log(`[FixCourse] 🏁 Done! Scanned ${S.usersScanned}, added ${S.enrollmentsAdded}, errors ${S.errors.length}`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({ at: new Date().toISOString(), error: err.message, fatal: true });
+    console.error("[FixCourse] FATAL:", err);
+  }
+}
+
+/**
  * Retry sync for large courses using date ranges
  * Uses adaptive splitting: starts with 2-year chunks, 
  * falls back to 6-month, then 3-month, then 1-month when max_limit hit
