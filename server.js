@@ -4004,7 +4004,7 @@ async function runFixCourseEnrollments(courseIds, customUserIds = null) {
         if (targetEnrollments.length === 0) continue;
 
         // Build rows
-        const rows = targetEnrollments.map(e => {
+        const rowsRaw = targetEnrollments.map(e => {
           const cid = parseInt(e.course_id || e.id || e.course?.id);
           return {
             teachable_user_id: userId,
@@ -4020,6 +4020,21 @@ async function runFixCourseEnrollments(courseIds, customUserIds = null) {
             raw_data: e
           };
         });
+
+        // Deduplicate by (user_id, course_id) - keep latest enrolled_at
+        const dedupedMap = new Map();
+        for (const row of rowsRaw) {
+          const key = `${row.teachable_user_id}_${row.course_id}`;
+          const existing = dedupedMap.get(key);
+          if (!existing || 
+              (row.enrolled_at && existing.enrolled_at && 
+               new Date(row.enrolled_at) > new Date(existing.enrolled_at))) {
+            dedupedMap.set(key, row);
+          } else if (!existing) {
+            dedupedMap.set(key, row);
+          }
+        }
+        const rows = Array.from(dedupedMap.values());
 
         // Upsert
         const { error } = await supabase
