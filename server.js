@@ -3724,11 +3724,22 @@ async function runEnrollmentsSync(courseIds) {
   const S = syncState.enrollments;
   const PER_PAGE = 100;
   const DELAY_BETWEEN_COURSES = 300;
+  const DELAY_BETWEEN_PAGES = 200;
   const BATCH_INSERT_SIZE = 50;
 
   await logSync("sync_enrollments", "started", { total_courses: courseIds.length });
 
   try {
+    // Fetch course names once upfront (to save in enrollments rows)
+    const { data: coursesData } = await supabase
+      .from("teachable_courses")
+      .select("teachable_course_id, name");
+
+    const courseNameMap = {};
+    (coursesData || []).forEach(c => {
+      courseNameMap[c.teachable_course_id] = c.name;
+    });
+
     for (const courseId of courseIds) {
       if (S.stopRequested) {
         S.status = "stopped";
@@ -3741,6 +3752,7 @@ async function runEnrollmentsSync(courseIds) {
 
       let page = 1;
       let hasMoreInCourse = true;
+      let courseEnrollmentsCount = 0;
 
       while (hasMoreInCourse) {
         if (S.stopRequested) break;
@@ -3757,34 +3769,52 @@ async function runEnrollmentsSync(courseIds) {
             break;
           }
 
+          // Transform using CORRECT schema
           const rows = enrollments.map(e => ({
-            teachable_user_id: e.user?.id || e.user_id || null,
+            enrollment_id: e.id || null,
+            teachable_user_id: e.user_id || e.user?.id || null,
             user_email: e.user?.email || e.email || null,
-            teachable_course_id: courseId,
+            course_id: courseId,
+            course_name: courseNameMap[courseId] || null,
             enrolled_at: e.enrolled_at || e.created_at || null,
             completed_at: e.completed_at || null,
             percent_complete: e.percent_complete || 0,
-            last_activity_at: e.last_activity_at || null,
+            completed_lecture_count: e.completed_lecture_count || 0,
+            completed_lecture_ids: e.completed_lecture_ids || null,
+            is_active: e.is_active ?? true,
+            has_full_access: e.has_full_access ?? false,
+            expires_at: e.expires_at || null,
             raw_data: e
           }));
 
-          for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
-            const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
+          // Filter out rows with null teachable_user_id (NOT NULL constraint)
+          const validRows = rows.filter(r => r.teachable_user_id !== null);
+          const skipped = rows.length - validRows.length;
+          if (skipped > 0) {
+            console.warn(`[Enrollments] Course ${courseId}: skipped ${skipped} rows with null user_id`);
+          }
+
+          // Insert in batches
+          for (let i = 0; i < validRows.length; i += BATCH_INSERT_SIZE) {
+            const batch = validRows.slice(i, i + BATCH_INSERT_SIZE);
             const { error } = await supabase
               .from("teachable_enrollments")
               .upsert(batch, {
-                onConflict: "teachable_user_id,teachable_course_id",
+                onConflict: "teachable_user_id,course_id",
                 ignoreDuplicates: false
               });
 
             if (!error) {
               S.enrollmentsCreated += batch.length;
+              courseEnrollmentsCount += batch.length;
             } else {
               S.errors.push({
                 at: new Date().toISOString(),
                 courseId,
+                page,
                 error: error.message
               });
+              console.error(`[Enrollments] Course ${courseId} page ${page}:`, error.message);
             }
           }
 
@@ -3792,6 +3822,7 @@ async function runEnrollmentsSync(courseIds) {
             hasMoreInCourse = false;
           } else {
             page++;
+            await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
           }
         } catch (err) {
           S.errors.push({
@@ -3800,20 +3831,26 @@ async function runEnrollmentsSync(courseIds) {
             page,
             error: err.message
           });
+          console.error(`[Enrollments] Fetch error course ${courseId} page ${page}:`, err.message);
           hasMoreInCourse = false;
         }
       }
 
       S.processed++;
+      if (courseEnrollmentsCount > 0) {
+        console.log(`[Enrollments] Course ${courseId}: ${courseEnrollmentsCount} enrollments saved (total processed: ${S.processed}/${courseIds.length})`);
+      }
       await new Promise(r => setTimeout(r, DELAY_BETWEEN_COURSES));
     }
 
-    S.status = "completed";
+    S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
     S.completedAt = new Date().toISOString();
     await logSync("sync_enrollments", "completed", {
       processed: S.processed,
-      created: S.enrollmentsCreated
+      created: S.enrollmentsCreated,
+      errors_count: S.errors.length
     });
+    console.log(`[Enrollments] ✅ DONE: ${S.enrollmentsCreated} enrollments, ${S.errors.length} errors`);
 
   } catch (err) {
     S.status = "failed";
@@ -3823,6 +3860,7 @@ async function runEnrollmentsSync(courseIds) {
       error: err.message,
       fatal: true
     });
+    console.error(`[Enrollments] Fatal error:`, err);
   }
 }
 
