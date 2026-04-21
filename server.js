@@ -3124,7 +3124,12 @@ app.post("/api/admin/teachable/sync-transactions/start", async (req, res) => {
       transactionsCreated: 0,
       errors: [],
       lastUpdate: new Date().toISOString(),
-      stopRequested: false
+      stopRequested: false,
+      totalChunks: 0,
+      chunksCompleted: 0,
+      chunksFailed: 0,
+      currentChunk: null,
+      chunks: []
     };
 
     runTransactionsSync().catch(err => {
@@ -3185,141 +3190,109 @@ app.post("/api/admin/teachable/sync-transactions/stop", async (req, res) => {
 async function runTransactionsSync() {
   const S = syncState.transactions;
   const PER_PAGE = 100;
-  const DELAY_BETWEEN_PAGES = 500;
+  const DELAY_BETWEEN_PAGES = 400;
+  const DELAY_BETWEEN_CHUNKS = 1000;
   const BATCH_INSERT_SIZE = 50;
-  const MAX_EMPTY_PAGES = 3; // Stop after 3 consecutive empty pages
+  const SAFE_LIMIT_PER_CHUNK = 9500; // Stay well below Teachable's 10K limit
+
+  // Extra state tracking for chunks
+  S.chunks = [];
+  S.currentChunk = null;
+  S.chunksCompleted = 0;
+  S.chunksFailed = 0;
 
   await logSync("sync_transactions", "started", {});
 
   try {
-    let page = 1;
-    let hasMore = true;
-    let emptyPagesInRow = 0;
-    let totalPages = null;
+    // Generate 6-month date ranges from 2019-01-01 to today
+    const chunks = generateDateChunks(
+      new Date("2019-01-01T00:00:00Z"),
+      new Date(),
+      6 // months per chunk
+    );
 
-    while (hasMore) {
+    S.totalChunks = chunks.length;
+    console.log(`[Transactions] Starting sync with ${chunks.length} date chunks`);
+
+    let grandTotal = 0;
+
+    // Process each chunk
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
       if (S.stopRequested) {
         S.status = "stopped";
         S.completedAt = new Date().toISOString();
         return;
       }
 
-      S.currentPage = page;
-      S.lastUpdate = new Date().toISOString();
+      const chunk = chunks[chunkIdx];
+      S.currentChunk = {
+        index: chunkIdx + 1,
+        total: chunks.length,
+        start: chunk.start,
+        end: chunk.end,
+        processed: 0
+      };
 
-      const data = await teachableFetchWithRetry(
-        `/transactions?page=${page}&per=${PER_PAGE}`
-      );
+      console.log(`[Transactions] Chunk ${chunkIdx + 1}/${chunks.length}: ${chunk.start} → ${chunk.end}`);
 
-      const transactions = data.transactions || [];
+      try {
+        const chunkResult = await syncTransactionsChunk(
+          chunk.start,
+          chunk.end,
+          PER_PAGE,
+          DELAY_BETWEEN_PAGES,
+          BATCH_INSERT_SIZE,
+          SAFE_LIMIT_PER_CHUNK,
+          S
+        );
 
-      // Set total and totalPages on first page
-      if (page === 1) {
-        if (data.meta?.total) S.total = data.meta.total;
-        if (data.meta?.number_of_pages) totalPages = data.meta.number_of_pages;
-        if (data.meta?.total_pages) totalPages = data.meta.total_pages;
-        console.log(`[Transactions] Total: ${S.total}, Pages: ${totalPages}`);
+        grandTotal += chunkResult.created;
+        S.chunks.push({
+          index: chunkIdx + 1,
+          start: chunk.start,
+          end: chunk.end,
+          processed: chunkResult.processed,
+          created: chunkResult.created,
+          status: "completed"
+        });
+        S.chunksCompleted++;
+
+        console.log(`[Transactions] ✓ Chunk ${chunkIdx + 1}: ${chunkResult.created} saved`);
+
+      } catch (chunkErr) {
+        console.error(`[Transactions] ✗ Chunk ${chunkIdx + 1} failed:`, chunkErr.message);
+        S.chunks.push({
+          index: chunkIdx + 1,
+          start: chunk.start,
+          end: chunk.end,
+          status: "failed",
+          error: chunkErr.message
+        });
+        S.chunksFailed++;
+        S.errors.push({
+          at: new Date().toISOString(),
+          chunk: `${chunk.start} → ${chunk.end}`,
+          error: chunkErr.message
+        });
+        // Continue to next chunk instead of stopping
       }
 
-      // Handle empty page (might be temporary API issue)
-      if (!transactions.length) {
-        emptyPagesInRow++;
-        console.log(`[Transactions] Empty page ${page} (${emptyPagesInRow}/${MAX_EMPTY_PAGES})`);
-
-        if (emptyPagesInRow >= MAX_EMPTY_PAGES) {
-          console.log(`[Transactions] Stopping after ${MAX_EMPTY_PAGES} empty pages`);
-          hasMore = false;
-          break;
-        }
-
-        // Skip and try next page
-        page++;
-        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES * 2));
-        continue;
-      }
-
-      // Reset empty counter
-      emptyPagesInRow = 0;
-
-      // Transform and insert
-      const rows = transactions.map(t => {
-        // Amount: Teachable returns in cents, convert to dollars
-        const amountInCents = t.final_price ?? t.charge ?? t.amount ?? 0;
-        const amountInDollars = amountInCents / 100;
-
-        // Transaction date: use purchased_at or created_at
-        const txDate = t.purchased_at || t.created_at || null;
-
-        return {
-          transaction_id: t.id,
-          teachable_user_id: t.user_id || t.user?.id || null,
-          user_email: t.user?.email || t.email || null,
-          amount: amountInDollars,
-          currency: t.currency || "USD",
-          status: t.status || "paid",
-          product_id: String(t.pricing_plan_id || t.product?.id || t.product_id || ""),
-          product_name: t.product?.name || t.product_name || null,
-          product_type: t.product?.type || t.product_type || null,
-          payment_gateway: t.payment_gateway || null,
-          transaction_date: txDate,
-          refunded_at: t.refunded_at || null,
-          raw_data: t
-        };
-      });
-
-      // Insert in smaller batches
-      let pageInserted = 0;
-      for (let i = 0; i < rows.length; i += BATCH_INSERT_SIZE) {
-        const batch = rows.slice(i, i + BATCH_INSERT_SIZE);
-        const { error } = await supabase
-          .from("teachable_transactions")
-          .upsert(batch, { onConflict: "transaction_id", ignoreDuplicates: false });
-
-        if (error) {
-          S.errors.push({
-            at: new Date().toISOString(),
-            page,
-            error: error.message
-          });
-          console.error(`[Transactions] Insert error page ${page}:`, error.message);
-        } else {
-          S.transactionsCreated += batch.length;
-          pageInserted += batch.length;
-        }
-      }
-
-      S.processed += transactions.length;
-      console.log(`[Transactions] Page ${page}: ${transactions.length} fetched, ${pageInserted} saved. Total: ${S.processed}/${S.total}`);
-
-      // Decide if we should continue
-      // Stop conditions:
-      // 1. Reached total pages (if known)
-      // 2. Processed equal/more than total (if known)
-      // 3. Got less than PER_PAGE (likely last page) - but only if no totalPages known
-
-      if (totalPages && page >= totalPages) {
-        console.log(`[Transactions] Reached final page ${page}/${totalPages}`);
-        hasMore = false;
-      } else if (S.total && S.processed >= S.total) {
-        console.log(`[Transactions] Reached total count ${S.processed}/${S.total}`);
-        hasMore = false;
-      } else if (!totalPages && !S.total && transactions.length < PER_PAGE) {
-        // Only use this as stop condition if we don't have meta info
-        console.log(`[Transactions] Partial page and no meta, stopping`);
-        hasMore = false;
-      } else {
-        page++;
-        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
-      }
+      // Pause between chunks to be nice to the API
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_CHUNKS));
     }
 
-    S.status = "completed";
+    S.status = S.chunksFailed === 0 ? "completed" : "completed_with_errors";
     S.completedAt = new Date().toISOString();
+    S.currentChunk = null;
+
     await logSync("sync_transactions", "completed", {
       processed: S.processed,
-      created: S.transactionsCreated
+      created: S.transactionsCreated,
+      chunks_completed: S.chunksCompleted,
+      chunks_failed: S.chunksFailed
     });
-    console.log(`[Transactions] ✅ Completed: ${S.transactionsCreated} transactions saved`);
+
+    console.log(`[Transactions] ✅ DONE. Total saved: ${S.transactionsCreated}. Chunks: ${S.chunksCompleted} ok, ${S.chunksFailed} failed`);
 
   } catch (err) {
     S.status = "failed";
@@ -3331,6 +3304,157 @@ async function runTransactionsSync() {
     });
     console.error(`[Transactions] Fatal error:`, err);
   }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Helper: Generate date chunks for date-range based pagination
+// ──────────────────────────────────────────────────────────────────
+function generateDateChunks(startDate, endDate, monthsPerChunk) {
+  const chunks = [];
+  let current = new Date(startDate);
+
+  while (current < endDate) {
+    const chunkStart = new Date(current);
+    const chunkEnd = new Date(current);
+    chunkEnd.setUTCMonth(chunkEnd.getUTCMonth() + monthsPerChunk);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() - 1); // End of previous day
+    chunkEnd.setUTCHours(23, 59, 59, 999);
+
+    // Don't go beyond endDate
+    const actualEnd = chunkEnd > endDate ? endDate : chunkEnd;
+
+    chunks.push({
+      start: chunkStart.toISOString(),
+      end: actualEnd.toISOString()
+    });
+
+    // Move to next chunk
+    current = new Date(chunkEnd);
+    current.setUTCDate(current.getUTCDate() + 1);
+    current.setUTCHours(0, 0, 0, 0);
+  }
+
+  return chunks;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Helper: Sync a single date-range chunk
+// ──────────────────────────────────────────────────────────────────
+async function syncTransactionsChunk(startISO, endISO, perPage, pageDelay, batchSize, safeLimit, S) {
+  let page = 1;
+  let hasMore = true;
+  let chunkProcessed = 0;
+  let chunkCreated = 0;
+  let emptyPagesInRow = 0;
+  const MAX_EMPTY_PAGES = 2;
+  let chunkTotal = null;
+  let totalPages = null;
+
+  while (hasMore) {
+    if (S.stopRequested) {
+      return { processed: chunkProcessed, created: chunkCreated };
+    }
+
+    S.currentPage = page;
+    S.lastUpdate = new Date().toISOString();
+    if (S.currentChunk) S.currentChunk.processed = chunkProcessed;
+
+    const url = `/transactions?page=${page}&per=${perPage}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`;
+    const data = await teachableFetchWithRetry(url);
+
+    const transactions = data.transactions || [];
+
+    // Capture meta on first page of chunk
+    if (page === 1) {
+      if (data.meta?.total) {
+        chunkTotal = data.meta.total;
+        S.total += chunkTotal;
+      }
+      if (data.meta?.number_of_pages) totalPages = data.meta.number_of_pages;
+      if (data.meta?.total_pages) totalPages = data.meta.total_pages;
+
+      console.log(`[Transactions]   Chunk has ${chunkTotal || "?"} transactions (${totalPages || "?"} pages)`);
+
+      // Warn if chunk is too big (approaching the 10K limit)
+      if (chunkTotal && chunkTotal > safeLimit) {
+        console.warn(`[Transactions]   ⚠️  Chunk has ${chunkTotal} > ${safeLimit}. May hit limit!`);
+      }
+    }
+
+    // Handle empty page
+    if (!transactions.length) {
+      emptyPagesInRow++;
+      if (emptyPagesInRow >= MAX_EMPTY_PAGES) {
+        hasMore = false;
+        break;
+      }
+      page++;
+      await new Promise(r => setTimeout(r, pageDelay * 2));
+      continue;
+    }
+    emptyPagesInRow = 0;
+
+    // Transform
+    const rows = transactions.map(t => {
+      const amountInCents = t.final_price ?? t.charge ?? t.amount ?? 0;
+      const amountInDollars = amountInCents / 100;
+      return {
+        transaction_id: t.id,
+        teachable_user_id: t.user_id || t.user?.id || null,
+        user_email: t.user?.email || t.email || null,
+        amount: amountInDollars,
+        currency: t.currency || "USD",
+        status: t.status || "paid",
+        product_id: String(t.pricing_plan_id || t.product?.id || t.product_id || ""),
+        product_name: t.product?.name || t.product_name || null,
+        product_type: t.product?.type || t.product_type || null,
+        payment_gateway: t.payment_gateway || null,
+        transaction_date: t.purchased_at || t.created_at || null,
+        refunded_at: t.refunded_at || null,
+        raw_data: t
+      };
+    });
+
+    // Insert in batches
+    let pageInserted = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const { error } = await supabase
+        .from("teachable_transactions")
+        .upsert(batch, { onConflict: "transaction_id", ignoreDuplicates: false });
+
+      if (error) {
+        S.errors.push({
+          at: new Date().toISOString(),
+          page,
+          chunk: `${startISO} → ${endISO}`,
+          error: error.message
+        });
+        console.error(`[Transactions]   Insert error:`, error.message);
+      } else {
+        S.transactionsCreated += batch.length;
+        chunkCreated += batch.length;
+        pageInserted += batch.length;
+      }
+    }
+
+    S.processed += transactions.length;
+    chunkProcessed += transactions.length;
+
+    // Stop conditions
+    if (totalPages && page >= totalPages) {
+      hasMore = false;
+    } else if (chunkTotal && chunkProcessed >= chunkTotal) {
+      hasMore = false;
+    } else if (transactions.length < perPage && !totalPages && !chunkTotal) {
+      hasMore = false;
+    } else {
+      page++;
+      await new Promise(r => setTimeout(r, pageDelay));
+    }
+  }
+
+  return { processed: chunkProcessed, created: chunkCreated };
 }
 
 // ═══════════════════════════════════════════════════════════════════
