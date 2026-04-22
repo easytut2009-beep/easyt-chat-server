@@ -28,8 +28,83 @@ const SUBSCRIPTION_URL = "https://easyt.online/p/subscriptions";
 const PAYMENTS_URL = "https://easyt.online/p/Payments";
 const COURSE_EMBEDDING_MODEL = "text-embedding-ada-002";
 const CHUNK_EMBEDDING_MODEL = "text-embedding-3-small";
+// ═══════════════════════════════════════════════════════════════════
+// MIGRATED TO teachable_courses
+// SCHEMA (verified via SQL on real DB):
+//   id                     bigint    (internal PK)
+//   teachable_course_id    bigint    (external from Teachable — main identifier)
+//   name                   text
+//   heading                text
+//   description            text
+//   image_url              text
+//   price                  text
+//   keywords               text
+//   objectives             text
+//   syllabus               text
+//   author_user_id         bigint    (→ teachable_authors.id)
+//   author_name            text      (denormalized for quick display)
+//   author_bio             text
+//   author_image_url       text
+//   is_published           boolean
+//   details_fetched        boolean
+//   total_sections         integer
+//   total_lectures         integer
+//   embedding              vector
+//
+// Notes:
+// - There is NO 'link', 'domain', 'full_content', 'page_content', 'author_id', or 'old_course_id' column.
+// - normalizeCourse() synthesizes a link from teachable_course_id.
+// ═══════════════════════════════════════════════════════════════════
 const COURSE_SELECT_COLS =
-  "id, title, link, description, subtitle, price, image, instructor_id, full_content, page_content, syllabus, objectives, domain, keywords";
+  "id, teachable_course_id, name, heading, image_url, author_user_id, author_name, description, price, syllabus, objectives, keywords, is_published";
+
+// ═══════════════════════════════════════════════════════════════════
+// Helper: converts teachable_courses row to legacy shape expected by the
+// rest of the codebase. Adds title/subtitle/image/instructor_id/link aliases
+// so old code continues to work unchanged.
+// ═══════════════════════════════════════════════════════════════════
+function normalizeCourse(course) {
+  if (!course) return course;
+  return {
+    ...course,
+    title: course.title || course.name,
+    subtitle: course.subtitle || course.heading,
+    image: course.image || course.image_url,
+    // Legacy alias: old code reads instructor_id; new schema uses author_user_id.
+    instructor_id: course.instructor_id != null ? course.instructor_id : course.author_user_id,
+    // Legacy alias kept for any code still reading `author_id`.
+    author_id: course.author_id != null ? course.author_id : course.author_user_id,
+    // No link column exists — always synthesize from teachable_course_id.
+    link: (course.teachable_course_id
+      ? `https://easyt.online/courses/${course.teachable_course_id}`
+      : "https://easyt.online/courses"),
+    // Back-compat: code paths that reference domain / full_content / page_content
+    // will just get undefined and skip gracefully.
+  };
+}
+function normalizeCourses(rows) {
+  return (rows || []).map(normalizeCourse);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MIGRATED TO teachable_lectures
+// Standard select cols + legacy-shape aliases.
+// title ← name, lesson_order ← position
+// ═══════════════════════════════════════════════════════════════════
+const LECTURE_SELECT_COLS =
+  "id, teachable_lecture_id, course_id, section_id, name, position, is_published, has_video, details_fetched, created_at";
+
+function normalizeLecture(lecture) {
+  if (!lecture) return lecture;
+  return {
+    ...lecture,
+    title: lecture.title || lecture.name,
+    lesson_order: lecture.lesson_order != null ? lecture.lesson_order : lecture.position,
+  };
+}
+function normalizeLectures(rows) {
+  return (rows || []).map(normalizeLecture);
+}
 
 
 const CATEGORIES = {
@@ -284,6 +359,9 @@ function escapeHtml(text) {
 
 // ─── formatCourseCard ───
 function formatCourseCard(course, instructors, index) {
+  // Normalize course to legacy shape (title, image, link, instructor_id, ...)
+  course = normalizeCourse(course);
+
 const instructor = course.instructor_id
   ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
   : null;
@@ -510,14 +588,24 @@ async function getInstructors() {
     return instructorCache.data;
   }
   try {
+    // MIGRATED: instructors → teachable_authors
+    // Aliases keep old field names (image, courses_link) for backward compatibility
     const { data } = await supabase
-      .from("instructors")
-.select("id, name, image, courses_link");
-    if (data) {
-      instructorCache.data = data;
+      .from("teachable_authors")
+      .select("id, name, title, image_url, link, bio");
+    const normalized = (data || []).map((i) => ({
+      id: i.id,
+      name: i.name,
+      title: i.title,
+      image: i.image_url,
+      courses_link: i.link,
+      bio: i.bio,
+    }));
+    if (normalized.length) {
+      instructorCache.data = normalized;
       instructorCache.ts = Date.now();
     }
-    return data || [];
+    return normalized;
   } catch (e) {
     return instructorCache.data || [];
   }
@@ -542,6 +630,11 @@ let _diplomaCourseMapCache = { data: null, ts: 0 };
 const DIPLOMA_COURSE_MAP_TTL = 10 * 60 * 1000;
 
 // ─── loadDiplomaCourseMap ───
+// Builds maps that link diplomas ↔ courses using the NEW bigint teachable_course_id.
+// SCHEMA:
+//   diploma_courses.teachable_course_id = bigint (populated from old UUID via name-match migration)
+//   teachable_courses.teachable_course_id = bigint
+// Keys in courseToD / dToCourses are stringified bigints.
 async function loadDiplomaCourseMap() {
   if (_diplomaCourseMapCache.data && Date.now() - _diplomaCourseMapCache.ts < DIPLOMA_COURSE_MAP_TTL) {
     return _diplomaCourseMapCache.data;
@@ -549,7 +642,7 @@ async function loadDiplomaCourseMap() {
   if (!supabase) return { courseToD: {}, dToCourses: {}, diplomaMap: {} };
   try {
     const [dcResult, dResult] = await Promise.all([
-      supabase.from("diploma_courses").select("diploma_id, course_id, course_order").order("course_order", { ascending: true }),
+      supabase.from("diploma_courses").select("diploma_id, teachable_course_id, course_order").order("course_order", { ascending: true }),
       supabase.from("diplomas").select("id, title, link, price")
     ]);
     const dcRows = dcResult.data || [];
@@ -560,14 +653,15 @@ async function loadDiplomaCourseMap() {
     var dToCourses = {};
     for (var i = 0; i < dcRows.length; i++) {
       var row = dcRows[i];
+      if (row.teachable_course_id == null) continue;  // skip unlinked rows
       var d = diplomaMap[String(row.diploma_id)];
       if (!d) continue;
-      var cKey = String(row.course_id);
+      var cKey = String(row.teachable_course_id);
       var dKey = String(row.diploma_id);
       if (!courseToD[cKey]) courseToD[cKey] = [];
       courseToD[cKey].push({ diplomaId: row.diploma_id, diplomaTitle: d.title, diplomaLink: d.link, courseOrder: row.course_order });
       if (!dToCourses[dKey]) dToCourses[dKey] = [];
-      dToCourses[dKey].push({ courseId: row.course_id, courseOrder: row.course_order });
+      dToCourses[dKey].push({ teachableCourseId: row.teachable_course_id, courseOrder: row.course_order });
     }
     for (var dk in dToCourses) {
       dToCourses[dk].sort(function(a, b) { return (a.courseOrder || 0) - (b.courseOrder || 0); });
@@ -583,6 +677,7 @@ async function loadDiplomaCourseMap() {
 }
 
 // ─── injectDiplomaInfo ───
+// Keys the diploma map by teachable_course_id (bigint) — matches the new schema.
 async function injectDiplomaInfo(courses) {
   if (!courses || courses.length === 0) return courses || [];
   try {
@@ -590,7 +685,9 @@ async function injectDiplomaInfo(courses) {
     var courseToD = map.courseToD;
     for (var i = 0; i < courses.length; i++) {
       var c = courses[i];
-      var entries = courseToD[String(c.id)];
+      if (c.teachable_course_id == null) continue;
+      var key = String(c.teachable_course_id);
+      var entries = courseToD[key];
       if (entries && entries.length > 0) {
         c._diplomaInfo = entries;
       }
@@ -635,12 +732,18 @@ async function getDiplomaWithCourses(diplomaIdOrTitle) {
     if (!diploma || !diplomaId) return null;
     var courseEntries = dToCourses[diplomaId] || [];
     if (courseEntries.length === 0) return { diploma: diploma, courses: [] };
-    var courseIds = courseEntries.map(function(e) { return e.courseId; });
-    var result = await supabase.from("courses").select(COURSE_SELECT_COLS).in("id", courseIds);
-    var courses = result.data || [];
+    // dToCourses entries now carry teachableCourseId (bigint)
+    var teachableIds = courseEntries.map(function(e) { return e.teachableCourseId; }).filter(function(v) { return v != null; });
+    if (teachableIds.length === 0) return { diploma: diploma, courses: [] };
+    var result = await supabase.from("teachable_courses").select(COURSE_SELECT_COLS).in("teachable_course_id", teachableIds);
+    var courses = normalizeCourses(result.data);
     var orderMap = {};
-    courseEntries.forEach(function(e) { orderMap[String(e.courseId)] = e.courseOrder; });
-    courses.sort(function(a, b) { return (orderMap[String(a.id)] || 999) - (orderMap[String(b.id)] || 999); });
+    courseEntries.forEach(function(e) { orderMap[String(e.teachableCourseId)] = e.courseOrder; });
+    courses.sort(function(a, b) {
+      var aKey = String(a.teachable_course_id);
+      var bKey = String(b.teachable_course_id);
+      return (orderMap[aKey] || 999) - (orderMap[bKey] || 999);
+    });
     return { diploma: diploma, courses: courses };
   } catch (e) {
     console.error("getDiplomaWithCourses error:", e.message);
@@ -842,11 +945,13 @@ async function fuzzySearchFallback(terms) {
   if (!supabase) return [];
   try {
     const { data: all, error } = await supabase
-      .from("courses").select(COURSE_SELECT_COLS).limit(500);
+      .from("teachable_courses").select(COURSE_SELECT_COLS).limit(500);
     if (error || !all) return [];
+    // Normalize to legacy shape (title, subtitle, image, instructor_id, link)
+    const normalized = normalizeCourses(all);
     const searchable = prepareSearchTerms(terms);
     const results = [];
-    for (const course of all) {
+    for (const course of normalized) {
       let bestSim = 0;
       const titleN = normalizeArabic((course.title || "").toLowerCase());
       const subtitleN = normalizeArabic((course.subtitle || "").toLowerCase());
@@ -919,7 +1024,8 @@ console.log("🔤 Expanded ilike terms:", allIlikeTerms.length, allIlikeTerms);
 const cappedIlikeTerms = allIlikeTerms.slice(0, 16);
 
 // 🔧 Phase 1: بحث في العنوان والـ keywords فقط (الأدق)
-const coreCols = ["title", "subtitle", "domain"];
+// SCHEMA: teachable_courses has no 'domain' column — use name + heading + keywords.
+const coreCols = ["name", "heading", "keywords"];
 
 const coreFilters = cappedIlikeTerms
   .flatMap((t) => coreCols.map((col) => `${col}.ilike.%${t}%`))
@@ -928,19 +1034,25 @@ const coreFilters = cappedIlikeTerms
 console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
     const ilikePromise = supabase
-      .from("courses")
+      .from("teachable_courses")
       .select(COURSE_SELECT_COLS)
       .or(coreFilters)
       .limit(30);
 
+    // Semantic search via match_courses RPC.
+    // RPC returns rows like { id: <uuid from legacy courses table>, similarity }.
+    // Since teachable_courses has no column holding that legacy UUID, we CANNOT
+    // look up courses by semantic result alone. We keep the semantic signal
+    // only to help rank courses that were already found by ilike (Phase 1-3),
+    // by joining on name via the legacy `courses` table.
     const semanticPromise = openai
       ? (async () => {
           try {
             const queryText = searchTerms.join(" ");
-const embResp = await openai.embeddings.create({
-      model: COURSE_EMBEDDING_MODEL,
-      input: queryText.substring(0, 2000),
-    });
+            const embResp = await openai.embeddings.create({
+              model: COURSE_EMBEDDING_MODEL,
+              input: queryText.substring(0, 2000),
+            });
             const { data } = await supabase.rpc("match_courses", {
               query_embedding: embResp.data[0].embedding,
               match_threshold: 0.75,
@@ -967,12 +1079,13 @@ const [ilikeResult, semanticResults] = await Promise.all([
 // 🔧 Phase 2: لو مفيش نتايج — وسع للـ description
     if (allCourses.length === 0) {
       console.log(`🔍 Phase 2 — expanding to description...`);
-      const deepCols = ["title", "subtitle", "description", "domain", "keywords"];
+      // SCHEMA: only use columns that actually exist on teachable_courses
+      const deepCols = ["name", "heading", "description", "keywords"];
       const deepFilters = cappedIlikeTerms
         .flatMap((t) => deepCols.map((col) => `${col}.ilike.%${t}%`))
         .join(",");
       const { data: deepResults } = await supabase
-        .from("courses")
+        .from("teachable_courses")
         .select(COURSE_SELECT_COLS)
         .or(deepFilters)
         .limit(30);
@@ -982,13 +1095,13 @@ const [ilikeResult, semanticResults] = await Promise.all([
       }
     }
 
-// 🔧 Phase 3: لو لسه مفيش — وسع للـ syllabus وfull_content
+// 🔧 Phase 3: لو لسه مفيش — وسع للـ syllabus + objectives
     if (allCourses.length === 0) {
       console.log(`🔍 Phase 1 got ${allCourses.length} results — expanding to deep search...`);
+      // SCHEMA: full_content / page_content / domain don't exist — use what's available.
       const deepCols = [
-        "title", "description", "subtitle",
-        "full_content", "page_content", "syllabus",
-        "objectives", "domain", "keywords",
+        "name", "description", "heading",
+        "syllabus", "objectives", "keywords",
       ];
       const deepIlikeTerms = expandArabicVariants(limitedTerms).slice(0, 10);
       const deepFilters = deepIlikeTerms
@@ -996,7 +1109,7 @@ const [ilikeResult, semanticResults] = await Promise.all([
         .join(",");
 
       const { data: deepResults } = await supabase
-        .from("courses")
+        .from("teachable_courses")
         .select(COURSE_SELECT_COLS)
         .or(deepFilters)
         .limit(30);
@@ -1009,31 +1122,66 @@ const [ilikeResult, semanticResults] = await Promise.all([
       }
     }
 
+    // semanticMap: key = legacy UUID (as returned by match_courses RPC), value = similarity.
+    // We bridge from UUID → name by querying the legacy `courses` table once,
+    // then attach similarity scores to currently fetched teachable_courses rows
+    // whose `name` equals a legacy `title`.
     const semanticMap = new Map();
+    const nameToSim = new Map();  // name (lowercased) -> similarity
 
     if (semanticResults.length > 0) {
-      semanticResults.forEach((s) => semanticMap.set(s.id, s.similarity));
+      semanticResults.forEach((s) => {
+        if (s && s.id != null) semanticMap.set(String(s.id), s.similarity);
+      });
 
-      // الـ semantic يضيف كورسات جديدة بس لو Phase 1 مفيش نتايج
-      if (allCourses.length === 0) {
-        const ilikeIds = new Set(allCourses.map((c) => c.id));
-        const semanticOnlyIds = [...semanticMap.keys()].filter(
-          (id) => !ilikeIds.has(id)
-        );
-        if (semanticOnlyIds.length > 0) {
-          const { data: semCourses } = await supabase
+      // Bridge UUIDs to names using the legacy courses table (if it still exists).
+      // If `courses` table has been dropped, this silently returns no rows and
+      // semantic scoring becomes a no-op (not a crash).
+      try {
+        const legacyIds = [...semanticMap.keys()];
+        if (legacyIds.length > 0) {
+          const { data: legacyRows } = await supabase
             .from("courses")
-            .select(COURSE_SELECT_COLS)
-            .in("id", semanticOnlyIds);
-          if (semCourses) allCourses = [...allCourses, ...semCourses];
+            .select("id, title")
+            .in("id", legacyIds);
+          (legacyRows || []).forEach((lr) => {
+            const sim = semanticMap.get(String(lr.id));
+            if (sim != null && lr.title) {
+              nameToSim.set(String(lr.title).toLowerCase().trim(), sim);
+            }
+          });
         }
+      } catch (e) {
+        // Table dropped or other error → skip semantic scoring silently
       }
-      // لو في نتايج من Phase 1 — الـ semantic بيستخدم للـ scoring بس (مش إضافة كورسات جديدة)
+
+      // If Phase 1/2/3 returned zero rows, try to seed allCourses from names
+      // of semantic matches.
+      if (allCourses.length === 0 && nameToSim.size > 0) {
+        try {
+          const names = [...nameToSim.keys()];
+          const orFilters = names
+            .slice(0, 20)
+            .map((n) => `name.ilike.${n.replace(/[,%]/g, " ")}`)
+            .join(",");
+          if (orFilters) {
+            const { data: semCourses } = await supabase
+              .from("teachable_courses")
+              .select(COURSE_SELECT_COLS)
+              .or(orFilters);
+            if (semCourses) allCourses = [...allCourses, ...semCourses];
+          }
+        } catch (_) { /* best effort */ }
+      }
     }
 
     if (allCourses.length === 0) {
       return await fuzzySearchFallback(allTerms);
     }
+
+    // Normalize all courses to legacy shape (title, subtitle, image, instructor_id, link)
+    // so the rest of the scoring / filtering code keeps working unchanged.
+    allCourses = normalizeCourses(allCourses);
 
     let filtered = allCourses;
 
@@ -1199,8 +1347,11 @@ if (isWordBoundaryMatch(titleNorm, nt)) {
 
       if (fullQuery.length > 2 && domainNorm.includes(fullQuery)) score += 60;
 
-      if (semanticMap.has(c.id)) {
-        const semSim = semanticMap.get(c.id);
+      // Bridge semantic similarity via course name (teachable_courses has no UUID column).
+      // nameToSim was built above from the match_courses RPC output.
+      const nameKey = ((c.name || c.title || "") + "").toLowerCase().trim();
+      if (nameKey && nameToSim.has(nameKey)) {
+        const semSim = nameToSim.get(nameKey);
         score += Math.round(semSim * 100);
         if (score <= Math.round(semSim * 100)) {
           score += Math.round(semSim * 50);
@@ -1370,7 +1521,8 @@ async function searchLessonsInCourses(searchTerms) {
 const allTerms = prepareSearchTerms(searchTerms);
     if (allTerms.length === 0) return [];
 
-    const orFilters = allTerms.map((t) => `title.ilike.%${t}%`).join(",");
+    // MIGRATED: lessons → teachable_lectures (field: name instead of title)
+    const orFilters = allTerms.map((t) => `name.ilike.%${t}%`).join(",");
 
     // الـ terms الأصلية بدون تكسير (للـ word boundary check)
     const originalTerms = searchTerms.map(t => t.toLowerCase().trim()).filter(t => t.length > 2);
@@ -1379,24 +1531,32 @@ const allTerms = prepareSearchTerms(searchTerms);
 
     // Title-based search
     try {
+      // MIGRATED: lessons → teachable_lectures
+      // - id (bigint)  ← was uuid
+      // - name         ← was title
+      // - course_id    ← bigint, references teachable_courses.teachable_course_id
       const { data: lessons, error } = await supabase
-        .from("lessons")
-        .select("id, title, course_id")
+        .from("teachable_lectures")
+        .select("id, name, course_id, teachable_lecture_id")
         .or(orFilters)
         .limit(50);
 
       if (!error) {
         // فلتر بـ word boundary — "work" مش هيطابق "network"
         const filtered = (lessons || []).filter(l => {
-          const titleNorm = normalizeArabic((l.title || '').toLowerCase());
+          const titleNorm = normalizeArabic((l.name || '').toLowerCase());
           return allTerms.some(term => {
             const nt = normalizeArabic(term.toLowerCase());
             if (nt.length <= 2) return false;
             return isWordBoundaryMatch(titleNorm, nt);
           });
         });
+        // Normalize to legacy shape: title (from name), keep course_id as bigint
         allLessons = filtered.map((l) => ({
-          ...l,
+          id: l.id,
+          title: l.name,
+          course_id: l.course_id, // bigint → teachable_courses.teachable_course_id
+          teachable_lecture_id: l.teachable_lecture_id,
           matchSource: "title_search",
         }));
       }
@@ -1422,19 +1582,25 @@ const allTerms = prepareSearchTerms(searchTerms);
       return [];
     }
 
+    // NOTE: courseIds are teachable_course_id (bigint)
+    // teachable_lectures.course_id → teachable_courses.teachable_course_id
     const { data: courses, error: cErr } = await supabase
-      .from("courses")
+      .from("teachable_courses")
       .select(COURSE_SELECT_COLS)
-      .in("id", courseIds);
+      .in("teachable_course_id", courseIds);
 
     if (cErr || !courses || courses.length === 0) {
       setCachedSearch(cacheKey, []);
       return [];
     }
 
-    const results = courses.map((course) => {
+    // Normalize courses to legacy shape
+    const normalizedCourses = normalizeCourses(courses);
+
+    const results = normalizedCourses.map((course) => {
+      // Match lessons by teachable_course_id (bigint)
       const matched = allLessons
-        .filter((l) => l.course_id === course.id)
+        .filter((l) => String(l.course_id) === String(course.teachable_course_id))
         .map((l) => ({
           title: l.title,
           timestamp_start: l.timestamp_start || null,
@@ -1471,6 +1637,64 @@ const allTerms = prepareSearchTerms(searchTerms);
   }
 }
 
+// ─── Cache invalidation helpers ───
+// Used by admin endpoints that mutate corrections/FAQs so next reads refetch.
+function clearCorrectionCache() {
+  correctionCache.data = null;
+  correctionCache.ts = 0;
+}
+
+function clearFAQCache() {
+  faqCache.data = null;
+  faqCache.ts = 0;
+}
+
+// ─── sessionMemory cleanup ───
+// Prevents unbounded growth of the in-memory sessionMemory map.
+// Periodically evicts sessions that haven't been active for a while,
+// and caps the total number of sessions.
+const SESSION_MEMORY_MAX = 2000;
+const SESSION_MEMORY_IDLE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+function cleanupSessionMemory() {
+  try {
+    if (sessionMemory.size === 0) return;
+    const now = Date.now();
+    let evicted = 0;
+
+    // First pass: evict idle sessions
+    for (const [sid, mem] of sessionMemory.entries()) {
+      const last = mem && mem.lastActivity ? mem.lastActivity : 0;
+      if (now - last > SESSION_MEMORY_IDLE_MS) {
+        sessionMemory.delete(sid);
+        evicted++;
+      }
+    }
+
+    // Second pass: if still over cap, evict oldest
+    if (sessionMemory.size > SESSION_MEMORY_MAX) {
+      const entries = [...sessionMemory.entries()]
+        .sort((a, b) => (a[1].lastActivity || 0) - (b[1].lastActivity || 0));
+      const excess = sessionMemory.size - SESSION_MEMORY_MAX;
+      for (let i = 0; i < excess; i++) {
+        sessionMemory.delete(entries[i][0]);
+        evicted++;
+      }
+    }
+
+    if (evicted > 0) {
+      console.log(`🧹 sessionMemory cleanup: evicted ${evicted} (remaining: ${sessionMemory.size})`);
+    }
+  } catch (e) {
+    console.error("cleanupSessionMemory error:", e.message);
+  }
+}
+
+// Run cleanup every 15 minutes. We use unref() so it doesn't keep the
+// process alive during shutdown.
+const _sessionCleanupTimer = setInterval(cleanupSessionMemory, 15 * 60 * 1000);
+if (_sessionCleanupTimer.unref) _sessionCleanupTimer.unref();
+
 module.exports = {
   normalizeArabic, similarityRatio, finalizeReply, markdownToHtml,
   prepareSearchTerms, escapeHtml, formatCourseCard, logChat,
@@ -1479,9 +1703,12 @@ module.exports = {
   injectDiplomaInfo, getDiplomaWithCourses, getCachedSearch, setCachedSearch,
   expandArabicVariants, loadAllCorrections, loadAllFAQs,
   searchCourses, searchDiplomas, searchLessonsInCourses,
+  normalizeCourse, normalizeCourses,
+  normalizeLecture, normalizeLectures,
   ALL_COURSES_URL, ALL_DIPLOMAS_URL, SUBSCRIPTION_URL,
-  COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS,
+  COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS, LECTURE_SELECT_COLS,
   CATEGORIES, WHATSAPP_SUPPORT_LINK,
   BASIC_STOP_WORDS, PAYMENTS_URL, CACHE_TTL, SEARCH_CACHE_TTL, CORRECTION_CACHE_TTL, FAQ_CACHE_TTL,
   gptWithRetry, initShared,
+  clearCorrectionCache, clearFAQCache, cleanupSessionMemory,
 };
