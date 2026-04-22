@@ -2537,6 +2537,23 @@ const syncState = {
     currentUser: null,
     lastUpdate: null,
     stopRequested: false
+  },
+  gapSync: {
+    status: "idle",
+    startedAt: null,
+    completedAt: null,
+    hours: 0,
+    gapStart: null,
+    gapEnd: null,
+    phase: null,
+    stopRequested: false,
+    errors: [],
+    lastUpdate: null,
+    phases: {
+      transactions: { status: "pending", processed: 0, created: 0 },
+      newUsers: { status: "pending", scanned: 0, foundNew: 0, inserted: 0 },
+      enrollments: { status: "pending", processed: 0, upserted: 0 }
+    }
   }
 };
 
@@ -6311,6 +6328,369 @@ async function handleAbandonedCart(cart) {
 
   if (error) throw new Error(`Abandoned cart insert failed: ${error.message}`);
   console.log(`[Webhook] Abandoned cart logged: ${userEmail}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAP SYNC v2 — Safe sync for transactions + new users + enrollments
+// in a specific time window
+// 
+// SAFETY GUARANTEES:
+// - Phase 1 (Transactions): Uses upsert on transaction_id (safe)
+// - Phase 2 (New Users): Uses INSERT (not upsert) — never touches existing users
+//   * Builds a Set of ALL existing user_ids in DB
+//   * Only inserts users that are NOT in the Set
+//   * Stops after 100 consecutive known users (we passed all new ones)
+// - Phase 3 (Enrollments): Only for newly inserted users from Phase 2
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/gap-sync", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.gapSync.status === "running") {
+      return res.status(409).json({
+        error: "Gap sync already running",
+        state: syncState.gapSync
+      });
+    }
+
+    const hours = parseInt(req.query.hours || req.body?.hours || 48);
+    if (hours < 1 || hours > 168) {
+      return res.status(400).json({
+        error: "hours must be between 1 and 168 (max 7 days)"
+      });
+    }
+
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
+
+    // Initialize state
+    syncState.gapSync = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      hours: hours,
+      gapStart: startISO,
+      gapEnd: endISO,
+      phase: "starting",
+      stopRequested: false,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      phases: {
+        transactions: { status: "pending", processed: 0, created: 0 },
+        newUsers: { status: "pending", scanned: 0, foundNew: 0, inserted: 0 },
+        enrollments: { status: "pending", processed: 0, upserted: 0 }
+      }
+    };
+
+    // Run in background
+    runGapSyncV2(startISO, endISO).catch(err => {
+      console.error("[GapSyncV2] Fatal:", err);
+      syncState.gapSync.status = "failed";
+      syncState.gapSync.completedAt = new Date().toISOString();
+      syncState.gapSync.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Gap sync started for last ${hours} hours`,
+      from: startISO,
+      to: endISO,
+      check_status: "/api/admin/teachable/gap-sync/status?admin=YOUR_PASSWORD"
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/gap-sync/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    const s = syncState.gapSync;
+    const elapsedSec = s.startedAt
+      ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+      : 0;
+    res.json({
+      success: true,
+      state: s,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/gap-sync/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    syncState.gapSync.stopRequested = true;
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * The main runner for Gap Sync v2
+ * Strict safety: never updates existing users' rows
+ */
+async function runGapSyncV2(startISO, endISO) {
+  const S = syncState.gapSync;
+
+  console.log(`[GapSyncV2] 🚀 Starting: ${startISO} → ${endISO}`);
+
+  // ═══════════════════════════════════════════════════
+  // PHASE 1: TRANSACTIONS (using existing safe function)
+  // ═══════════════════════════════════════════════════
+  S.phase = "transactions";
+  S.phases.transactions.status = "running";
+  S.lastUpdate = new Date().toISOString();
+  console.log(`[GapSyncV2] 📊 Phase 1/3: Transactions...`);
+
+  try {
+    // Reuse the proven safe function (upserts on transaction_id)
+    // We'll track via a temporary "S adapter" since syncTransactionsChunk expects
+    // a state with: stopRequested, currentPage, lastUpdate, currentChunk, total, processed, transactionsCreated, errors
+    const txnState = {
+      stopRequested: false,
+      currentPage: 0,
+      lastUpdate: S.lastUpdate,
+      currentChunk: null,
+      total: 0,
+      processed: 0,
+      transactionsCreated: 0,
+      errors: []
+    };
+
+    const txnResult = await syncTransactionsChunk(
+      startISO, endISO,
+      100,    // perPage
+      400,    // pageDelay
+      50,     // batchSize
+      9500,   // safeLimit
+      txnState
+    );
+
+    S.phases.transactions.status = "completed";
+    S.phases.transactions.processed = txnResult.processed;
+    S.phases.transactions.created = txnResult.created;
+    if (txnState.errors.length) S.errors.push(...txnState.errors);
+    console.log(`[GapSyncV2] ✅ Phase 1: ${txnResult.created} new transactions`);
+  } catch (err) {
+    S.phases.transactions.status = "failed";
+    S.errors.push({ phase: "transactions", error: err.message });
+    console.error(`[GapSyncV2] ❌ Phase 1 failed:`, err.message);
+  }
+
+  if (S.stopRequested) {
+    S.status = "stopped";
+    S.completedAt = new Date().toISOString();
+    return;
+  }
+
+  // ═══════════════════════════════════════════════════
+  // PHASE 2: NEW USERS (strict: only insert, never update)
+  // ═══════════════════════════════════════════════════
+  S.phase = "newUsers";
+  S.phases.newUsers.status = "running";
+  S.lastUpdate = new Date().toISOString();
+  console.log(`[GapSyncV2] 👥 Phase 2/3: Finding NEW users...`);
+
+  const newUserIds = [];
+
+  try {
+    // Build a Set of ALL existing user_ids in DB
+    // We page through to handle the 89K+ users
+    console.log(`[GapSyncV2]   Loading existing user IDs from DB...`);
+    const knownIds = new Set();
+    let dbPage = 0;
+    const DB_PAGE_SIZE = 5000;
+    while (true) {
+      const { data, error } = await supabase
+        .from("teachable_users")
+        .select("teachable_user_id")
+        .order("teachable_user_id", { ascending: true })
+        .range(dbPage * DB_PAGE_SIZE, (dbPage + 1) * DB_PAGE_SIZE - 1);
+
+      if (error) throw new Error(`DB query failed: ${error.message}`);
+      if (!data || data.length === 0) break;
+
+      data.forEach(u => knownIds.add(u.teachable_user_id));
+      dbPage++;
+      if (data.length < DB_PAGE_SIZE) break;
+    }
+    console.log(`[GapSyncV2]   Loaded ${knownIds.size} existing user IDs`);
+
+    // Now scan Teachable users
+    const STOP_AFTER_KNOWN = 100;  // Stop after 100 consecutive known users
+    const MAX_PAGES = 30;           // Safety: max 3000 users to scan
+    let consecutiveKnown = 0;
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore && page <= MAX_PAGES) {
+      if (S.stopRequested) break;
+
+      const url = `/users?page=${page}&per=100`;
+      const data = await teachableFetchWithRetry(url);
+      const users = data.users || [];
+
+      if (!users.length) break;
+
+      for (const u of users) {
+        S.phases.newUsers.scanned++;
+        S.lastUpdate = new Date().toISOString();
+
+        if (knownIds.has(u.id)) {
+          consecutiveKnown++;
+          if (consecutiveKnown >= STOP_AFTER_KNOWN) {
+            console.log(`[GapSyncV2]   Hit ${STOP_AFTER_KNOWN} consecutive known → stopping scan`);
+            hasMore = false;
+            break;
+          }
+          continue;
+        }
+
+        // NEW USER FOUND
+        consecutiveKnown = 0;
+        S.phases.newUsers.foundNew++;
+
+        // INSERT (not upsert) — if conflict happens, that's a bug we want to know about
+        const userData = {
+          teachable_user_id: u.id,
+          email: u.email?.toLowerCase() || null,
+          name: u.name || null,
+          role: u.role || "student",
+          signin_count: u.sign_in_count || 0,
+          last_signin: u.last_sign_in_at || null,
+          phone_number: u.phone_number || null,
+          unsubscribed: u.unsubscribe_from_marketing_emails || false,
+          raw_data: u,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: insErr } = await supabase
+          .from("teachable_users")
+          .insert(userData);
+
+        if (insErr) {
+          // If duplicate key, it means race condition or concurrent webhook
+          // — log but don't fail
+          if (insErr.code === '23505') {
+            console.warn(`[GapSyncV2]   User ${u.id} already exists (race): ${insErr.message}`);
+          } else {
+            S.errors.push({ phase: "newUsers", user_id: u.id, error: insErr.message });
+          }
+        } else {
+          S.phases.newUsers.inserted++;
+          newUserIds.push(u.id);
+          knownIds.add(u.id); // add to set so we don't try again
+          console.log(`[GapSyncV2]   ✅ NEW user inserted: ${u.id} (${u.email})`);
+        }
+      }
+
+      page++;
+      await wait(300);
+    }
+
+    S.phases.newUsers.status = "completed";
+    console.log(`[GapSyncV2] ✅ Phase 2: ${newUserIds.length} new users inserted`);
+  } catch (err) {
+    S.phases.newUsers.status = "failed";
+    S.errors.push({ phase: "newUsers", error: err.message });
+    console.error(`[GapSyncV2] ❌ Phase 2 failed:`, err.message);
+  }
+
+  if (S.stopRequested) {
+    S.status = "stopped";
+    S.completedAt = new Date().toISOString();
+    return;
+  }
+
+  // ═══════════════════════════════════════════════════
+  // PHASE 3: ENROLLMENTS for new users only
+  // ═══════════════════════════════════════════════════
+  S.phase = "enrollments";
+  S.phases.enrollments.status = "running";
+  S.lastUpdate = new Date().toISOString();
+  console.log(`[GapSyncV2] 📚 Phase 3/3: Enrollments for ${newUserIds.length} new users...`);
+
+  try {
+    for (const userId of newUserIds) {
+      if (S.stopRequested) break;
+
+      try {
+        const apiData = await teachableFetchWithRetry(`/users/${userId}`);
+        const u = apiData.user || apiData;
+        const courses = u.courses || apiData.courses || [];
+
+        for (const course of courses) {
+          const courseId = course.course_id || course.id;
+          if (!courseId) continue;
+
+          const enrollmentData = {
+            teachable_user_id: userId,
+            user_email: u.email?.toLowerCase() || null,
+            course_id: courseId,
+            course_name: course.name || null,
+            enrolled_at: course.enrolled_at || null,
+            completed_at: course.completed_at || null,
+            percent_complete: course.percent_complete || 0,
+            is_active: course.is_active !== false,
+            has_full_access: course.has_full_access || false,
+            expires_at: course.expires_at || null,
+            raw_data: course
+          };
+
+          const { error: enrErr } = await supabase
+            .from("teachable_enrollments")
+            .upsert(enrollmentData, {
+              onConflict: "teachable_user_id,course_id",
+              ignoreDuplicates: false
+            });
+
+          S.phases.enrollments.processed++;
+          if (!enrErr) {
+            S.phases.enrollments.upserted++;
+          }
+        }
+
+        // Update course_count for this new user
+        try {
+          await updateUserCourseCount(userId);
+        } catch (cntErr) {
+          // non-fatal
+        }
+      } catch (err) {
+        S.errors.push({ phase: "enrollments", user_id: userId, error: err.message });
+        console.warn(`[GapSyncV2]   User ${userId} enrollments failed:`, err.message);
+      }
+
+      await wait(250);
+    }
+
+    S.phases.enrollments.status = "completed";
+    console.log(`[GapSyncV2] ✅ Phase 3: ${S.phases.enrollments.upserted} enrollments`);
+  } catch (err) {
+    S.phases.enrollments.status = "failed";
+    S.errors.push({ phase: "enrollments", error: err.message });
+    console.error(`[GapSyncV2] ❌ Phase 3 failed:`, err.message);
+  }
+
+  // ═══════════════════════════════════════════════════
+  // DONE
+  // ═══════════════════════════════════════════════════
+  S.status = "completed";
+  S.completedAt = new Date().toISOString();
+  console.log(`[GapSyncV2] 🎉 All phases done!`);
 }
 
 /* ═══ Webhook Admin Endpoints ═══ */
