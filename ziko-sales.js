@@ -887,66 +887,11 @@ async function performSearch(keywords, instructors) {
     } catch (e) { console.error("chunk search error:", e.message); }
   }
 
-  // 5. Semantic fallback على الكورسات — بس لو في علاقة قوية (threshold عالي)
-  if (results.courses.length === 0 && results.lessons.length === 0 && results.chunks.length === 0 && (!results._textChunkCourses || results._textChunkCourses.length === 0)) {
-    try {
-      if (supabase && openai) {
-        const embResp = await openai.embeddings.create({
-          model: COURSE_EMBEDDING_MODEL,
-          input: keywords.join(" "),
-        });
-        const embedding = embResp.data[0].embedding;
-        const { data: semCourses } = await supabase.rpc("match_courses", {
-          query_embedding: embedding,
-          match_threshold: 0.80,
-          match_count: 5,
-        });
-        if (semCourses && semCourses.length > 0) {
-          // match_courses RPC returns { id, similarity }. For UUID ids we
-          // bridge via the legacy `courses` table (id → title → name → teachable_courses).
-          // For numeric ids, they map directly to teachable_course_id.
-          const rawIds = semCourses.map(s => s.id).filter(Boolean);
-          let courseDataRaw = null;
-          if (rawIds.length > 0) {
-            const firstId = rawIds[0];
-            const isUuid = typeof firstId === "string" && /^[0-9a-f-]{36}$/i.test(firstId);
-            if (isUuid) {
-              // Bridge UUIDs via legacy courses table by name
-              try {
-                const { data: legacy } = await supabase
-                  .from("courses")
-                  .select("id, title")
-                  .in("id", rawIds);
-                const titles = (legacy || []).map(l => l.title).filter(Boolean);
-                if (titles.length > 0) {
-                  const { data } = await supabase
-                    .from("teachable_courses")
-                    .select(COURSE_SELECT_COLS)
-                    .in("name", titles);
-                  courseDataRaw = data;
-                }
-              } catch (_) { /* legacy table may have been dropped */ }
-            } else {
-              // Numeric ids → assume teachable_course_id
-              const { data } = await supabase
-                .from("teachable_courses")
-                .select(COURSE_SELECT_COLS)
-                .in("teachable_course_id", rawIds);
-              courseDataRaw = data;
-            }
-          }
-          if (courseDataRaw && courseDataRaw.length > 0) {
-            const courseData = normalizeCourses(courseDataRaw);
-            const withDiploma = await injectDiplomaInfo(courseData).catch(() => courseData);
-            withDiploma.forEach(c => { c._semanticFallback = true; });
-            results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
-            results.noDirectCourse = false;
-            console.log(`🔮 Semantic fallback: ${results.courses.length} courses`);
-          }
-        }
-      }
-    } catch (e) { console.error("semantic fallback error:", e.message); }
-  }
+  // 5. Semantic fallback على الكورسات — معطّلة حالياً
+  // match_courses RPC يرجع legacy UUIDs ما بقاش ليها جدول مقابل (بعد حذف courses القديم).
+  // لما الـ RPC يتم إعادة توليده ليرجع teachable_course_id (bigint) بدل الـ UUID،
+  // يمكن إعادة تفعيل الـ block ده.
+  if (false) { /* semantic fallback disabled */ }
 
   return results;
 }
