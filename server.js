@@ -3917,6 +3917,258 @@ app.post("/api/admin/teachable/fix-course-enrollments/stop", async (req, res) =>
 });
 
 /**
+ * DIRECT COURSE SYNC - Smart pagination
+ * Uses /courses/{id}/enrollments with page parameter
+ * Fast: ~2-3 minutes per course
+ */
+app.post("/api/admin/teachable/sync-course-direct", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.courseDirect?.status === "running") {
+      return res.status(400).json({ error: "Course direct sync already running" });
+    }
+
+    const courseIds = req.body?.course_ids || [];
+    if (!Array.isArray(courseIds) || !courseIds.length) {
+      return res.status(400).json({
+        error: "Send course_ids in body, e.g., { course_ids: [1456290, 1514828] }"
+      });
+    }
+
+    syncState.courseDirect = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      courseIds,
+      currentCourseIndex: 0,
+      currentCourse: null,
+      currentAction: null,
+      pagesProcessed: 0,
+      enrollmentsFetched: 0,
+      enrollmentsAdded: 0,
+      errors: [],
+      courseResults: {},
+      stopRequested: false,
+      lastUpdate: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      message: "Direct course sync started",
+      courses: courseIds
+    });
+
+    runCourseDirectSync(courseIds).catch(err => {
+      console.error("[CourseDirect] Fatal:", err);
+      syncState.courseDirect.status = "failed";
+      syncState.courseDirect.completedAt = new Date().toISOString();
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-course-direct/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const S = syncState.courseDirect;
+    if (!S) return res.json({ success: true, state: null });
+
+    const { count } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    const elapsedMs = S.startedAt ? Date.now() - new Date(S.startedAt).getTime() : 0;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+
+    res.json({
+      success: true,
+      state: S,
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`,
+      database_count: count || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-course-direct/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    if (syncState.courseDirect) {
+      syncState.courseDirect.stopRequested = true;
+    }
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Direct course sync - pulls enrollments via pagination
+ * Handles 10K limit by using filters if needed
+ */
+async function runCourseDirectSync(courseIds) {
+  const S = syncState.courseDirect;
+  const PER_PAGE = 100;
+
+  try {
+    // Get course names
+    const { data: courses } = await supabase
+      .from("teachable_courses")
+      .select("teachable_course_id, name")
+      .in("teachable_course_id", courseIds);
+
+    const courseNameMap = {};
+    for (const c of courses || []) {
+      courseNameMap[c.teachable_course_id] = c.name;
+    }
+
+    for (let ci = 0; ci < courseIds.length; ci++) {
+      if (S.stopRequested) {
+        S.status = "stopped";
+        break;
+      }
+
+      const courseId = courseIds[ci];
+      S.currentCourseIndex = ci;
+      S.currentCourse = courseId;
+      S.courseResults[courseId] = {
+        pages: 0,
+        fetched: 0,
+        added: 0,
+        errors: 0
+      };
+
+      console.log(`[CourseDirect] 📚 Starting course ${courseId} (${ci + 1}/${courseIds.length})`);
+
+      // Pagination loop
+      let page = 1;
+      let totalPages = null;
+      let keepGoing = true;
+
+      while (keepGoing) {
+        if (S.stopRequested) break;
+
+        S.currentAction = `Course ${courseId}: page ${page}${totalPages ? '/' + totalPages : ''}`;
+        S.lastUpdate = new Date().toISOString();
+
+        try {
+          const data = await teachableFetchWithRetry(
+            `/courses/${courseId}/enrollments?per=${PER_PAGE}&page=${page}`
+          );
+
+          const enrollments = data.enrollments || [];
+          const meta = data.meta || {};
+
+          if (meta.number_of_pages) {
+            totalPages = meta.number_of_pages;
+          }
+
+          if (enrollments.length === 0) {
+            keepGoing = false;
+            break;
+          }
+
+          S.pagesProcessed++;
+          S.courseResults[courseId].pages++;
+          S.enrollmentsFetched += enrollments.length;
+          S.courseResults[courseId].fetched += enrollments.length;
+
+          // Build rows
+          const rowsRaw = enrollments.map(e => ({
+            teachable_user_id: e.user_id || e.user?.id,
+            user_email: e.user?.email || null,
+            course_id: courseId,
+            course_name: courseNameMap[courseId] || null,
+            enrolled_at: e.enrolled_at || e.created_at || null,
+            completed_at: e.completed_at || null,
+            percent_complete: e.percent_complete || 0,
+            is_active: e.is_active ?? true,
+            has_full_access: e.has_full_access ?? false,
+            expires_at: e.expires_at || null,
+            raw_data: e
+          })).filter(r => r.teachable_user_id);
+
+          // Deduplicate
+          const dedupedMap = new Map();
+          for (const row of rowsRaw) {
+            const key = `${row.teachable_user_id}_${row.course_id}`;
+            if (!dedupedMap.has(key)) {
+              dedupedMap.set(key, row);
+            }
+          }
+          const rows = Array.from(dedupedMap.values());
+
+          if (rows.length > 0) {
+            const { error } = await supabase
+              .from("teachable_enrollments")
+              .upsert(rows, {
+                onConflict: "teachable_user_id,course_id",
+                ignoreDuplicates: false
+              });
+
+            if (!error) {
+              S.enrollmentsAdded += rows.length;
+              S.courseResults[courseId].added += rows.length;
+            } else {
+              S.errors.push({
+                at: new Date().toISOString(),
+                courseId,
+                page,
+                error: error.message
+              });
+              S.courseResults[courseId].errors++;
+            }
+          }
+
+          // If we got less than PER_PAGE, this is the last page
+          if (enrollments.length < PER_PAGE) {
+            keepGoing = false;
+            break;
+          }
+
+          // Stop if reached page limit (API's 10K ceiling)
+          if (page >= 100) {
+            console.log(`[CourseDirect] ⚠️  Course ${courseId} hit 10K limit at page 100`);
+            keepGoing = false;
+            break;
+          }
+
+          page++;
+        } catch (err) {
+          S.errors.push({
+            at: new Date().toISOString(),
+            courseId,
+            page,
+            error: err.message
+          });
+          S.courseResults[courseId].errors++;
+          // Try next page
+          page++;
+          if (page > 100) keepGoing = false;
+        }
+      }
+
+      console.log(`[CourseDirect] ✅ Course ${courseId}: ${S.courseResults[courseId].added} enrollments added in ${S.courseResults[courseId].pages} pages`);
+    }
+
+    S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
+    S.completedAt = new Date().toISOString();
+    S.currentAction = "Done";
+    console.log(`[CourseDirect] 🏁 Done! Added ${S.enrollmentsAdded}, errors ${S.errors.length}`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({ at: new Date().toISOString(), error: err.message, fatal: true });
+    console.error("[CourseDirect] FATAL:", err);
+  }
+}
+
+/**
  * Fix course enrollments by scanning users
  * For each user in teachable_users, check if they're enrolled in the target courses
  * Uses the /users/{id} endpoint which returns full enrollment data
@@ -3974,98 +4226,98 @@ async function runFixCourseEnrollments(courseIds, customUserIds = null) {
 
     S.total = allUserIds.length;
 
-    // For each user, fetch their enrollments and add missing ones for target courses
-    for (let i = 0; i < allUserIds.length; i++) {
+    const CONCURRENCY = 3; // 3 users in parallel - safe for rate limit
+
+    // Process in chunks of CONCURRENCY
+    for (let i = 0; i < allUserIds.length; i += CONCURRENCY) {
       if (S.stopRequested) {
         S.status = "stopped";
         break;
       }
 
-      const userId = allUserIds[i];
-      S.usersScanned = i + 1;
-      S.currentAction = `Scanning user ${userId} (${i + 1}/${allUserIds.length})`;
+      const batch = allUserIds.slice(i, i + CONCURRENCY);
 
-      // Update lastUpdate every 50 users
-      if (i % 50 === 0) {
+      // Update progress
+      S.currentAction = `Scanning users ${i + 1}-${Math.min(i + CONCURRENCY, allUserIds.length)}/${allUserIds.length}`;
+
+      if (i % 60 === 0) {
         S.lastUpdate = new Date().toISOString();
-        console.log(`[FixCourse] Progress: ${i + 1}/${allUserIds.length} users, ${S.enrollmentsAdded} enrollments added`);
+        console.log(`[FixCourse] Progress: ${i}/${allUserIds.length} users, ${S.enrollmentsAdded} enrollments added`);
       }
 
-      try {
-        const userData = await teachableFetchWithRetry(`/users/${userId}`);
-        const enrollments = userData.courses || userData.enrollments || [];
+      // Process batch in parallel
+      await Promise.all(batch.map(async (userId) => {
+        S.usersScanned++;
 
-        // Filter for target courses
-        const targetEnrollments = enrollments.filter(e => {
-          const cid = e.course_id || e.id || e.course?.id;
-          return courseIdSet.has(parseInt(cid));
-        });
+        try {
+          const userData = await teachableFetchWithRetry(`/users/${userId}`);
+          const enrollments = userData.courses || userData.enrollments || [];
 
-        if (targetEnrollments.length === 0) continue;
-
-        // Build rows
-        const rowsRaw = targetEnrollments.map(e => {
-          const cid = parseInt(e.course_id || e.id || e.course?.id);
-          return {
-            teachable_user_id: userId,
-            user_email: userData.email || null,
-            course_id: cid,
-            course_name: courseNameMap[cid] || e.course?.name || null,
-            enrolled_at: e.enrolled_at || e.created_at || null,
-            completed_at: e.completed_at || null,
-            percent_complete: e.percent_complete || 0,
-            is_active: e.is_active ?? true,
-            has_full_access: e.has_full_access ?? false,
-            expires_at: e.expires_at || null,
-            raw_data: e
-          };
-        });
-
-        // Deduplicate by (user_id, course_id) - keep latest enrolled_at
-        const dedupedMap = new Map();
-        for (const row of rowsRaw) {
-          const key = `${row.teachable_user_id}_${row.course_id}`;
-          const existing = dedupedMap.get(key);
-          if (!existing || 
-              (row.enrolled_at && existing.enrolled_at && 
-               new Date(row.enrolled_at) > new Date(existing.enrolled_at))) {
-            dedupedMap.set(key, row);
-          } else if (!existing) {
-            dedupedMap.set(key, row);
-          }
-        }
-        const rows = Array.from(dedupedMap.values());
-
-        // Upsert
-        const { error } = await supabase
-          .from("teachable_enrollments")
-          .upsert(rows, {
-            onConflict: "teachable_user_id,course_id",
-            ignoreDuplicates: false
+          // Filter for target courses
+          const targetEnrollments = enrollments.filter(e => {
+            const cid = e.course_id || e.id || e.course?.id;
+            return courseIdSet.has(parseInt(cid));
           });
 
-        if (!error) {
-          S.enrollmentsAdded += rows.length;
-        } else {
+          if (targetEnrollments.length === 0) return;
+
+          // Build rows
+          const rowsRaw = targetEnrollments.map(e => {
+            const cid = parseInt(e.course_id || e.id || e.course?.id);
+            return {
+              teachable_user_id: userId,
+              user_email: userData.email || null,
+              course_id: cid,
+              course_name: courseNameMap[cid] || e.course?.name || null,
+              enrolled_at: e.enrolled_at || e.created_at || null,
+              completed_at: e.completed_at || null,
+              percent_complete: e.percent_complete || 0,
+              is_active: e.is_active ?? true,
+              has_full_access: e.has_full_access ?? false,
+              expires_at: e.expires_at || null,
+              raw_data: e
+            };
+          });
+
+          // Deduplicate by (user_id, course_id)
+          const dedupedMap = new Map();
+          for (const row of rowsRaw) {
+            const key = `${row.teachable_user_id}_${row.course_id}`;
+            const existing = dedupedMap.get(key);
+            if (!existing ||
+                (row.enrolled_at && existing.enrolled_at &&
+                 new Date(row.enrolled_at) > new Date(existing.enrolled_at))) {
+              dedupedMap.set(key, row);
+            } else if (!existing) {
+              dedupedMap.set(key, row);
+            }
+          }
+          const rows = Array.from(dedupedMap.values());
+
+          const { error } = await supabase
+            .from("teachable_enrollments")
+            .upsert(rows, {
+              onConflict: "teachable_user_id,course_id",
+              ignoreDuplicates: false
+            });
+
+          if (!error) {
+            S.enrollmentsAdded += rows.length;
+          } else {
+            S.errors.push({
+              at: new Date().toISOString(),
+              userId,
+              error: error.message
+            });
+          }
+        } catch (err) {
           S.errors.push({
             at: new Date().toISOString(),
             userId,
-            error: error.message
+            error: err.message
           });
         }
-
-        // Rate limit - none, API latency is self-limiting
-        if (DELAY_BETWEEN_USERS > 0) {
-          await new Promise(r => setTimeout(r, DELAY_BETWEEN_USERS));
-        }
-      } catch (err) {
-        S.errors.push({
-          at: new Date().toISOString(),
-          userId,
-          error: err.message
-        });
-        // Continue to next user
-      }
+      }));
     }
 
     S.status = S.errors.length === 0 ? "completed" : "completed_with_errors";
