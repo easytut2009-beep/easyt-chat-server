@@ -7119,13 +7119,19 @@ async function runAttachmentMigration(dryRun) {
 
   try {
     // جيب الـ attachments اللي على Teachable CDN فقط
-    const { data: attachments, error } = await supabase
+    const { data: allAttachments, error: fetchError } = await supabase
       .from("teachable_attachments")
       .select("id, lecture_id, kind, url, name")
-      .in("kind", ["file", "pdf_embed", "image"])
-      .or("url.ilike.%teachablecdn.com%,url.ilike.%uploads.teachable%");
+      .in("kind", ["file", "pdf_embed", "image"]);
 
-    if (error) throw new Error("Fetch attachments: " + error.message);
+    if (fetchError) throw new Error("Fetch attachments: " + fetchError.message);
+
+    const attachments = (allAttachments || []).filter(a =>
+      a.url && (
+        a.url.includes("teachablecdn") ||
+        a.url.includes("uploads.teachable")
+      )
+    );
 
     s.total = attachments.length;
     console.log(`[AttachMigration] ${s.total} attachments to migrate`);
