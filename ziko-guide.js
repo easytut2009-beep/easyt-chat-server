@@ -9,19 +9,24 @@ module.exports = function registerGuideRoutes(app, { openai, supabase, limiter, 
 // ═══ Guide-specific helpers (injected from shared) ═══
 const {
   normalizeArabic, similarityRatio, finalizeReply, markdownToHtml,
-  escapeHtml, formatCourseCard, logChat, loadBotInstructions, highlightTerms,
+  prepareSearchTerms, escapeHtml, formatCourseCard, logChat,
+  loadBotInstructions, highlightTerms,
   getInstructors, injectDiplomaInfo, getCachedSearch, setCachedSearch,
-  COURSE_SELECT_COLS, COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL,
+  COURSE_SELECT_COLS, LECTURE_SELECT_COLS, COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL,
   BASIC_STOP_WORDS, gptWithRetry,
+  normalizeCourse, normalizeCourses,
+  normalizeLecture, normalizeLectures,
 } = require("./shared");
 
 async function getAllLessonChunks(lessonId, limit = 50) {
   if (!supabase || !lessonId) return [];
   try {
+    // MIGRATED: chunks.lesson_id (uuid) → chunks.teachable_lecture_id (bigint)
+    // NOTE: 'lessonId' parameter is expected to be a teachable_lecture_id (bigint) now
     const { data, error } = await supabase
       .from("chunks")
-      .select("id, content, lesson_id, chunk_order, timestamp_start")
-      .eq("lesson_id", lessonId)
+      .select("id, content, teachable_lecture_id, chunk_order, timestamp_start")
+      .eq("teachable_lecture_id", lessonId)
       .order("chunk_order", { ascending: true })
       .limit(limit);
 
@@ -30,10 +35,16 @@ async function getAllLessonChunks(lessonId, limit = 50) {
       return [];
     }
 
+    // Map teachable_lecture_id → lesson_id for backward compatibility
+    const normalized = (data || []).map(c => ({
+      ...c,
+      lesson_id: c.teachable_lecture_id,
+    }));
+
     console.log(
-      `📖 FIX #40: Got ${(data || []).length} chunks for lesson ${lessonId}`
+      `📖 FIX #40: Got ${normalized.length} chunks for lecture ${lessonId}`
     );
-    return data || [];
+    return normalized;
   } catch (e) {
     console.error("getAllLessonChunks error:", e.message);
     return [];
@@ -41,16 +52,19 @@ async function getAllLessonChunks(lessonId, limit = 50) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   🆕 Helper: getCourseLessonIds — gets all lesson IDs for a course
+   🆕 Helper: getCourseLessonIds — gets all lecture IDs for a course
+   MIGRATED: lessons → teachable_lectures
+   courseId = teachable_course_id (bigint)
    ══════════════════════════════════════════════════════════ */
 async function getCourseLessonIds(courseId) {
   if (!supabase || !courseId) return [];
   try {
+    // teachable_lectures.course_id references teachable_courses.teachable_course_id
     const { data } = await supabase
-      .from("lessons")
-      .select("id")
+      .from("teachable_lectures")
+      .select("teachable_lecture_id")
       .eq("course_id", courseId);
-    return (data || []).map((l) => l.id);
+    return (data || []).map((l) => l.teachable_lecture_id).filter(Boolean);
   } catch (e) {
     return [];
   }
@@ -82,17 +96,19 @@ const allVariants = [...new Set([
 
     let query = supabase
       .from("chunks")
-      .select("id, content, lesson_id, chunk_order, timestamp_start")
+      .select("id, content, teachable_lecture_id, chunk_order, timestamp_start")
       .or(orFilters)
+      .not("teachable_lecture_id", "is", null)
       .limit(limit);
 
     if (lessonId) {
-      query = query.eq("lesson_id", lessonId);
+      // MIGRATED: filter by teachable_lecture_id now
+      query = query.eq("teachable_lecture_id", lessonId);
     } else if (courseId) {
-      // 🆕 FIX #41: Filter by courseId through lesson IDs
+      // 🆕 FIX #41: Filter by courseId through lecture IDs (teachable_lecture_id)
       const lessonIds = await getCourseLessonIds(courseId);
       if (lessonIds.length > 0) {
-        query = query.in("lesson_id", lessonIds);
+        query = query.in("teachable_lecture_id", lessonIds);
       }
     }
 
@@ -102,21 +118,23 @@ const allVariants = [...new Set([
       return [];
     }
 
-    // Enrich with lesson titles
+    // Enrich with lecture titles (MIGRATED: lessons → teachable_lectures)
     if (data && data.length > 0) {
       const lessonIds = [
-        ...new Set(data.map((c) => c.lesson_id).filter(Boolean)),
+        ...new Set(data.map((c) => c.teachable_lecture_id).filter(Boolean)),
       ];
       if (lessonIds.length > 0) {
         const { data: lessons } = await supabase
-          .from("lessons")
-          .select("id, title")
-          .in("id", lessonIds);
+          .from("teachable_lectures")
+          .select("teachable_lecture_id, name")
+          .in("teachable_lecture_id", lessonIds);
         const lessonMap = new Map(
-          (lessons || []).map((l) => [l.id, l.title])
+          (lessons || []).map((l) => [l.teachable_lecture_id, l.name])
         );
         data.forEach((c) => {
-          c.lesson_title = lessonMap.get(c.lesson_id) || "";
+          c.lesson_title = lessonMap.get(c.teachable_lecture_id) || "";
+          // Back-compat alias
+          c.lesson_id = c.teachable_lecture_id;
         });
       }
     }
@@ -145,7 +163,7 @@ const embResponse = await openai.embeddings.create({
     });
     const queryEmbedding = embResponse.data[0].embedding;
 
-    const { data, error } = await supabase.rpc("match_lesson_chunks", {
+    const { data, error } = await supabase.rpc("match_teachable_chunks", {
       query_embedding: queryEmbedding,
       match_threshold: 0.50,
       match_count: limit,
@@ -154,7 +172,7 @@ const embResponse = await openai.embeddings.create({
 
 if (error) {
       console.error("═══════════════════════════════════════");
-      console.error("❌ match_lesson_chunks RPC FAILED!");
+      console.error("❌ match_teachable_chunks RPC FAILED!");
       console.error("   Error:", error.message);
       console.error("   Code:", error.code);
       console.error("   Hint:", error.hint);
@@ -165,10 +183,14 @@ if (error) {
 
     console.log(`🔍 Semantic search: ${(data || []).length} results (model: text-embedding-3-small)`);
 
+    // MIGRATED: RPC returns teachable_lecture_id + lecture_name + course_id (external bigint).
+    // Add legacy aliases (lesson_id, lesson_title) so downstream code works unchanged.
     return (data || []).map((chunk) => ({
       ...chunk,
-      chunk_title: chunk.lesson_title
-        ? `${chunk.lesson_title}${
+      lesson_id: chunk.teachable_lecture_id,
+      lesson_title: chunk.lecture_name || "",
+      chunk_title: chunk.lecture_name
+        ? `${chunk.lecture_name}${
             chunk.timestamp_start
               ? " [⏱️ " + chunk.timestamp_start + "]"
               : ""
@@ -278,30 +300,33 @@ const searchTerms = prepareSearchTerms(rawTerms);
         if (searchTerms.length > 0) {
           let allFoundCourses = [];
           
-          // Pass 1: Title-only search (highest relevance)
+          // Pass 1: Title-only search (MIGRATED: 'title' → 'name')
           const titleFilters = searchTerms
-            .flatMap(t => [`title.ilike.%${t}%`])
+            .flatMap(t => [`name.ilike.%${t}%`])
             .join(",");
           
+          // MIGRATED: currentCourseId is teachable_course_id (external)
           let titleQuery = supabase
-            .from("courses")
-            .select("id, title, link, subtitle, description")
+            .from("teachable_courses")
+            .select(COURSE_SELECT_COLS)
             .or(titleFilters)
             .limit(10);
-          if (currentCourseId) titleQuery = titleQuery.neq("id", currentCourseId);
+          if (currentCourseId) titleQuery = titleQuery.neq("teachable_course_id", currentCourseId);
           
-          const { data: titleCourses, error: titleErr } = await titleQuery;
-          if (!titleErr && titleCourses && titleCourses.length > 0) {
+          const { data: titleCoursesRaw, error: titleErr } = await titleQuery;
+          if (!titleErr && titleCoursesRaw && titleCoursesRaw.length > 0) {
+            // Normalize to legacy shape (title, subtitle, link aliases)
+            const titleCourses = normalizeCourses(titleCoursesRaw);
             console.log(`   📊 Strategy 1 Pass 1 (title): ${titleCourses.length} courses`);
             titleCourses.forEach((c, i) => console.log(`      ${i+1}. "${c.title}"`));
             allFoundCourses = [...titleCourses];
           }
 
-          // Pass 2: Broader search
+          // Pass 2: Broader search (MIGRATED: 'subtitle' → 'heading')
           if (allFoundCourses.length < 3) {
             const broadFilters = searchTerms
               .flatMap(t => [
-                `subtitle.ilike.%${t}%`, 
+                `heading.ilike.%${t}%`, 
                 `keywords.ilike.%${t}%`, 
                 `domain.ilike.%${t}%`,
                 `description.ilike.%${t}%`
@@ -309,14 +334,15 @@ const searchTerms = prepareSearchTerms(rawTerms);
               .join(",");
 
             let broadQuery = supabase
-              .from("courses")
-              .select("id, title, link, subtitle, description")
+              .from("teachable_courses")
+              .select(COURSE_SELECT_COLS)
               .or(broadFilters)
               .limit(10);
-            if (currentCourseId) broadQuery = broadQuery.neq("id", currentCourseId);
+            if (currentCourseId) broadQuery = broadQuery.neq("teachable_course_id", currentCourseId);
 
-            const { data: broadCourses, error: broadErr } = await broadQuery;
-            if (!broadErr && broadCourses && broadCourses.length > 0) {
+            const { data: broadCoursesRaw, error: broadErr } = await broadQuery;
+            if (!broadErr && broadCoursesRaw && broadCoursesRaw.length > 0) {
+              const broadCourses = normalizeCourses(broadCoursesRaw);
               const existingIds = new Set(allFoundCourses.map(c => c.id));
               for (const bc of broadCourses) {
                 if (!existingIds.has(bc.id)) {
@@ -372,19 +398,20 @@ const searchTerms = prepareSearchTerms(rawTerms);
               // Get lessons for best course
               let courseLessons = [];
               try {
+                // MIGRATED: teachable_lectures.course_id → teachable_courses.teachable_course_id
                 const { data: lessons } = await supabase
-                  .from("lessons")
-                  .select("id, title")
-                  .eq("course_id", bestCourse.id)
+                  .from("teachable_lectures")
+                  .select("id, teachable_lecture_id, course_id, name, position")
+                  .eq("course_id", bestCourse.teachable_course_id)
                   .limit(5);
                 if (lessons && lessons.length > 0) {
                   courseLessons = lessons
                     .filter(l => {
-                      const lNorm = normalizeArabic((l.title || '').toLowerCase());
+                      const lNorm = normalizeArabic((l.name || '').toLowerCase());
                       return searchTerms.some(t => lNorm.includes(normalizeArabic(t.toLowerCase())));
                     })
                     .slice(0, 3)
-                    .map(l => ({ title: l.title, timestamp: null }));
+                    .map(l => ({ title: l.name, timestamp: null }));
                 }
               } catch (lessonErr) {}
 
@@ -423,7 +450,7 @@ const embResponse = await openai.embeddings.create({
         });
         const queryEmbedding = embResponse.data[0].embedding;
 
-        const { data: allChunks, error } = await supabase.rpc("match_lesson_chunks", {
+        const { data: allChunks, error } = await supabase.rpc("match_teachable_chunks", {
           query_embedding: queryEmbedding,
           match_threshold: 0.55,
           match_count: 15,
@@ -461,42 +488,47 @@ const embResponse = await openai.embeddings.create({
           }
 
           if (bestGroup && bestScore > 0.55) {
+            // MIGRATED: bestGroup.courseId is teachable_course_id (bigint) from RPC
             const { data: courseData } = await supabase
-              .from("courses")
-              .select("id, title, link")
-              .eq("id", bestGroup.courseId)
+              .from("teachable_courses")
+              .select("id, teachable_course_id, name")
+              .eq("teachable_course_id", bestGroup.courseId)
               .single();
 
             if (courseData) {
-              const lessonIds = [...new Set(bestGroup.chunks.map(c => c.lesson_id).filter(Boolean))];
+              // RPC returns teachable_lecture_id (not lesson_id)
+              const lessonIds = [...new Set(bestGroup.chunks.map(c => c.teachable_lecture_id).filter(Boolean))];
               let lessonDetails = [];
 
               if (lessonIds.length > 0) {
                 const { data: lessons } = await supabase
-                  .from("lessons")
-                  .select("id, title")
-                  .in("id", lessonIds);
-                const lessonMap = new Map((lessons || []).map(l => [l.id, l.title]));
+                  .from("teachable_lectures")
+                  .select("id, teachable_lecture_id, course_id, name")
+                  .in("teachable_lecture_id", lessonIds);
+                const lessonMap = new Map((lessons || []).map(l => [l.teachable_lecture_id, l.name]));
 
                 const seenLessons = new Set();
                 for (const chunk of bestGroup.chunks) {
-                  if (!chunk.lesson_id || seenLessons.has(chunk.lesson_id)) continue;
-                  seenLessons.add(chunk.lesson_id);
+                  const lid = chunk.teachable_lecture_id;
+                  if (!lid || seenLessons.has(lid)) continue;
+                  seenLessons.add(lid);
                   lessonDetails.push({
-                    title: lessonMap.get(chunk.lesson_id) || chunk.lesson_title || "",
+                    title: lessonMap.get(lid) || chunk.lecture_name || "",
                     timestamp: chunk.timestamp_start || null,
                   });
                 }
               }
 
               result = {
-                courseTitle: courseData.title,
-                courseLink: courseData.link || "https://easyt.online/courses",
+                courseTitle: courseData.name,
+                courseLink: courseData.teachable_course_id
+                  ? `https://easyt.online/courses/${courseData.teachable_course_id}`
+                  : "https://easyt.online/courses",
                 lessons: lessonDetails.slice(0, 3),
                 source: "chunks",
                 score: bestScore,
               };
-              console.log(`   ✅ Strategy 2 SUCCESS: "${courseData.title}" (score=${bestScore.toFixed(2)})`);
+              console.log(`   ✅ Strategy 2 SUCCESS: "${courseData.name}" (score=${bestScore.toFixed(2)})`);
             }
           } else {
             console.log(`   ❌ Strategy 2: No course scored high enough (best=${bestScore.toFixed(2)})`);
@@ -694,32 +726,34 @@ app.get("/api/debug-guide", adminAuth, async (req, res) => {
   try {
     // Step 1: Find course
     const courseMatch = await findCourseByName(courseName);
-    result.step1_course = courseMatch ? { id: courseMatch.id, title: courseMatch.title } : "NOT FOUND";
+    result.step1_course = courseMatch ? { id: courseMatch.id, teachable_course_id: courseMatch.teachable_course_id, title: courseMatch.title } : "NOT FOUND";
 
     if (courseMatch) {
       // Step 2: Get all lessons
+      // MIGRATED: teachable_lectures.course_id → teachable_courses.teachable_course_id
       const { data: lessons } = await supabase
-        .from("lessons")
-        .select("id, title, lesson_order")
-        .eq("course_id", courseMatch.id)
-        .order("lesson_order", { ascending: true });
+        .from("teachable_lectures")
+        .select(LECTURE_SELECT_COLS)
+        .eq("course_id", courseMatch.teachable_course_id)
+        .order("position", { ascending: true });
       result.step2_lessons = (lessons || []).map(l => ({
         id: l.id,
-        title: l.title,
-        order: l.lesson_order
+        title: l.name,
+        order: l.position
       }));
 
-      // Step 3: Find lesson by title
-      const lessonMatch = await findLessonByTitle(lessonTitle, courseMatch.id);
+      // Step 3: Find lesson by title (pass teachable_course_id)
+      const lessonMatch = await findLessonByTitle(lessonTitle, courseMatch.teachable_course_id);
       result.step3_lessonMatch = lessonMatch ? {
         id: lessonMatch.id,
-        title: lessonMatch.title,
-        order: lessonMatch.lesson_order
+        title: lessonMatch.name,
+        order: lessonMatch.position
       } : "NOT FOUND";
 
       // Step 4: Get chunks
       if (lessonMatch) {
-        const chunks = await getAllLessonChunks(lessonMatch.id, 5);
+        // chunks are keyed by teachable_lecture_id (bigint)
+        const chunks = await getAllLessonChunks(lessonMatch.teachable_lecture_id, 5);
         result.step4_chunks = chunks.length;
         if (chunks.length > 0) {
           result.step5_sampleChunk = chunks[0].content?.substring(0, 200) || "";
@@ -736,311 +770,15 @@ app.get("/api/debug-guide", adminAuth, async (req, res) => {
 // ════════════════════════════════════════════════════════════
 // ═══ Upload Panel API Endpoints ═══
 // ════════════════════════════════════════════════════════════
+// NOTE: The upload/admin endpoints below were originally registered in this
+// file, but identical routes are also registered in server.js. Because
+// server.js registers them BEFORE registerGuideRoutes() is called, the
+// server.js versions win, making the ones here dead code. They have been
+// removed to avoid confusion. The authoritative implementations live in
+// server.js (routes: /api/upload/courses, /api/upload/courses/:courseId/lessons,
+// /api/upload/courses/:courseId/chunks-count, /api/admin/lessons/:lessonId,
+// /api/admin/lessons/:lessonId/chunks, /api/admin/process-lesson).
 
-/* ═══════════════════════════════════
-   Get all courses (for upload panel)
-   ═══════════════════════════════════ */
-app.get("/api/upload/courses", adminAuth, async (req, res) => {
-  try {
-    const { data: courses, error } = await supabase
-      .from("courses")
-      .select("id, title")
-      .order("title", { ascending: true });
-
-    if (error) throw error;
-
-    res.json({
-      success: true,
-      courses: (courses || []).map(c => ({ id: c.id, name: c.title }))
-    });
-  } catch (e) {
-    console.error("❌ GET /api/upload/courses error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Get lessons for a course (with chunk counts)
-   ═══════════════════════════════════ */
-app.get("/api/upload/courses/:courseId/lessons", adminAuth, async (req, res) => {
-  const { courseId } = req.params;
-  try {
-    const { data: lessons, error } = await supabase
-      .from("lessons")
-      .select("id, title, lesson_order")
-      .eq("course_id", courseId)
-      .order("lesson_order", { ascending: true });
-
-    if (error) throw error;
-
-    // Get chunk counts for each lesson
-    const lessonsWithCounts = [];
-    for (const lesson of (lessons || [])) {
-      const { count } = await supabase
-        .from("chunks")
-        .select("id", { count: "exact", head: true })
-        .eq("lesson_id", lesson.id);
-
-      lessonsWithCounts.push({
-        id: lesson.id,
-        title: lesson.title,
-        lesson_order: lesson.lesson_order,
-        chunk_count: count || 0
-      });
-    }
-
-    res.json({ success: true, lessons: lessonsWithCounts });
-  } catch (e) {
-    console.error("❌ GET lessons error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Get total chunks count for a course
-   ═══════════════════════════════════ */
-app.get("/api/upload/courses/:courseId/chunks-count", adminAuth, async (req, res) => {
-  const { courseId } = req.params;
-  try {
-    const { data: lessons } = await supabase
-      .from("lessons")
-      .select("id")
-      .eq("course_id", courseId);
-
-    if (!lessons || lessons.length === 0) {
-      return res.json({ success: true, count: 0 });
-    }
-
-    const lessonIds = lessons.map(l => l.id);
-
-    const { count } = await supabase
-      .from("chunks")
-      .select("id", { count: "exact", head: true })
-      .in("lesson_id", lessonIds);
-
-    res.json({ success: true, count: count || 0 });
-  } catch (e) {
-    console.error("❌ GET chunks-count error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Rename a lesson (PATCH)
-   ═══════════════════════════════════ */
-app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
-  const { lessonId } = req.params;
-  const { title } = req.body;
-
-  if (!title || !title.trim()) {
-    return res.status(400).json({ success: false, error: "Title is required" });
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from("lessons")
-      .update({ title: title.trim() })
-      .eq("id", lessonId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    console.log(`✏️ Renamed lesson ${lessonId} to "${title.trim()}"`);
-    res.json({ success: true, lesson: data });
-  } catch (e) {
-    console.error("❌ PATCH lesson error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Delete a lesson record (DELETE)
-   ═══════════════════════════════════ */
-app.delete("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
-  const { lessonId } = req.params;
-
-  try {
-    // First delete all chunks for this lesson
-    const { error: chunksError, count: chunksDeleted } = await supabase
-      .from("chunks")
-      .delete()
-      .eq("lesson_id", lessonId);
-
-    if (chunksError) {
-      console.error("⚠️ Error deleting chunks:", chunksError.message);
-    }
-
-    // Then delete the lesson itself
-    const { error: lessonError } = await supabase
-      .from("lessons")
-      .delete()
-      .eq("id", lessonId);
-
-    if (lessonError) throw lessonError;
-
-    console.log(`🗑️ Deleted lesson ${lessonId} (+ ${chunksDeleted || 0} chunks)`);
-    res.json({
-      success: true,
-      message: "Lesson deleted",
-      chunksDeleted: chunksDeleted || 0
-    });
-  } catch (e) {
-    console.error("❌ DELETE lesson error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Delete chunks for a lesson
-   ═══════════════════════════════════ */
-app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) => {
-  const { lessonId } = req.params;
-
-  try {
-    // Count first
-    const { count: beforeCount } = await supabase
-      .from("chunks")
-      .select("id", { count: "exact", head: true })
-      .eq("lesson_id", lessonId);
-
-    // Delete
-    const { error } = await supabase
-      .from("chunks")
-      .delete()
-      .eq("lesson_id", lessonId);
-
-    if (error) throw error;
-
-    console.log(`🗑️ Deleted ${beforeCount || 0} chunks for lesson ${lessonId}`);
-    res.json({ success: true, deleted: beforeCount || 0 });
-  } catch (e) {
-    console.error("❌ DELETE chunks error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   Process lesson (upload transcript → chunks)
-   - If lessonId provided: delete old chunks, reuse lesson
-   - If no lessonId: create new lesson
-   ═══════════════════════════════════ */
-app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
-  const { courseId, lessonName, transcript, lessonId } = req.body;
-
-  if (!courseId || !lessonName || !transcript) {
-    return res.status(400).json({
-      success: false,
-      error: "courseId, lessonName, and transcript are required"
-    });
-  }
-
-  try {
-    let targetLessonId = lessonId;
-
-    // ═══ 1) If lessonId provided, delete old chunks ═══
-    if (targetLessonId) {
-      console.log(`🔄 Re-uploading lesson ${targetLessonId}: "${lessonName}"`);
-
-      const { error: delErr } = await supabase
-        .from("chunks")
-        .delete()
-        .eq("lesson_id", targetLessonId);
-
-      if (delErr) {
-        console.error("⚠️ Error deleting old chunks:", delErr.message);
-      }
-
-      // Update lesson name if changed
-      await supabase
-        .from("lessons")
-        .update({ title: lessonName.trim() })
-        .eq("id", targetLessonId);
-
-    } else {
-      // ═══ 2) Create new lesson ═══
-      // Find current max lesson_order for this course
-      const { data: existingLessons } = await supabase
-        .from("lessons")
-        .select("lesson_order")
-        .eq("course_id", courseId)
-        .order("lesson_order", { ascending: false })
-        .limit(1);
-
-      const nextOrder = (existingLessons && existingLessons.length > 0)
-        ? (existingLessons[0].lesson_order || 0) + 1
-        : 1;
-
-      const { data: newLesson, error: createErr } = await supabase
-        .from("lessons")
-        .insert({
-          course_id: courseId,
-          title: lessonName.trim(),
-          lesson_order: nextOrder
-        })
-        .select()
-        .single();
-
-      if (createErr) throw createErr;
-
-      targetLessonId = newLesson.id;
-      console.log(`📝 Created new lesson ${targetLessonId}: "${lessonName}" (order: ${nextOrder})`);
-    }
-
-    // ═══ 3) Parse transcript into chunks ═══
-    const chunks = parseAndChunkTranscript(transcript, 500);
-
-    if (chunks.length === 0) {
-      return res.json({
-        success: true,
-        lessonId: targetLessonId,
-        chunksCreated: 0,
-        warning: "No valid segments found in transcript"
-      });
-    }
-
-    console.log(`📦 Parsed ${chunks.length} chunks for "${lessonName}"`);
-
-    // ═══ 4) Insert chunks into database ═══
-    const chunkRecords = chunks.map((chunk, idx) => ({
-      lesson_id: targetLessonId,
-      content: chunk.content,
-      start_time: chunk.startTime,
-      end_time: chunk.endTime,
-      chunk_order: idx + 1
-    }));
-
-    // Insert in batches of 50
-    let totalInserted = 0;
-    const BATCH_SIZE = 50;
-
-    for (let i = 0; i < chunkRecords.length; i += BATCH_SIZE) {
-      const batch = chunkRecords.slice(i, i + BATCH_SIZE);
-      const { error: insertErr } = await supabase
-        .from("chunks")
-        .insert(batch);
-
-      if (insertErr) {
-        console.error(`❌ Insert batch error (${i}-${i + batch.length}):`, insertErr.message);
-        throw insertErr;
-      }
-      totalInserted += batch.length;
-    }
-
-    console.log(`✅ Inserted ${totalInserted} chunks for "${lessonName}"`);
-
-    res.json({
-      success: true,
-      lessonId: targetLessonId,
-      chunksCreated: totalInserted,
-      lessonName: lessonName.trim()
-    });
-
-  } catch (e) {
-    console.error("❌ process-lesson error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
 
 // ═══════════════════════════════════════════════════════
 // 🆕 ZIKO WIDGET ENDPOINTS
@@ -1190,10 +928,18 @@ app.post("/api/guide/tool", limiter, async (req, res) => {
     try {
       const courseMatch = await findCourseByName(courseName);
       if (!courseMatch) return res.json({ exists: false });
-      const { data: lessons } = await supabase.from("lessons").select("id").eq("course_id", courseMatch.id);
+      // MIGRATED: teachable_lectures.course_id references teachable_courses.teachable_course_id
+      const { data: lessons } = await supabase
+        .from("teachable_lectures")
+        .select("teachable_lecture_id")
+        .eq("course_id", courseMatch.teachable_course_id);
       if (!lessons || lessons.length === 0) return res.json({ exists: false });
-      const lessonIds = lessons.map(l => l.id);
-      const { count } = await supabase.from("chunks").select("id", { count: "exact", head: true }).in("lesson_id", lessonIds);
+      const lectureIds = lessons.map(l => l.teachable_lecture_id).filter(Boolean);
+      if (lectureIds.length === 0) return res.json({ exists: false });
+      const { count } = await supabase
+        .from("chunks")
+        .select("id", { count: "exact", head: true })
+        .in("teachable_lecture_id", lectureIds);
       return res.json({ exists: (count || 0) > 0, course_title: courseMatch.title, chunks_count: count || 0 });
     } catch (e) {
       console.error("❌ check-course error:", e.message);
@@ -1224,10 +970,11 @@ app.post("/api/guide/tool", limiter, async (req, res) => {
 async function findCourseByName(courseName) {
   if (!supabase || !courseName) return null;
   try {
+    // MIGRATED: teachable_courses uses 'name' (not 'title')
     const { data: matches } = await supabase
-      .from("courses")
-      .select("id, title")
-      .ilike("title", `%${courseName}%`)
+      .from("teachable_courses")
+      .select(COURSE_SELECT_COLS)
+      .ilike("name", `%${courseName}%`)
       .limit(5);
 
     if (matches && matches.length > 0) {
@@ -1237,20 +984,21 @@ async function findCourseByName(courseName) {
       for (const m of matches) {
         const sim = similarityRatio(
           normName,
-          normalizeArabic((m.title || "").toLowerCase())
+          normalizeArabic((m.name || "").toLowerCase())
         );
         if (sim > bestSim) {
           bestSim = sim;
           best = m;
         }
       }
-      return best;
+      // Return normalized (adds title/image/link aliases + teachable_course_id preserved)
+      return normalizeCourse(best);
     }
 
     // Fuzzy fallback
     const { data: all } = await supabase
-      .from("courses")
-      .select("id, title")
+      .from("teachable_courses")
+      .select(COURSE_SELECT_COLS)
       .limit(500);
     if (!all) return null;
 
@@ -1260,14 +1008,14 @@ async function findCourseByName(courseName) {
     for (const course of all) {
       const sim = similarityRatio(
         normName,
-        normalizeArabic((course.title || "").toLowerCase())
+        normalizeArabic((course.name || "").toLowerCase())
       );
       if (sim > bestScore && sim >= 50) {
         bestScore = sim;
         bestMatch = course;
       }
     }
-    return bestMatch;
+    return bestMatch ? normalizeCourse(bestMatch) : null;
   } catch (e) {
     console.error("findCourseByName error:", e.message);
     return null;
@@ -1275,14 +1023,16 @@ async function findCourseByName(courseName) {
 }
 
 // ─── findLessonByTitle ───
+// NOTE: courseId parameter MUST be teachable_course_id (bigint external),
+// because teachable_lectures.course_id references teachable_courses.teachable_course_id
 async function findLessonByTitle(lessonTitle, courseId = null) {
   if (!supabase || !lessonTitle) return null;
   try {
-    // Step 1: Direct ilike
+    // Step 1: Direct ilike (MIGRATED: 'title' → 'name')
     let query = supabase
-      .from("lessons")
-      .select("id, title, course_id, lesson_order")
-      .ilike("title", `%${lessonTitle}%`)
+      .from("teachable_lectures")
+      .select(LECTURE_SELECT_COLS)
+      .ilike("name", `%${lessonTitle}%`)
       .limit(10);
     if (courseId) query = query.eq("course_id", courseId);
     let { data } = await query;
@@ -1293,11 +1043,11 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
       if (words.length > 0) {
         const partialFilter = words
           .slice(0, 4)
-          .map((w) => `title.ilike.%${w}%`)
+          .map((w) => `name.ilike.%${w}%`)
           .join(",");
         let q2 = supabase
-          .from("lessons")
-          .select("id, title, course_id, lesson_order")
+          .from("teachable_lectures")
+          .select(LECTURE_SELECT_COLS)
           .or(partialFilter)
           .limit(10);
         if (courseId) q2 = q2.eq("course_id", courseId);
@@ -1309,22 +1059,22 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
     // Step 3: Get ALL lessons for course as fallback
     if ((!data || data.length === 0) && courseId) {
       const { data: allLessons } = await supabase
-        .from("lessons")
-        .select("id, title, course_id, lesson_order")
+        .from("teachable_lectures")
+        .select(LECTURE_SELECT_COLS)
         .eq("course_id", courseId)
-        .order("lesson_order", { ascending: true });
+        .order("position", { ascending: true });
       data = allLessons;
     }
 
     if (!data || data.length === 0) return null;
 
-    // Smart matching
+    // Smart matching (uses .name from teachable_lectures)
     const normTitle = normalizeArabic(lessonTitle.toLowerCase().trim());
     let best = null;
     let bestScore = 0;
 
     for (const d of data) {
-      const dbTitle = (d.title || "").toLowerCase().trim();
+      const dbTitle = (d.name || "").toLowerCase().trim();
       const dbNorm = normalizeArabic(dbTitle);
       let score = 0;
 
@@ -1351,8 +1101,14 @@ async function findLessonByTitle(lessonTitle, courseId = null) {
       }
     }
 
-    console.log(`🎓 findLessonByTitle: "${lessonTitle}" → "${best ? best.title : 'NONE'}" (score=${bestScore}%)`);
-    return bestScore >= 30 ? best : data.length > 0 ? data[0] : null;
+    const chosen = bestScore >= 30 ? best : (data.length > 0 ? data[0] : null);
+    if (chosen) {
+      console.log(`🎓 findLessonByTitle: "${lessonTitle}" → "${chosen.name}" (score=${bestScore}%)`);
+      // Return normalized (adds title/lesson_order aliases)
+      return normalizeLecture(chosen);
+    }
+    console.log(`🎓 findLessonByTitle: "${lessonTitle}" → NONE`);
+    return null;
   } catch (e) {
     console.error("findLessonByTitle error:", e.message);
     return null;
@@ -1734,36 +1490,39 @@ let currentLessonContext = "";
           console.log("   message:", message.substring(0, 80));
           console.log("═══════════════════════════════════════");
 
-          // Step 1: Find Course
+          // Step 1: Find Course (returns normalized object with teachable_course_id + title alias)
           const courseMatch = await findCourseByName(course_name || lecture_title);
-let courseId = courseMatch ? courseMatch.id : null;
+          // MIGRATED: courseId passed to child functions MUST be teachable_course_id (external bigint)
+          // because teachable_lectures.course_id and RPC filter_course_id both use the external value.
+          let courseId = courseMatch ? courseMatch.teachable_course_id : null;
           console.log(`📚 Guide: course="${course_name}" → ${courseId ? courseMatch.title : "NOT FOUND"}`);
 
-          // Step 1.5: Get ALL lessons (sorted by lesson_order)
+          // Step 1.5: Get ALL lessons (sorted by position)
           if (courseId) {
             const { data: courseLessons } = await supabase
-              .from("lessons")
-              .select("id, title, lesson_order")
+              .from("teachable_lectures")
+              .select(LECTURE_SELECT_COLS)
               .eq("course_id", courseId)
-              .order("lesson_order", { ascending: true });
-            allCourseLessons = courseLessons || [];
+              .order("position", { ascending: true });
+            // Normalize to legacy shape (title, lesson_order aliases)
+            allCourseLessons = normalizeLectures(courseLessons || []);
             console.log(`📋 Found ${allCourseLessons.length} lessons in course`);
             allCourseLessons.forEach((l, i) => {
-              console.log(`   ${i + 1}. [order=${l.lesson_order}] "${l.title}"`);
+              console.log(`   ${i + 1}. [order=${l.position}] "${l.name}"`);
             });
           }
 
           // Step 2: Find Current Lesson
           if (lecture_title) {
             lessonMatch = await findLessonByTitle(lecture_title, courseId);
-            console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id})` : "❌ NOT FOUND"}`);
+            console.log(`📖 Guide: lesson="${lecture_title}" → ${lessonMatch ? `"${lessonMatch.title}" (id=${lessonMatch.id}, tl_id=${lessonMatch.teachable_lecture_id})` : "❌ NOT FOUND"}`);
 
             // Extra fallback using all course lessons
             if (!lessonMatch && allCourseLessons.length > 0) {
               const normSearch = normalizeArabic(lecture_title.toLowerCase());
               let bestL = null, bestS = 0;
               for (const cl of allCourseLessons) {
-                const normDb = normalizeArabic((cl.title || "").toLowerCase());
+                const normDb = normalizeArabic((cl.name || "").toLowerCase());
                 let s = 0;
                 if (normDb.includes(normSearch) || normSearch.includes(normDb)) s = 90;
                 else {
@@ -1774,15 +1533,16 @@ let courseId = courseMatch ? courseMatch.id : null;
                 if (s > bestS) { bestS = s; bestL = cl; }
               }
               if (bestL && bestS >= 25) {
-                lessonMatch = bestL;
-                console.log(`📖 Fallback match → "${bestL.title}" (score=${bestS}%)`);
+                lessonMatch = normalizeLecture(bestL);
+                console.log(`📖 Fallback match → "${bestL.name}" (score=${bestS}%)`);
               }
             }
           }
 
           // Step 3: Get ALL chunks of current lesson
           if (lessonMatch) {
-            const currentChunks = await getAllLessonChunks(lessonMatch.id, 50);
+            // MIGRATED: chunks keyed by teachable_lecture_id (bigint external)
+            const currentChunks = await getAllLessonChunks(lessonMatch.teachable_lecture_id, 50);
             ragStats.currentLesson = currentChunks.length;
             if (currentChunks.length > 0) {
               currentLessonContext = currentChunks.map((c) => {
@@ -1795,9 +1555,13 @@ let courseId = courseMatch ? courseMatch.id : null;
           }
 
 // Step 4: Search OTHER lessons + OTHER COURSES (🆕 FIX #55)
-          const currentLessonId = lessonMatch ? lessonMatch.id : null;
+          // MIGRATED: compare against teachable_lecture_id (chunks/RPC use external id).
+          const currentLessonId = lessonMatch ? lessonMatch.teachable_lecture_id : null;
           const otherChunksMap = new Map();
-          const lessonTitleMap = new Map(allCourseLessons.map((l) => [l.id, l.title]));
+          // MIGRATED: map keyed by teachable_lecture_id (external) to match chunk.lesson_id alias
+          const lessonTitleMap = new Map(
+            allCourseLessons.map((l) => [l.teachable_lecture_id, l.name])
+          );
 
           
 const searchQuery = message + (lecture_title ? " " + lecture_title : "");
