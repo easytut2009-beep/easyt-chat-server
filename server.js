@@ -4008,6 +4008,56 @@ app.post("/api/admin/teachable/sync-course-direct/stop", async (req, res) => {
 });
 
 /**
+ * DIAGNOSTIC - Test API pagination with different params
+ * Tries different sort orders and returns unique user counts
+ */
+app.get("/api/admin/teachable/diagnose-course", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const courseId = req.query.course_id;
+    if (!courseId) return res.status(400).json({ error: "course_id required" });
+
+    const results = {};
+    const testCases = [
+      { name: "default", url: `?per=100&page=1` },
+      { name: "default_page50", url: `?per=100&page=50` },
+      { name: "default_page99", url: `?per=100&page=99` },
+      { name: "sort_enrolled_asc", url: `?per=100&page=1&sort=enrolled_at&order=asc` },
+      { name: "sort_enrolled_desc", url: `?per=100&page=1&sort=enrolled_at&order=desc` },
+      { name: "sort_user_asc", url: `?per=100&page=1&sort=user_id&order=asc` },
+    ];
+
+    for (const test of testCases) {
+      try {
+        const data = await teachableFetchWithRetry(
+          `/courses/${courseId}/enrollments${test.url}`
+        );
+        const enrollments = data.enrollments || [];
+        const userIds = enrollments.map(e => e.user_id || e.user?.id).filter(Boolean);
+        const unique = new Set(userIds);
+
+        results[test.name] = {
+          count: enrollments.length,
+          unique_users: unique.size,
+          first_user_id: userIds[0],
+          last_user_id: userIds[userIds.length - 1],
+          total: data.meta?.total,
+          pages: data.meta?.number_of_pages,
+          meta: data.meta
+        };
+      } catch (err) {
+        results[test.name] = { error: err.message };
+      }
+    }
+
+    res.json({ success: true, course_id: courseId, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Direct course sync - pulls enrollments via pagination
  * Handles 10K limit by using filters if needed
  */
@@ -4131,9 +4181,9 @@ async function runCourseDirectSync(courseIds) {
             break;
           }
 
-          // Stop if reached page limit (API's 10K ceiling)
-          if (page >= 100) {
-            console.log(`[CourseDirect] ⚠️  Course ${courseId} hit 10K limit at page 100`);
+          // Safety limit: 500 pages = 50,000 enrollments max per course
+          if (page >= 500) {
+            console.log(`[CourseDirect] ⚠️  Course ${courseId} hit safety limit at page 500`);
             keepGoing = false;
             break;
           }
