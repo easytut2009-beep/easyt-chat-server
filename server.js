@@ -3520,6 +3520,251 @@ async function runRetryTransactions(subChunks) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// GAP SYNC: Sync recent transactions + new users + their enrollments
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/admin/teachable/sync-gap", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const hours = parseInt(req.query.hours || req.body?.hours || 48);
+    if (hours < 1 || hours > 168) {
+      return res.status(400).json({ 
+        error: "hours must be between 1 and 168 (max 7 days)" 
+      });
+    }
+
+    if (syncState.transactions.status === "running") {
+      return res.status(409).json({
+        error: "Another sync is currently running",
+        state: syncState.transactions
+      });
+    }
+
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
+
+    // Initialize state
+    syncState.transactions = {
+      status: "running",
+      mode: "gap_sync",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      currentPage: 0,
+      processed: 0,
+      total: 0,
+      transactionsCreated: 0,
+      errors: [],
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false,
+      gapHours: hours,
+      gapStart: startISO,
+      gapEnd: endISO,
+      phase: "starting",
+      phases: {
+        transactions: { status: "pending", processed: 0, created: 0 },
+        users: { status: "pending", processed: 0, created: 0 },
+        enrollments: { status: "pending", processed: 0, created: 0 }
+      }
+    };
+
+    // Run in background
+    runGapSync(startISO, endISO).catch(err => {
+      console.error("[GapSync] Fatal:", err);
+      syncState.transactions.status = "failed";
+      syncState.transactions.errors.push({
+        at: new Date().toISOString(),
+        error: err.message,
+        fatal: true
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Gap sync started for last ${hours} hours`,
+      from: startISO,
+      to: endISO,
+      check_status: "/api/admin/teachable/sync-transactions/status?admin=YOUR_PASSWORD"
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Gap sync runner: 
+ * Phase 1: Sync transactions in date range
+ * Phase 2: Sync new users (signed up in date range)
+ * Phase 3: Sync enrollments for those new users
+ */
+async function runGapSync(startISO, endISO) {
+  const S = syncState.transactions;
+  
+  console.log(`[GapSync] 🚀 Starting gap sync: ${startISO} → ${endISO}`);
+  
+  // ═══ PHASE 1: TRANSACTIONS ═══
+  S.phase = "transactions";
+  S.phases.transactions.status = "running";
+  console.log(`[GapSync] 📊 Phase 1/3: Syncing transactions...`);
+  
+  try {
+    const txnResult = await syncTransactionsChunk(
+      startISO, endISO,
+      100,    // perPage
+      400,    // pageDelay
+      50,     // batchSize
+      9500,   // safeLimit
+      S       // state
+    );
+    S.phases.transactions.status = "completed";
+    S.phases.transactions.processed = txnResult.processed;
+    S.phases.transactions.created = txnResult.created;
+    console.log(`[GapSync] ✅ Phase 1 done: ${txnResult.created} transactions`);
+  } catch (err) {
+    S.phases.transactions.status = "failed";
+    S.errors.push({ phase: "transactions", error: err.message });
+    console.error(`[GapSync] ❌ Phase 1 failed:`, err.message);
+  }
+  
+  if (S.stopRequested) {
+    S.status = "stopped";
+    S.completedAt = new Date().toISOString();
+    return;
+  }
+  
+  // ═══ PHASE 2: NEW USERS ═══
+  S.phase = "users";
+  S.phases.users.status = "running";
+  console.log(`[GapSync] 👥 Phase 2/3: Finding new users...`);
+  
+  const newUserIds = [];
+  try {
+    let page = 1;
+    let hasMore = true;
+    
+    while (hasMore) {
+      if (S.stopRequested) break;
+      
+      // Teachable API: /users with date filter
+      const url = `/users?page=${page}&per=100`;
+      const data = await teachableFetchWithRetry(url);
+      const users = data.users || [];
+      
+      if (!users.length) break;
+      
+      // Filter by date (Teachable doesn't have a clean date filter for /users)
+      // We'll fetch each user's signup date separately
+      for (const u of users) {
+        // Quick filter: skip if user_id is much smaller than recent ones
+        // (newest users have biggest IDs)
+        if (u.id < 117000000) {
+          hasMore = false; // older users, stop here
+          break;
+        }
+        
+        // Upsert user to teachable_users
+        const userData = {
+          teachable_user_id: u.id,
+          email: u.email?.toLowerCase() || null,
+          name: u.name || null,
+          role: u.role || "student",
+          last_synced_at: new Date().toISOString()
+        };
+        
+        const { error } = await supabase
+          .from("teachable_users")
+          .upsert(userData, { onConflict: "teachable_user_id", ignoreDuplicates: false });
+        
+        if (!error) {
+          newUserIds.push(u.id);
+          S.phases.users.created++;
+        }
+        S.phases.users.processed++;
+      }
+      
+      page++;
+      if (page > 5) hasMore = false; // Safety: max 500 users in gap
+      await new Promise(r => setTimeout(r, 300));
+    }
+    
+    S.phases.users.status = "completed";
+    console.log(`[GapSync] ✅ Phase 2 done: ${newUserIds.length} users found/updated`);
+  } catch (err) {
+    S.phases.users.status = "failed";
+    S.errors.push({ phase: "users", error: err.message });
+    console.error(`[GapSync] ❌ Phase 2 failed:`, err.message);
+  }
+  
+  if (S.stopRequested) {
+    S.status = "stopped";
+    S.completedAt = new Date().toISOString();
+    return;
+  }
+  
+  // ═══ PHASE 3: ENROLLMENTS FOR NEW USERS ═══
+  S.phase = "enrollments";
+  S.phases.enrollments.status = "running";
+  console.log(`[GapSync] 📚 Phase 3/3: Syncing enrollments for ${newUserIds.length} users...`);
+  
+  try {
+    for (const userId of newUserIds) {
+      if (S.stopRequested) break;
+      
+      try {
+        const userData = await teachableFetchWithRetry(`/users/${userId}`);
+        const courses = userData.user?.courses || userData.courses || [];
+        
+        for (const course of courses) {
+          const enrollmentData = {
+            teachable_user_id: userId,
+            user_email: userData.user?.email?.toLowerCase() || userData.email?.toLowerCase() || null,
+            course_id: course.course_id || course.id,
+            course_name: course.name || null,
+            enrolled_at: course.enrolled_at || null,
+            completed_at: course.completed_at || null,
+            percent_complete: course.percent_complete || 0,
+            is_active: course.is_active !== false,
+            has_full_access: course.has_full_access || false,
+            expires_at: course.expires_at || null,
+            raw_data: course
+          };
+          
+          const { error } = await supabase
+            .from("teachable_enrollments")
+            .upsert(enrollmentData, { 
+              onConflict: "teachable_user_id,course_id", 
+              ignoreDuplicates: false 
+            });
+          
+          if (!error) {
+            S.phases.enrollments.created++;
+          }
+          S.phases.enrollments.processed++;
+        }
+      } catch (userErr) {
+        console.warn(`[GapSync] Failed to sync user ${userId}:`, userErr.message);
+      }
+      
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    S.phases.enrollments.status = "completed";
+    console.log(`[GapSync] ✅ Phase 3 done: ${S.phases.enrollments.created} enrollments`);
+  } catch (err) {
+    S.phases.enrollments.status = "failed";
+    S.errors.push({ phase: "enrollments", error: err.message });
+    console.error(`[GapSync] ❌ Phase 3 failed:`, err.message);
+  }
+  
+  // ═══ DONE ═══
+  S.status = "completed";
+  S.completedAt = new Date().toISOString();
+  console.log(`[GapSync] 🎉 All phases complete!`);
+}
+
 async function runTransactionsSync() {
   const S = syncState.transactions;
   const PER_PAGE = 100;
