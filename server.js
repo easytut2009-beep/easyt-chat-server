@@ -142,10 +142,9 @@ function isBigintLike(v) {
 // Resolve an incoming course identifier to { id, teachable_course_id }.
 // Accepts:
 //   - bigint     → tries teachable_course_id (external) first, then id (internal PK)
-//   - UUID       → bridges through the legacy `courses` table (by title → name)
-//                  since teachable_courses does NOT store the old UUID.
+//   - UUID       → NOT supported (legacy courses table removed). Returns null.
 // Returns null on invalid input or not found.
-// SCHEMA: teachable_courses.id = bigint, .teachable_course_id = bigint (no UUID col).
+// SCHEMA: teachable_courses.id = bigint, .teachable_course_id = bigint.
 async function resolveCourseId(incomingId) {
   if (incomingId == null || incomingId === "") return null;
   try {
@@ -170,29 +169,7 @@ async function resolveCourseId(incomingId) {
       return data || null;
     }
 
-    if (isUuidLike(incomingId)) {
-      // UUID likely refers to the legacy courses.id.
-      // Bridge: courses.id (uuid) -> courses.title -> teachable_courses.name
-      try {
-        const { data: legacy } = await supabase
-          .from("courses")
-          .select("id, title")
-          .eq("id", incomingId)
-          .limit(1)
-          .maybeSingle();
-        if (legacy && legacy.title) {
-          const { data } = await supabase
-            .from("teachable_courses")
-            .select(selectCols)
-            .eq("name", legacy.title)
-            .limit(1)
-            .maybeSingle();
-          return data || null;
-        }
-      } catch (_) { /* legacy table may be gone; fall through */ }
-      return null;
-    }
-
+    // UUIDs are no longer supported after the legacy courses table is dropped.
     return null;
   } catch (e) {
     console.error("resolveCourseId error:", e.message);
@@ -1220,71 +1197,21 @@ app.put("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
 
     // أضف الجديد
     if (courses && courses.length > 0) {
-      // Build a bridge map: legacy UUID (courses.id) -> teachable_course_id (bigint).
-      // We need to keep legacy course_id populated because the column is NOT NULL.
-      const incomingUuids = courses
-        .map(c => c.course_id)
-        .filter(v => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v));
-      const incomingBigints = courses
-        .map(c => c.teachable_course_id)
-        .filter(v => v != null);
-
-      // Fetch name-based bridge: courses(uuid) -> title -> teachable_courses(bigint)
-      let uuidToBigint = new Map();
-      let bigintToUuid = new Map();
-      if (incomingUuids.length > 0) {
-        const { data: legacy } = await supabase
-          .from("courses")
-          .select("id, title")
-          .in("id", incomingUuids);
-        if (legacy && legacy.length > 0) {
-          const titles = legacy.map(l => l.title).filter(Boolean);
-          if (titles.length > 0) {
-            const { data: tc } = await supabase
-              .from("teachable_courses")
-              .select("teachable_course_id, name")
-              .in("name", titles);
-            const titleToBigint = new Map((tc || []).map(r => [r.name, r.teachable_course_id]));
-            legacy.forEach(l => {
-              const big = titleToBigint.get(l.title);
-              if (big != null) uuidToBigint.set(l.id, big);
-            });
-          }
-        }
-      }
-      if (incomingBigints.length > 0) {
-        const { data: tc } = await supabase
-          .from("teachable_courses")
-          .select("teachable_course_id, name")
-          .in("teachable_course_id", incomingBigints);
-        if (tc && tc.length > 0) {
-          const names = tc.map(r => r.name).filter(Boolean);
-          const { data: legacy } = await supabase
-            .from("courses")
-            .select("id, title")
-            .in("title", names);
-          const titleToUuid = new Map((legacy || []).map(l => [l.title, l.id]));
-          tc.forEach(r => {
-            const u = titleToUuid.get(r.name);
-            if (u) bigintToUuid.set(r.teachable_course_id, u);
-          });
-        }
-      }
-
-      const rows = courses.map(c => {
-        const row = {
-          diploma_id: parseInt(diplomaId),
-          course_order: c.course_order || 1,
-        };
-        if (c.course_id && /^[0-9a-f-]{36}$/i.test(c.course_id)) {
-          row.course_id = c.course_id;
-          row.teachable_course_id = uuidToBigint.get(c.course_id) || null;
-        } else if (c.teachable_course_id != null) {
-          row.teachable_course_id = c.teachable_course_id;
-          row.course_id = bigintToUuid.get(c.teachable_course_id) || null;
-        }
-        return row;
-      }).filter(r => r.course_id);  // course_id is NOT NULL in DB
+      // Accept only teachable_course_id (bigint). Legacy UUID course_id is no longer bridged.
+      const rows = courses
+        .map(c => {
+          // Support both shapes from frontend: { teachable_course_id } or legacy { course_id } as bigint
+          const tcid = c.teachable_course_id != null
+            ? c.teachable_course_id
+            : (typeof c.course_id === "number" || /^\d+$/.test(String(c.course_id)) ? c.course_id : null);
+          if (tcid == null) return null;
+          return {
+            diploma_id: parseInt(diplomaId),
+            teachable_course_id: parseInt(tcid),
+            course_order: c.course_order || 1,
+          };
+        })
+        .filter(Boolean);
 
       if (rows.length > 0) {
         const { error: insError } = await supabase
