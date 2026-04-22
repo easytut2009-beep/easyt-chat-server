@@ -4093,6 +4093,47 @@ app.get("/api/admin/teachable/raw-course", async (req, res) => {
   }
 });
 
+/**
+ * RAW USER - see full user data from Teachable API
+ * This tests if /users/{id} returns complete enrollments
+ */
+app.get("/api/admin/teachable/raw-user", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const userId = req.query.user_id;
+    if (!userId) return res.status(400).json({ error: "user_id required" });
+    
+    const endpoint = `/users/${userId}`;
+    const url = `${TEACHABLE_API_BASE}${endpoint}`;
+    
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        apiKey: process.env.TEACHABLE_API_KEY
+      }
+    });
+
+    const data = await response.json();
+    
+    res.json({
+      teachable_endpoint: endpoint,
+      status: response.status,
+      full_response: data,
+      enrollments_count: (data.courses || data.enrollments || []).length,
+      courses_list: (data.courses || data.enrollments || []).map(c => ({
+        course_id: c.course_id || c.id,
+        course_name: c.course_name || c.name,
+        enrolled_at: c.enrolled_at || c.created_at,
+        percent_complete: c.percent_complete
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/admin/teachable/diagnose-course", async (req, res) => {
   try {
     if (!checkInspectorAuth(req, res)) return;
