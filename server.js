@@ -5686,6 +5686,17 @@ async function processWebhookEvent(event) {
         await handleEnrollmentDisabled(obj);
         break;
 
+      case "Lesson.completed":
+      case "Lecture.completed":
+        await handleLessonCompleted(obj);
+        break;
+
+      case "AbandonedCart.created":
+      case "AbandonedCart":
+      case "Cart.abandoned":
+        await handleAbandonedCart(obj);
+        break;
+
       default:
         console.log(`[Webhook] ℹ️ Event type not handled: ${eventType}`);
     }
@@ -5958,6 +5969,80 @@ async function updateUserCourseCount(userId) {
   } catch (err) {
     console.error(`[Webhook] Failed to update course_count for user ${userId}:`, err.message);
   }
+}
+
+/**
+ * Handle Lesson.completed event
+ * Saves lesson completion to teachable_lesson_progress
+ */
+async function handleLessonCompleted(lesson) {
+  // Teachable might send the data in different shapes
+  const userId = lesson.user?.id || lesson.user_id;
+  const userEmail = (lesson.user?.email || lesson.user_email)?.toLowerCase() || null;
+  const courseId = lesson.course?.id || lesson.course_id || null;
+  const courseName = lesson.course?.name || null;
+  const lessonId = lesson.lesson?.id || lesson.lecture?.id || lesson.id;
+  const lessonName = lesson.lesson?.name || lesson.lecture?.name || lesson.name || null;
+
+  if (!userId || !lessonId) {
+    console.warn(`[Webhook] Lesson.completed missing user_id or lesson_id`);
+    return;
+  }
+
+  const lessonData = {
+    teachable_user_id: userId,
+    user_email: userEmail,
+    course_id: courseId,
+    course_name: courseName,
+    lesson_id: lessonId,
+    lesson_name: lessonName,
+    completed_at: lesson.completed_at || new Date().toISOString(),
+    raw_data: lesson
+  };
+
+  const { error } = await supabase
+    .from("teachable_lesson_progress")
+    .upsert(lessonData, {
+      onConflict: "teachable_user_id,lesson_id",
+      ignoreDuplicates: false
+    });
+
+  if (error) throw new Error(`Lesson progress insert failed: ${error.message}`);
+  console.log(`[Webhook] Lesson completed: user=${userId}, lesson=${lessonId}`);
+}
+
+/**
+ * Handle AbandonedCart event
+ * Saves abandoned cart info to teachable_abandoned_carts
+ */
+async function handleAbandonedCart(cart) {
+  const userEmail = (cart.email || cart.user?.email)?.toLowerCase();
+  
+  if (!userEmail) {
+    console.warn(`[Webhook] AbandonedCart missing email`);
+    return;
+  }
+
+  const cartData = {
+    teachable_user_id: cart.user?.id || cart.user_id || null,
+    user_email: userEmail,
+    user_name: cart.name || cart.user?.name || null,
+    product_id: cart.product?.id || cart.product_id || null,
+    product_name: cart.product?.name || cart.product_name || null,
+    product_price: cart.product?.price 
+      ? cart.product.price / 100  // Teachable sends prices in cents
+      : (cart.price ? cart.price / 100 : null),
+    currency: cart.currency || "USD",
+    abandoned_at: cart.abandoned_at || cart.created_at || new Date().toISOString(),
+    raw_data: cart
+  };
+
+  const { error } = await supabase
+    .from("teachable_abandoned_carts")
+    .insert(cartData);
+
+  if (error) throw new Error(`Abandoned cart insert failed: ${error.message}`);
+  console.log(`[Webhook] Abandoned cart logged: ${userEmail}`);
 }
 
 /* ═══ Webhook Admin Endpoints ═══ */
