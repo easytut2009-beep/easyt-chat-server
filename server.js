@@ -6807,6 +6807,289 @@ app.get("/api/webhooks/test", (req, res) => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════
+   IMAGE MIGRATION — Teachable CDN → Supabase Storage
+   ══════════════════════════════════════════════════════════ */
+
+const STORAGE_BUCKET = "easyt-images";
+const STORAGE_PUBLIC_BASE = process.env.SUPABASE_URL
+  ? `${process.env.SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}`
+  : null;
+
+// حالة الـ migration
+const imageMigrationState = {
+  status: "idle",        // idle | running | completed | failed | stopped
+  startedAt: null,
+  completedAt: null,
+  target: null,          // "courses" | "authors" | "all"
+  dryRun: false,
+  stopRequested: false,
+  phase: null,           // "courses" | "authors"
+  total: 0,
+  processed: 0,
+  succeeded: 0,
+  skipped: 0,
+  failed: 0,
+  errors: [],
+  lastUpdate: null
+};
+
+// ── Helper: تحميل الصورة من URL ──
+async function downloadImage(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    return { buffer: Buffer.from(buffer), contentType };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ── Helper: استخرج الامتداد ──
+function getExtensionFromUrl(url, contentType) {
+  const urlMatch = url.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
+  if (urlMatch) return urlMatch[1].toLowerCase().replace("jpeg", "jpg");
+  if (contentType.includes("png")) return "png";
+  if (contentType.includes("webp")) return "webp";
+  if (contentType.includes("gif")) return "gif";
+  return "jpg";
+}
+
+// ── Helper: رفع على Supabase Storage ──
+async function uploadToSupabaseStorage(storagePath, buffer, contentType) {
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, buffer, { contentType, upsert: true });
+  if (error) throw new Error(error.message);
+  return `${STORAGE_PUBLIC_BASE}/${storagePath}`;
+}
+
+// ── الـ Runner الرئيسي ──
+async function runImageMigration(target, dryRun) {
+  const s = imageMigrationState;
+  s.status = "running";
+  s.startedAt = new Date().toISOString();
+  s.target = target;
+  s.dryRun = dryRun;
+  s.stopRequested = false;
+  s.total = 0; s.processed = 0; s.succeeded = 0; s.skipped = 0; s.failed = 0;
+  s.errors = [];
+  s.lastUpdate = new Date().toISOString();
+
+  try {
+    // ── Phase 1: Courses ──
+    if (target === "courses" || target === "all") {
+      s.phase = "courses";
+      console.log("[ImageMigration] Phase 1: Courses");
+
+      const { data: courses, error } = await supabase
+        .from("teachable_courses")
+        .select("teachable_course_id, name, image_url")
+        .not("image_url", "is", null);
+
+      if (error) throw new Error("Courses fetch: " + error.message);
+
+      // فلتر اللي لسه على teachablecdn
+      const toMigrate = courses.filter(c =>
+        c.image_url && (
+          c.image_url.includes("teachablecdn.com") ||
+          c.image_url.includes("uploads.teachable")
+        )
+      );
+
+      s.total += toMigrate.length;
+      console.log(`[ImageMigration] ${toMigrate.length} course images to migrate`);
+
+      for (const course of toMigrate) {
+        if (s.stopRequested) { s.status = "stopped"; return; }
+
+        s.processed++;
+        s.lastUpdate = new Date().toISOString();
+
+        try {
+          if (dryRun) {
+            s.skipped++;
+            continue;
+          }
+
+          const { buffer, contentType } = await downloadImage(course.image_url);
+          const ext = getExtensionFromUrl(course.image_url, contentType);
+          const storagePath = `courses/${course.teachable_course_id}.${ext}`;
+          const newUrl = await uploadToSupabaseStorage(storagePath, buffer, contentType);
+
+          // حدّث الـ DB
+          await supabase
+            .from("teachable_courses")
+            .update({ image_url: newUrl })
+            .eq("teachable_course_id", course.teachable_course_id);
+
+          s.succeeded++;
+          console.log(`[ImageMigration] ✅ course ${course.teachable_course_id}: ${newUrl}`);
+        } catch (err) {
+          s.failed++;
+          s.errors.push({ type: "course", id: course.teachable_course_id, error: err.message });
+          console.error(`[ImageMigration] ❌ course ${course.teachable_course_id}: ${err.message}`);
+        }
+
+        await wait(200); // delay بين الصور
+      }
+    }
+
+    // ── Phase 2: Authors ──
+    if ((target === "authors" || target === "all") && s.status === "running") {
+      s.phase = "authors";
+      console.log("[ImageMigration] Phase 2: Authors");
+
+      const { data: authors, error } = await supabase
+        .from("teachable_authors")
+        .select("id, teachable_author_id, name, image_url")
+        .not("image_url", "is", null);
+
+      if (error) throw new Error("Authors fetch: " + error.message);
+
+      const toMigrate = authors.filter(a =>
+        a.image_url && (
+          a.image_url.includes("teachablecdn.com") ||
+          a.image_url.includes("uploads.teachable")
+        )
+      );
+
+      s.total += toMigrate.length;
+      console.log(`[ImageMigration] ${toMigrate.length} author images to migrate`);
+
+      for (const author of toMigrate) {
+        if (s.stopRequested) { s.status = "stopped"; return; }
+
+        s.processed++;
+        s.lastUpdate = new Date().toISOString();
+
+        try {
+          if (dryRun) {
+            s.skipped++;
+            continue;
+          }
+
+          const { buffer, contentType } = await downloadImage(author.image_url);
+          const ext = getExtensionFromUrl(author.image_url, contentType);
+
+          // ID للـ path: استخدم teachable_author_id لو موجود، وإلا hash الاسم
+          const authorKey = author.teachable_author_id
+            ? author.teachable_author_id
+            : crypto.createHash("md5").update(author.name || String(author.id)).digest("hex").slice(0, 12);
+
+          const storagePath = `authors/${authorKey}.${ext}`;
+          const newUrl = await uploadToSupabaseStorage(storagePath, buffer, contentType);
+
+          await supabase
+            .from("teachable_authors")
+            .update({ image_url: newUrl })
+            .eq("id", author.id);
+
+          s.succeeded++;
+          console.log(`[ImageMigration] ✅ author ${authorKey}: ${newUrl}`);
+        } catch (err) {
+          s.failed++;
+          s.errors.push({ type: "author", id: author.id, error: err.message });
+          console.error(`[ImageMigration] ❌ author ${author.id}: ${err.message}`);
+        }
+
+        await wait(200);
+      }
+    }
+
+    s.status = "completed";
+    s.completedAt = new Date().toISOString();
+    console.log(`[ImageMigration] ✅ Done. succeeded=${s.succeeded}, failed=${s.failed}, skipped=${s.skipped}`);
+  } catch (err) {
+    s.status = "failed";
+    s.errors.push({ type: "fatal", error: err.message });
+    console.error("[ImageMigration] Fatal error:", err.message);
+  }
+}
+
+/**
+ * POST /api/admin/teachable/migrate-images
+ * Query: ?admin=PASS&target=all|courses|authors&dry_run=true|false
+ */
+app.post("/api/admin/teachable/migrate-images", async (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (imageMigrationState.status === "running") {
+    return res.status(409).json({
+      error: "Migration already running",
+      state: imageMigrationState
+    });
+  }
+
+  const target = ["courses", "authors", "all"].includes(req.query.target)
+    ? req.query.target
+    : "all";
+  const dryRun = req.query.dry_run === "true";
+
+  res.json({
+    success: true,
+    message: `Image migration started${dryRun ? " (DRY RUN)" : ""}`,
+    target,
+    dry_run: dryRun
+  });
+
+  // شغّل في الـ background
+  runImageMigration(target, dryRun).catch(err => {
+    console.error("[ImageMigration] Unhandled:", err.message);
+  });
+});
+
+/**
+ * GET /api/admin/teachable/migrate-images/status
+ */
+app.get("/api/admin/teachable/migrate-images/status", (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const s = imageMigrationState;
+  const elapsed = s.startedAt
+    ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+    : 0;
+  const percent = s.total > 0 ? Math.round((s.processed / s.total) * 100) : 0;
+  const rate = elapsed > 0 ? (s.processed / elapsed).toFixed(2) : 0;
+  const eta = rate > 0 && s.total > s.processed
+    ? Math.round((s.total - s.processed) / rate)
+    : null;
+
+  res.json({
+    success: true,
+    state: {
+      ...s,
+      elapsed_seconds: elapsed,
+      percent,
+      rate_per_second: rate,
+      eta_seconds: eta,
+      errors_sample: s.errors.slice(-10)
+    }
+  });
+});
+
+/**
+ * POST /api/admin/teachable/migrate-images/stop
+ */
+app.post("/api/admin/teachable/migrate-images/stop", (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (imageMigrationState.status !== "running") {
+    return res.json({ success: false, message: "Not running", state: imageMigrationState });
+  }
+  imageMigrationState.stopRequested = true;
+  res.json({ success: true, message: "Stop requested" });
+});
+
+/* ══════════════════════════════════════════════════════════ */
+
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
