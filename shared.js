@@ -1041,27 +1041,11 @@ console.log("🔤 Core filter conditions:", coreFilters.split(',').length);
 
     // Semantic search via match_courses RPC.
     // RPC returns rows like { id: <uuid from legacy courses table>, similarity }.
-    // Since teachable_courses has no column holding that legacy UUID, we CANNOT
-    // look up courses by semantic result alone. We keep the semantic signal
-    // only to help rank courses that were already found by ilike (Phase 1-3),
-    // by joining on name via the legacy `courses` table.
-    const semanticPromise = openai
-      ? (async () => {
-          try {
-            const queryText = searchTerms.join(" ");
-            const embResp = await openai.embeddings.create({
-              model: COURSE_EMBEDDING_MODEL,
-              input: queryText.substring(0, 2000),
-            });
-            const { data } = await supabase.rpc("match_courses", {
-              query_embedding: embResp.data[0].embedding,
-              match_threshold: 0.75,
-              match_count: 10,
-            });
-            return data || [];
-          } catch (e) { return []; }
-        })()
-      : Promise.resolve([]);
+    // match_courses RPC returns legacy UUIDs that can no longer be resolved to
+    // teachable_courses rows (after courses/lessons/instructors cleanup). Disabling
+    // the semantic call entirely to avoid a wasted OpenAI embedding + RPC hit.
+    // Re-enable this once the RPC is rewritten to return teachable_course_id (bigint).
+    const semanticPromise = Promise.resolve([]);
 
 const [ilikeResult, semanticResults] = await Promise.all([
       ilikePromise,
@@ -1134,45 +1118,11 @@ const [ilikeResult, semanticResults] = await Promise.all([
         if (s && s.id != null) semanticMap.set(String(s.id), s.similarity);
       });
 
-      // Bridge UUIDs to names using the legacy courses table (if it still exists).
-      // If `courses` table has been dropped, this silently returns no rows and
-      // semantic scoring becomes a no-op (not a crash).
-      try {
-        const legacyIds = [...semanticMap.keys()];
-        if (legacyIds.length > 0) {
-          const { data: legacyRows } = await supabase
-            .from("courses")
-            .select("id, title")
-            .in("id", legacyIds);
-          (legacyRows || []).forEach((lr) => {
-            const sim = semanticMap.get(String(lr.id));
-            if (sim != null && lr.title) {
-              nameToSim.set(String(lr.title).toLowerCase().trim(), sim);
-            }
-          });
-        }
-      } catch (e) {
-        // Table dropped or other error → skip semantic scoring silently
-      }
-
-      // If Phase 1/2/3 returned zero rows, try to seed allCourses from names
-      // of semantic matches.
-      if (allCourses.length === 0 && nameToSim.size > 0) {
-        try {
-          const names = [...nameToSim.keys()];
-          const orFilters = names
-            .slice(0, 20)
-            .map((n) => `name.ilike.${n.replace(/[,%]/g, " ")}`)
-            .join(",");
-          if (orFilters) {
-            const { data: semCourses } = await supabase
-              .from("teachable_courses")
-              .select(COURSE_SELECT_COLS)
-              .or(orFilters);
-            if (semCourses) allCourses = [...allCourses, ...semCourses];
-          }
-        } catch (_) { /* best effort */ }
-      }
+      // NOTE: match_courses RPC returns legacy UUIDs that no longer exist in any table
+      // (after the courses/lessons/instructors cleanup). Semantic scoring and seeding
+      // via RPC are therefore disabled. The ilike-based Phase 1/2/3 search still works.
+      // If you regenerate the match_courses RPC to return teachable_course_id (bigint),
+      // you can re-enable semantic scoring here.
     }
 
     if (allCourses.length === 0) {
