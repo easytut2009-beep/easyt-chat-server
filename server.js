@@ -4058,9 +4058,13 @@ app.get("/api/admin/teachable/raw", async (req, res) => {
   try {
     if (!checkInspectorAuth(req, res)) return;
 
-    const endpoint = req.query.endpoint || '/courses/1814750/enrollments?per=100&page=1';
+    const courseId = req.query.course_id || '1814750';
+    const page = req.query.page || '1';
+    const per = req.query.per || '100';
     
+    const endpoint = `/courses/${courseId}/enrollments?per=${per}&page=${page}`;
     const url = `${TEACHABLE_API_BASE}${endpoint}`;
+    
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -4074,15 +4078,15 @@ app.get("/api/admin/teachable/raw", async (req, res) => {
     res.json({
       teachable_endpoint: endpoint,
       status: response.status,
-      raw_response: data,
-      meta_only: data.meta,
+      meta: data.meta,
       enrollments_count: (data.enrollments || []).length,
       first_5_users: (data.enrollments || []).slice(0, 5).map(e => ({
         user_id: e.user_id,
         email: e.user?.email,
         enrolled_at: e.enrolled_at,
         is_active: e.is_active
-      }))
+      })),
+      full_response_keys: Object.keys(data)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
