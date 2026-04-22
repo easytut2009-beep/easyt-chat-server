@@ -7121,7 +7121,7 @@ async function runAttachmentMigration(dryRun) {
     // جيب الـ attachments اللي على Teachable CDN فقط
     const { data: attachments, error } = await supabase
       .from("teachable_attachments")
-      .select("id, teachable_lecture_id, kind, url, name")
+      .select("id, lecture_id, kind, url, name")
       .in("kind", ["file", "pdf_embed", "image"])
       .or("url.ilike.%teachablecdn.com%,url.ilike.%uploads.teachable%");
 
