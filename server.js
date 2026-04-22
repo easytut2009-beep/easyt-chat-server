@@ -4050,6 +4050,45 @@ app.get("/api/admin/teachable/raw", async (req, res) => {
  * DIAGNOSTIC - Test API pagination with different params
  * Tries different sort orders and returns unique user counts
  */
+/**
+ * RAW PROXY - directly forwards Teachable API response
+ * Use to see exactly what Teachable returns
+ */
+app.get("/api/admin/teachable/raw", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const endpoint = req.query.endpoint || '/courses/1814750/enrollments?per=100&page=1';
+    
+    const url = `${TEACHABLE_API_BASE}${endpoint}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        apiKey: process.env.TEACHABLE_API_KEY
+      }
+    });
+
+    const data = await response.json();
+    
+    res.json({
+      teachable_endpoint: endpoint,
+      status: response.status,
+      raw_response: data,
+      meta_only: data.meta,
+      enrollments_count: (data.enrollments || []).length,
+      first_5_users: (data.enrollments || []).slice(0, 5).map(e => ({
+        user_id: e.user_id,
+        email: e.user?.email,
+        enrolled_at: e.enrolled_at,
+        is_active: e.is_active
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/admin/teachable/diagnose-course", async (req, res) => {
   try {
     if (!checkInspectorAuth(req, res)) return;
