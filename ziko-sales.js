@@ -27,9 +27,10 @@ const {
   expandArabicVariants, loadAllCorrections, loadAllFAQs,
   searchCourses, searchDiplomas, searchLessonsInCourses,
   ALL_COURSES_URL, ALL_DIPLOMAS_URL, SUBSCRIPTION_URL, PAYMENTS_URL,
-  COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS,
+  COURSE_EMBEDDING_MODEL, CHUNK_EMBEDDING_MODEL, COURSE_SELECT_COLS, LECTURE_SELECT_COLS,
   CATEGORIES, WHATSAPP_SUPPORT_LINK, BASIC_STOP_WORDS,
   CACHE_TTL, gptWithRetry, initShared,
+  normalizeCourse, normalizeCourses, normalizeLecture, normalizeLectures,
 } = require("./shared");
 
 // ══════════════════════════════════════════════════════════
@@ -794,44 +795,51 @@ async function performSearch(keywords, instructors) {
         let textChunkCourses = [];
         if (chunkTextFilters) {
           console.log(`🔍 Chunk filters: ${chunkTextFilters}`);
+          // MIGRATED: chunks use teachable_lecture_id (bigint external)
           const { data: tc, error: tcError } = await supabase
             .from("chunks")
-            .select("lesson_id, content, timestamp_start")
+            .select("teachable_lecture_id, content, timestamp_start")
             .or(chunkTextFilters)
+            .not("teachable_lecture_id", "is", null)
             .limit(50);
           if (tcError) console.error("❌ Text chunks error:", tcError.message, tcError.details);
           else console.log(`📝 Text chunks found: ${tc?.length || 0}`);
 
           if (tc && tc.length > 0) {
-            const lessonIds = [...new Set(tc.map(c => c.lesson_id))];
+            // MIGRATED: map by teachable_lecture_id (external bigint)
+            const lectureIds = [...new Set(tc.map(c => c.teachable_lecture_id).filter(Boolean))];
             const { data: lessonData } = await supabase
-              .from("lessons")
-              .select("id, course_id, title")
-              .in("id", lessonIds);
+              .from("teachable_lectures")
+              .select("id, teachable_lecture_id, course_id, name")
+              .in("teachable_lecture_id", lectureIds);
 
             if (lessonData && lessonData.length > 0) {
-              const courseIds = [...new Set(lessonData.map(l => l.course_id))];
-              const { data: courseData } = await supabase
-                .from("courses")
+              // lesson.course_id is teachable_course_id (external) — match to teachable_courses.teachable_course_id
+              const courseIds = [...new Set(lessonData.map(l => l.course_id).filter(Boolean))];
+              const { data: courseDataRaw } = await supabase
+                .from("teachable_courses")
                 .select(COURSE_SELECT_COLS)
-                .in("id", courseIds);
+                .in("teachable_course_id", courseIds);
 
-              // ربط كل chunk بالـ lesson والكورس
-              const lessonMap = new Map(lessonData.map(l => [l.id, l]));
-              const courseMap = new Map((courseData || []).map(c => [c.id, c]));
+              // Normalize courses (adds title/subtitle/link aliases)
+              const courseData = normalizeCourses(courseDataRaw || []);
 
-              // جمع الـ chunks لكل كورس
+              // ربط كل chunk بالـ lesson والكورس — keyed by external ids
+              const lessonMap = new Map(lessonData.map(l => [l.teachable_lecture_id, l]));
+              const courseMap = new Map(courseData.map(c => [String(c.teachable_course_id), c]));
+
+              // جمع الـ chunks لكل كورس — key by internal id (stable)
               const courseChunksMap = new Map();
               tc.forEach(chunk => {
-                const lesson = lessonMap.get(chunk.lesson_id);
+                const lesson = lessonMap.get(chunk.teachable_lecture_id);
                 if (!lesson) return;
-                const course = courseMap.get(lesson.course_id);
+                const course = courseMap.get(String(lesson.course_id));
                 if (!course) return;
                 if (!courseChunksMap.has(course.id)) {
                   courseChunksMap.set(course.id, { course, chunks: [] });
                 }
                 courseChunksMap.get(course.id).chunks.push({
-                  lessonTitle: lesson.title,
+                  lessonTitle: lesson.name,
                   content: chunk.content,
                   timestamp: chunk.timestamp_start,
                 });
@@ -890,15 +898,45 @@ async function performSearch(keywords, instructors) {
         const embedding = embResp.data[0].embedding;
         const { data: semCourses } = await supabase.rpc("match_courses", {
           query_embedding: embedding,
-          match_threshold: 0.80, // threshold عالي — بس لو في علاقة حقيقية
+          match_threshold: 0.80,
           match_count: 5,
         });
         if (semCourses && semCourses.length > 0) {
-          const { data: courseData } = await supabase
-            .from("courses")
-            .select(COURSE_SELECT_COLS)
-            .in("id", semCourses.map(s => s.id));
-          if (courseData && courseData.length > 0) {
+          // match_courses RPC returns { id, similarity }. For UUID ids we
+          // bridge via the legacy `courses` table (id → title → name → teachable_courses).
+          // For numeric ids, they map directly to teachable_course_id.
+          const rawIds = semCourses.map(s => s.id).filter(Boolean);
+          let courseDataRaw = null;
+          if (rawIds.length > 0) {
+            const firstId = rawIds[0];
+            const isUuid = typeof firstId === "string" && /^[0-9a-f-]{36}$/i.test(firstId);
+            if (isUuid) {
+              // Bridge UUIDs via legacy courses table by name
+              try {
+                const { data: legacy } = await supabase
+                  .from("courses")
+                  .select("id, title")
+                  .in("id", rawIds);
+                const titles = (legacy || []).map(l => l.title).filter(Boolean);
+                if (titles.length > 0) {
+                  const { data } = await supabase
+                    .from("teachable_courses")
+                    .select(COURSE_SELECT_COLS)
+                    .in("name", titles);
+                  courseDataRaw = data;
+                }
+              } catch (_) { /* legacy table may have been dropped */ }
+            } else {
+              // Numeric ids → assume teachable_course_id
+              const { data } = await supabase
+                .from("teachable_courses")
+                .select(COURSE_SELECT_COLS)
+                .in("teachable_course_id", rawIds);
+              courseDataRaw = data;
+            }
+          }
+          if (courseDataRaw && courseDataRaw.length > 0) {
+            const courseData = normalizeCourses(courseDataRaw);
             const withDiploma = await injectDiplomaInfo(courseData).catch(() => courseData);
             withDiploma.forEach(c => { c._semanticFallback = true; });
             results.courses = withDiploma.slice(0, MAX_COURSES_DISPLAY);
@@ -1735,12 +1773,14 @@ async function smartChat(message, sessionId, userId = null) {
       }
 
       if (foundInstructor) {
-        const { data: courses } = await supabase
-          .from("courses")
+        // SCHEMA: teachable_courses.author_user_id → teachable_authors.id
+        const { data: coursesRaw } = await supabase
+          .from("teachable_courses")
           .select(COURSE_SELECT_COLS)
-          .eq("instructor_id", foundInstructor.id)
+          .eq("author_user_id", foundInstructor.id)
           .limit(30);
 
+        const courses = normalizeCourses(coursesRaw || []);
         if (courses && courses.length > 0) {
           reply = `👨‍🏫 <strong>كورسات ${escapeHtml(foundInstructor.name)}:</strong><br><br>`;
           const withDiploma = await injectDiplomaInfo(courses).catch(() => courses);
@@ -1953,22 +1993,31 @@ async function smartChat(message, sessionId, userId = null) {
     }
 
     const results = await performSearch(keywords, [], audience);
-    
+
     // 🧠 GPT SMART FILTER — Select most relevant courses
+    // NOTE: performSearch returns an OBJECT ({diplomas, courses, lessons, chunks}),
+    // not an array. The code below flattens to a combined array, runs the filter,
+    // then re-projects onto the object shape that formatResults expects.
     let filteredResults = results;
-    
-    if (results.length > 5) {
-      console.log(`🧠 GPT Smart Filter: ${results.length} results → selecting best matches...`);
-      
+
+    // Flatten courses+diplomas into a unified array for the filter step.
+    const combined = [
+      ...(results.diplomas || []).map((d) => ({ item: d, isDiploma: true })),
+      ...(results.courses || []).map((c) => ({ item: c, isDiploma: false })),
+    ];
+
+    if (combined.length > 5) {
+      console.log(`🧠 GPT Smart Filter: ${combined.length} results → selecting best matches...`);
+
       try {
-        const courseList = results.slice(0, 20).map((r, i) => ({
+        const courseList = combined.slice(0, 20).map((r, i) => ({
           id: i,
           title: r.item.title,
           subtitle: r.item.subtitle || "",
           domain: r.item.domain || "",
           isDiploma: r.isDiploma || false
         }));
-        
+
         const filterPrompt = `أنت خبير في اختيار الكورسات المناسبة للمستخدمين.
 
 المستخدم قال: "${message}"
@@ -2013,38 +2062,51 @@ ${courseList.map(c => `[${c.id}] ${c.title} ${c.isDiploma ? "(دبلومة)" : "
           messages: [{ role: "user", content: filterPrompt }],
           response_format: { type: "json_object" }
         }), 2);
-        
+
         const filterResult = JSON.parse(filterResp.choices[0].message.content);
-        
+
         if (filterResult.selected_ids && Array.isArray(filterResult.selected_ids)) {
-          // ✅ لو GPT رجع [] → معناه مفيش نتائج مناسبة
           if (filterResult.selected_ids.length === 0) {
             console.log(`❌ GPT Filter: NO relevant results found`);
             console.log(`💡 Reasoning: ${filterResult.reasoning}`);
-            filteredResults = []; // مفيش نتائج
+            // Empty the results
+            filteredResults = { diplomas: [], courses: [], lessons: results.lessons || [], chunks: results.chunks || [], _textChunkCourses: results._textChunkCourses, _chunkWords: results._chunkWords, noDirectCourse: results.noDirectCourse };
           } else {
-            filteredResults = filterResult.selected_ids
-              .filter(id => id >= 0 && id < results.length)
-              .map(id => results[id]);
-            
-            console.log(`✅ GPT Filter: Selected ${filteredResults.length} most relevant`);
+            // Map selected ids back to original structure
+            const picked = filterResult.selected_ids
+              .filter(id => id >= 0 && id < combined.length)
+              .map(id => combined[id]);
+
+            filteredResults = {
+              diplomas: picked.filter(p => p.isDiploma).map(p => p.item),
+              courses: picked.filter(p => !p.isDiploma).map(p => p.item),
+              lessons: results.lessons || [],
+              chunks: results.chunks || [],
+              _textChunkCourses: results._textChunkCourses,
+              _chunkWords: results._chunkWords,
+              noDirectCourse: results.noDirectCourse,
+            };
+
+            console.log(`✅ GPT Filter: Selected ${picked.length} most relevant`);
             console.log(`💡 Reasoning: ${filterResult.reasoning}`);
           }
         }
       } catch (e) {
         console.error("⚠️ GPT Filter failed, using original results:", e.message);
-        filteredResults = results.slice(0, 5);
+        filteredResults = results;
       }
     }
-    
-    const finalResults = filteredResults.length > 0 ? filteredResults : results;
+
+    const hasResults = (filteredResults.courses && filteredResults.courses.length > 0)
+                      || (filteredResults.diplomas && filteredResults.diplomas.length > 0);
+    const finalResults = hasResults ? filteredResults : results;
     const displayTopic = keywords[0] || message;
     reply = await formatResults(finalResults, displayTopic, session);
 
     session.lastTopic = keywords.join(" ");
     session.lastResults = finalResults;
 
-    if (finalResults.courses.length > 0 || finalResults.diplomas.length > 0) {
+    if ((finalResults.courses && finalResults.courses.length > 0) || (finalResults.diplomas && finalResults.diplomas.length > 0)) {
       session.history = [];
       session.hadClarify = false;
       session.clarifyCount = 0;
