@@ -29,7 +29,7 @@ let supabaseConnected = false;
 async function testSupabaseConnection() {
   if (!supabase) { console.error("❌ Supabase not initialized"); return false; }
   try {
-    const { error } = await supabase.from("courses").select("id").limit(1);
+    const { error } = await supabase.from("teachable_courses").select("id").limit(1);
     if (error) { console.error("❌ Supabase:", error.message); return false; }
     console.log("✅ Supabase OK");
     return true;
@@ -99,9 +99,178 @@ const limiter = rateLimit({
 });
 
 /* ═══ Routes ═══ */
-const { initShared } = require("./shared");
+const {
+  initShared,
+  normalizeCourse, normalizeCourses,
+  normalizeLecture, normalizeLectures,
+  COURSE_SELECT_COLS, LECTURE_SELECT_COLS,
+  // Functions used by route handlers and helpers below.
+  // (Previously these relied on implicit closure scope from routes that
+  // were duplicated in ziko-guide.js; now that the duplicates are gone,
+  // server.js must import them explicitly.)
+  logChat, loadBotInstructions, markdownToHtml, finalizeReply, getInstructors,
+  // Cache invalidation helpers — used by corrections/FAQ admin endpoints.
+  clearCorrectionCache, clearFAQCache,
+} = require("./shared");
 const registerGuideRoutes = require("./ziko-guide");
 const registerSalesRoutes = require("./ziko-sales");
+
+// ============================================================
+// ID Resolution Helpers (post-migration)
+// ============================================================
+// SCHEMA (verified via SQL on real DB, April 2026):
+//   teachable_courses.id                 = bigint (internal PK)
+//   teachable_courses.teachable_course_id = bigint (external from Teachable)
+//   teachable_lectures.id                = bigint
+//   teachable_lectures.teachable_lecture_id = bigint
+//   diploma_courses.course_id            = uuid (legacy; points to courses.id)
+//   diploma_courses.teachable_course_id  = bigint (new bridge; points to teachable_courses.teachable_course_id)
+// URL params may come in either form (UUID or bigint); helpers below route correctly.
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidLike(v) {
+  return typeof v === "string" && UUID_REGEX.test(v);
+}
+
+function isBigintLike(v) {
+  if (v === null || v === undefined) return false;
+  const s = String(v);
+  return /^\d+$/.test(s);
+}
+
+// Resolve an incoming course identifier to { id, teachable_course_id }.
+// Accepts:
+//   - bigint     → tries teachable_course_id (external) first, then id (internal PK)
+//   - UUID       → bridges through the legacy `courses` table (by title → name)
+//                  since teachable_courses does NOT store the old UUID.
+// Returns null on invalid input or not found.
+// SCHEMA: teachable_courses.id = bigint, .teachable_course_id = bigint (no UUID col).
+async function resolveCourseId(incomingId) {
+  if (incomingId == null || incomingId === "") return null;
+  try {
+    const selectCols = "id, teachable_course_id";
+
+    if (isBigintLike(incomingId)) {
+      // Try external teachable_course_id first (what most clients send)
+      let { data } = await supabase
+        .from("teachable_courses")
+        .select(selectCols)
+        .eq("teachable_course_id", incomingId)
+        .limit(1)
+        .maybeSingle();
+      if (data) return data;
+      // Fallback to internal id
+      ({ data } = await supabase
+        .from("teachable_courses")
+        .select(selectCols)
+        .eq("id", incomingId)
+        .limit(1)
+        .maybeSingle());
+      return data || null;
+    }
+
+    if (isUuidLike(incomingId)) {
+      // UUID likely refers to the legacy courses.id.
+      // Bridge: courses.id (uuid) -> courses.title -> teachable_courses.name
+      try {
+        const { data: legacy } = await supabase
+          .from("courses")
+          .select("id, title")
+          .eq("id", incomingId)
+          .limit(1)
+          .maybeSingle();
+        if (legacy && legacy.title) {
+          const { data } = await supabase
+            .from("teachable_courses")
+            .select(selectCols)
+            .eq("name", legacy.title)
+            .limit(1)
+            .maybeSingle();
+          return data || null;
+        }
+      } catch (_) { /* legacy table may be gone; fall through */ }
+      return null;
+    }
+
+    return null;
+  } catch (e) {
+    console.error("resolveCourseId error:", e.message);
+    return null;
+  }
+}
+
+// Resolve an incoming lecture identifier to { id, teachable_lecture_id }.
+// Accepts:
+//   - bigint     → tries both id (internal PK) and teachable_lecture_id (external)
+//   - UUID       → NOT supported; teachable_lectures has no UUID column (returns null)
+// Returns null on invalid input or not found.
+// SCHEMA: teachable_lectures.id = bigint, .teachable_lecture_id = bigint
+async function resolveLectureId(incomingId) {
+  if (incomingId == null || incomingId === "") return null;
+  try {
+    const selectCols = "id, teachable_lecture_id";
+    if (isUuidLike(incomingId)) {
+      // teachable_lectures has no UUID column; nothing to match.
+      return null;
+    }
+    if (isBigintLike(incomingId)) {
+      // Try external teachable_lecture_id first (more common from clients)
+      let { data } = await supabase
+        .from("teachable_lectures")
+        .select(selectCols)
+        .eq("teachable_lecture_id", incomingId)
+        .limit(1)
+        .maybeSingle();
+      if (data) return data;
+      // Fallback to internal id
+      ({ data } = await supabase
+        .from("teachable_lectures")
+        .select(selectCols)
+        .eq("id", incomingId)
+        .limit(1)
+        .maybeSingle());
+      return data || null;
+    }
+    return null;
+  } catch (e) {
+    console.error("resolveLectureId error:", e.message);
+    return null;
+  }
+}
+
+// ─── loadRecentHistory ───
+// Loads the last N messages for a session from chat_logs and returns them
+// as an array of {role, content} objects, oldest-first.
+// Used by /chat-image to provide conversation context to the model.
+async function loadRecentHistory(sessionId, limit = 6) {
+  if (!supabase || !sessionId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("chat_logs")
+      .select("role, message, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error("loadRecentHistory error:", error.message);
+      return [];
+    }
+    // Oldest-first order for the model
+    return (data || [])
+      .reverse()
+      .map((r) => ({
+        role: r.role === "bot" ? "assistant" : r.role,
+        content: String(r.message || "").substring(0, 1000),
+      }))
+      .filter((m) => m.content);
+  } catch (e) {
+    console.error("loadRecentHistory exception:", e.message);
+    return [];
+  }
+}
+
+
 
 
 /* ═══ Chat Image + Admin + Static Endpoints ═══ */
@@ -301,7 +470,7 @@ app.get("/admin/stats", adminAuth, async (req, res) => {
 
     try {
       const { count } = await supabase
-        .from("courses")
+        .from("teachable_courses")
         .select("*", { count: "exact", head: true });
       totalCourses = count || 0;
     } catch (e) {}
@@ -768,25 +937,27 @@ app.get("/admin/courses", adminAuth, async (req, res) => {
     const search = req.query.search || "";
 
     let query = supabase
-      .from("courses")
-.select("id, title, subtitle, description, full_content, link, price, instructor_id, image, keywords", { count: "exact" })
-      .order("title", { ascending: true })
+      .from("teachable_courses")
+      .select("id, teachable_course_id, name, heading, description, price, author_user_id, author_name, image_url, keywords, is_published", { count: "exact" })
+      .order("name", { ascending: true })
       .range(offset, offset + limit - 1);
 
     if (search) {
-      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
     const { data, count, error } = await query;
     if (error) throw error;
 
     const instructors = await getInstructors();
-    const enriched = (data || []).map((c) => {
-const inst = c.instructor_id
-        ? instructors.find((i) => String(i.id) === String(c.instructor_id))
+    const enriched = normalizeCourses(data || []).map((c) => {
+      // SCHEMA: teachable_courses.author_user_id → teachable_authors.id
+      // normalizeCourse() exposes it as `author_id` alias for back-compat.
+      const authorId = c.author_user_id != null ? c.author_user_id : c.author_id;
+      const inst = authorId != null
+        ? instructors.find((i) => String(i.id) === String(authorId))
         : null;
-      return { ...c, instructor_name: inst ? inst.name : "" };
-
+      return { ...c, instructor_name: inst ? inst.name : (c.author_name || "") };
     });
 
     res.json({
@@ -802,12 +973,38 @@ const inst = c.instructor_id
   }
 });
 
+// Map legacy field names (from old schema / existing frontends) to the
+// new teachable_courses column names. Safe to apply unconditionally:
+// if the frontend already sends the new names, this function is a no-op.
+function mapLegacyCourseFields(body) {
+  if (!body || typeof body !== "object") return body;
+  const out = { ...body };
+  if (out.title !== undefined && out.name === undefined) {
+    out.name = out.title;
+  }
+  delete out.title;
+  if (out.subtitle !== undefined && out.heading === undefined) {
+    out.heading = out.subtitle;
+  }
+  delete out.subtitle;
+  if (out.image !== undefined && out.image_url === undefined) {
+    out.image_url = out.image;
+  }
+  delete out.image;
+  if (out.instructor_id !== undefined && out.author_id === undefined) {
+    out.author_id = out.instructor_id;
+  }
+  delete out.instructor_id;
+  return out;
+}
+
 app.post("/admin/courses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
+    const payload = mapLegacyCourseFields(req.body);
     const { data, error } = await supabase
-      .from("courses")
-      .insert(req.body)
+      .from("teachable_courses")
+      .insert(payload)
       .select()
       .single();
     if (error) throw error;
@@ -821,10 +1018,14 @@ app.post("/admin/courses", adminAuth, async (req, res) => {
 app.get("/admin/courses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
+    // Accepts UUID (bridged through legacy courses table) or bigint (teachable_course_id / id).
+    const incoming = req.params.id;
+    const row = await resolveCourseId(incoming);
+    if (!row) return res.status(404).json({ success: false, error: "Course not found" });
     const { data, error } = await supabase
-      .from("courses")
+      .from("teachable_courses")
       .select("*")
-      .eq("id", req.params.id)
+      .eq("id", row.id)
       .single();
     if (error) throw error;
     res.json({ success: true, item: data });
@@ -837,10 +1038,14 @@ app.get("/admin/courses/:id", adminAuth, async (req, res) => {
 app.put("/admin/courses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
+    const payload = mapLegacyCourseFields(req.body);
+    const incoming = req.params.id;
+    const row = await resolveCourseId(incoming);
+    if (!row) return res.status(404).json({ success: false, error: "Course not found" });
     const { data, error } = await supabase
-      .from("courses")
-      .update(req.body)
-      .eq("id", req.params.id)
+      .from("teachable_courses")
+      .update(payload)
+      .eq("id", row.id)
       .select()
       .single();
     if (error) throw error;
@@ -853,10 +1058,13 @@ app.put("/admin/courses/:id", adminAuth, async (req, res) => {
 app.delete("/admin/courses/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
+    const incoming = req.params.id;
+    const row = await resolveCourseId(incoming);
+    if (!row) return res.status(404).json({ success: false, error: "Course not found" });
     const { error } = await supabase
-      .from("courses")
+      .from("teachable_courses")
       .delete()
-      .eq("id", req.params.id);
+      .eq("id", row.id);
     if (error) throw error;
     res.json({ success: true });
   } catch (e) {
@@ -952,34 +1160,43 @@ app.get("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
 
     const { data, error } = await supabase
       .from("diploma_courses")
-      .select("id, course_id, course_order")
+      .select("id, course_id, teachable_course_id, course_order")
       .eq("diploma_id", diplomaId)
       .order("course_order", { ascending: true });
 
     if (error) throw error;
 
-    // جيب بيانات الكورسات
-    const courseIds = (data || []).map(dc => dc.course_id);
+    // Resolve course info via the new teachable_course_id (bigint) column.
+    const teachableIds = (data || [])
+      .map(dc => dc.teachable_course_id)
+      .filter(v => v != null);
     let coursesMap = {};
 
-    if (courseIds.length > 0) {
+    if (teachableIds.length > 0) {
       const { data: courses, error: cErr } = await supabase
-        .from("courses")
-        .select("id, title, price")
-        .in("id", courseIds);
+        .from("teachable_courses")
+        .select("id, teachable_course_id, name, price")
+        .in("teachable_course_id", teachableIds);
 
       if (!cErr && courses) {
-        courses.forEach(c => { coursesMap[c.id] = c; });
+        courses.forEach(c => {
+          if (c.teachable_course_id != null) coursesMap[String(c.teachable_course_id)] = c;
+        });
       }
     }
 
-    const result = (data || []).map(dc => ({
-      id: dc.id,
-      course_id: dc.course_id,
-      course_order: dc.course_order,
-      course_title: coursesMap[dc.course_id] ? coursesMap[dc.course_id].title : "",
-      course_price: coursesMap[dc.course_id] ? coursesMap[dc.course_id].price : ""
-    }));
+    const result = (data || []).map(dc => {
+      const key = dc.teachable_course_id != null ? String(dc.teachable_course_id) : null;
+      const c = key ? coursesMap[key] : null;
+      return {
+        id: dc.id,
+        course_id: dc.course_id,  // legacy UUID (kept for back-compat with admin UI)
+        teachable_course_id: dc.teachable_course_id,
+        course_order: dc.course_order,
+        course_title: c ? (c.name || "") : "",
+        course_price: c ? (c.price || "") : "",
+      };
+    });
 
     res.json({ success: true, courses: result });
   } catch (e) {
@@ -1003,17 +1220,78 @@ app.put("/admin/diplomas/:id/courses", adminAuth, async (req, res) => {
 
     // أضف الجديد
     if (courses && courses.length > 0) {
-      const rows = courses.map(c => ({
-        diploma_id: parseInt(diplomaId),
-        course_id: c.course_id,
-        course_order: c.course_order || 1
-      }));
+      // Build a bridge map: legacy UUID (courses.id) -> teachable_course_id (bigint).
+      // We need to keep legacy course_id populated because the column is NOT NULL.
+      const incomingUuids = courses
+        .map(c => c.course_id)
+        .filter(v => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v));
+      const incomingBigints = courses
+        .map(c => c.teachable_course_id)
+        .filter(v => v != null);
 
-      const { error: insError } = await supabase
-        .from("diploma_courses")
-        .insert(rows);
+      // Fetch name-based bridge: courses(uuid) -> title -> teachable_courses(bigint)
+      let uuidToBigint = new Map();
+      let bigintToUuid = new Map();
+      if (incomingUuids.length > 0) {
+        const { data: legacy } = await supabase
+          .from("courses")
+          .select("id, title")
+          .in("id", incomingUuids);
+        if (legacy && legacy.length > 0) {
+          const titles = legacy.map(l => l.title).filter(Boolean);
+          if (titles.length > 0) {
+            const { data: tc } = await supabase
+              .from("teachable_courses")
+              .select("teachable_course_id, name")
+              .in("name", titles);
+            const titleToBigint = new Map((tc || []).map(r => [r.name, r.teachable_course_id]));
+            legacy.forEach(l => {
+              const big = titleToBigint.get(l.title);
+              if (big != null) uuidToBigint.set(l.id, big);
+            });
+          }
+        }
+      }
+      if (incomingBigints.length > 0) {
+        const { data: tc } = await supabase
+          .from("teachable_courses")
+          .select("teachable_course_id, name")
+          .in("teachable_course_id", incomingBigints);
+        if (tc && tc.length > 0) {
+          const names = tc.map(r => r.name).filter(Boolean);
+          const { data: legacy } = await supabase
+            .from("courses")
+            .select("id, title")
+            .in("title", names);
+          const titleToUuid = new Map((legacy || []).map(l => [l.title, l.id]));
+          tc.forEach(r => {
+            const u = titleToUuid.get(r.name);
+            if (u) bigintToUuid.set(r.teachable_course_id, u);
+          });
+        }
+      }
 
-if (insError) throw insError;
+      const rows = courses.map(c => {
+        const row = {
+          diploma_id: parseInt(diplomaId),
+          course_order: c.course_order || 1,
+        };
+        if (c.course_id && /^[0-9a-f-]{36}$/i.test(c.course_id)) {
+          row.course_id = c.course_id;
+          row.teachable_course_id = uuidToBigint.get(c.course_id) || null;
+        } else if (c.teachable_course_id != null) {
+          row.teachable_course_id = c.teachable_course_id;
+          row.course_id = bigintToUuid.get(c.teachable_course_id) || null;
+        }
+        return row;
+      }).filter(r => r.course_id);  // course_id is NOT NULL in DB
+
+      if (rows.length > 0) {
+        const { error: insError } = await supabase
+          .from("diploma_courses")
+          .insert(rows);
+        if (insError) throw insError;
+      }
     }
 
     _diplomaCourseMapCache = { data: null, ts: 0 };
@@ -1029,7 +1307,7 @@ app.get("/admin/instructors", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
-      .from("instructors")
+      .from("teachable_authors")
       .select("*")
       .order("name", { ascending: true });
     if (error) throw error;
@@ -1043,7 +1321,7 @@ app.post("/admin/instructors", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
-      .from("instructors")
+      .from("teachable_authors")
       .insert(req.body)
       .select()
       .single();
@@ -1059,7 +1337,7 @@ app.put("/admin/instructors/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { data, error } = await supabase
-      .from("instructors")
+      .from("teachable_authors")
       .update(req.body)
       .eq("id", req.params.id)
       .select()
@@ -1076,7 +1354,7 @@ app.delete("/admin/instructors/:id", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { error } = await supabase
-      .from("instructors")
+      .from("teachable_authors")
       .delete()
       .eq("id", req.params.id);
     if (error) throw error;
@@ -1446,17 +1724,17 @@ app.get("/admin/export-logs", adminAuth, async (req, res) => {
 // ============================================================
 
 /* ═══ Upload + Static + Health ═══ */
-app.get("/api/upload/courses", async (req, res) => {
+app.get("/api/upload/courses", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { data, error } = await supabase
-      .from("courses")
-      .select("id, title")
-      .order("title", { ascending: true });
+      .from("teachable_courses")
+      .select("id, teachable_course_id, name")
+      .order("name", { ascending: true });
     if (error) throw error;
     res.json({ 
       success: true, 
-      courses: (data || []).map(c => ({ id: c.id, name: c.title }))
+      courses: (data || []).map(c => ({ id: c.id, teachable_course_id: c.teachable_course_id, name: c.name }))
     });
   } catch (err) {
     console.error("❌ GET /api/upload/courses error:", err.message);
@@ -1465,24 +1743,30 @@ app.get("/api/upload/courses", async (req, res) => {
 });
 
 // --- Get lessons for a course ---
-app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
+app.get("/api/upload/courses/:courseId/lessons", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { courseId } = req.params;
     console.log("📖 Fetching lessons for course:", courseId);
     
+    // MIGRATED: resolve incoming id to external teachable_course_id
+    let externalCourseId = courseId;
+    try {
+      const cRow = await resolveCourseId(courseId);
+      if (cRow && cRow.teachable_course_id) externalCourseId = cRow.teachable_course_id;
+    } catch (_) {}
+
     // Check if lessons table exists and get lessons
     let lessons = [];
     try {
       const { data, error } = await supabase
-        .from("lessons")
-        .select("id, title")
-        .eq("course_id", courseId)
-        .order("created_at", { ascending: true });
+        .from("teachable_lectures")
+        .select(LECTURE_SELECT_COLS)
+        .eq("course_id", externalCourseId)
+        .order("position", { ascending: true });
       
       if (error) {
         console.error("❌ Lessons query error:", error.message, error.code);
-        // If table doesn't exist, return empty
         if (error.code === "42P01" || error.message.includes("does not exist")) {
           return res.json({ success: true, lessons: [] });
         }
@@ -1496,27 +1780,26 @@ app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
 
     console.log("📖 Found", lessons.length, "lessons");
 
-    // Get chunk counts for each lesson
+    // Get chunk counts (MIGRATED: chunks.teachable_lecture_id)
     const result = [];
     for (const lesson of lessons) {
       let chunkCount = 0;
       try {
-        const { count, error: chunkErr } = await supabase
-          .from("chunks")
-          .select("*", { count: "exact", head: true })
-          .eq("lesson_id", lesson.id);
-        if (!chunkErr) {
-          chunkCount = count || 0;
-        } else {
-          console.error("⚠️ Chunks count error for lesson", lesson.id, ":", chunkErr.message);
+        if (lesson.teachable_lecture_id) {
+          const { count, error: chunkErr } = await supabase
+            .from("chunks")
+            .select("*", { count: "exact", head: true })
+            .eq("teachable_lecture_id", lesson.teachable_lecture_id);
+          if (!chunkErr) chunkCount = count || 0;
+          else console.error("⚠️ Chunks count error for lesson", lesson.id, ":", chunkErr.message);
         }
       } catch (chunkEx) {
-        // chunks table might not exist — OK, just 0
         console.error("⚠️ Chunks table error:", chunkEx.message);
       }
       result.push({
         id: lesson.id,
-        title: lesson.title,
+        teachable_lecture_id: lesson.teachable_lecture_id,
+        title: lesson.name,
         chunk_count: chunkCount
       });
     }
@@ -1529,40 +1812,47 @@ app.get("/api/upload/courses/:courseId/lessons", async (req, res) => {
 });
 
 // --- Get total chunk count for a course ---
-app.get("/api/upload/courses/:courseId/chunks-count", async (req, res) => {
+app.get("/api/upload/courses/:courseId/chunks-count", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false, error: "DB not connected" });
   try {
     const { courseId } = req.params;
     console.log("📊 Fetching chunks count for course:", courseId);
-    
-    // Get lesson IDs for this course
-    let lessonIds = [];
+
+    // MIGRATED: resolve incoming id to external teachable_course_id
+    let externalCourseId = courseId;
+    try {
+      const cRow = await resolveCourseId(courseId);
+      if (cRow && cRow.teachable_course_id) externalCourseId = cRow.teachable_course_id;
+    } catch (_) {}
+
+    // Get teachable_lecture_ids for this course (chunks use external id)
+    let lectureIds = [];
     try {
       const { data: lessons, error: lessonErr } = await supabase
-        .from("lessons")
-        .select("id")
-        .eq("course_id", courseId);
+        .from("teachable_lectures")
+        .select("teachable_lecture_id")
+        .eq("course_id", externalCourseId);
 
       if (lessonErr) {
         console.error("❌ Lessons query error:", lessonErr.message);
         return res.json({ success: true, count: 0 });
       }
-      lessonIds = (lessons || []).map(l => l.id);
+      lectureIds = (lessons || []).map(l => l.teachable_lecture_id).filter(Boolean);
     } catch (e) {
       console.error("⚠️ Lessons table error:", e.message);
       return res.json({ success: true, count: 0 });
     }
 
-    if (lessonIds.length === 0) {
+    if (lectureIds.length === 0) {
       return res.json({ success: true, count: 0 });
     }
 
-    // Count chunks
+    // Count chunks (MIGRATED: teachable_lecture_id)
     try {
       const { count, error: chunkErr } = await supabase
         .from("chunks")
         .select("*", { count: "exact", head: true })
-        .in("lesson_id", lessonIds);
+        .in("teachable_lecture_id", lectureIds);
       
       if (chunkErr) {
         console.error("⚠️ Chunks count error:", chunkErr.message);
@@ -1601,10 +1891,10 @@ app.get("/api/upload/debug", adminAuth, async (req, res) => {
   // Test a specific course
   try {
     const { data } = await supabase
-      .from("courses")
-      .select("id, title")
+      .from("teachable_courses")
+      .select("id, teachable_course_id, name")
       .limit(1);
-    tables.sample_course = data && data[0] ? data[0].title : "no courses";
+    tables.sample_course = data && data[0] ? data[0].name : "no courses";
   } catch (e) {
     tables.sample_course = "error";
   }
@@ -1612,8 +1902,8 @@ app.get("/api/upload/debug", adminAuth, async (req, res) => {
   // Test lessons join
   try {
     const { data, error } = await supabase
-      .from("lessons")
-      .select("id, title, course_id")
+      .from("teachable_lectures")
+      .select("id, name, course_id, teachable_lecture_id")
       .limit(3);
     tables.sample_lessons = error ? "ERROR: " + error.message : (data || []).length + " sample lessons";
   } catch (e) {
@@ -1629,15 +1919,22 @@ app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) =>
   if (!supabase) return res.status(500).json({ success: false });
   try {
     const { lessonId } = req.params;
+    // MIGRATED: resolve to teachable_lecture_id (bigint external)
+    const lectureRow = await resolveLectureId(lessonId);
+
+    if (!lectureRow || !lectureRow.teachable_lecture_id) {
+      return res.json({ success: true, deleted: 0 });
+    }
+
     const { count } = await supabase
       .from("chunks")
       .select("*", { count: "exact", head: true })
-      .eq("lesson_id", lessonId);
+      .eq("teachable_lecture_id", lectureRow.teachable_lecture_id);
 
     const { error } = await supabase
       .from("chunks")
       .delete()
-      .eq("lesson_id", lessonId);
+      .eq("teachable_lecture_id", lectureRow.teachable_lecture_id);
     if (error) throw error;
     console.log(`🗑️ Deleted ${count || 0} chunks for lesson ${lessonId}`);
     res.json({ success: true, deleted: count || 0 });
@@ -1646,7 +1943,7 @@ app.delete("/api/admin/lessons/:lessonId/chunks", adminAuth, async (req, res) =>
   }
 });
 
-// --- Rename a lesson (update title in lessons table) ---
+// --- Rename a lesson (update name) ---
 app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
   if (!supabase) return res.status(500).json({ success: false });
   try {
@@ -1655,10 +1952,18 @@ app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
     if (!title || !title.trim()) {
       return res.status(400).json({ error: "Title is required" });
     }
+    // MIGRATED: 'title' → 'name'. Resolve the row first to avoid updating
+    // multiple rows in the rare case of id/teachable_lecture_id collision.
+    const lectureRow = await resolveLectureId(lessonId);
+
+    if (!lectureRow) {
+      return res.status(404).json({ error: "Lesson not found" });
+    }
+
     const { data, error } = await supabase
-      .from("lessons")
-      .update({ title: title.trim() })
-      .eq("id", lessonId)
+      .from("teachable_lectures")
+      .update({ name: title.trim() })
+      .eq("id", lectureRow.id)
       .select()
       .single();
     if (error) throw error;
@@ -1670,6 +1975,61 @@ app.patch("/api/admin/lessons/:lessonId", adminAuth, async (req, res) => {
 });
 
 // --- Process lesson (create/reupload → chunk → embed → store) ---
+// Helpers used by the process-lesson endpoint. These used to live only in
+// ziko-guide.js (which also defines its own, now-removed, process-lesson
+// route). Keeping local copies here so this endpoint is self-contained.
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseAndChunkTranscript(content, maxChunkChars = 500) {
+  const lines = content.split("\n").filter((l) => l.trim());
+  const segments = [];
+
+  for (const line of lines) {
+    const match = line.match(/\[(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\]\s*(.*)/);
+    if (match) {
+      const text = match[3].trim();
+      if (text) {
+        segments.push({
+          startTime: match[1],
+          endTime: match[2],
+          text: text,
+        });
+      }
+    }
+  }
+
+  const chunks = [];
+  let currentSegments = [];
+  let currentLength = 0;
+
+  for (const seg of segments) {
+    if (currentLength + seg.text.length > maxChunkChars && currentSegments.length > 0) {
+      chunks.push({
+        content: currentSegments.map((s) => s.text).join(" "),
+        startTime: currentSegments[0].startTime,
+        endTime: currentSegments[currentSegments.length - 1].endTime,
+      });
+      currentSegments = [];
+      currentLength = 0;
+    }
+
+    currentSegments.push(seg);
+    currentLength += seg.text.length + 1;
+  }
+
+  if (currentSegments.length > 0) {
+    chunks.push({
+      content: currentSegments.map((s) => s.text).join(" "),
+      startTime: currentSegments[0].startTime,
+      endTime: currentSegments[currentSegments.length - 1].endTime,
+    });
+  }
+
+  return chunks;
+}
+
 app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
   if (!supabase || !openai) return res.status(500).json({ error: "Not initialized" });
   try {
@@ -1681,28 +2041,49 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
     let targetLessonId = lessonId;
 
     if (targetLessonId) {
-      // Re-upload: update title + delete old chunks
-      await supabase
-        .from("lessons")
-        .update({ title: lessonName.trim() })
-        .eq("id", targetLessonId);
+      // MIGRATED: resolve lesson id flexibly; update 'name' (was 'title')
+      const lectureRow = await resolveLectureId(targetLessonId);
 
-      const { error: delErr } = await supabase
-        .from("chunks")
-        .delete()
-        .eq("lesson_id", targetLessonId);
-      if (delErr) console.error("Error deleting old chunks:", delErr);
+      if (lectureRow) {
+        await supabase
+          .from("teachable_lectures")
+          .update({ name: lessonName.trim() })
+          .eq("id", lectureRow.id);
+
+        if (lectureRow.teachable_lecture_id) {
+          const { error: delErr } = await supabase
+            .from("chunks")
+            .delete()
+            .eq("teachable_lecture_id", lectureRow.teachable_lecture_id);
+          if (delErr) console.error("Error deleting old chunks:", delErr);
+        }
+        targetLessonId = lectureRow.id;
+        var targetLectureExternalId = lectureRow.teachable_lecture_id;
+      }
       console.log(`📖 Re-uploading lesson: "${lessonName}" (id: ${targetLessonId})`);
     } else {
-      // New lesson: create entry in lessons table
+      // MIGRATED: resolve courseId → teachable_course_id (external)
+      let externalCourseId = courseId;
+      const cRow = await resolveCourseId(courseId);
+      if (cRow && cRow.teachable_course_id) externalCourseId = cRow.teachable_course_id;
+
+      // New lesson: create entry (MIGRATED: 'title' → 'name')
       const { data: newLesson, error: lessonErr } = await supabase
-        .from("lessons")
-        .insert({ title: lessonName.trim(), course_id: courseId })
-        .select()
+        .from("teachable_lectures")
+        .insert({ name: lessonName.trim(), course_id: externalCourseId })
+        .select("id, teachable_lecture_id")
         .single();
       if (lessonErr) throw lessonErr;
       targetLessonId = newLesson.id;
-      console.log(`📖 Created new lesson: "${lessonName}" (id: ${targetLessonId})`);
+      var targetLectureExternalId = newLesson.teachable_lecture_id;
+      console.log(`📖 Created new lesson: "${lessonName}" (id: ${targetLessonId}, tl_id: ${targetLectureExternalId})`);
+
+      if (!targetLectureExternalId) {
+        return res.status(409).json({
+          error: "هذا الدرس تم إنشاؤه يدوياً ولا يملك teachable_lecture_id، ولا يمكن ربط chunks به. الدروس يجب أن تأتي من Teachable sync أولاً — اعمل sync للكورس ثم أعد المحاولة.",
+          code: "NO_TEACHABLE_LECTURE_ID"
+        });
+      }
     }
 
     // 1️⃣ Parse & chunk
@@ -1712,18 +2093,18 @@ app.post("/api/admin/process-lesson", adminAuth, async (req, res) => {
     }
     console.log(`📖 Processing "${lessonName}": ${chunks.length} chunks`);
 
-    // 2️⃣ Generate embeddings & insert
+    // 2️⃣ Generate embeddings & insert (MIGRATED: chunks use teachable_lecture_id)
     let chunksCreated = 0;
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-const embeddingRes = await openai.embeddings.create({
+      const embeddingRes = await openai.embeddings.create({
         model: CHUNK_EMBEDDING_MODEL,
         input: chunk.content,
       });
       const embedding = embeddingRes.data[0].embedding;
 
       const { error } = await supabase.from("chunks").insert({
-        lesson_id: targetLessonId,
+        teachable_lecture_id: targetLectureExternalId,
         content: chunk.content,
         chunk_order: i + 1,
         timestamp_start: chunk.startTime || null,
@@ -1823,7 +2204,7 @@ app.get("/health", async (req, res) => {
   let dbStatus = "unknown";
   if (supabase) {
     try {
-      const { error } = await supabase.from("courses").select("id").limit(1);
+      const { error } = await supabase.from("teachable_courses").select("id").limit(1);
       dbStatus = error ? `error: ${error.message}` : "connected";
     } catch (e) {
       dbStatus = `exception: ${e.message}`;
@@ -1882,10 +2263,11 @@ app.get("/api/admin/generate-embeddings", adminAuth, async (req, res) => {
     };
 
     // Courses
+    // SCHEMA: only existing text columns on teachable_courses
     const { data: courses } = await supabase
-      .from("courses")
+      .from("teachable_courses")
       .select(
-        "id, title, description, subtitle, syllabus, objectives, keywords, page_content, domain"
+        "id, name, description, heading, syllabus, objectives, keywords"
       )
       .is("embedding", null);
 
@@ -1894,12 +2276,10 @@ app.get("/api/admin/generate-embeddings", adminAuth, async (req, res) => {
       for (const course of courses) {
         try {
           const text = [
-            course.title,
-            course.subtitle,
-            course.domain,
+            course.name,
+            course.heading,
             course.keywords,
             course.description,
-            course.page_content,
             course.syllabus,
             course.objectives,
           ]
@@ -1909,7 +2289,7 @@ app.get("/api/admin/generate-embeddings", adminAuth, async (req, res) => {
 
           const embedding = await generateSingleEmbedding(text);
           const { error } = await supabase
-            .from("courses")
+            .from("teachable_courses")
             .update({ embedding })
             .eq("id", course.id);
 
@@ -1966,156 +2346,11 @@ app.get("/api/admin/generate-embeddings", adminAuth, async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   ██████████████████████████████████████████████████████████
-   ██                                                      ██
-   ██   SECTION 16: 🧩 Guide Bot RAG Helpers v2.0         ██
-   ██   🆕 COMPLETELY REWRITTEN for v10.9                  ██
-   ██                                                      ██
-   ██████████████████████████████████████████████████████████
-   ══════════════════════════════════════════════════════════ */
-
-async function findCourseByName(courseName) {
-  if (!supabase || !courseName) return null;
-  try {
-    const { data: matches } = await supabase
-      .from("courses")
-      .select("id, title")
-      .ilike("title", `%${courseName}%`)
-      .limit(5);
-
-    if (matches && matches.length > 0) {
-      const normName = normalizeArabic(courseName.toLowerCase());
-      let best = matches[0];
-      let bestSim = 0;
-      for (const m of matches) {
-        const sim = similarityRatio(
-          normName,
-          normalizeArabic((m.title || "").toLowerCase())
-        );
-        if (sim > bestSim) {
-          bestSim = sim;
-          best = m;
-        }
-      }
-      return best;
-    }
-
-    // Fuzzy fallback
-    const { data: all } = await supabase
-      .from("courses")
-      .select("id, title")
-      .limit(500);
-    if (!all) return null;
-
-    const normName = normalizeArabic(courseName.toLowerCase());
-    let bestMatch = null;
-    let bestScore = 0;
-    for (const course of all) {
-      const sim = similarityRatio(
-        normName,
-        normalizeArabic((course.title || "").toLowerCase())
-      );
-      if (sim > bestScore && sim >= 50) {
-        bestScore = sim;
-        bestMatch = course;
-      }
-    }
-    return bestMatch;
-  } catch (e) {
-    console.error("findCourseByName error:", e.message);
-    return null;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════
-   🆕 FIX #44: Improved findLessonByTitle — partial word matching
-   ══════════════════════════════════════════════════════════ */
-async function findLessonByTitle(lessonTitle, courseId = null) {
-  if (!supabase || !lessonTitle) return null;
-  try {
-    // Step 1: Direct ilike
-    let query = supabase
-      .from("lessons")
-      .select("id, title, course_id, lesson_order")
-      .ilike("title", `%${lessonTitle}%`)
-      .limit(10);
-    if (courseId) query = query.eq("course_id", courseId);
-    let { data } = await query;
-
-    // Step 2: Try individual words (for bilingual titles)
-    if (!data || data.length === 0) {
-      const words = lessonTitle.split(/\s+/).filter((w) => w.length > 3);
-      if (words.length > 0) {
-        const partialFilter = words
-          .slice(0, 4)
-          .map((w) => `title.ilike.%${w}%`)
-          .join(",");
-        let q2 = supabase
-          .from("lessons")
-          .select("id, title, course_id, lesson_order")
-          .or(partialFilter)
-          .limit(10);
-        if (courseId) q2 = q2.eq("course_id", courseId);
-        const { data: d2 } = await q2;
-        data = d2;
-      }
-    }
-
-    // Step 3: Get ALL lessons for course as fallback
-    if ((!data || data.length === 0) && courseId) {
-      const { data: allLessons } = await supabase
-        .from("lessons")
-        .select("id, title, course_id, lesson_order")
-        .eq("course_id", courseId)
-        .order("lesson_order", { ascending: true });
-      data = allLessons;
-    }
-
-    if (!data || data.length === 0) return null;
-
-    // Smart matching
-    const normTitle = normalizeArabic(lessonTitle.toLowerCase().trim());
-    let best = null;
-    let bestScore = 0;
-
-    for (const d of data) {
-      const dbTitle = (d.title || "").toLowerCase().trim();
-      const dbNorm = normalizeArabic(dbTitle);
-      let score = 0;
-
-      if (dbNorm === normTitle || dbTitle === lessonTitle.toLowerCase().trim()) {
-        score = 100;
-      } else if (dbNorm.includes(normTitle) || dbTitle.includes(lessonTitle.toLowerCase().trim())) {
-        score = 95;
-      } else if (normTitle.includes(dbNorm)) {
-        score = 90;
-      } else {
-        const searchWords = normTitle.split(/\s+/).filter(w => w.length > 2);
-        const matchedWords = searchWords.filter(w => dbNorm.includes(w));
-        if (searchWords.length > 0 && matchedWords.length > 0) {
-          score = 40 + Math.round((matchedWords.length / searchWords.length) * 40);
-        }
-        if (score < 50) {
-          score = Math.max(score, similarityRatio(normTitle, dbNorm));
-        }
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = d;
-      }
-    }
-
-    console.log(`🎓 findLessonByTitle: "${lessonTitle}" → "${best ? best.title : 'NONE'}" (score=${bestScore}%)`);
-    return bestScore >= 30 ? best : data.length > 0 ? data[0] : null;
-  } catch (e) {
-    console.error("findLessonByTitle error:", e.message);
-    return null;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════
-   🆕 FIX #40: getAllLessonChunks — gets ALL chunks for a lesson
+   SECTION 16 (REMOVED): The Guide Bot RAG Helpers
+   (findCourseByName, findLessonByTitle, getAllLessonChunks)
+   previously lived here as dead code — they are only referenced
+   from within ziko-guide.js where the actual Guide RAG flow runs.
+   Removed to reduce surface area.
    ══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -4146,7 +4381,7 @@ app.post("/api/admin/teachable/sync-enrollments-via-users", async (req, res) => 
       return res.status(400).json({ error: "Already running" });
     }
 
-    const concurrency = parseInt(req.body?.concurrency) || 3;
+    const concurrency = parseInt(req.body?.concurrency) || 10;
     const batchSize = parseInt(req.body?.batch_size) || 100;
     const resumeFromUserId = req.body?.resume_from_user_id || null;
 
@@ -4156,10 +4391,7 @@ app.post("/api/admin/teachable/sync-enrollments-via-users", async (req, res) => 
       completedAt: null,
       totalUsers: 0,
       usersProcessed: 0,
-      usersSkipped: 0,      // 404 — user deleted
-      usersEmpty: 0,        // user had 0 courses
-      usersSucceeded: 0,    // user added to DB successfully
-      usersFailed: 0,       // user failed (403 after retries, upsert error, network)
+      usersSkipped: 0,
       enrollmentsAdded: 0,
       enrollmentsUpdated: 0,
       errors: [],
@@ -4302,13 +4534,6 @@ async function runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUser
         if (S.stopRequested) break;
         
         await Promise.all(chunk.map(user => processOneUser(user, S)));
-        
-        // Delay between chunks to respect Teachable API rate limits (~60 req/min)
-        // With concurrency=3, delay=500ms → ~6 req/s = 360 req/min
-        // With concurrency=3, delay=1000ms → ~3 req/s = 180 req/min
-        if (!S.stopRequested) {
-          await new Promise(r => setTimeout(r, 500));
-        }
       }
 
       // Update last user ID for next batch
@@ -4330,14 +4555,9 @@ async function runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUser
 
 /**
  * Process one user: fetch their enrollments from Teachable API and upsert to DB
- * Features:
- *  - Retries for HTTP 403/429 with exponential backoff (up to 3 attempts)
- *  - Separate counters for processed/failed/skipped
- *  - Tracks failed users persistently for later retry
  */
-async function processOneUser(user, S, attempt = 1) {
+async function processOneUser(user, S) {
   const userId = user.teachable_user_id;
-  const MAX_ATTEMPTS = 3;
   S.currentUserId = userId;
 
   try {
@@ -4351,56 +4571,18 @@ async function processOneUser(user, S, attempt = 1) {
       }
     });
 
-    // 404: user deleted — skip permanently
-    if (response.status === 404) {
-      S.usersSkipped++;
-      S.usersProcessed++;
-      return;
-    }
-
-    // 403 or 429: rate limiting / temporary — retry with exponential backoff
-    if (response.status === 403 || response.status === 429) {
-      if (attempt < MAX_ATTEMPTS) {
-        // Backoff: 3s, 8s, 20s
-        const delayMs = attempt === 1 ? 3000 : attempt === 2 ? 8000 : 20000;
-        await new Promise(r => setTimeout(r, delayMs));
-        return processOneUser(user, S, attempt + 1);
-      }
-      // Exhausted retries — save to failed_sync_users for later retry
-      S.usersFailed = (S.usersFailed || 0) + 1;
-      S.usersProcessed++;
-      S.errors.push({
-        at: new Date().toISOString(),
-        userId,
-        error: `HTTP ${response.status} after ${MAX_ATTEMPTS} attempts`,
-        retriable: true
-      });
-      // Persist to failed_sync_users table
-      try {
-        await supabase.from("failed_sync_users").upsert({
-          teachable_user_id: userId,
-          email: user.email || null,
-          last_http_status: response.status,
-          attempts: MAX_ATTEMPTS,
-          last_error: `HTTP ${response.status}`,
-          last_attempted_at: new Date().toISOString(),
-          succeeded: false
-        }, { onConflict: "teachable_user_id" });
-      } catch (e) { /* silent — don't break main flow */ }
-      return;
-    }
-
-    // Any other HTTP error (500+, etc.) — log and move on, no throw
     if (!response.ok) {
-      S.usersFailed = (S.usersFailed || 0) + 1;
-      S.usersProcessed++;
-      S.errors.push({
-        at: new Date().toISOString(),
-        userId,
-        error: `HTTP ${response.status}`,
-        retriable: response.status >= 500
-      });
-      return;
+      if (response.status === 404) {
+        S.usersSkipped++;
+        S.usersProcessed++;
+        return;
+      }
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        await new Promise(r => setTimeout(r, 5000));
+        return processOneUser(user, S);
+      }
+      throw new Error(`HTTP ${response.status}`);
     }
 
     const data = await response.json();
@@ -4408,7 +4590,6 @@ async function processOneUser(user, S, attempt = 1) {
 
     if (courses.length === 0) {
       S.usersProcessed++;
-      S.usersEmpty = (S.usersEmpty || 0) + 1;
       return;
     }
 
@@ -4443,67 +4624,34 @@ async function processOneUser(user, S, attempt = 1) {
     }));
 
     if (rows.length > 0) {
-      const { error } = await supabase
+      const { error, count } = await supabase
         .from("teachable_enrollments")
         .upsert(rows, {
           onConflict: "teachable_user_id,course_id",
-          ignoreDuplicates: false
+          ignoreDuplicates: false,
+          count: 'exact'
         });
 
       if (error) {
-        S.usersFailed = (S.usersFailed || 0) + 1;
         S.errors.push({
           at: new Date().toISOString(),
           userId,
           type: "upsert_error",
           error: error.message
         });
-        // Save to failed table — we'll retry this user later
-        try {
-          await supabase.from("failed_sync_users").upsert({
-            teachable_user_id: userId,
-            email: data.email || user.email || null,
-            last_http_status: 200,
-            attempts: 1,
-            last_error: `upsert: ${error.message}`.slice(0, 500),
-            last_attempted_at: new Date().toISOString(),
-            succeeded: false
-          }, { onConflict: "teachable_user_id" });
-        } catch (e) { /* silent */ }
-        S.usersProcessed++;
-        return;
+      } else {
+        S.enrollmentsAdded += rows.length;
       }
-      S.enrollmentsAdded += rows.length;
-      S.usersSucceeded = (S.usersSucceeded || 0) + 1;
     }
 
     S.usersProcessed++;
   } catch (err) {
-    // Network error / timeout / etc.
-    // Retry once for transient network errors
-    if (attempt < MAX_ATTEMPTS && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("ETIMEDOUT") || err.message.includes("ECONNRESET"))) {
-      await new Promise(r => setTimeout(r, attempt * 2000));
-      return processOneUser(user, S, attempt + 1);
-    }
-    S.usersFailed = (S.usersFailed || 0) + 1;
     S.usersProcessed++;
     S.errors.push({
       at: new Date().toISOString(),
       userId,
-      error: err.message,
-      network: true
+      error: err.message
     });
-    try {
-      await supabase.from("failed_sync_users").upsert({
-        teachable_user_id: userId,
-        email: user.email || null,
-        last_http_status: 0,
-        attempts: attempt,
-        last_error: err.message.slice(0, 500),
-        last_attempted_at: new Date().toISOString(),
-        succeeded: false
-      }, { onConflict: "teachable_user_id" });
-    } catch (e) { /* silent */ }
   }
 }
 
