@@ -3924,7 +3924,7 @@ app.post("/api/admin/teachable/fix-course-enrollments/stop", async (req, res) =>
 async function runFixCourseEnrollments(courseIds, customUserIds = null) {
   const S = syncState.fixCourse;
   const BATCH_SIZE = 500;
-  const DELAY_BETWEEN_USERS = 150;
+  const DELAY_BETWEEN_USERS = 0; // No delay - API itself is slow enough
 
   const courseIdSet = new Set(courseIds.map(id => parseInt(id)));
 
@@ -4054,8 +4054,10 @@ async function runFixCourseEnrollments(courseIds, customUserIds = null) {
           });
         }
 
-        // Rate limit
-        await new Promise(r => setTimeout(r, DELAY_BETWEEN_USERS));
+        // Rate limit - none, API latency is self-limiting
+        if (DELAY_BETWEEN_USERS > 0) {
+          await new Promise(r => setTimeout(r, DELAY_BETWEEN_USERS));
+        }
       } catch (err) {
         S.errors.push({
           at: new Date().toISOString(),
