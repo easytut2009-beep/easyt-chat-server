@@ -4020,34 +4020,54 @@ app.get("/api/admin/teachable/diagnose-course", async (req, res) => {
 
     const results = {};
     const testCases = [
+      // Basic
       { name: "default", url: `?per=100&page=1` },
-      { name: "default_page50", url: `?per=100&page=50` },
-      { name: "default_page99", url: `?per=100&page=99` },
-      { name: "sort_enrolled_asc", url: `?per=100&page=1&sort=enrolled_at&order=asc` },
-      { name: "sort_enrolled_desc", url: `?per=100&page=1&sort=enrolled_at&order=desc` },
-      { name: "sort_user_asc", url: `?per=100&page=1&sort=user_id&order=asc` },
+      
+      // Status filters
+      { name: "status_active", url: `?per=100&page=1&status=active` },
+      { name: "status_all", url: `?per=100&page=1&status=all` },
+      { name: "is_active_true", url: `?per=100&page=1&is_active=true` },
+      { name: "is_active_false", url: `?per=100&page=1&is_active=false` },
+      
+      // Include filters
+      { name: "include_deleted", url: `?per=100&page=1&include_deleted=true` },
+      { name: "include_inactive", url: `?per=100&page=1&include_inactive=true` },
+      { name: "include_refunded", url: `?per=100&page=1&include_refunded=true` },
+      
+      // Per page size tests
+      { name: "per_200", url: `?per=200&page=1` },
+      { name: "per_250", url: `?per=250&page=1` },
+      
+      // Different endpoints
+      { name: "users_endpoint", url: `/users?per=100&page=1&has_enrollment_in_course=${courseId}`, alternate: true },
     ];
 
     for (const test of testCases) {
       try {
-        const data = await teachableFetchWithRetry(
-          `/courses/${courseId}/enrollments${test.url}`
-        );
-        const enrollments = data.enrollments || [];
-        const userIds = enrollments.map(e => e.user_id || e.user?.id).filter(Boolean);
+        let url;
+        if (test.alternate) {
+          url = test.url; // Full path
+        } else {
+          url = `/courses/${courseId}/enrollments${test.url}`;
+        }
+        
+        const data = await teachableFetchWithRetry(url);
+        
+        // Handle different response structures
+        const items = data.enrollments || data.users || [];
+        const userIds = items.map(e => e.user_id || e.user?.id || e.id).filter(Boolean);
         const unique = new Set(userIds);
 
         results[test.name] = {
-          count: enrollments.length,
-          unique_users: unique.size,
-          first_user_id: userIds[0],
-          last_user_id: userIds[userIds.length - 1],
+          count: items.length,
+          unique: unique.size,
           total: data.meta?.total,
           pages: data.meta?.number_of_pages,
-          meta: data.meta
+          first_id: userIds[0],
+          last_id: userIds[userIds.length - 1]
         };
       } catch (err) {
-        results[test.name] = { error: err.message };
+        results[test.name] = { error: err.message.slice(0, 100) };
       }
     }
 
