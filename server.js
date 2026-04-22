@@ -7088,6 +7088,165 @@ app.post("/api/admin/teachable/migrate-images/stop", (req, res) => {
   res.json({ success: true, message: "Stop requested" });
 });
 
+/* ══════════════════════════════════════════════════════════
+   ATTACHMENTS MIGRATION — Teachable CDN → Supabase Storage
+   ══════════════════════════════════════════════════════════ */
+
+const attachmentMigrationState = {
+  status: "idle",
+  startedAt: null,
+  completedAt: null,
+  dryRun: false,
+  stopRequested: false,
+  total: 0,
+  processed: 0,
+  succeeded: 0,
+  skipped: 0,
+  failed: 0,
+  errors: [],
+  lastUpdate: null
+};
+
+async function runAttachmentMigration(dryRun) {
+  const s = attachmentMigrationState;
+  s.status = "running";
+  s.startedAt = new Date().toISOString();
+  s.dryRun = dryRun;
+  s.stopRequested = false;
+  s.total = 0; s.processed = 0; s.succeeded = 0; s.skipped = 0; s.failed = 0;
+  s.errors = [];
+  s.lastUpdate = new Date().toISOString();
+
+  try {
+    // جيب الـ attachments اللي على Teachable CDN فقط
+    const { data: attachments, error } = await supabase
+      .from("teachable_attachments")
+      .select("id, teachable_lecture_id, kind, url, name")
+      .in("kind", ["file", "pdf_embed", "image"])
+      .or("url.ilike.%teachablecdn.com%,url.ilike.%uploads.teachable%");
+
+    if (error) throw new Error("Fetch attachments: " + error.message);
+
+    s.total = attachments.length;
+    console.log(`[AttachMigration] ${s.total} attachments to migrate`);
+
+    for (const att of attachments) {
+      if (s.stopRequested) { s.status = "stopped"; return; }
+
+      s.processed++;
+      s.lastUpdate = new Date().toISOString();
+
+      try {
+        if (dryRun) { s.skipped++; continue; }
+
+        // حمّل الملف
+        const { buffer, contentType } = await downloadImage(att.url);
+
+        // استخرج الامتداد من الـ URL أو الـ name
+        const nameExt = (att.name || "").match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+        const urlExt = getExtensionFromUrl(att.url, contentType);
+        const ext = nameExt || urlExt;
+
+        // اسم الملف: id + ext
+        const storagePath = `attachments/${att.id}.${ext}`;
+        const newUrl = await uploadToSupabaseStorage(storagePath, buffer, contentType);
+
+        // حدّث الـ DB
+        await supabase
+          .from("teachable_attachments")
+          .update({ url: newUrl })
+          .eq("id", att.id);
+
+        s.succeeded++;
+        console.log(`[AttachMigration] ✅ ${att.id} (${att.kind}): ${newUrl}`);
+      } catch (err) {
+        s.failed++;
+        s.errors.push({ id: att.id, kind: att.kind, error: err.message });
+        console.error(`[AttachMigration] ❌ ${att.id}: ${err.message}`);
+      }
+
+      await wait(300); // أبطأ شوية عشان الملفات أكبر
+    }
+
+    s.status = "completed";
+    s.completedAt = new Date().toISOString();
+    console.log(`[AttachMigration] Done. succeeded=${s.succeeded}, failed=${s.failed}`);
+  } catch (err) {
+    s.status = "failed";
+    s.errors.push({ type: "fatal", error: err.message });
+    console.error("[AttachMigration] Fatal:", err.message);
+  }
+}
+
+/**
+ * POST /api/admin/teachable/migrate-attachments
+ * Query: ?admin=PASS&dry_run=true|false
+ */
+app.post("/api/admin/teachable/migrate-attachments", async (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (attachmentMigrationState.status === "running") {
+    return res.status(409).json({ error: "Already running", state: attachmentMigrationState });
+  }
+
+  const dryRun = req.query.dry_run === "true";
+
+  res.json({
+    success: true,
+    message: `Attachment migration started${dryRun ? " (DRY RUN)" : ""}`,
+    dry_run: dryRun
+  });
+
+  runAttachmentMigration(dryRun).catch(err => {
+    console.error("[AttachMigration] Unhandled:", err.message);
+  });
+});
+
+/**
+ * GET /api/admin/teachable/migrate-attachments/status
+ */
+app.get("/api/admin/teachable/migrate-attachments/status", (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const s = attachmentMigrationState;
+  const elapsed = s.startedAt
+    ? Math.round((Date.now() - new Date(s.startedAt).getTime()) / 1000)
+    : 0;
+  const percent = s.total > 0 ? Math.round((s.processed / s.total) * 100) : 0;
+  const rate = elapsed > 0 ? (s.processed / elapsed).toFixed(2) : 0;
+  const eta = rate > 0 && s.total > s.processed
+    ? Math.round((s.total - s.processed) / rate)
+    : null;
+
+  res.json({
+    success: true,
+    state: {
+      ...s,
+      elapsed_seconds: elapsed,
+      percent,
+      rate_per_second: rate,
+      eta_seconds: eta,
+      errors_sample: s.errors.slice(-10)
+    }
+  });
+});
+
+/**
+ * POST /api/admin/teachable/migrate-attachments/stop
+ */
+app.post("/api/admin/teachable/migrate-attachments/stop", (req, res) => {
+  if (req.query.admin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (attachmentMigrationState.status !== "running") {
+    return res.json({ success: false, message: "Not running" });
+  }
+  attachmentMigrationState.stopRequested = true;
+  res.json({ success: true, message: "Stop requested" });
+});
+
 /* ══════════════════════════════════════════════════════════ */
 
 async function startServer() {
