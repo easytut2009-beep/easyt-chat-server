@@ -4054,7 +4054,7 @@ app.get("/api/admin/teachable/raw", async (req, res) => {
  * RAW PROXY - directly forwards Teachable API response
  * Use to see exactly what Teachable returns
  */
-app.get("/api/admin/teachable/raw", async (req, res) => {
+app.get("/api/admin/teachable/raw-course", async (req, res) => {
   try {
     if (!checkInspectorAuth(req, res)) return;
 
