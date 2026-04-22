@@ -4146,7 +4146,7 @@ app.post("/api/admin/teachable/sync-enrollments-via-users", async (req, res) => 
       return res.status(400).json({ error: "Already running" });
     }
 
-    const concurrency = parseInt(req.body?.concurrency) || 10;
+    const concurrency = parseInt(req.body?.concurrency) || 3;
     const batchSize = parseInt(req.body?.batch_size) || 100;
     const resumeFromUserId = req.body?.resume_from_user_id || null;
 
@@ -4156,7 +4156,10 @@ app.post("/api/admin/teachable/sync-enrollments-via-users", async (req, res) => 
       completedAt: null,
       totalUsers: 0,
       usersProcessed: 0,
-      usersSkipped: 0,
+      usersSkipped: 0,      // 404 — user deleted
+      usersEmpty: 0,        // user had 0 courses
+      usersSucceeded: 0,    // user added to DB successfully
+      usersFailed: 0,       // user failed (403 after retries, upsert error, network)
       enrollmentsAdded: 0,
       enrollmentsUpdated: 0,
       errors: [],
@@ -4299,6 +4302,13 @@ async function runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUser
         if (S.stopRequested) break;
         
         await Promise.all(chunk.map(user => processOneUser(user, S)));
+        
+        // Delay between chunks to respect Teachable API rate limits (~60 req/min)
+        // With concurrency=3, delay=500ms → ~6 req/s = 360 req/min
+        // With concurrency=3, delay=1000ms → ~3 req/s = 180 req/min
+        if (!S.stopRequested) {
+          await new Promise(r => setTimeout(r, 500));
+        }
       }
 
       // Update last user ID for next batch
@@ -4320,9 +4330,14 @@ async function runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUser
 
 /**
  * Process one user: fetch their enrollments from Teachable API and upsert to DB
+ * Features:
+ *  - Retries for HTTP 403/429 with exponential backoff (up to 3 attempts)
+ *  - Separate counters for processed/failed/skipped
+ *  - Tracks failed users persistently for later retry
  */
-async function processOneUser(user, S) {
+async function processOneUser(user, S, attempt = 1) {
   const userId = user.teachable_user_id;
+  const MAX_ATTEMPTS = 3;
   S.currentUserId = userId;
 
   try {
@@ -4336,18 +4351,56 @@ async function processOneUser(user, S) {
       }
     });
 
+    // 404: user deleted — skip permanently
+    if (response.status === 404) {
+      S.usersSkipped++;
+      S.usersProcessed++;
+      return;
+    }
+
+    // 403 or 429: rate limiting / temporary — retry with exponential backoff
+    if (response.status === 403 || response.status === 429) {
+      if (attempt < MAX_ATTEMPTS) {
+        // Backoff: 3s, 8s, 20s
+        const delayMs = attempt === 1 ? 3000 : attempt === 2 ? 8000 : 20000;
+        await new Promise(r => setTimeout(r, delayMs));
+        return processOneUser(user, S, attempt + 1);
+      }
+      // Exhausted retries — save to failed_sync_users for later retry
+      S.usersFailed = (S.usersFailed || 0) + 1;
+      S.usersProcessed++;
+      S.errors.push({
+        at: new Date().toISOString(),
+        userId,
+        error: `HTTP ${response.status} after ${MAX_ATTEMPTS} attempts`,
+        retriable: true
+      });
+      // Persist to failed_sync_users table
+      try {
+        await supabase.from("failed_sync_users").upsert({
+          teachable_user_id: userId,
+          email: user.email || null,
+          last_http_status: response.status,
+          attempts: MAX_ATTEMPTS,
+          last_error: `HTTP ${response.status}`,
+          last_attempted_at: new Date().toISOString(),
+          succeeded: false
+        }, { onConflict: "teachable_user_id" });
+      } catch (e) { /* silent — don't break main flow */ }
+      return;
+    }
+
+    // Any other HTTP error (500+, etc.) — log and move on, no throw
     if (!response.ok) {
-      if (response.status === 404) {
-        S.usersSkipped++;
-        S.usersProcessed++;
-        return;
-      }
-      if (response.status === 429) {
-        // Rate limited - wait and retry
-        await new Promise(r => setTimeout(r, 5000));
-        return processOneUser(user, S);
-      }
-      throw new Error(`HTTP ${response.status}`);
+      S.usersFailed = (S.usersFailed || 0) + 1;
+      S.usersProcessed++;
+      S.errors.push({
+        at: new Date().toISOString(),
+        userId,
+        error: `HTTP ${response.status}`,
+        retriable: response.status >= 500
+      });
+      return;
     }
 
     const data = await response.json();
@@ -4355,6 +4408,7 @@ async function processOneUser(user, S) {
 
     if (courses.length === 0) {
       S.usersProcessed++;
+      S.usersEmpty = (S.usersEmpty || 0) + 1;
       return;
     }
 
@@ -4389,34 +4443,67 @@ async function processOneUser(user, S) {
     }));
 
     if (rows.length > 0) {
-      const { error, count } = await supabase
+      const { error } = await supabase
         .from("teachable_enrollments")
         .upsert(rows, {
           onConflict: "teachable_user_id,course_id",
-          ignoreDuplicates: false,
-          count: 'exact'
+          ignoreDuplicates: false
         });
 
       if (error) {
+        S.usersFailed = (S.usersFailed || 0) + 1;
         S.errors.push({
           at: new Date().toISOString(),
           userId,
           type: "upsert_error",
           error: error.message
         });
-      } else {
-        S.enrollmentsAdded += rows.length;
+        // Save to failed table — we'll retry this user later
+        try {
+          await supabase.from("failed_sync_users").upsert({
+            teachable_user_id: userId,
+            email: data.email || user.email || null,
+            last_http_status: 200,
+            attempts: 1,
+            last_error: `upsert: ${error.message}`.slice(0, 500),
+            last_attempted_at: new Date().toISOString(),
+            succeeded: false
+          }, { onConflict: "teachable_user_id" });
+        } catch (e) { /* silent */ }
+        S.usersProcessed++;
+        return;
       }
+      S.enrollmentsAdded += rows.length;
+      S.usersSucceeded = (S.usersSucceeded || 0) + 1;
     }
 
     S.usersProcessed++;
   } catch (err) {
+    // Network error / timeout / etc.
+    // Retry once for transient network errors
+    if (attempt < MAX_ATTEMPTS && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("ETIMEDOUT") || err.message.includes("ECONNRESET"))) {
+      await new Promise(r => setTimeout(r, attempt * 2000));
+      return processOneUser(user, S, attempt + 1);
+    }
+    S.usersFailed = (S.usersFailed || 0) + 1;
     S.usersProcessed++;
     S.errors.push({
       at: new Date().toISOString(),
       userId,
-      error: err.message
+      error: err.message,
+      network: true
     });
+    try {
+      await supabase.from("failed_sync_users").upsert({
+        teachable_user_id: userId,
+        email: user.email || null,
+        last_http_status: 0,
+        attempts: attempt,
+        last_error: err.message.slice(0, 500),
+        last_attempted_at: new Date().toISOString(),
+        succeeded: false
+      }, { onConflict: "teachable_user_id" });
+    } catch (e) { /* silent */ }
   }
 }
 
