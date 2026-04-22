@@ -4008,6 +4008,45 @@ app.post("/api/admin/teachable/sync-course-direct/stop", async (req, res) => {
 });
 
 /**
+ * RAW Teachable API proxy - returns exact response from Teachable
+ * Usage: /api/admin/teachable/raw?path=/courses/1814750/enrollments?per=5
+ */
+app.get("/api/admin/teachable/raw", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    
+    const path = req.query.path;
+    if (!path) return res.status(400).json({ error: "path query param required" });
+
+    const url = `${TEACHABLE_API_BASE}${path}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        apiKey: process.env.TEACHABLE_API_KEY
+      }
+    });
+
+    const text = await response.text();
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+
+    res.json({
+      request_url: url,
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: body
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * DIAGNOSTIC - Test API pagination with different params
  * Tries different sort orders and returns unique user counts
  */
