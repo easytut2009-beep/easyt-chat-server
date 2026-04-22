@@ -3642,30 +3642,63 @@ async function runGapSync(startISO, endISO) {
   
   const newUserIds = [];
   try {
+    // Get the highest user_id we currently have
+    const { data: maxData } = await supabase
+      .from("teachable_users")
+      .select("teachable_user_id")
+      .order("teachable_user_id", { ascending: false })
+      .limit(1)
+      .single();
+    
+    const ourMaxId = maxData?.teachable_user_id || 0;
+    console.log(`[GapSync] Our highest user_id: ${ourMaxId}`);
+    
+    // Track recent users we've already seen
+    const knownUserIds = new Set();
+    {
+      const { data: recentUsers } = await supabase
+        .from("teachable_users")
+        .select("teachable_user_id")
+        .order("teachable_user_id", { ascending: false })
+        .limit(500);
+      
+      (recentUsers || []).forEach(u => knownUserIds.add(u.teachable_user_id));
+    }
+    
     let page = 1;
     let hasMore = true;
+    let consecutiveKnown = 0;
+    const STOP_AFTER_KNOWN = 50; // Stop after 50 consecutive known users
     
     while (hasMore) {
       if (S.stopRequested) break;
       
-      // Teachable API: /users with date filter
       const url = `/users?page=${page}&per=100`;
       const data = await teachableFetchWithRetry(url);
       const users = data.users || [];
       
       if (!users.length) break;
       
-      // Filter by date (Teachable doesn't have a clean date filter for /users)
-      // We'll fetch each user's signup date separately
+      let pageHasNew = false;
+      
       for (const u of users) {
-        // Quick filter: skip if user_id is much smaller than recent ones
-        // (newest users have biggest IDs)
-        if (u.id < 117000000) {
-          hasMore = false; // older users, stop here
-          break;
+        S.phases.users.processed++;
+        
+        // Check if we already have this user
+        if (knownUserIds.has(u.id)) {
+          consecutiveKnown++;
+          if (consecutiveKnown >= STOP_AFTER_KNOWN) {
+            console.log(`[GapSync] Found ${STOP_AFTER_KNOWN} consecutive known users → stopping`);
+            hasMore = false;
+            break;
+          }
+          continue;
         }
         
-        // Upsert user to teachable_users
+        // New user - reset counter and add to DB
+        consecutiveKnown = 0;
+        pageHasNew = true;
+        
         const userData = {
           teachable_user_id: u.id,
           email: u.email?.toLowerCase() || null,
@@ -3680,18 +3713,21 @@ async function runGapSync(startISO, endISO) {
         
         if (!error) {
           newUserIds.push(u.id);
+          knownUserIds.add(u.id);
           S.phases.users.created++;
         }
-        S.phases.users.processed++;
       }
       
       page++;
-      if (page > 5) hasMore = false; // Safety: max 500 users in gap
+      if (page > 20) {
+        console.log(`[GapSync] Hit page limit (20) → stopping users phase`);
+        hasMore = false;
+      }
       await new Promise(r => setTimeout(r, 300));
     }
     
     S.phases.users.status = "completed";
-    console.log(`[GapSync] ✅ Phase 2 done: ${newUserIds.length} users found/updated`);
+    console.log(`[GapSync] ✅ Phase 2 done: ${newUserIds.length} new users added`);
   } catch (err) {
     S.phases.users.status = "failed";
     S.errors.push({ phase: "users", error: err.message });
