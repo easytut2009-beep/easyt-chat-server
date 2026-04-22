@@ -4134,6 +4134,294 @@ app.get("/api/admin/teachable/raw-user", async (req, res) => {
   }
 });
 
+/**
+ * 🔥 MAIN SYNC - Pulls enrollments via /users/{id} endpoint
+ * This gets 100% accurate enrollment data matching Teachable UI
+ */
+app.post("/api/admin/teachable/sync-enrollments-via-users", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    if (syncState.usersEnrollments?.status === "running") {
+      return res.status(400).json({ error: "Already running" });
+    }
+
+    const concurrency = parseInt(req.body?.concurrency) || 10;
+    const batchSize = parseInt(req.body?.batch_size) || 100;
+    const resumeFromUserId = req.body?.resume_from_user_id || null;
+
+    syncState.usersEnrollments = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      totalUsers: 0,
+      usersProcessed: 0,
+      usersSkipped: 0,
+      enrollmentsAdded: 0,
+      enrollmentsUpdated: 0,
+      errors: [],
+      currentBatch: 0,
+      currentUserId: null,
+      concurrency,
+      batchSize,
+      lastUpdate: new Date().toISOString(),
+      stopRequested: false
+    };
+
+    res.json({
+      success: true,
+      message: "Users enrollments sync started",
+      concurrency,
+      batchSize
+    });
+
+    runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUserId).catch(err => {
+      console.error("[SyncViaUsers] Fatal:", err);
+      syncState.usersEnrollments.status = "failed";
+      syncState.usersEnrollments.completedAt = new Date().toISOString();
+      syncState.usersEnrollments.errors.push({
+        at: new Date().toISOString(),
+        fatal: true,
+        error: err.message
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/teachable/sync-enrollments-via-users/status", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+
+    const S = syncState.usersEnrollments;
+    if (!S) return res.json({ success: true, state: null });
+
+    const { count: enrollmentsCount } = await supabase
+      .from("teachable_enrollments")
+      .select("*", { count: "exact", head: true });
+
+    const elapsedMs = S.startedAt ? Date.now() - new Date(S.startedAt).getTime() : 0;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+    const progress = S.totalUsers > 0 ? (S.usersProcessed / S.totalUsers * 100).toFixed(2) : 0;
+    
+    // Calculate ETA
+    const rate = elapsedSec > 0 ? S.usersProcessed / elapsedSec : 0;
+    const remaining = S.totalUsers - S.usersProcessed;
+    const etaSec = rate > 0 ? Math.floor(remaining / rate) : 0;
+
+    res.json({
+      success: true,
+      state: {
+        ...S,
+        recent_errors: (S.errors || []).slice(-10)
+      },
+      elapsed_seconds: elapsedSec,
+      elapsed_readable: `${Math.floor(elapsedSec / 3600)}h ${Math.floor((elapsedSec % 3600) / 60)}m ${elapsedSec % 60}s`,
+      progress_percent: progress,
+      rate_per_second: rate.toFixed(2),
+      eta_seconds: etaSec,
+      eta_readable: `${Math.floor(etaSec / 3600)}h ${Math.floor((etaSec % 3600) / 60)}m`,
+      database_enrollments: enrollmentsCount || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/teachable/sync-enrollments-via-users/stop", async (req, res) => {
+  try {
+    if (!checkInspectorAuth(req, res)) return;
+    if (syncState.usersEnrollments) {
+      syncState.usersEnrollments.stopRequested = true;
+    }
+    res.json({ success: true, message: "Stop requested" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * The runner: fetches enrollments for each user via /users/{id}
+ */
+async function runSyncEnrollmentsViaUsers(concurrency, batchSize, resumeFromUserId) {
+  const S = syncState.usersEnrollments;
+
+  try {
+    // Get total users count
+    const { count: totalCount } = await supabase
+      .from("teachable_users")
+      .select("*", { count: "exact", head: true });
+    
+    S.totalUsers = totalCount || 0;
+    console.log(`[SyncViaUsers] 🚀 Starting for ${S.totalUsers} users (concurrency=${concurrency}, batch=${batchSize})`);
+
+    // Process users in batches
+    let lastUserId = resumeFromUserId ? parseInt(resumeFromUserId) : 0;
+    let batchNum = 0;
+
+    while (!S.stopRequested) {
+      batchNum++;
+      S.currentBatch = batchNum;
+      S.lastUpdate = new Date().toISOString();
+
+      // Fetch next batch of users
+      const { data: users, error: fetchErr } = await supabase
+        .from("teachable_users")
+        .select("teachable_user_id, email")
+        .gt("teachable_user_id", lastUserId)
+        .order("teachable_user_id", { ascending: true })
+        .limit(batchSize);
+
+      if (fetchErr) {
+        S.errors.push({
+          at: new Date().toISOString(),
+          type: "fetch_users_error",
+          error: fetchErr.message
+        });
+        console.error(`[SyncViaUsers] Fetch error:`, fetchErr.message);
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
+
+      if (!users || users.length === 0) {
+        console.log(`[SyncViaUsers] ✅ No more users. Done!`);
+        break;
+      }
+
+      // Process users in parallel with concurrency limit
+      const chunks = [];
+      for (let i = 0; i < users.length; i += concurrency) {
+        chunks.push(users.slice(i, i + concurrency));
+      }
+
+      for (const chunk of chunks) {
+        if (S.stopRequested) break;
+        
+        await Promise.all(chunk.map(user => processOneUser(user, S)));
+      }
+
+      // Update last user ID for next batch
+      lastUserId = users[users.length - 1].teachable_user_id;
+      
+      console.log(`[SyncViaUsers] 📦 Batch ${batchNum}: processed ${users.length} users. Total: ${S.usersProcessed}/${S.totalUsers}`);
+    }
+
+    S.status = S.stopRequested ? "stopped" : "completed";
+    S.completedAt = new Date().toISOString();
+    console.log(`[SyncViaUsers] 🏁 Done! Processed: ${S.usersProcessed}, Enrollments added: ${S.enrollmentsAdded}`);
+  } catch (err) {
+    S.status = "failed";
+    S.completedAt = new Date().toISOString();
+    S.errors.push({ at: new Date().toISOString(), error: err.message, fatal: true });
+    console.error("[SyncViaUsers] FATAL:", err);
+  }
+}
+
+/**
+ * Process one user: fetch their enrollments from Teachable API and upsert to DB
+ */
+async function processOneUser(user, S) {
+  const userId = user.teachable_user_id;
+  S.currentUserId = userId;
+
+  try {
+    // Fetch user details from Teachable
+    const url = `${TEACHABLE_API_BASE}/users/${userId}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        apiKey: process.env.TEACHABLE_API_KEY
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        S.usersSkipped++;
+        S.usersProcessed++;
+        return;
+      }
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        await new Promise(r => setTimeout(r, 5000));
+        return processOneUser(user, S);
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const courses = data.courses || [];
+
+    if (courses.length === 0) {
+      S.usersProcessed++;
+      return;
+    }
+
+    // Dedupe enrollments by (user_id, course_id) - keep latest enrolled_at
+    const dedupMap = new Map();
+    for (const c of courses) {
+      const courseId = c.course_id;
+      if (!courseId) continue;
+      
+      const key = `${userId}_${courseId}`;
+      const existing = dedupMap.get(key);
+      
+      // Keep the most recent enrollment (or the active one)
+      if (!existing || 
+          (c.is_active_enrollment && !existing.is_active_enrollment) ||
+          (c.enrolled_at > existing.enrolled_at)) {
+        dedupMap.set(key, c);
+      }
+    }
+
+    const rows = Array.from(dedupMap.values()).map(c => ({
+      teachable_user_id: userId,
+      user_email: data.email || user.email || null,
+      course_id: c.course_id,
+      course_name: c.course_name || null,
+      enrolled_at: c.enrolled_at || null,
+      completed_at: c.completed_at || null,
+      percent_complete: c.percent_complete || 0,
+      is_active: c.is_active_enrollment !== false,
+      has_full_access: true,
+      raw_data: c
+    }));
+
+    if (rows.length > 0) {
+      const { error, count } = await supabase
+        .from("teachable_enrollments")
+        .upsert(rows, {
+          onConflict: "teachable_user_id,course_id",
+          ignoreDuplicates: false,
+          count: 'exact'
+        });
+
+      if (error) {
+        S.errors.push({
+          at: new Date().toISOString(),
+          userId,
+          type: "upsert_error",
+          error: error.message
+        });
+      } else {
+        S.enrollmentsAdded += rows.length;
+      }
+    }
+
+    S.usersProcessed++;
+  } catch (err) {
+    S.usersProcessed++;
+    S.errors.push({
+      at: new Date().toISOString(),
+      userId,
+      error: err.message
+    });
+  }
+}
+
+
+
 app.get("/api/admin/teachable/diagnose-course", async (req, res) => {
   try {
     if (!checkInspectorAuth(req, res)) return;
