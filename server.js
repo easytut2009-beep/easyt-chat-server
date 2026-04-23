@@ -4123,11 +4123,14 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
     // رتب الـ matched بالـ position
     matched.sort((a, b) => a.lecturePosition - b.lecturePosition);
 
+    const pendingMatched  = matched.filter(m => m.status === 'pending');
+    const doneMatched     = matched.filter(m => m.status === 'done');
+
     res.json({
-      total_drive: driveVideos.length,
-      total_db: (attachments || []).filter(a => a.migration_status === 'pending').length,
-      matched: matched.filter(m => m.status === 'pending'),
-      already_done: matched.filter(m => m.status === 'done').length,
+      total_drive:    driveVideos.length,
+      total_db:       (attachments || []).filter(a => a.migration_status === 'pending').length,
+      matched:        pendingMatched,   // اللي هيترفع فعلاً
+      already_done:   doneMatched.length,
       unmatched_drive,
       unmatched_db
     });
