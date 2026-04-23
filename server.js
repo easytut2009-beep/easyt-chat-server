@@ -3864,6 +3864,41 @@ async function runMigrationJob(jobId, driveFileId, driveToken, videoTitle, attac
   }
 }
 
+
+// GET /video-migrator - Video Migration Tool
+app.get('/video-migrator', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'video-migrator.html');
+  if (fs.existsSync(htmlPath)) {
+    res.sendFile(htmlPath);
+  } else {
+    res.status(404).send('video-migrator.html not found');
+  }
+});
+
+// GET /auth/callback - Google OAuth callback
+app.get('/auth/callback', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Auth</title></head>
+    <body>
+    <script>
+      const hash = window.location.hash;
+      const params = window.location.search;
+      if (hash || params) {
+        window.location.href = '/video-migrator' + hash + params;
+      } else {
+        window.location.href = '/video-migrator';
+      }
+    </script>
+    <p>جاري التوجيه...</p>
+    </body>
+    </html>
+  `);
+});
+
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
