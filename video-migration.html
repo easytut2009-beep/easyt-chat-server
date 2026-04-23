@@ -186,7 +186,7 @@
         <div class="step-header"><div class="step-num">3</div><h3>مراجعة المطابقة — تأكد قبل الرفع</h3></div>
         <div class="prev-stats" id="prevStats"></div>
         <div class="table-wrap">
-          <table><thead><tr><th>#</th><th>ملف Drive</th><th>اسم الدرس</th><th>✓</th></tr></thead>
+          <table><thead><tr><th>#</th><th>ملف Drive</th><th>ملف الداتابيز</th><th>اسم الدرس</th><th>✓</th></tr></thead>
           <tbody id="prevBody"></tbody></table>
         </div>
         <div id="unmatchedWrap"></div>
@@ -435,6 +435,7 @@ function renderPreview(d) {
     ? d.matched.map((m,i) => `<tr>
         <td style="color:var(--muted)">${i+1}</td>
         <td><span class="fn">${m.driveFile}</span>${m.folderPath?`<br><span class="fp">📁 ${m.folderPath}</span>`:''}</td>
+        <td><span class="fn" style="color:${m.driveFile===m.dbFile?'var(--green)':'var(--orange)'}">${m.dbFile}</span></td>
         <td>${m.lectureName}</td>
         <td style="color:var(--green)">✅</td>
       </tr>`).join('')
