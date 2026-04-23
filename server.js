@@ -4028,19 +4028,18 @@ app.get('/api/admin/video-migration/drive-folders', adminAuth, async (req, res) 
 
 // GET /api/admin/video-migration/preview
 // معاينة المطابقة بين فيديوهات الفولدر والدروس في الكورس
-app.get('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
+app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
   try {
     const { courseId, folderId } = req.query;
+    const accessToken = req.body?.accessToken;
     if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
-
-    const drive = getDriveClient();
+    if (!accessToken) return res.status(400).json({ error: 'accessToken مطلوب' });
 
     // جيب كل الفيديوهات من الفولدر وكل السب-فولدرات recursively
     async function getVideosRecursive(fId, path = '') {
-      const driveToken = req.query.accessToken || req.body?.accessToken;
       const result = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${fId}' in parents and trashed = false`)}&fields=files(id,name,size,mimeType)&pageSize=500&orderBy=name`,
-        { headers: { 'Authorization': 'Bearer ' + driveToken } }
+        { headers: { 'Authorization': 'Bearer ' + accessToken } }
       );
       const data = await result.json();
       const files = data.files || [];
