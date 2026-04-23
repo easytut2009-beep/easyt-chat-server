@@ -3779,14 +3779,28 @@ async function runCourseMigration(courseId, courseName, folderId) {
   try {
     const drive = getDriveClient();
 
-    // 1. جيب كل الفيديوهات من Drive folder
-    const filesRes = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`,
-      fields: 'files(id,name,size,mimeType)',
-      pageSize: 1000,
-      orderBy: 'name'
-    });
-    const driveFiles = filesRes.data.files || [];
+    // 1. جيب كل الفيديوهات من Drive folder وكل السب-فولدرات
+    async function getVideosRecursive(fId) {
+      const result = await drive.files.list({
+        q: `'${fId}' in parents and trashed = false`,
+        fields: 'files(id,name,size,mimeType)',
+        pageSize: 500,
+        orderBy: 'name'
+      });
+      const files = result.data.files || [];
+      let videos = [];
+      for (const f of files) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') {
+          const sub = await getVideosRecursive(f.id);
+          videos = videos.concat(sub);
+        } else if (f.mimeType.includes('video/') || f.name.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
+          videos.push(f);
+        }
+      }
+      return videos;
+    }
+
+    const driveFiles = await getVideosRecursive(folderId);
     courseMigState.total = driveFiles.length;
 
     if (driveFiles.length === 0) {
@@ -3970,6 +3984,154 @@ app.get('/api/admin/video-migration/status', adminAuth, (req, res) => {
 app.post('/api/admin/video-migration/stop', adminAuth, (req, res) => {
   courseMigState.running = false;
   res.json({ success: true, message: 'تم إيقاف الـ migration' });
+});
+
+// GET /api/admin/video-migration/drive-folders
+// جيب الفولدرات من Drive (الـ root أو جوه فولدر معين)
+app.get('/api/admin/video-migration/drive-folders', adminAuth, async (req, res) => {
+  try {
+    const drive = getDriveClient();
+    const parentId = req.query.parentId || null;
+    const search = req.query.search || '';
+
+    let q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+    if (parentId) {
+      q += ` and '${parentId}' in parents`;
+    } else if (search) {
+      q += ` and name contains '${search.replace(/'/g, "\\'")}'`;
+    } else {
+      // الفولدرات الجذر المشاركة مع الـ service account
+      q += " and sharedWithMe = true";
+    }
+
+    const result = await drive.files.list({
+      q,
+      fields: 'files(id,name,parents,modifiedTime)',
+      pageSize: 100,
+      orderBy: 'name'
+    });
+
+    const folders = (result.data.files || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      modifiedTime: f.modifiedTime
+    }));
+
+    res.json({ folders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/video-migration/preview
+// معاينة المطابقة بين فيديوهات الفولدر والدروس في الكورس
+app.get('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
+  try {
+    const { courseId, folderId } = req.query;
+    if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
+
+    const drive = getDriveClient();
+
+    // جيب كل الفيديوهات من الفولدر وكل السب-فولدرات recursively
+    async function getVideosRecursive(fId, path = '') {
+      const result = await drive.files.list({
+        q: `'${fId}' in parents and trashed = false`,
+        fields: 'files(id,name,size,mimeType)',
+        pageSize: 500,
+        orderBy: 'name'
+      });
+      const files = result.data.files || [];
+      let videos = [];
+      for (const f of files) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') {
+          const sub = await getVideosRecursive(f.id, path ? path + '/' + f.name : f.name);
+          videos = videos.concat(sub);
+        } else if (f.mimeType.includes('video/') || f.name.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
+          videos.push({ ...f, folderPath: path });
+        }
+      }
+      return videos;
+    }
+
+    const driveVideos = await getVideosRecursive(folderId);
+
+    // جيب الـ attachments من Supabase
+    const { data: attachments } = await supabase
+      .from('teachable_attachments')
+      .select('id, teachable_attachment_id, name, lecture_id, migration_status')
+      .eq('course_id', courseId)
+      .eq('kind', 'video');
+
+    // جيب أسماء الدروس
+    const lectureIds = [...new Set((attachments || []).map(a => a.lecture_id))];
+    let lecturesMap = {};
+    if (lectureIds.length > 0) {
+      const { data: lectures } = await supabase
+        .from('teachable_lectures')
+        .select('teachable_lecture_id, name, position')
+        .in('teachable_lecture_id', lectureIds);
+      for (const l of (lectures || [])) {
+        lecturesMap[l.teachable_lecture_id] = { name: l.name, position: l.position };
+      }
+    }
+
+    // عمل map من اسم الملف للـ attachment
+    const attMap = {};
+    for (const att of (attachments || [])) {
+      attMap[att.name.toLowerCase()] = att;
+    }
+
+    // بناء الـ preview
+    const matched = [];
+    const unmatched_drive = [];
+    const unmatched_db = [];
+
+    for (const video of driveVideos) {
+      const att = attMap[video.name.toLowerCase()];
+      if (att) {
+        const lecture = lecturesMap[att.lecture_id] || {};
+        matched.push({
+          driveFile: video.name,
+          driveId: video.id,
+          folderPath: video.folderPath,
+          dbFile: att.name,
+          lectureName: lecture.name || '—',
+          lecturePosition: lecture.position || 0,
+          attachmentId: att.id,
+          status: att.migration_status
+        });
+      } else {
+        unmatched_drive.push({ name: video.name, folderPath: video.folderPath });
+      }
+    }
+
+    // الـ attachments اللي مفيش فيديو ليها في Drive
+    const driveNames = new Set(driveVideos.map(v => v.name.toLowerCase()));
+    for (const att of (attachments || [])) {
+      if (!driveNames.has(att.name.toLowerCase()) && att.migration_status === 'pending') {
+        const lecture = lecturesMap[att.lecture_id] || {};
+        unmatched_db.push({
+          dbFile: att.name,
+          lectureName: lecture.name || '—',
+          lecturePosition: lecture.position || 0
+        });
+      }
+    }
+
+    // رتب الـ matched بالـ position
+    matched.sort((a, b) => a.lecturePosition - b.lecturePosition);
+
+    res.json({
+      total_drive: driveVideos.length,
+      total_db: (attachments || []).filter(a => a.migration_status === 'pending').length,
+      matched: matched.filter(m => m.status === 'pending'),
+      already_done: matched.filter(m => m.status === 'done').length,
+      unmatched_drive,
+      unmatched_db
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Migration state
