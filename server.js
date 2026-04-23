@@ -10,6 +10,7 @@ const path = require("path");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
+const { google } = require("googleapis");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -3709,6 +3710,268 @@ const BUNNY_LIBRARY_ID = '643309';
 const BUNNY_STREAM_KEY = '1d49d084-1043-42cd-96e49b649c2b-d05b-437c';
 const BUNNY_CDN_HOST = 'vz-1b5f7566-8e8.b-cdn.net';
 
+/* ══════════════════════════════════════════════════════════ */
+/* ══ Video Migration v2 — Service Account (بدون OAuth) ════ */
+/* ══════════════════════════════════════════════════════════ */
+
+// State للـ course migration الجاري
+const courseMigState = {
+  running: false,
+  courseId: null,
+  courseName: null,
+  folderId: null,
+  total: 0,
+  done: 0,
+  failed: 0,
+  current: null,
+  errors: [],
+  startedAt: null,
+  finishedAt: null
+};
+
+// Google Drive client بـ Service Account
+function getDriveClient() {
+  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!saJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON غير موجود في env');
+  const creds = JSON.parse(saJson);
+  const auth = new google.auth.GoogleAuth({
+    credentials: creds,
+    scopes: ['https://www.googleapis.com/auth/drive.readonly']
+  });
+  return google.drive({ version: 'v3', auth });
+}
+
+// جيب أو اعمل Bunny Collection للكورس
+async function getOrCreateBunnyCollection(courseId, courseName) {
+  const searchRes = await fetch(
+    `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/collections?page=1&itemsPerPage=100`,
+    { headers: { 'AccessKey': BUNNY_STREAM_KEY } }
+  );
+  const searchData = await searchRes.json();
+  const existing = (searchData.items || []).find(c => c.name.startsWith(String(courseId) + ' -'));
+  if (existing) return existing.guid;
+
+  const createRes = await fetch(
+    `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/collections`,
+    {
+      method: 'POST',
+      headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `${courseId} - ${courseName}` })
+    }
+  );
+  const created = await createRes.json();
+  return created.guid;
+}
+
+// Runner: يرفع كل فيديوهات فولدر لكورس معين
+async function runCourseMigration(courseId, courseName, folderId) {
+  courseMigState.running   = true;
+  courseMigState.courseId  = courseId;
+  courseMigState.courseName = courseName;
+  courseMigState.folderId  = folderId;
+  courseMigState.done      = 0;
+  courseMigState.failed    = 0;
+  courseMigState.errors    = [];
+  courseMigState.current   = null;
+  courseMigState.startedAt = new Date().toISOString();
+  courseMigState.finishedAt = null;
+
+  try {
+    const drive = getDriveClient();
+
+    // 1. جيب كل الفيديوهات من Drive folder
+    const filesRes = await drive.files.list({
+      q: `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`,
+      fields: 'files(id,name,size,mimeType)',
+      pageSize: 1000,
+      orderBy: 'name'
+    });
+    const driveFiles = filesRes.data.files || [];
+    courseMigState.total = driveFiles.length;
+
+    if (driveFiles.length === 0) {
+      courseMigState.errors.push('مفيش فيديوهات في الفولدر ده — تأكد من الـ Folder ID والـ Share');
+      courseMigState.running = false;
+      courseMigState.finishedAt = new Date().toISOString();
+      return;
+    }
+
+    // 2. جيب الـ attachments من Supabase للكورس
+    const { data: attachments, error: attErr } = await supabase
+      .from('teachable_attachments')
+      .select('id, teachable_attachment_id, name, lecture_id')
+      .eq('course_id', courseId)
+      .eq('kind', 'video')
+      .eq('migration_status', 'pending');
+
+    if (attErr) throw new Error('Supabase error: ' + attErr.message);
+
+    // Map: اسم الملف (lowercase) → attachment
+    const attMap = {};
+    for (const att of (attachments || [])) {
+      attMap[att.name.toLowerCase()] = att;
+    }
+
+    // 3. جيب أو اعمل Collection في Bunny
+    const collectionGuid = await getOrCreateBunnyCollection(courseId, courseName);
+
+    // 4. ارفع كل فيديو
+    for (const file of driveFiles) {
+      if (!courseMigState.running) break;
+
+      courseMigState.current = file.name;
+      const att = attMap[file.name.toLowerCase()];
+
+      if (!att) {
+        courseMigState.errors.push(`${file.name}: مش موجود في الداتابيز`);
+        courseMigState.failed++;
+        console.log('[CourseMig] No match:', file.name);
+        continue;
+      }
+
+      try {
+        console.log('[CourseMig] Uploading:', file.name);
+
+        // Step A: اعمل video entry في Bunny
+        const createBunnyRes = await fetch(
+          `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`,
+          {
+            method: 'POST',
+            headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: file.name, collectionId: collectionGuid })
+          }
+        );
+        if (!createBunnyRes.ok) throw new Error('Bunny create failed: ' + createBunnyRes.status);
+        const bunnyVideo = await createBunnyRes.json();
+        const bunnyId = bunnyVideo.guid;
+
+        // Step B: حمّل من Drive مباشرة كـ stream
+        const auth = await getDriveClient().context._options.auth.getClient();
+        const token = await auth.getAccessToken();
+
+        const driveStream = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          { headers: { 'Authorization': 'Bearer ' + token.token } }
+        );
+        if (!driveStream.ok) throw new Error('Drive download failed: ' + driveStream.status);
+
+        // Step C: ارفع على Bunny مباشرة (stream)
+        const contentLength = driveStream.headers.get('content-length');
+        const uploadRes = await fetch(
+          `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos/${bunnyId}`,
+          {
+            method: 'PUT',
+            headers: {
+              'AccessKey': BUNNY_STREAM_KEY,
+              'Content-Type': 'video/mp4',
+              ...(contentLength ? { 'Content-Length': contentLength } : {})
+            },
+            body: driveStream.body,
+            duplex: 'half'
+          }
+        );
+        if (!uploadRes.ok) throw new Error('Bunny upload failed: ' + uploadRes.status);
+
+        // Step D: حدّث Supabase
+        const playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
+        const thumbnailUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/thumbnail.jpg`;
+        await supabase
+          .from('teachable_attachments')
+          .update({
+            bunny_video_id: bunnyId,
+            bunny_playback_url: playbackUrl,
+            bunny_thumbnail_url: thumbnailUrl,
+            migration_status: 'done',
+            migrated_at: new Date().toISOString()
+          })
+          .eq('id', att.id);
+
+        courseMigState.done++;
+        console.log('[CourseMig] Done:', file.name, '->', bunnyId);
+
+      } catch (err) {
+        courseMigState.errors.push(`${file.name}: ${err.message}`);
+        courseMigState.failed++;
+        console.error('[CourseMig] Failed:', file.name, err.message);
+
+        // سجّل الخطأ في الداتابيز
+        await supabase
+          .from('teachable_attachments')
+          .update({ migration_status: 'error', migration_error: err.message })
+          .eq('id', att.id)
+          .catch(() => {});
+      }
+    }
+
+  } catch (err) {
+    courseMigState.errors.push('خطأ عام: ' + err.message);
+    console.error('[CourseMig] Fatal:', err.message);
+  } finally {
+    courseMigState.running    = false;
+    courseMigState.current    = null;
+    courseMigState.finishedAt = new Date().toISOString();
+  }
+}
+
+// GET /api/admin/video-migration/courses
+// جيب الكورسات اللي عندها فيديوهات pending
+app.get('/api/admin/video-migration/courses', adminAuth, async (req, res) => {
+  try {
+    // جيب course_ids اللي فيها pending videos
+    const { data: pending, error } = await supabase
+      .from('teachable_attachments')
+      .select('course_id')
+      .eq('kind', 'video')
+      .eq('migration_status', 'pending');
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const courseIds = [...new Set((pending || []).map(r => r.course_id))];
+    if (!courseIds.length) return res.json({ courses: [] });
+
+    // جيب بيانات الكورسات
+    const { data: courses } = await supabase
+      .from('teachable_courses')
+      .select('teachable_course_id, name, image_url')
+      .in('teachable_course_id', courseIds)
+      .order('name');
+
+    // أضف عدد الفيديوهات لكل كورس
+    const result = (courses || []).map(c => ({
+      ...c,
+      pending_videos: pending.filter(p => p.course_id === c.teachable_course_id).length
+    }));
+
+    res.json({ courses: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/video-migration/start
+app.post('/api/admin/video-migration/start', adminAuth, async (req, res) => {
+  const { courseId, courseName, folderId } = req.body;
+  if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
+  if (courseMigState.running) return res.status(400).json({ error: 'في migration شغال دلوقتي' });
+
+  runCourseMigration(courseId, courseName || 'Unknown', folderId); // background
+  res.json({ success: true, message: 'بدأ الرفع في الخلفية' });
+});
+
+// GET /api/admin/video-migration/status
+app.get('/api/admin/video-migration/status', adminAuth, (req, res) => {
+  const percent = courseMigState.total > 0
+    ? Math.round(((courseMigState.done + courseMigState.failed) / courseMigState.total) * 100)
+    : 0;
+  res.json({ ...courseMigState, percent });
+});
+
+// POST /api/admin/video-migration/stop
+app.post('/api/admin/video-migration/stop', adminAuth, (req, res) => {
+  courseMigState.running = false;
+  res.json({ success: true, message: 'تم إيقاف الـ migration' });
+});
+
 // Migration state
 const migrationJobs = new Map(); // jobId -> state
 
@@ -3863,41 +4126,6 @@ async function runMigrationJob(jobId, driveFileId, driveToken, videoTitle, attac
     console.error('[Migrate] Failed:', videoTitle, err.message);
   }
 }
-
-
-// GET /video-migrator - Video Migration Tool
-app.get('/video-migrator', (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
-  const htmlPath = path.join(__dirname, 'video-migrator.html');
-  if (fs.existsSync(htmlPath)) {
-    res.sendFile(htmlPath);
-  } else {
-    res.status(404).send('video-migrator.html not found');
-  }
-});
-
-// GET /auth/callback - Google OAuth callback
-app.get('/auth/callback', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head><title>Auth</title></head>
-    <body>
-    <script>
-      const hash = window.location.hash;
-      const params = window.location.search;
-      if (hash || params) {
-        window.location.href = '/video-migrator' + hash + params;
-      } else {
-        window.location.href = '/video-migrator';
-      }
-    </script>
-    <p>جاري التوجيه...</p>
-    </body>
-    </html>
-  `);
-});
 
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
