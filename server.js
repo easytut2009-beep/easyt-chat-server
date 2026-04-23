@@ -3844,7 +3844,7 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
       }
 
       try {
-        console.log('[CourseMig] Uploading:', file.name);
+        console.log('[CourseMig] Uploading:', driveFile.name);
 
         // Step A: اعمل video entry في Bunny
         const createBunnyRes = await fetch(
@@ -3906,11 +3906,12 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
         console.error('[CourseMig] Failed:', att.name, err.message);
 
         // سجّل الخطأ في الداتابيز
-        await supabase
-          .from('teachable_attachments')
-          .update({ migration_status: 'error', migration_error: err.message })
-          .eq('id', att.id)
-          .catch(() => {});
+        try {
+          await supabase
+            .from('teachable_attachments')
+            .update({ migration_status: 'error', migration_error: err.message })
+            .eq('id', att.id);
+        } catch(e) {}
       }
     }
 
