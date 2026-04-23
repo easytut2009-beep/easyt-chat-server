@@ -4137,7 +4137,6 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
 
     // عمل map من اسم الملف للـ Drive file
     const driveMap = {};
-    const driveMap = {};
     for (const f of driveVideos) {
       const key = f.name.toLowerCase();
       if (driveMap[key]) {
