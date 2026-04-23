@@ -2060,6 +2060,10 @@ app.get("/upload", (req, res) => {
   res.sendFile(path.join(__dirname, "upload.html"));
 });
 
+app.get("/video-migration", (req, res) => {
+  res.sendFile(path.join(__dirname, "video-migration.html"));
+});
+
 
 // === Admin HTML ===
 app.get("/admin", (req, res) => {
