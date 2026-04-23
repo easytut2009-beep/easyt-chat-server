@@ -3876,8 +3876,8 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
     // 3. جيب أو اعمل Collection في Bunny
     const collectionGuid = await getOrCreateBunnyCollection(courseId, courseName);
 
-    // 4. ارفع كل فيديو من الـ DB (pending فقط)
-    for (const att of (attachments || [])) {
+    // 4. ارفع كل فيديو من الـ DB (pending فقط) مرتبين بـ section + lecture
+    for (const att of sortedAttachments) {
       if (!courseMigState.running) break;
 
       const key = att.name.toLowerCase();
