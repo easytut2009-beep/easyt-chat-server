@@ -3782,7 +3782,7 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
   try {
     // 1. جيب كل الفيديوهات من Drive folder وكل السب-فولدرات
-    async function getVideosRecursive(fId) {
+    async function getVideosRecursive(fId, folderPath = '') {
       const result = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${fId}' in parents and trashed = false`)}&fields=files(id,name,size,mimeType)&pageSize=500&orderBy=name`,
         { headers: { 'Authorization': 'Bearer ' + accessToken } }
@@ -3792,10 +3792,10 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
       let videos = [];
       for (const f of files) {
         if (f.mimeType === 'application/vnd.google-apps.folder') {
-          const sub = await getVideosRecursive(f.id);
+          const sub = await getVideosRecursive(f.id, folderPath ? folderPath + '/' + f.name : f.name);
           videos = videos.concat(sub);
         } else if (f.mimeType?.includes('video/') || f.name?.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
-          videos.push(f);
+          videos.push({ ...f, folderPath });
         }
       }
       return videos;
