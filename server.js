@@ -3764,7 +3764,7 @@ async function getOrCreateBunnyCollection(courseId, courseName) {
 }
 
 // Runner: يرفع كل فيديوهات فولدر لكورس معين
-async function runCourseMigration(courseId, courseName, folderId) {
+async function runCourseMigration(courseId, courseName, folderId, accessToken) {
   courseMigState.running   = true;
   courseMigState.courseId  = courseId;
   courseMigState.courseName = courseName;
@@ -3781,19 +3781,18 @@ async function runCourseMigration(courseId, courseName, folderId) {
 
     // 1. جيب كل الفيديوهات من Drive folder وكل السب-فولدرات
     async function getVideosRecursive(fId) {
-      const result = await drive.files.list({
-        q: `'${fId}' in parents and trashed = false`,
-        fields: 'files(id,name,size,mimeType)',
-        pageSize: 500,
-        orderBy: 'name'
-      });
-      const files = result.data.files || [];
+      const result = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${fId}' in parents and trashed = false`)}&fields=files(id,name,size,mimeType)&pageSize=500&orderBy=name`,
+        { headers: { 'Authorization': 'Bearer ' + accessToken } }
+      );
+      const data = await result.json();
+      const files = data.files || [];
       let videos = [];
       for (const f of files) {
         if (f.mimeType === 'application/vnd.google-apps.folder') {
           const sub = await getVideosRecursive(f.id);
           videos = videos.concat(sub);
-        } else if (f.mimeType.includes('video/') || f.name.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
+        } else if (f.mimeType?.includes('video/') || f.name?.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
           videos.push(f);
         }
       }
@@ -3859,13 +3858,10 @@ async function runCourseMigration(courseId, courseName, folderId) {
         const bunnyVideo = await createBunnyRes.json();
         const bunnyId = bunnyVideo.guid;
 
-        // Step B: حمّل من Drive مباشرة كـ stream
-        const auth = await getDriveClient().context._options.auth.getClient();
-        const token = await auth.getAccessToken();
-
+        // Step B: حمّل من Drive مباشرة كـ stream بالـ accessToken
         const driveStream = await fetch(
           `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-          { headers: { 'Authorization': 'Bearer ' + token.token } }
+          { headers: { 'Authorization': 'Bearer ' + accessToken } }
         );
         if (!driveStream.ok) throw new Error('Drive download failed: ' + driveStream.status);
 
@@ -3964,11 +3960,12 @@ app.get('/api/admin/video-migration/courses', adminAuth, async (req, res) => {
 
 // POST /api/admin/video-migration/start
 app.post('/api/admin/video-migration/start', adminAuth, async (req, res) => {
-  const { courseId, courseName, folderId } = req.body;
+  const { courseId, courseName, folderId, accessToken } = req.body;
   if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
+  if (!accessToken) return res.status(400).json({ error: 'accessToken مطلوب' });
   if (courseMigState.running) return res.status(400).json({ error: 'في migration شغال دلوقتي' });
 
-  runCourseMigration(courseId, courseName || 'Unknown', folderId); // background
+  runCourseMigration(courseId, courseName || 'Unknown', folderId, accessToken); // background
   res.json({ success: true, message: 'بدأ الرفع في الخلفية' });
 });
 
@@ -3987,7 +3984,7 @@ app.post('/api/admin/video-migration/stop', adminAuth, (req, res) => {
 });
 
 // GET /api/admin/video-migration/drive-folders
-// جيب الفولدرات من Drive (الـ root أو جوه فولدر معين)
+// جيب الفولدرات من Drive
 app.get('/api/admin/video-migration/drive-folders', adminAuth, async (req, res) => {
   try {
     const drive = getDriveClient();
@@ -4000,15 +3997,17 @@ app.get('/api/admin/video-migration/drive-folders', adminAuth, async (req, res) 
     } else if (search) {
       q += ` and name contains '${search.replace(/'/g, "\\'")}'`;
     } else {
-      // الفولدرات الجذر المشاركة مع الـ service account
-      q += " and sharedWithMe = true";
+      q += " and ('root' in parents or sharedWithMe = true)";
     }
 
     const result = await drive.files.list({
       q,
       fields: 'files(id,name,parents,modifiedTime)',
-      pageSize: 100,
-      orderBy: 'name'
+      pageSize: 200,
+      orderBy: 'name',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      corpora: 'allDrives'
     });
 
     const folders = (result.data.files || []).map(f => ({
@@ -4034,19 +4033,19 @@ app.get('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
 
     // جيب كل الفيديوهات من الفولدر وكل السب-فولدرات recursively
     async function getVideosRecursive(fId, path = '') {
-      const result = await drive.files.list({
-        q: `'${fId}' in parents and trashed = false`,
-        fields: 'files(id,name,size,mimeType)',
-        pageSize: 500,
-        orderBy: 'name'
-      });
-      const files = result.data.files || [];
+      const driveToken = req.query.accessToken || req.body?.accessToken;
+      const result = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${fId}' in parents and trashed = false`)}&fields=files(id,name,size,mimeType)&pageSize=500&orderBy=name`,
+        { headers: { 'Authorization': 'Bearer ' + driveToken } }
+      );
+      const data = await result.json();
+      const files = data.files || [];
       let videos = [];
       for (const f of files) {
         if (f.mimeType === 'application/vnd.google-apps.folder') {
           const sub = await getVideosRecursive(f.id, path ? path + '/' + f.name : f.name);
           videos = videos.concat(sub);
-        } else if (f.mimeType.includes('video/') || f.name.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
+        } else if (f.mimeType?.includes('video/') || f.name?.match(/\.(mp4|mkv|avi|mov|wmv)$/i)) {
           videos.push({ ...f, folderPath: path });
         }
       }
