@@ -145,15 +145,33 @@
         </div>
       </div>
 
-      <!-- Step 2: Drive Picker -->
+      <!-- Step 2: Drive Browser inline -->
       <div class="step">
         <div class="step-header"><div class="step-num">2</div><h3>اختار فولدر Google Drive</h3></div>
-        <div class="drive-picker-area">
-          <p>اضغط الزرار وهيفتحلك Drive بتاعك مباشرة تختار منه الفولدر</p>
-          <button class="btn btn-gray" onclick="openDrivePicker()">
-            <img src="https://www.google.com/favicon.ico" width="16"> اختار من Google Drive
-          </button>
+        
+        <div id="driveAuthArea">
+          <div class="drive-picker-area">
+            <p>اضغط عشان تسجل دخول على Drive بتاعك</p>
+            <button class="btn btn-gray" onclick="authAndLoadDrive()">
+              <img src="https://www.google.com/favicon.ico" width="16"> دخول على Google Drive
+            </button>
+          </div>
         </div>
+
+        <div id="driveBrowserArea" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input type="text" id="driveSearchBox" placeholder="ابحث عن فولدر..." 
+              style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px;outline:none"
+              onkeydown="if(event.key==='Enter')searchDriveFolders()">
+            <button class="btn btn-gray" onclick="searchDriveFolders()">🔍</button>
+            <button class="btn btn-gray" onclick="loadDriveFolders('root')">🏠</button>
+          </div>
+          <div id="driveBreadcrumb" style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px;flex-wrap:wrap"></div>
+          <div id="driveFoldersGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:7px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px">
+            <div class="loading"><div class="spinner"></div> جاري التحميل...</div>
+          </div>
+        </div>
+
         <div class="sel-folder-bar" id="selFolderBar" style="display:none">
           <span id="selFolderName">—</span>
           <button onclick="clearFolder()">✕ تغيير</button>
@@ -207,7 +225,6 @@
 </div>
 
 <!-- Google APIs -->
-<script src="https://apis.google.com/js/api.js"></script>
 <script src="https://accounts.google.com/gsi/client"></script>
 
 <script>
@@ -220,56 +237,111 @@ let allCourses = [], selectedCourse = null, selectedFolder = null;
 let statusInterval = null;
 let accessToken = null;
 let tokenClient = null;
-let pickerApiLoaded = false;
+let bcStack = [];
 
 const api = (path, opts={}) => fetch(`${SERVER}${path}${path.includes('?')?'&':'?'}admin=${ADMIN}`, opts);
 
-// ── Google Auth + Picker ──────────────────────────────────
-function initGoogle() {
-  gapi.load('picker', () => { pickerApiLoaded = true; });
+// ── Google Auth ───────────────────────────────────────────
+function authAndLoadDrive() {
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function initTokenClient() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPE,
     callback: (resp) => {
       if (resp.access_token) {
         accessToken = resp.access_token;
-        showPicker();
+        document.getElementById('driveAuthArea').style.display = 'none';
+        document.getElementById('driveBrowserArea').style.display = 'block';
+        loadDriveFolders('root');
       }
     }
   });
 }
 
-function openDrivePicker() {
-  if (!pickerApiLoaded) { alert('جاري التحميل، حاول تاني...'); return; }
-  if (accessToken) { showPicker(); return; }
-  tokenClient.requestAccessToken({ prompt: 'consent' });
-}
+async function loadDriveFolders(parentId, parentName) {
+  const grid = document.getElementById('driveFoldersGrid');
+  grid.innerHTML = `<div class="loading" style="grid-column:1/-1"><div class="spinner"></div> جاري التحميل...</div>`;
 
-function showPicker() {
-  const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-    .setSelectFolderEnabled(true)
-    .setIncludeFolders(true)
-    .setParent('root');
-
-  const picker = new google.picker.PickerBuilder()
-    .addView(view)
-    .setOAuthToken(accessToken)
-    .setCallback(pickerCallback)
-    .setTitle('اختار الفولدر الرئيسي اللي فيه الفيديوهات')
-    .build();
-
-  picker.setVisible(true);
-}
-
-function pickerCallback(data) {
-  if (data.action === google.picker.Action.PICKED) {
-    const folder = data.docs[0];
-    selectedFolder = { id: folder.id, name: folder.name };
-    document.getElementById('selFolderBar').style.display = 'flex';
-    document.getElementById('selFolderName').textContent = '📁 ' + folder.name;
-    document.getElementById('previewBtn').disabled = false;
-    document.getElementById('step3').style.display = 'none';
+  if (parentId === 'root') { bcStack = []; }
+  else if (parentName) {
+    const idx = bcStack.findIndex(b => b.id === parentId);
+    if (idx >= 0) bcStack = bcStack.slice(0, idx+1);
+    else bcStack.push({ id: parentId, name: parentName });
   }
+  renderDriveBreadcrumb();
+
+  try {
+    const q = `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=name&pageSize=200`,
+      { headers: { 'Authorization': 'Bearer ' + accessToken } }
+    );
+    const d = await r.json();
+    renderDriveFolders(d.files || [], parentId, parentName);
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--red);padding:20px;text-align:center">❌ ${e.message}</div>`;
+  }
+}
+
+async function searchDriveFolders() {
+  const q = document.getElementById('driveSearchBox').value.trim();
+  if (!q) return loadDriveFolders('root');
+  const grid = document.getElementById('driveFoldersGrid');
+  grid.innerHTML = `<div class="loading" style="grid-column:1/-1"><div class="spinner"></div> جاري البحث...</div>`;
+  bcStack = []; renderDriveBreadcrumb();
+  try {
+    const query = `mimeType = 'application/vnd.google-apps.folder' and name contains '${q.replace(/'/g,"\\'")}' and trashed = false`;
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&orderBy=name&pageSize=100`,
+      { headers: { 'Authorization': 'Bearer ' + accessToken } }
+    );
+    const d = await r.json();
+    renderDriveFolders(d.files || [], null, null);
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--red);padding:20px;text-align:center">❌ ${e.message}</div>`;
+  }
+}
+
+function renderDriveFolders(folders, parentId, parentName) {
+  const grid = document.getElementById('driveFoldersGrid');
+  if (!folders.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted)">📂 مفيش فولدرات هنا</div>`;
+    return;
+  }
+  grid.innerHTML = folders.map(f => `
+    <div style="background:var(--surface2);border:1px solid ${selectedFolder?.id===f.id?'var(--green)':'var(--border)'};border-radius:8px;padding:10px;cursor:pointer;transition:all .15s"
+         onclick="selectDriveFolder('${f.id}','${esc(f.name)}',this)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span>📁</span>
+        <span style="font-size:12px;font-weight:600;flex:1;word-break:break-word">${f.name}</span>
+      </div>
+      <div style="text-align:left">
+        <span onclick="event.stopPropagation();loadDriveFolders('${f.id}','${esc(f.name)}')" 
+          style="font-size:10px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:4px;background:var(--surface3)">فتح ›</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderDriveBreadcrumb() {
+  let html = `<span style="color:var(--red);cursor:pointer" onclick="loadDriveFolders('root')">🏠</span>`;
+  bcStack.forEach((b,i) => {
+    html += `<span style="color:var(--border)">›</span>`;
+    if (i < bcStack.length-1) html += `<span style="color:var(--red);cursor:pointer" onclick="loadDriveFolders('${b.id}','${esc(b.name)}')">${b.name}</span>`;
+    else html += `<span style="color:var(--text)">${b.name}</span>`;
+  });
+  document.getElementById('driveBreadcrumb').innerHTML = html;
+}
+
+function selectDriveFolder(id, name, el) {
+  selectedFolder = { id, name };
+  document.getElementById('selFolderBar').style.display = 'flex';
+  document.getElementById('selFolderName').textContent = '📁 ' + name;
+  document.getElementById('previewBtn').disabled = false;
+  document.querySelectorAll('#driveFoldersGrid > div').forEach(e => e.style.borderColor = 'var(--border)');
+  if (el) el.style.borderColor = 'var(--green)';
 }
 
 function clearFolder() {
@@ -432,22 +504,9 @@ async function stopMigration() {
 
 function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 
-// Init
-window.onload = () => { gapi.load('picker', () => { pickerApiLoaded = true; }); };
-google.accounts.id.initialize({ client_id: CLIENT_ID });
-loadCourses();
-
-// Init token client after GSI loads
 window.addEventListener('load', () => {
   setTimeout(() => {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPE,
-      callback: (resp) => {
-        if (resp.access_token) { accessToken = resp.access_token; showPicker(); }
-      }
-    });
-    gapi.load('picker', () => { pickerApiLoaded = true; });
+    initTokenClient();
   }, 500);
 });
 </script>
