@@ -3821,26 +3821,25 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
     if (attErr) throw new Error('Supabase error: ' + attErr.message);
 
-    // Map: اسم الملف (lowercase) → attachment
-    const attMap = {};
-    for (const att of (attachments || [])) {
-      attMap[att.name.toLowerCase()] = att;
+    // Map: اسم الملف (lowercase) → Drive file
+    const driveMap = {};
+    for (const f of driveFiles) {
+      driveMap[f.name.toLowerCase()] = f;
     }
 
     // 3. جيب أو اعمل Collection في Bunny
     const collectionGuid = await getOrCreateBunnyCollection(courseId, courseName);
 
-    // 4. ارفع كل فيديو
-    for (const file of driveFiles) {
+    // 4. ارفع كل فيديو من الـ DB (pending فقط)
+    for (const att of (attachments || [])) {
       if (!courseMigState.running) break;
 
-      courseMigState.current = file.name;
-      const att = attMap[file.name.toLowerCase()];
+      const driveFile = driveMap[att.name.toLowerCase()];
+      courseMigState.current = att.name;
 
-      if (!att) {
-        courseMigState.errors.push(`${file.name}: مش موجود في الداتابيز`);
+      if (!driveFile) {
+        courseMigState.errors.push(`${att.name}: مش موجود في Drive`);
         courseMigState.failed++;
-        console.log('[CourseMig] No match:', file.name);
         continue;
       }
 
@@ -3853,7 +3852,7 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
           {
             method: 'POST',
             headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: file.name, collectionId: collectionGuid })
+            body: JSON.stringify({ title: driveFile.name, collectionId: collectionGuid })
           }
         );
         if (!createBunnyRes.ok) throw new Error('Bunny create failed: ' + createBunnyRes.status);
@@ -3862,7 +3861,7 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
         // Step B: حمّل من Drive مباشرة كـ stream بالـ accessToken
         const driveStream = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`,
           { headers: { 'Authorization': 'Bearer ' + accessToken } }
         );
         if (!driveStream.ok) throw new Error('Drive download failed: ' + driveStream.status);
@@ -3899,12 +3898,12 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
           .eq('id', att.id);
 
         courseMigState.done++;
-        console.log('[CourseMig] Done:', file.name, '->', bunnyId);
+        console.log('[CourseMig] Done:', driveFile.name, '->', bunnyId);
 
       } catch (err) {
-        courseMigState.errors.push(`${file.name}: ${err.message}`);
+        courseMigState.errors.push(`${att.name}: ${err.message}`);
         courseMigState.failed++;
-        console.error('[CourseMig] Failed:', file.name, err.message);
+        console.error('[CourseMig] Failed:', att.name, err.message);
 
         // سجّل الخطأ في الداتابيز
         await supabase
