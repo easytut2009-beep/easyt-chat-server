@@ -2627,37 +2627,48 @@ async function handleTransactionRefunded(txn) {
  * Helper: Create/update subscription from a transaction
  */
 async function syncSubscriptionFromTransaction(txn, txnData) {
-  const SUBSCRIPTION_PRODUCT_IDS = [
-    '3389406', '2853142', '3745174', '4486167',
-    '3902295', '5240323', '6687780'
-  ];
+  // لازم يكون subscription
+  if (txnData.product_type !== "subscription") return;
+  if (!txn.user_id) return;
 
-  const isKnownSubscription = SUBSCRIPTION_PRODUCT_IDS.includes(txnData.product_id);
-  if (!isKnownSubscription && txnData.product_type !== "subscription") return;
+  // تحديد نوع الخطة من السعر الأصلي بالسنت
+  // txn.final_price بالسنت (زي sale.price في handleSaleCreated)
+  const priceInCents = txn.final_price || txn.net_charge || 0;
+  const planType = priceInCents >= 4000 ? 'yearly' : 'monthly';
+
+  // حساب تاريخ الانتهاء
+  const startDate = txnData.transaction_date ? new Date(txnData.transaction_date) : new Date();
+  const expiresAt = planType === 'yearly'
+    ? new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    : null;
 
   const subData = {
     teachable_user_id: txn.user_id,
     user_email: txnData.user_email,
     product_id: txnData.product_id,
     product_name: txnData.product_name,
-    plan_type: txnData.product_id === '6687780' ? 'yearly_current' : 'yearly_legacy',
+    plan_type: planType,
     status: 'active',
     amount: txnData.amount,
     currency: txnData.currency,
     started_at: txnData.transaction_date,
-    expires_at: txnData.transaction_date ? 
-      new Date(new Date(txnData.transaction_date).getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() 
-      : null,
+    expires_at: expiresAt,
     raw_data: txn,
     updated_at: new Date().toISOString()
   };
 
-  await supabase
+  const { error } = await supabase
     .from("teachable_subscriptions")
     .upsert(subData, {
       onConflict: "teachable_user_id",
       ignoreDuplicates: false
     });
+
+  if (error) {
+    console.error(`[Webhook] syncSubscriptionFromTransaction failed: ${error.message}`);
+  } else {
+    console.log(`[Webhook] ✅ Subscription renewed for user=${txn.user_id} (${planType})`);
+  }
 }
 
 async function handleEnrollmentCreated(enrollment) {
