@@ -3821,25 +3821,16 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
     if (attErr) throw new Error('Supabase error: ' + attErr.message);
 
-    // Map: اسم الملف (lowercase) → Drive file — لو مكرر يضيف suffix
-    const driveMap = {};
+    // جمّع Drive files في groups بالاسم
+    const driveGroups = {};
     for (const f of driveFiles) {
       const key = f.name.toLowerCase();
-      if (driveMap[key]) {
-        // مكرر — عدّل اسمه
-        const ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
-        const base = f.name.slice(0, f.name.lastIndexOf('.') > 0 ? f.name.lastIndexOf('.') : f.name.length);
-        let counter = 2;
-        let newKey = `${base}-repeated${ext}`.toLowerCase();
-        while (driveMap[newKey]) {
-          newKey = `${base}-repeated${counter}${ext}`.toLowerCase();
-          counter++;
-        }
-        driveMap[newKey] = { ...f, name: `${base}-repeated${ext}` };
-      } else {
-        driveMap[key] = f;
-      }
+      if (!driveGroups[key]) driveGroups[key] = [];
+      driveGroups[key].push(f);
     }
+
+    // counter لكل اسم عشان نوزع الـ duplicates
+    const driveGroupCounters = {};
 
     // 3. جيب أو اعمل Collection في Bunny
     const collectionGuid = await getOrCreateBunnyCollection(courseId, courseName);
@@ -3848,7 +3839,12 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
     for (const att of (attachments || [])) {
       if (!courseMigState.running) break;
 
-      const driveFile = driveMap[att.name.toLowerCase()];
+      const key = att.name.toLowerCase();
+      const group = driveGroups[key] || [];
+      const idx = driveGroupCounters[key] || 0;
+      const driveFile = group[idx];
+      driveGroupCounters[key] = idx + 1;
+
       courseMigState.current = att.name;
 
       if (!driveFile) {
@@ -3860,13 +3856,19 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
       try {
         console.log('[CourseMig] Uploading:', driveFile.name);
 
+        // لو مكرر ضيف suffix
+        const isDuplicate = (driveGroups[att.name.toLowerCase()] || []).length > 1;
+        const bunnyTitle = isDuplicate 
+          ? att.name.replace(/(\.\w+)$/, `_${driveGroupCounters[att.name.toLowerCase()]}$1`)
+          : driveFile.name;
+
         // Step A: اعمل video entry في Bunny
         const createBunnyRes = await fetch(
           `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`,
           {
             method: 'POST',
             headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: driveFile.name, collectionId: collectionGuid })
+            body: JSON.stringify({ title: bunnyTitle, collectionId: collectionGuid })
           }
         );
         if (!createBunnyRes.ok) throw new Error('Bunny create failed: ' + createBunnyRes.status);
