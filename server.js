@@ -3811,7 +3811,7 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
       return;
     }
 
-    // 2. جيب الـ attachments من Supabase للكورس
+    // 2. جيب الـ attachments من Supabase مع section info
     const { data: attachments, error: attErr } = await supabase
       .from('teachable_attachments')
       .select('id, teachable_attachment_id, name, lecture_id')
@@ -3821,15 +3821,56 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
     if (attErr) throw new Error('Supabase error: ' + attErr.message);
 
-    // جمّع Drive files في groups بالاسم
+    // جيب section names لكل lecture
+    const lectureIds = [...new Set((attachments || []).map(a => a.lecture_id))];
+    let sectionNames = {}; // lecture_id -> section_name
+    if (lectureIds.length > 0) {
+      const { data: lectures } = await supabase
+        .from('teachable_lectures')
+        .select('teachable_lecture_id, section_id, position')
+        .in('teachable_lecture_id', lectureIds);
+
+      const sectionIds = [...new Set((lectures || []).map(l => l.section_id).filter(Boolean))];
+      let sectionsMap = {};
+      if (sectionIds.length > 0) {
+        const { data: sections } = await supabase
+          .from('teachable_sections')
+          .select('teachable_section_id, name, position')
+          .in('teachable_section_id', sectionIds);
+        for (const s of (sections || [])) sectionsMap[s.teachable_section_id] = s;
+      }
+
+      for (const l of (lectures || [])) {
+        const sec = sectionsMap[l.section_id] || {};
+        sectionNames[l.teachable_lecture_id] = {
+          sectionName: sec.name || '',
+          sectionPos: sec.position || 0,
+          lecturePos: l.position || 0
+        };
+      }
+    }
+
+    // رتب الـ attachments بـ section + lecture position
+    const sortedAttachments = [...(attachments || [])].sort((a, b) => {
+      const sa = sectionNames[a.lecture_id] || {};
+      const sb = sectionNames[b.lecture_id] || {};
+      if (sa.sectionPos !== sb.sectionPos) return sa.sectionPos - sb.sectionPos;
+      return sa.lecturePos - sb.lecturePos;
+    });
+
+    // جمّع Drive files في groups بالاسم مرتبة بالـ folderPath
     const driveGroups = {};
     for (const f of driveFiles) {
       const key = f.name.toLowerCase();
       if (!driveGroups[key]) driveGroups[key] = [];
       driveGroups[key].push(f);
     }
+    // رتب كل group بالـ folderPath
+    for (const key of Object.keys(driveGroups)) {
+      driveGroups[key].sort((a, b) => (a.folderPath || '').localeCompare(b.folderPath || ''));
+    }
 
-    // counter لكل اسم عشان نوزع الـ duplicates
+    // counter لكل اسم عشان نوزع الـ duplicates بالترتيب
     const driveGroupCounters = {};
 
     // 3. جيب أو اعمل Collection في Bunny
@@ -4074,22 +4115,6 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
     const accessToken = req.body?.accessToken;
     if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
     if (!accessToken) return res.status(400).json({ error: 'accessToken مطلوب' });
-
-    // أول حاجة: شوف لو في سب-فولدرات
-    const topResult = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&fields=files(id,name)&orderBy=name&pageSize=100`,
-      { headers: { 'Authorization': 'Bearer ' + accessToken } }
-    );
-    const topData = await topResult.json();
-    const subFolders = topData.files || [];
-
-    // لو في سب-فولدرات → رجّع القائمة للمستخدم يختار
-    if (subFolders.length > 0) {
-      return res.json({
-        has_subfolders: true,
-        subfolders: subFolders.map(f => ({ id: f.id, name: f.name }))
-      });
-    }
 
     // جيب كل الفيديوهات من الفولدر وكل السب-فولدرات recursively
     async function getVideosRecursive(fId, path = '') {
