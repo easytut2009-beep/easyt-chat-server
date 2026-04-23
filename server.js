@@ -3781,8 +3781,6 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
   courseMigState.finishedAt = null;
 
   try {
-    const drive = getDriveClient();
-
     // 1. جيب كل الفيديوهات من Drive folder وكل السب-فولدرات
     async function getVideosRecursive(fId) {
       const result = await fetch(
