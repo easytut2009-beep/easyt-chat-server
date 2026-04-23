@@ -2497,13 +2497,14 @@ async function handleSaleCreated(sale) {
   if (!sale.product?.is_recurring) return;
   if (!sale.user_id) return;
 
+  const priceInCents = sale.price || 0;
   const amountInDollars = (sale.final_price || sale.price || 0) / 100;
   const userEmail = sale.user?.email?.toLowerCase() || null;
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   // تحديد نوع الخطة
-  const planType = amountInDollars >= 50 ? 'yearly' : 'monthly';
+  const planType = priceInCents >= 4000 ? 'yearly' : 'monthly'; // سنوي >= $40, شهري < $40
 
   const subData = {
     teachable_user_id: sale.user_id,
