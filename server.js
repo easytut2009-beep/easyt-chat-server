@@ -48,8 +48,7 @@ function generateAdminToken() {
 }
 
 function adminAuth(req, res, next) {
-  // قبول من query param أو Authorization header
-  const token = req.query.admin || req.headers.authorization?.replace("Bearer ", "");
+  const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return res.status(401).json({ error: "غير مصرح" });
   
   // لو Token موجود في الـ memory — تمام
@@ -3700,6 +3699,171 @@ app.post("/api/admin/teachable/migrate-attachments/stop", (req, res) => {
 
 /* ══════════════════════════════════════════════════════════ */
 
+
+
+/* ══════════════════════════════════════════════════════════ */
+/* ═══════════ Google Drive → Bunny Stream Migration ═══════ */
+/* ══════════════════════════════════════════════════════════ */
+
+const BUNNY_LIBRARY_ID = '643309';
+const BUNNY_STREAM_KEY = '1d49d084-1043-42cd-96e49b649c2b-d05b-437c';
+const BUNNY_CDN_HOST = 'vz-1b5f7566-8e8.b-cdn.net';
+
+// Migration state
+const migrationJobs = new Map(); // jobId -> state
+
+// POST /api/migrate/video
+// Body: { driveFileId, driveToken, videoTitle, attachmentId }
+app.post('/api/migrate/video', adminAuth, async (req, res) => {
+  const { driveFileId, driveToken, videoTitle, attachmentId } = req.body;
+  if (!driveFileId || !driveToken) {
+    return res.status(400).json({ error: 'driveFileId and driveToken required' });
+  }
+
+  const jobId = Date.now() + '-' + Math.random().toString(36).slice(2);
+  migrationJobs.set(jobId, { status: 'starting', progress: 0, error: null, bunnyId: null });
+
+  res.json({ jobId, message: 'Migration started' });
+
+  // Run in background
+  runMigrationJob(jobId, driveFileId, driveToken, videoTitle, attachmentId).catch(err => {
+    const job = migrationJobs.get(jobId);
+    if (job) { job.status = 'failed'; job.error = err.message; }
+    console.error('[Migrate] Job failed:', err.message);
+  });
+});
+
+// GET /api/migrate/status/:jobId
+app.get('/api/migrate/status/:jobId', adminAuth, (req, res) => {
+  const job = migrationJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
+});
+
+// POST /api/migrate/batch
+// Body: { videos: [{driveFileId, driveToken, videoTitle, attachmentId}] }
+app.post('/api/migrate/batch', adminAuth, async (req, res) => {
+  const { videos, concurrency = 2 } = req.body;
+  if (!videos || !videos.length) return res.status(400).json({ error: 'videos array required' });
+
+  const batchId = 'batch-' + Date.now();
+  const jobs = videos.map(v => {
+    const jobId = batchId + '-' + Math.random().toString(36).slice(2);
+    migrationJobs.set(jobId, { status: 'queued', progress: 0, error: null, bunnyId: null, title: v.videoTitle });
+    return { jobId, ...v };
+  });
+
+  res.json({ batchId, jobs: jobs.map(j => ({ jobId: j.jobId, title: j.videoTitle })) });
+
+  // Run with concurrency limit
+  const queue = [...jobs];
+  const runNext = async () => {
+    if (!queue.length) return;
+    const job = queue.shift();
+    await runMigrationJob(job.jobId, job.driveFileId, job.driveToken, job.videoTitle, job.attachmentId);
+    await runNext();
+  };
+  const workers = Array(Math.min(concurrency, jobs.length)).fill(null).map(runNext);
+  Promise.all(workers).then(() => console.log('[Migrate] Batch complete:', batchId));
+});
+
+async function runMigrationJob(jobId, driveFileId, driveToken, videoTitle, attachmentId) {
+  const job = migrationJobs.get(jobId);
+  if (!job) return;
+
+  try {
+    // Step 1: Create video object in Bunny
+    job.status = 'creating';
+    console.log('[Migrate] Creating Bunny video:', videoTitle);
+
+    const createRes = await fetch('https://video.bunnycdn.com/library/' + BUNNY_LIBRARY_ID + '/videos', {
+      method: 'POST',
+      headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: videoTitle || 'Untitled' })
+    });
+
+    if (!createRes.ok) throw new Error('Bunny create failed: ' + createRes.status);
+    const bunnyVideo = await createRes.json();
+    const bunnyId = bunnyVideo.guid;
+    job.bunnyId = bunnyId;
+
+    // Step 2: Download from Google Drive (server-side - fast!)
+    job.status = 'downloading';
+    job.progress = 10;
+    console.log('[Migrate] Downloading from Drive:', driveFileId);
+
+    // Try direct download first
+    let driveRes = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media', {
+      headers: { 'Authorization': 'Bearer ' + driveToken }
+    });
+
+    // Handle Google's virus scan redirect for large files
+    if (driveRes.status === 200) {
+      const contentType = driveRes.headers.get('content-type') || '';
+      // If it's HTML, it's the warning page - use export download instead
+      if (contentType.includes('text/html')) {
+        driveRes = await fetch('https://drive.google.com/uc?id=' + driveFileId + '&export=download&confirm=t', {
+          headers: { 'Authorization': 'Bearer ' + driveToken }
+        });
+      }
+    }
+
+    if (!driveRes.ok) throw new Error('Drive download failed: ' + driveRes.status);
+
+    const contentLength = driveRes.headers.get('content-length');
+    const totalBytes = contentLength ? parseInt(contentLength) : 0;
+    console.log('[Migrate] File size:', totalBytes ? (totalBytes/1024/1024).toFixed(1) + ' MB' : 'unknown');
+
+    // Step 3: Upload to Bunny (stream directly - no buffering!)
+    job.status = 'uploading';
+    job.progress = 20;
+    console.log('[Migrate] Uploading to Bunny:', bunnyId);
+
+    const uploadRes = await fetch('https://video.bunnycdn.com/library/' + BUNNY_LIBRARY_ID + '/videos/' + bunnyId, {
+      method: 'PUT',
+      headers: {
+        'AccessKey': BUNNY_STREAM_KEY,
+        'Content-Type': 'video/mp4',
+        ...(contentLength ? { 'Content-Length': contentLength } : {})
+      },
+      body: driveRes.body, // Stream directly! No buffering in memory
+      duplex: 'half'
+    });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error('Bunny upload failed: ' + uploadRes.status + ' ' + errText);
+    }
+
+    job.progress = 90;
+    job.status = 'processing';
+
+    // Step 4: Update Supabase
+    if (attachmentId) {
+      const playbackUrl = 'https://' + BUNNY_CDN_HOST + '/' + bunnyId + '/playlist.m3u8';
+      await supabase
+        .from('teachable_attachments')
+        .update({
+          bunny_video_id: bunnyId,
+          bunny_playback_url: playbackUrl,
+          migration_status: 'done',
+          migrated_at: new Date().toISOString()
+        })
+        .eq('id', attachmentId);
+    }
+
+    job.status = 'done';
+    job.progress = 100;
+    job.playbackUrl = 'https://' + BUNNY_CDN_HOST + '/' + bunnyId + '/playlist.m3u8';
+    console.log('[Migrate] Done:', videoTitle, '->', bunnyId);
+
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message;
+    console.error('[Migrate] Failed:', videoTitle, err.message);
+  }
+}
+
 async function startServer() {
   supabaseConnected = await testSupabaseConnection();
 
@@ -3716,141 +3880,3 @@ async function startServer() {
 }
 
 startServer();
-/* ══════════════════════════════════════════════════════════ */
-/* ═══════════════ Books Sync Endpoints ════════════════════ */
-/* ══════════════════════════════════════════════════════════ */
-
-const booksSyncState = {
-  running: false,
-  total: 0,
-  processed: 0,
-  inserted: 0,
-  errors: 0,
-  startedAt: null,
-  stoppedAt: null
-};
-
-// GET /api/admin/books/sync/status
-app.get("/api/admin/books/sync/status", adminAuth, (req, res) => {
-  res.json(booksSyncState);
-});
-
-// POST /api/admin/books/sync/stop
-app.post("/api/admin/books/sync/stop", adminAuth, (req, res) => {
-  booksSyncState.running = false;
-  booksSyncState.stoppedAt = new Date().toISOString();
-  res.json({ success: true, message: "Stop requested" });
-});
-
-// POST /api/admin/books/sync
-app.post("/api/admin/books/sync", adminAuth, async (req, res) => {
-  if (booksSyncState.running) {
-    return res.json({ success: false, message: "Already running", state: booksSyncState });
-  }
-
-  booksSyncState.running = true;
-  booksSyncState.total = 0;
-  booksSyncState.processed = 0;
-  booksSyncState.inserted = 0;
-  booksSyncState.errors = 0;
-  booksSyncState.startedAt = new Date().toISOString();
-  booksSyncState.stoppedAt = null;
-
-  res.json({ success: true, message: "Books sync started in background" });
-
-  // تشغيل في الخلفية
-  runBooksSync().catch(err => {
-    console.error("[Books] Sync error:", err.message);
-    booksSyncState.running = false;
-  });
-});
-
-async function runBooksSync() {
-  console.log("[Books] Starting sync...");
-
-  try {
-    // سحب كل الكتب من Teachable
-    let page = 1;
-    let allBooks = [];
-
-    while (booksSyncState.running) {
-      const url = `https://developers.teachable.com/v1/digital_media?page=${page}&per=50`;
-      const res = await fetch(url, {
-        headers: { "apiKey": process.env.TEACHABLE_API_KEY }
-      });
-
-      if (!res.ok) {
-        console.error(`[Books] API error: ${res.status}`);
-        break;
-      }
-
-      const data = await res.json();
-      const items = data.digital_media || data.digital_medias || [];
-
-      if (items.length === 0) break;
-
-      allBooks = allBooks.concat(items);
-      booksSyncState.total = data.meta?.total || allBooks.length;
-
-      console.log(`[Books] Page ${page}: got ${items.length} books (total: ${allBooks.length})`);
-
-      if (!data.meta?.next_page) break;
-      page++;
-      await new Promise(r => setTimeout(r, 300));
-    }
-
-    console.log(`[Books] Total books fetched: ${allBooks.length}`);
-    booksSyncState.total = allBooks.length;
-
-    // حفظ في Supabase
-    for (const book of allBooks) {
-      if (!booksSyncState.running) break;
-
-      try {
-        const bookData = {
-          teachable_book_id: book.id,
-          title: book.name || book.title || null,
-          description: book.description || null,
-          price: book.price ? book.price / 100 : 0,
-          image_url: book.image_url || null,
-          file_url: book.url || book.file_url || null,
-          file_size: book.size || null,
-          file_type: book.content_type || null,
-          is_published: book.is_published ?? true,
-          raw_data: book,
-          updated_at: new Date().toISOString()
-        };
-
-        const { error } = await supabase
-          .from("books")
-          .upsert(bookData, {
-            onConflict: "teachable_book_id",
-            ignoreDuplicates: false
-          });
-
-        if (error) {
-          console.error(`[Books] Insert error for book ${book.id}: ${error.message}`);
-          booksSyncState.errors++;
-        } else {
-          booksSyncState.inserted++;
-        }
-
-        booksSyncState.processed++;
-      } catch (err) {
-        console.error(`[Books] Error processing book ${book.id}: ${err.message}`);
-        booksSyncState.errors++;
-        booksSyncState.processed++;
-      }
-
-      await new Promise(r => setTimeout(r, 100));
-    }
-
-  } catch (err) {
-    console.error("[Books] Fatal error:", err.message);
-  }
-
-  booksSyncState.running = false;
-  booksSyncState.stoppedAt = new Date().toISOString();
-  console.log(`[Books] Sync complete: ${booksSyncState.inserted} inserted, ${booksSyncState.errors} errors`);
-}
-
