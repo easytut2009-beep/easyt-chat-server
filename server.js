@@ -2491,63 +2491,10 @@ async function handleUserEvent(user, eventType) {
 }
 
 async function handleSaleCreated(sale) {
-  console.log(`[Webhook] Sale.created: user=${sale.user_id}, product=${sale.product?.id}, is_recurring=${sale.product?.is_recurring}, price=${sale.final_price || sale.price}`);
-
-  // لو الـ sale مش متكرر (مش اشتراك) → مش محتاجين نضيفه هنا
-  if (!sale.product?.is_recurring) return;
-  if (!sale.user_id) return;
-
-  const priceInCents = sale.price || 0;
-  const amountInDollars = (sale.final_price || sale.price || 0) / 100;
-  const userEmail = sale.user?.email?.toLowerCase() || null;
-  const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-
-  // تحديد نوع الخطة
-  const planType = priceInCents >= 4000 ? 'yearly' : 'monthly'; // سنوي >= $40, شهري < $40
-
-  const subData = {
-    teachable_user_id: sale.user_id,
-    user_email: userEmail,
-    product_id: sale.product?.id ? sale.product.id.toString() : null,
-    product_name: sale.product?.name || null,
-    plan_type: planType,
-    status: 'active',
-    amount: amountInDollars,
-    currency: sale.currency || 'USD',
-    started_at: now,
-    expires_at: planType === 'yearly' ? expiresAt : null,
-    raw_data: sale,
-    updated_at: now
-  };
-
-  const { error } = await supabase
-    .from('teachable_subscriptions')
-    .upsert(subData, {
-      onConflict: 'teachable_user_id',
-      ignoreDuplicates: false
-    });
-
-  if (error) {
-    console.error(`[Webhook] Sale subscription insert failed: ${error.message}`);
-  } else {
-    console.log(`[Webhook] ✅ Subscription created/updated for user=${sale.user_id} (${planType}, $${amountInDollars})`);
-  }
-
-  // كمان حدّث الـ user في teachable_users لو عنده بيانات
-  if (sale.user?.email) {
-    await supabase
-      .from('teachable_users')
-      .upsert({
-        teachable_user_id: sale.user_id,
-        email: userEmail,
-        name: sale.user.name || null,
-        updated_at: now
-      }, {
-        onConflict: 'teachable_user_id',
-        ignoreDuplicates: false
-      });
-  }
+  // Sale.created doesn't create a transaction directly,
+  // but we log it in webhook_events for visibility.
+  // The actual transaction comes via Transaction.created.
+  console.log(`[Webhook] Sale.created: user=${sale.user_id}, course=${sale.course?.id}, price=${sale.final_price || sale.price}`);
 }
 
 async function handleSubscriptionCanceled(sale) {
@@ -2627,48 +2574,37 @@ async function handleTransactionRefunded(txn) {
  * Helper: Create/update subscription from a transaction
  */
 async function syncSubscriptionFromTransaction(txn, txnData) {
-  // لازم يكون subscription
-  if (txnData.product_type !== "subscription") return;
-  if (!txn.user_id) return;
+  const SUBSCRIPTION_PRODUCT_IDS = [
+    '3389406', '2853142', '3745174', '4486167',
+    '3902295', '5240323', '6687780'
+  ];
 
-  // تحديد نوع الخطة من السعر الأصلي بالسنت
-  // txn.final_price بالسنت (زي sale.price في handleSaleCreated)
-  const priceInCents = txn.final_price || txn.net_charge || 0;
-  const planType = priceInCents >= 4000 ? 'yearly' : 'monthly';
-
-  // حساب تاريخ الانتهاء
-  const startDate = txnData.transaction_date ? new Date(txnData.transaction_date) : new Date();
-  const expiresAt = planType === 'yearly'
-    ? new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString()
-    : null;
+  const isKnownSubscription = SUBSCRIPTION_PRODUCT_IDS.includes(txnData.product_id);
+  if (!isKnownSubscription && !txnData.product_type === "subscription") return;
 
   const subData = {
     teachable_user_id: txn.user_id,
     user_email: txnData.user_email,
     product_id: txnData.product_id,
     product_name: txnData.product_name,
-    plan_type: planType,
+    plan_type: txnData.product_id === '6687780' ? 'yearly_current' : 'yearly_legacy',
     status: 'active',
     amount: txnData.amount,
     currency: txnData.currency,
     started_at: txnData.transaction_date,
-    expires_at: expiresAt,
+    expires_at: txnData.transaction_date ? 
+      new Date(new Date(txnData.transaction_date).getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() 
+      : null,
     raw_data: txn,
     updated_at: new Date().toISOString()
   };
 
-  const { error } = await supabase
+  await supabase
     .from("teachable_subscriptions")
     .upsert(subData, {
       onConflict: "teachable_user_id",
       ignoreDuplicates: false
     });
-
-  if (error) {
-    console.error(`[Webhook] syncSubscriptionFromTransaction failed: ${error.message}`);
-  } else {
-    console.log(`[Webhook] ✅ Subscription renewed for user=${txn.user_id} (${planType})`);
-  }
 }
 
 async function handleEnrollmentCreated(enrollment) {
@@ -3779,3 +3715,141 @@ async function startServer() {
 }
 
 startServer();
+/* ══════════════════════════════════════════════════════════ */
+/* ═══════════════ Books Sync Endpoints ════════════════════ */
+/* ══════════════════════════════════════════════════════════ */
+
+const booksSyncState = {
+  running: false,
+  total: 0,
+  processed: 0,
+  inserted: 0,
+  errors: 0,
+  startedAt: null,
+  stoppedAt: null
+};
+
+// GET /api/admin/books/sync/status
+app.get("/api/admin/books/sync/status", adminAuth, (req, res) => {
+  res.json(booksSyncState);
+});
+
+// POST /api/admin/books/sync/stop
+app.post("/api/admin/books/sync/stop", adminAuth, (req, res) => {
+  booksSyncState.running = false;
+  booksSyncState.stoppedAt = new Date().toISOString();
+  res.json({ success: true, message: "Stop requested" });
+});
+
+// POST /api/admin/books/sync
+app.post("/api/admin/books/sync", adminAuth, async (req, res) => {
+  if (booksSyncState.running) {
+    return res.json({ success: false, message: "Already running", state: booksSyncState });
+  }
+
+  booksSyncState.running = true;
+  booksSyncState.total = 0;
+  booksSyncState.processed = 0;
+  booksSyncState.inserted = 0;
+  booksSyncState.errors = 0;
+  booksSyncState.startedAt = new Date().toISOString();
+  booksSyncState.stoppedAt = null;
+
+  res.json({ success: true, message: "Books sync started in background" });
+
+  // تشغيل في الخلفية
+  runBooksSync().catch(err => {
+    console.error("[Books] Sync error:", err.message);
+    booksSyncState.running = false;
+  });
+});
+
+async function runBooksSync() {
+  console.log("[Books] Starting sync...");
+
+  try {
+    // سحب كل الكتب من Teachable
+    let page = 1;
+    let allBooks = [];
+
+    while (booksSyncState.running) {
+      const url = `https://developers.teachable.com/v1/digital_media?page=${page}&per=50`;
+      const res = await fetch(url, {
+        headers: { "apiKey": process.env.TEACHABLE_API_KEY }
+      });
+
+      if (!res.ok) {
+        console.error(`[Books] API error: ${res.status}`);
+        break;
+      }
+
+      const data = await res.json();
+      const items = data.digital_media || data.digital_medias || [];
+
+      if (items.length === 0) break;
+
+      allBooks = allBooks.concat(items);
+      booksSyncState.total = data.meta?.total || allBooks.length;
+
+      console.log(`[Books] Page ${page}: got ${items.length} books (total: ${allBooks.length})`);
+
+      if (!data.meta?.next_page) break;
+      page++;
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    console.log(`[Books] Total books fetched: ${allBooks.length}`);
+    booksSyncState.total = allBooks.length;
+
+    // حفظ في Supabase
+    for (const book of allBooks) {
+      if (!booksSyncState.running) break;
+
+      try {
+        const bookData = {
+          teachable_book_id: book.id,
+          title: book.name || book.title || null,
+          description: book.description || null,
+          price: book.price ? book.price / 100 : 0,
+          image_url: book.image_url || null,
+          file_url: book.url || book.file_url || null,
+          file_size: book.size || null,
+          file_type: book.content_type || null,
+          is_published: book.is_published ?? true,
+          raw_data: book,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+          .from("books")
+          .upsert(bookData, {
+            onConflict: "teachable_book_id",
+            ignoreDuplicates: false
+          });
+
+        if (error) {
+          console.error(`[Books] Insert error for book ${book.id}: ${error.message}`);
+          booksSyncState.errors++;
+        } else {
+          booksSyncState.inserted++;
+        }
+
+        booksSyncState.processed++;
+      } catch (err) {
+        console.error(`[Books] Error processing book ${book.id}: ${err.message}`);
+        booksSyncState.errors++;
+        booksSyncState.processed++;
+      }
+
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+  } catch (err) {
+    console.error("[Books] Fatal error:", err.message);
+  }
+
+  booksSyncState.running = false;
+  booksSyncState.stoppedAt = new Date().toISOString();
+  console.log(`[Books] Sync complete: ${booksSyncState.inserted} inserted, ${booksSyncState.errors} errors`);
+}
+
