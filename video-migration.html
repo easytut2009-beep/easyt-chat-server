@@ -251,11 +251,18 @@ function showPicker() {
     .setIncludeFolders(true)
     .setMimeTypes('application/vnd.google-apps.folder');
 
+  const view2 = new google.picker.DocsView()
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(true)
+    .setMimeTypes('application/vnd.google-apps.folder')
+    .setMode(google.picker.DocsViewMode.LIST);
+
   const picker = new google.picker.PickerBuilder()
     .addView(view)
+    .addView(view2)
     .setOAuthToken(accessToken)
     .setCallback(pickerCallback)
-    .setTitle('اختار الفولدر اللي فيه فيديوهات الكورس')
+    .setTitle('اختار الفولدر الرئيسي اللي فيه الفيديوهات')
     .build();
 
   picker.setVisible(true);
