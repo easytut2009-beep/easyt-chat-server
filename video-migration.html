@@ -411,7 +411,11 @@ async function loadPreview() {
   document.getElementById('unmatchedWrap').innerHTML = '';
   document.getElementById('startBtn').disabled = true;
   try {
-    const r = await api(`/api/admin/video-migration/preview&courseId=${selectedCourse.teachable_course_id}&folderId=${selectedFolder.id}&accessToken=${accessToken}`);
+    const r = await fetch(`${SERVER}/api/admin/video-migration/preview?admin=${ADMIN}&courseId=${selectedCourse.teachable_course_id}&folderId=${selectedFolder.id}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ accessToken })
+    });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     renderPreview(d);
