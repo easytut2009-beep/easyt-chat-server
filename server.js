@@ -2491,10 +2491,62 @@ async function handleUserEvent(user, eventType) {
 }
 
 async function handleSaleCreated(sale) {
-  // Sale.created doesn't create a transaction directly,
-  // but we log it in webhook_events for visibility.
-  // The actual transaction comes via Transaction.created.
-  console.log(`[Webhook] Sale.created: user=${sale.user_id}, course=${sale.course?.id}, price=${sale.final_price || sale.price}`);
+  console.log(`[Webhook] Sale.created: user=${sale.user_id}, product=${sale.product?.id}, is_recurring=${sale.product?.is_recurring}, price=${sale.final_price || sale.price}`);
+
+  // لو الـ sale مش متكرر (مش اشتراك) → مش محتاجين نضيفه هنا
+  if (!sale.product?.is_recurring) return;
+  if (!sale.user_id) return;
+
+  const amountInDollars = (sale.final_price || sale.price || 0) / 100;
+  const userEmail = sale.user?.email?.toLowerCase() || null;
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  // تحديد نوع الخطة
+  const planType = amountInDollars >= 50 ? 'yearly' : 'monthly';
+
+  const subData = {
+    teachable_user_id: sale.user_id,
+    user_email: userEmail,
+    product_id: sale.product?.id ? sale.product.id.toString() : null,
+    product_name: sale.product?.name || null,
+    plan_type: planType,
+    status: 'active',
+    amount: amountInDollars,
+    currency: sale.currency || 'USD',
+    started_at: now,
+    expires_at: planType === 'yearly' ? expiresAt : null,
+    raw_data: sale,
+    updated_at: now
+  };
+
+  const { error } = await supabase
+    .from('teachable_subscriptions')
+    .upsert(subData, {
+      onConflict: 'teachable_user_id',
+      ignoreDuplicates: false
+    });
+
+  if (error) {
+    console.error(`[Webhook] Sale subscription insert failed: ${error.message}`);
+  } else {
+    console.log(`[Webhook] ✅ Subscription created/updated for user=${sale.user_id} (${planType}, $${amountInDollars})`);
+  }
+
+  // كمان حدّث الـ user في teachable_users لو عنده بيانات
+  if (sale.user?.email) {
+    await supabase
+      .from('teachable_users')
+      .upsert({
+        teachable_user_id: sale.user_id,
+        email: userEmail,
+        name: sale.user.name || null,
+        updated_at: now
+      }, {
+        onConflict: 'teachable_user_id',
+        ignoreDuplicates: false
+      });
+  }
 }
 
 async function handleSubscriptionCanceled(sale) {
@@ -2580,7 +2632,7 @@ async function syncSubscriptionFromTransaction(txn, txnData) {
   ];
 
   const isKnownSubscription = SUBSCRIPTION_PRODUCT_IDS.includes(txnData.product_id);
-  if (!isKnownSubscription && !txnData.product_type === "subscription") return;
+  if (!isKnownSubscription && txnData.product_type !== "subscription") return;
 
   const subData = {
     teachable_user_id: txn.user_id,
