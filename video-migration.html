@@ -507,6 +507,7 @@ function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 window.addEventListener('load', () => {
   setTimeout(() => {
     initTokenClient();
+    loadCourses();
   }, 500);
 });
 </script>
