@@ -49,7 +49,9 @@ function generateAdminToken() {
 }
 
 function adminAuth(req, res, next) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
+  const token = req.headers.authorization?.replace("Bearer ", "") 
+    || req.query.admin 
+    || req.body?.admin;
   if (!token) return res.status(401).json({ error: "غير مصرح" });
   
   // لو Token موجود في الـ memory — تمام
@@ -62,7 +64,6 @@ function adminAuth(req, res, next) {
   // لو Token مش موجود (بعد restart) — تحقق لو هو الـ password نفسه
   const adminPass = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "admin123";
   if (token === adminPass) {
-    // أعد إنشاء الـ token في الـ memory
     adminTokens.set(token, { created: Date.now(), lastUsed: Date.now() });
     return next();
   }
@@ -81,11 +82,10 @@ const adminLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5 });
 
 /* ═══ Middleware ═══ */
 app.use(cors({
-  origin: [
-    "https://easyt.online",
-    "https://www.easyt.online",
-    process.env.ALLOWED_ORIGIN,
-  ].filter(Boolean),
+  origin: function(origin, callback) {
+    // السماح لـ admin routes من أي origin (file://, localhost, إلخ)
+    callback(null, true);
+  },
   methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
   credentials: true,
 }));
