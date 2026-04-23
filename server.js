@@ -4077,25 +4077,25 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
       }
     }
 
-    // عمل map من اسم الملف للـ attachment
-    const attMap = {};
-    for (const att of (attachments || [])) {
-      attMap[att.name.toLowerCase()] = att;
+    // عمل map من اسم الملف للـ Drive file
+    const driveMap = {};
+    for (const f of driveVideos) {
+      driveMap[f.name.toLowerCase()] = f;
     }
 
-    // بناء الـ preview
+    // بناء الـ preview من جهة DB
     const matched = [];
-    const unmatched_drive = [];
     const unmatched_db = [];
 
-    for (const video of driveVideos) {
-      const att = attMap[video.name.toLowerCase()];
-      if (att) {
+    for (const att of (attachments || [])) {
+      if (att.migration_status !== 'pending') continue;
+      const driveFile = driveMap[att.name.toLowerCase()];
+      if (driveFile) {
         const lecture = lecturesMap[att.lecture_id] || {};
         matched.push({
-          driveFile: video.name,
-          driveId: video.id,
-          folderPath: video.folderPath,
+          driveFile: driveFile.name,
+          driveId: driveFile.id,
+          folderPath: driveFile.folderPath || '',
           dbFile: att.name,
           lectureName: lecture.name || '—',
           lecturePosition: lecture.position || 0,
@@ -4103,14 +4103,6 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
           status: att.migration_status
         });
       } else {
-        unmatched_drive.push({ name: video.name, folderPath: video.folderPath });
-      }
-    }
-
-    // الـ attachments اللي مفيش فيديو ليها في Drive
-    const driveNames = new Set(driveVideos.map(v => v.name.toLowerCase()));
-    for (const att of (attachments || [])) {
-      if (!driveNames.has(att.name.toLowerCase()) && att.migration_status === 'pending') {
         const lecture = lecturesMap[att.lecture_id] || {};
         unmatched_db.push({
           dbFile: att.name,
@@ -4120,17 +4112,20 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
       }
     }
 
+    // الفيديوهات الزيادة في Drive
+    const dbNames = new Set((attachments || []).map(a => a.name.toLowerCase()));
+    const unmatched_drive = driveVideos
+      .filter(f => !dbNames.has(f.name.toLowerCase()))
+      .map(f => ({ name: f.name, folderPath: f.folderPath || '' }));
+
     // رتب الـ matched بالـ position
     matched.sort((a, b) => a.lecturePosition - b.lecturePosition);
-
-    const pendingMatched  = matched.filter(m => m.status === 'pending');
-    const doneMatched     = matched.filter(m => m.status === 'done');
 
     res.json({
       total_drive:    driveVideos.length,
       total_db:       (attachments || []).filter(a => a.migration_status === 'pending').length,
-      matched:        pendingMatched,   // اللي هيترفع فعلاً
-      already_done:   doneMatched.length,
+      matched:        matched,
+      already_done:   (attachments || []).filter(a => a.migration_status === 'done').length,
       unmatched_drive,
       unmatched_db
     });
