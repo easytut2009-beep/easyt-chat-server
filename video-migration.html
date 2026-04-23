@@ -446,17 +446,7 @@ async function loadPreview() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
 
-    // لو في سب-فولدرات — اعرضهم
-    if (d.has_subfolders) {
-      document.getElementById('prevStats').innerHTML = `<div style="grid-column:1/-1;background:rgba(255,214,0,.08);border:1px solid rgba(255,214,0,.3);border-radius:8px;padding:14px;color:var(--yellow)">⚠️ الفولدر ده فيه ${d.subfolders.length} سب-فولدر — اختار واحد منهم:</div>`;
-      document.getElementById('prevBody').innerHTML = d.subfolders.map(f => `
-        <tr style="cursor:pointer" onclick="selectSubFolder('${f.id}','${esc(f.name)}')">
-          <td colspan="3"><span style="font-size:18px">📁</span> ${f.name}</td>
-          <td><button class="btn btn-red" style="padding:4px 12px;font-size:11px">اختار</button></td>
-        </tr>`).join('');
-      return;
-    }
-
+    // لو في سب-فولدرات — اعرضهم في الـ browser مش هنا
     renderPreview(d);
   } catch(e) {
     document.getElementById('prevBody').innerHTML = `<tr><td colspan="4" style="color:var(--red);text-align:center;padding:20px">❌ ${e.message}</td></tr>`;
