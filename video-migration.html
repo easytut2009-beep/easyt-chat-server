@@ -305,23 +305,50 @@ async function searchDriveFolders() {
   }
 }
 
-function renderDriveFolders(folders, parentId, parentName) {
+async function renderDriveFolders(folders, parentId, parentName) {
   const grid = document.getElementById('driveFoldersGrid');
   if (!folders.length) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted)">📂 مفيش فولدرات هنا</div>`;
     return;
   }
-  grid.innerHTML = folders.map(f => `
-    <div style="background:var(--surface2);border:1px solid ${selectedFolder?.id===f.id?'var(--green)':'var(--border)'};border-radius:8px;padding:10px;cursor:pointer;transition:all .15s"
-         onclick="selectDriveFolder('${f.id}','${esc(f.name)}',this)">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+
+  // جيب السب-فولدرات لكل فولدر
+  const foldersWithSubs = await Promise.all(folders.map(async f => {
+    try {
+      const q = `'${f.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+      const r = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=name&pageSize=50`,
+        { headers: { 'Authorization': 'Bearer ' + accessToken } }
+      );
+      const d = await r.json();
+      return { ...f, subs: d.files || [] };
+    } catch(e) {
+      return { ...f, subs: [] };
+    }
+  }));
+
+  grid.style.gridTemplateColumns = '1fr';
+  grid.innerHTML = foldersWithSubs.map(f => `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${f.subs.length?'8px':'0'}">
         <span>📁</span>
-        <span style="font-size:12px;font-weight:600;flex:1;word-break:break-word">${f.name}</span>
+        <span style="font-size:13px;font-weight:700;flex:1">${f.name}</span>
+        <button onclick="selectDriveFolder('${f.id}','${esc(f.name)}',this)" 
+          style="background:${selectedFolder?.id===f.id?'var(--green)':'var(--surface3)'};color:${selectedFolder?.id===f.id?'#000':'var(--text)'};border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:Cairo,sans-serif">
+          ${selectedFolder?.id===f.id?'✅ محدد':'اختار'}
+        </button>
       </div>
-      <div style="text-align:left">
-        <span onclick="event.stopPropagation();loadDriveFolders('${f.id}','${esc(f.name)}')" 
-          style="font-size:10px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:4px;background:var(--surface3)">فتح ›</span>
-      </div>
+      ${f.subs.length ? `
+        <div style="padding-right:20px;border-right:2px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">
+          ${f.subs.map(s => `
+            <div style="display:flex;align-items:center;gap:6px;background:var(--surface3);border:1px solid ${selectedFolder?.id===s.id?'var(--green)':'var(--border)'};border-radius:6px;padding:5px 10px;cursor:pointer"
+                 onclick="selectDriveFolder('${s.id}','${esc(s.name)}',this)">
+              <span style="font-size:11px">📁 ${s.name}</span>
+              ${selectedFolder?.id===s.id?'<span style="color:var(--green)">✅</span>':''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
     </div>`).join('');
 }
 
