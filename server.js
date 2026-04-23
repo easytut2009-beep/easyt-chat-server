@@ -48,7 +48,8 @@ function generateAdminToken() {
 }
 
 function adminAuth(req, res, next) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
+  // قبول من query param أو Authorization header
+  const token = req.query.admin || req.headers.authorization?.replace("Bearer ", "");
   if (!token) return res.status(401).json({ error: "غير مصرح" });
   
   // لو Token موجود في الـ memory — تمام
