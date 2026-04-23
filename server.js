@@ -4064,16 +4064,34 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
       .eq('course_id', courseId)
       .eq('kind', 'video');
 
-    // جيب أسماء الدروس
+    // جيب أسماء الدروس مع section position
     const lectureIds = [...new Set((attachments || []).map(a => a.lecture_id))];
     let lecturesMap = {};
     if (lectureIds.length > 0) {
       const { data: lectures } = await supabase
         .from('teachable_lectures')
-        .select('teachable_lecture_id, name, position')
+        .select('teachable_lecture_id, name, position, section_id')
         .in('teachable_lecture_id', lectureIds);
+
+      // جيب الـ sections
+      const sectionIds = [...new Set((lectures || []).map(l => l.section_id).filter(Boolean))];
+      let sectionsMap = {};
+      if (sectionIds.length > 0) {
+        const { data: sections } = await supabase
+          .from('teachable_sections')
+          .select('teachable_section_id, position')
+          .in('teachable_section_id', sectionIds);
+        for (const s of (sections || [])) {
+          sectionsMap[s.teachable_section_id] = s.position;
+        }
+      }
+
       for (const l of (lectures || [])) {
-        lecturesMap[l.teachable_lecture_id] = { name: l.name, position: l.position };
+        lecturesMap[l.teachable_lecture_id] = {
+          name: l.name,
+          position: l.position,
+          sectionPosition: sectionsMap[l.section_id] || 0
+        };
       }
     }
 
@@ -4099,6 +4117,7 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
           dbFile: att.name,
           lectureName: lecture.name || '—',
           lecturePosition: lecture.position || 0,
+          sectionPosition: lecture.sectionPosition || 0,
           attachmentId: att.id,
           status: att.migration_status
         });
@@ -4119,7 +4138,11 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
       .map(f => ({ name: f.name, folderPath: f.folderPath || '' }));
 
     // رتب الـ matched بالـ position
-    matched.sort((a, b) => a.lecturePosition - b.lecturePosition);
+    matched.sort((a, b) => 
+      a.sectionPosition !== b.sectionPosition 
+        ? a.sectionPosition - b.sectionPosition 
+        : a.lecturePosition - b.lecturePosition
+    );
 
     res.json({
       total_drive:    driveVideos.length,
