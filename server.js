@@ -3821,10 +3821,24 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 
     if (attErr) throw new Error('Supabase error: ' + attErr.message);
 
-    // Map: اسم الملف (lowercase) → Drive file
+    // Map: اسم الملف (lowercase) → Drive file — لو مكرر يضيف suffix
     const driveMap = {};
     for (const f of driveFiles) {
-      driveMap[f.name.toLowerCase()] = f;
+      const key = f.name.toLowerCase();
+      if (driveMap[key]) {
+        // مكرر — عدّل اسمه
+        const ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
+        const base = f.name.slice(0, f.name.lastIndexOf('.') > 0 ? f.name.lastIndexOf('.') : f.name.length);
+        let counter = 2;
+        let newKey = `${base}-repeated${ext}`.toLowerCase();
+        while (driveMap[newKey]) {
+          newKey = `${base}-repeated${counter}${ext}`.toLowerCase();
+          counter++;
+        }
+        driveMap[newKey] = { ...f, name: `${base}-repeated${ext}` };
+      } else {
+        driveMap[key] = f;
+      }
     }
 
     // 3. جيب أو اعمل Collection في Bunny
@@ -4121,8 +4135,19 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
 
     // عمل map من اسم الملف للـ Drive file
     const driveMap = {};
+    const driveMap = {};
     for (const f of driveVideos) {
-      driveMap[f.name.toLowerCase()] = f;
+      const key = f.name.toLowerCase();
+      if (driveMap[key]) {
+        const ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
+        const base = f.name.slice(0, f.name.lastIndexOf('.') > 0 ? f.name.lastIndexOf('.') : f.name.length);
+        let counter = 2;
+        let newKey = `${base}-repeated${ext}`.toLowerCase();
+        while (driveMap[newKey]) { newKey = `${base}-repeated${counter}${ext}`.toLowerCase(); counter++; }
+        driveMap[newKey] = { ...f, name: `${base}-repeated${ext}` };
+      } else {
+        driveMap[key] = f;
+      }
     }
 
     // بناء الـ preview من جهة DB
