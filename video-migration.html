@@ -427,9 +427,9 @@ async function loadPreview() {
 function renderPreview(d) {
   document.getElementById('prevStats').innerHTML = `
     <div class="ps"><div class="n">${d.total_drive}</div><div class="l">في Drive</div></div>
-    <div class="ps"><div class="n">${d.total_db}</div><div class="l">في الداتابيز</div></div>
-    <div class="ps green"><div class="n">${d.matched.length}</div><div class="l">مطابق ✅</div></div>
-    <div class="ps red"><div class="n">${d.unmatched_drive.length + d.unmatched_db.length}</div><div class="l">غير مطابق ⚠️</div></div>`;
+    <div class="ps"><div class="n">${d.total_db}</div><div class="l">pending في DB</div></div>
+    <div class="ps green"><div class="n">${d.matched.length}</div><div class="l">هيترفع ✅</div></div>
+    <div class="ps red"><div class="n">${d.unmatched_drive.length}</div><div class="l">زيادة في Drive ⚠️</div></div>`;
 
   document.getElementById('prevBody').innerHTML = d.matched.length
     ? d.matched.map((m,i) => `<tr>
