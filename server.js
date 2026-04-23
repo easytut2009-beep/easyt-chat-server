@@ -2089,7 +2089,7 @@ app.get("/admin/debug", adminAuth, async (req, res) => {
     },
     supabase_connection: supabaseConnected ? "✅" : "❌",
     admin_sessions: adminTokens.size,
-    active_chat_sessions: sessionMemory.size,
+    active_chat_sessions: 0,
     search_cache_entries: searchCache.size,
     tables: {},
   };
@@ -2151,7 +2151,7 @@ app.get("/health", async (req, res) => {
     database: dbStatus,
     openai: openai ? "ready" : "not ready",
     engine: "Guide RAG Overhaul v10.9",
-    active_sessions: sessionMemory.size,
+    active_sessions: 0,
     timestamp: new Date().toISOString(),
   });
 });
@@ -3928,29 +3928,55 @@ async function runCourseMigration(courseId, courseName, folderId, accessToken) {
 // جيب الكورسات اللي عندها فيديوهات pending
 app.get('/api/admin/video-migration/courses', adminAuth, async (req, res) => {
   try {
-    // جيب course_ids اللي فيها pending videos
+    // جيب distinct course_ids من RPC عشان نتخطى الـ 1000 limit
     const { data: pending, error } = await supabase
-      .from('teachable_attachments')
-      .select('course_id')
-      .eq('kind', 'video')
-      .eq('migration_status', 'pending');
+      .rpc('get_pending_video_courses');
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      // fallback: جيب بـ pagination
+      let allPending = [];
+      let page = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data: batch } = await supabase
+          .from('teachable_attachments')
+          .select('course_id')
+          .eq('kind', 'video')
+          .eq('migration_status', 'pending')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        if (!batch || batch.length === 0) break;
+        allPending = allPending.concat(batch);
+        if (batch.length < pageSize) break;
+        page++;
+      }
+      const courseIds = [...new Set(allPending.map(r => r.course_id))];
+      if (!courseIds.length) return res.json({ courses: [] });
+
+      const { data: courses } = await supabase
+        .from('teachable_courses')
+        .select('teachable_course_id, name, image_url')
+        .in('teachable_course_id', courseIds)
+        .order('name');
+
+      const result = (courses || []).map(c => ({
+        ...c,
+        pending_videos: allPending.filter(p => p.course_id === c.teachable_course_id).length
+      }));
+      return res.json({ courses: result });
+    }
 
     const courseIds = [...new Set((pending || []).map(r => r.course_id))];
     if (!courseIds.length) return res.json({ courses: [] });
 
-    // جيب بيانات الكورسات
     const { data: courses } = await supabase
       .from('teachable_courses')
       .select('teachable_course_id, name, image_url')
       .in('teachable_course_id', courseIds)
       .order('name');
 
-    // أضف عدد الفيديوهات لكل كورس
     const result = (courses || []).map(c => ({
       ...c,
-      pending_videos: pending.filter(p => p.course_id === c.teachable_course_id).length
+      pending_videos: (pending || []).filter(p => p.course_id === c.teachable_course_id).length
     }));
 
     res.json({ courses: result });
