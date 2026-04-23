@@ -4075,6 +4075,22 @@ app.post('/api/admin/video-migration/preview', adminAuth, async (req, res) => {
     if (!courseId || !folderId) return res.status(400).json({ error: 'courseId و folderId مطلوبين' });
     if (!accessToken) return res.status(400).json({ error: 'accessToken مطلوب' });
 
+    // أول حاجة: شوف لو في سب-فولدرات
+    const topResult = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&fields=files(id,name)&orderBy=name&pageSize=100`,
+      { headers: { 'Authorization': 'Bearer ' + accessToken } }
+    );
+    const topData = await topResult.json();
+    const subFolders = topData.files || [];
+
+    // لو في سب-فولدرات → رجّع القائمة للمستخدم يختار
+    if (subFolders.length > 0) {
+      return res.json({
+        has_subfolders: true,
+        subfolders: subFolders.map(f => ({ id: f.id, name: f.name }))
+      });
+    }
+
     // جيب كل الفيديوهات من الفولدر وكل السب-فولدرات recursively
     async function getVideosRecursive(fId, path = '') {
       const result = await fetch(
