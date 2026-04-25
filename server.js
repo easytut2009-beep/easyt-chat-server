@@ -115,6 +115,7 @@ const {
 } = require("./shared");
 const registerGuideRoutes = require("./ziko-guide");
 const registerSalesRoutes = require("./ziko-sales");
+const { uploadToBunnyTus } = require("./bunny-tus");
 
 // ============================================================
 // ID Resolution Helpers (post-migration)
@@ -4312,94 +4313,112 @@ async function runMigrationJob(jobId, driveFileId, driveToken, videoTitle, attac
 
   try {
     // Step 1: Create video object in Bunny
-    job.status = 'creating';
-    console.log('[Migrate] Creating Bunny video:', videoTitle);
+    job.status = "creating";
+    console.log("[Migrate] Creating Bunny video:", videoTitle);
 
-    const createRes = await fetch('https://video.bunnycdn.com/library/' + BUNNY_LIBRARY_ID + '/videos', {
-      method: 'POST',
-      headers: { 'AccessKey': BUNNY_STREAM_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: videoTitle || 'Untitled' })
-    });
+    const createRes = await fetch(
+      `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`,
+      {
+        method: "POST",
+        headers: {
+          AccessKey: BUNNY_STREAM_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title: videoTitle || "Untitled" }),
+      },
+    );
 
-    if (!createRes.ok) throw new Error('Bunny create failed: ' + createRes.status);
+    if (!createRes.ok) {
+      throw new Error("Bunny create failed: " + createRes.status);
+    }
     const bunnyVideo = await createRes.json();
     const bunnyId = bunnyVideo.guid;
     job.bunnyId = bunnyId;
 
-    // Step 2: Download from Google Drive (server-side - fast!)
-    job.status = 'downloading';
+    // Step 2: Download from Google Drive (with virus-scan bypass for large files)
+    job.status = "downloading";
+    job.progress = 5;
+    console.log("[Migrate] Downloading from Drive:", driveFileId);
+
+    const driveUrl =
+      `https://www.googleapis.com/drive/v3/files/${driveFileId}` +
+      `?alt=media&acknowledgeAbuse=true`;
+
+    const driveRes = await fetch(driveUrl, {
+      headers: { Authorization: "Bearer " + driveToken },
+    });
+
+    if (!driveRes.ok) {
+      const text = await driveRes.text().catch(() => "");
+      throw new Error(`Drive download failed: ${driveRes.status} ${text}`);
+    }
+
+    // Verify we got binary, not an HTML warning page
+    const contentType = driveRes.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) {
+      throw new Error(
+        "Drive returned HTML (likely virus-scan warning). " +
+          "Ensure the OAuth user owns the file, or switch to a service account.",
+      );
+    }
+
+    const contentLength = driveRes.headers.get("content-length");
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    if (!totalBytes) {
+      throw new Error(
+        "Drive did not return Content-Length (required for TUS upload)",
+      );
+    }
+    console.log(
+      "[Migrate] File size:",
+      (totalBytes / 1024 / 1024).toFixed(1) + " MB",
+    );
+
+    // Step 3: TUS resumable upload to Bunny
+    job.status = "uploading";
     job.progress = 10;
-    console.log('[Migrate] Downloading from Drive:', driveFileId);
+    job.totalBytes = totalBytes;
+    console.log("[Migrate] TUS upload to Bunny:", bunnyId);
 
-    // Try direct download first
-    let driveRes = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media', {
-      headers: { 'Authorization': 'Bearer ' + driveToken }
-    });
-
-    // Handle Google's virus scan redirect for large files
-    if (driveRes.status === 200) {
-      const contentType = driveRes.headers.get('content-type') || '';
-      // If it's HTML, it's the warning page - use export download instead
-      if (contentType.includes('text/html')) {
-        driveRes = await fetch('https://drive.google.com/uc?id=' + driveFileId + '&export=download&confirm=t', {
-          headers: { 'Authorization': 'Bearer ' + driveToken }
-        });
-      }
-    }
-
-    if (!driveRes.ok) throw new Error('Drive download failed: ' + driveRes.status);
-
-    const contentLength = driveRes.headers.get('content-length');
-    const totalBytes = contentLength ? parseInt(contentLength) : 0;
-    console.log('[Migrate] File size:', totalBytes ? (totalBytes/1024/1024).toFixed(1) + ' MB' : 'unknown');
-
-    // Step 3: Upload to Bunny (stream directly - no buffering!)
-    job.status = 'uploading';
-    job.progress = 20;
-    console.log('[Migrate] Uploading to Bunny:', bunnyId);
-
-    const uploadRes = await fetch('https://video.bunnycdn.com/library/' + BUNNY_LIBRARY_ID + '/videos/' + bunnyId, {
-      method: 'PUT',
-      headers: {
-        'AccessKey': BUNNY_STREAM_KEY,
-        'Content-Type': 'video/mp4',
-        ...(contentLength ? { 'Content-Length': contentLength } : {})
+    await uploadToBunnyTus({
+      bodyStream: driveRes.body,
+      totalBytes,
+      bunnyVideoId: bunnyId,
+      libraryId: BUNNY_LIBRARY_ID,
+      apiKey: BUNNY_STREAM_KEY,
+      title: videoTitle,
+      onProgress: (sent, total) => {
+        job.sentBytes = sent;
+        // Map 10% → 90% of the overall job progress to the upload phase
+        job.progress = Math.min(90, 10 + Math.floor((sent / total) * 80));
       },
-      body: driveRes.body, // Stream directly! No buffering in memory
-      duplex: 'half'
     });
 
-    if (!uploadRes.ok) {
-      const errText = await uploadRes.text();
-      throw new Error('Bunny upload failed: ' + uploadRes.status + ' ' + errText);
-    }
-
-    job.progress = 90;
-    job.status = 'processing';
+    job.progress = 95;
+    job.status = "processing";
 
     // Step 4: Update Supabase
     if (attachmentId) {
-      const playbackUrl = 'https://' + BUNNY_CDN_HOST + '/' + bunnyId + '/playlist.m3u8';
+      const playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
       await supabase
-        .from('teachable_attachments')
+        .from("teachable_attachments")
         .update({
           bunny_video_id: bunnyId,
           bunny_playback_url: playbackUrl,
-          migration_status: 'done',
-          migrated_at: new Date().toISOString()
+          migration_status: "done",
+          migrated_at: new Date().toISOString(),
         })
-        .eq('id', attachmentId);
+        .eq("id", attachmentId);
     }
 
-    job.status = 'done';
+    job.status = "done";
     job.progress = 100;
-    job.playbackUrl = 'https://' + BUNNY_CDN_HOST + '/' + bunnyId + '/playlist.m3u8';
-    console.log('[Migrate] Done:', videoTitle, '->', bunnyId);
-
+    job.playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
+    console.log("[Migrate] Done:", videoTitle, "->", bunnyId);
   } catch (err) {
-    job.status = 'failed';
+    job.status = "failed";
     job.error = err.message;
-    console.error('[Migrate] Failed:', videoTitle, err.message);
+    console.error("[Migrate] Failed:", videoTitle, err.message);
   }
 }
 
