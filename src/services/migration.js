@@ -240,10 +240,46 @@ async function resumeCourse({ courseId, driveToken }) {
   return { jobId };
 }
 
+/** Resolve (or create) a Bunny Stream collection for the course. The id
+ *  is cached on `teachable_courses.bunny_collection_id` so subsequent
+ *  uploads land in the same collection. */
+async function ensureBunnyCollectionForCourse(courseId) {
+  const { data: course } = await supabase
+    .from("teachable_courses")
+    .select("teachable_course_id,name,name_original,bunny_collection_id")
+    .eq("teachable_course_id", courseId)
+    .limit(1)
+    .single();
+  if (!course) return null;
+  if (course.bunny_collection_id) return course.bunny_collection_id;
+
+  const collectionName = course.name_original || course.name || `Course ${courseId}`;
+  const id = await bunny.createBunnyCollection({
+    libraryId: BUNNY_LIBRARY_ID,
+    apiKey: BUNNY_STREAM_KEY,
+    name: collectionName,
+  });
+  await supabase
+    .from("teachable_courses")
+    .update({ bunny_collection_id: id })
+    .eq("teachable_course_id", courseId);
+  console.log(`[migrate] ✓ collection ${collectionName} → ${id}`);
+  return id;
+}
+
 /** Worker — sequential, one lecture at a time. */
 async function processQueue(jobId, driveToken, lectureIds) {
   const job = jobs.get(jobId);
   if (!job) return;
+
+  // One Bunny collection per course (created lazily on first use).
+  let collectionId = null;
+  try {
+    collectionId = await ensureBunnyCollectionForCourse(job.courseId);
+  } catch (e) {
+    console.error(`[migrate] collection setup failed: ${e.message}`);
+    // Not fatal — uploads still work, just won't be grouped.
+  }
 
   for (let i = 0; i < lectureIds.length; i++) {
     job.currentIndex = i;
@@ -280,11 +316,12 @@ async function processQueue(jobId, driveToken, lectureIds) {
       }
       job.currentTotal = meta.size;
 
-      // 2. Create Bunny video object.
+      // 2. Create Bunny video object — placed inside the course's collection.
       const bunnyId = await bunny.createBunnyVideo({
         libraryId: BUNNY_LIBRARY_ID,
         apiKey: BUNNY_STREAM_KEY,
         title: lecture.name,
+        collectionId,
       });
 
       // 3. Open Drive stream and TUS upload.

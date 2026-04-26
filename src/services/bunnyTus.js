@@ -124,10 +124,12 @@ async function uploadChunk({
   throw lastErr || new Error("TUS PATCH failed after retries");
 }
 
-/** Create the Bunny video object then stream-upload via TUS. Returns the
- *  bunny video guid on success. `onProgress(sent, total)` fires after each
- *  chunk. */
-async function createBunnyVideo({ libraryId, apiKey, title }) {
+/** Create a video record in Bunny Stream. When `collectionId` is supplied,
+ *  the video is filed inside that collection so the library stays grouped
+ *  by course. Returns the GUID. */
+async function createBunnyVideo({ libraryId, apiKey, title, collectionId }) {
+  const body = { title: title || "Untitled" };
+  if (collectionId) body.collectionId = collectionId;
   const res = await fetch(
     `https://video.bunnycdn.com/library/${libraryId}/videos`,
     {
@@ -136,11 +138,34 @@ async function createBunnyVideo({ libraryId, apiKey, title }) {
         AccessKey: apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ title: title || "Untitled" }),
+      body: JSON.stringify(body),
     },
   );
   if (!res.ok) {
     throw new Error(`Bunny create video failed: ${res.status}`);
+  }
+  const json = await res.json();
+  return json.guid;
+}
+
+/** Create a Bunny Stream collection (a folder for videos) and return its id.
+ *  Called once per course at the start of a migration job; the id is then
+ *  cached on `teachable_courses.bunny_collection_id`. */
+async function createBunnyCollection({ libraryId, apiKey, name }) {
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/collections`,
+    {
+      method: "POST",
+      headers: {
+        AccessKey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: name || "Course" }),
+    },
+  );
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Bunny create collection failed: ${res.status} ${t}`);
   }
   const json = await res.json();
   return json.guid;
@@ -186,4 +211,4 @@ async function uploadToBunnyTus({
   return offset;
 }
 
-module.exports = { createBunnyVideo, uploadToBunnyTus };
+module.exports = { createBunnyVideo, createBunnyCollection, uploadToBunnyTus };
