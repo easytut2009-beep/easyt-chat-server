@@ -50,6 +50,7 @@ async function createTusSession({
   libraryId,
   apiKey,
   title,
+  signal,
 }) {
   const expiration = Math.floor(Date.now() / 1000) + 24 * 3600;
   const signature = generateSignature(libraryId, apiKey, bunnyVideoId, expiration);
@@ -69,6 +70,7 @@ async function createTusSession({
       VideoId: bunnyVideoId,
       LibraryId: String(libraryId),
     },
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -89,9 +91,11 @@ async function uploadChunk({
   expiration,
   bunnyVideoId,
   libraryId,
+  signal,
 }) {
   let lastErr = null;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new Error("aborted");
     try {
       const res = await fetch(uploadUrl, {
         method: "PATCH",
@@ -105,6 +109,7 @@ async function uploadChunk({
           LibraryId: String(libraryId),
         },
         body: chunk,
+        signal,
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -197,6 +202,7 @@ async function uploadToBunnyTus({
   title,
   onProgress,
   chunkSize = DEFAULT_CHUNK_SIZE,
+  signal,
 }) {
   if (!bodyStream) throw new Error("bodyStream is required");
   if (!totalBytes || totalBytes <= 0) {
@@ -208,9 +214,11 @@ async function uploadToBunnyTus({
     libraryId,
     apiKey,
     title,
+    signal,
   });
   let offset = 0;
   for await (const chunk of chunkedReader(bodyStream, chunkSize)) {
+    if (signal?.aborted) throw new Error("aborted");
     offset = await uploadChunk({
       uploadUrl,
       chunk,
@@ -219,6 +227,7 @@ async function uploadToBunnyTus({
       expiration,
       bunnyVideoId,
       libraryId,
+      signal,
     });
     if (onProgress) onProgress(offset, totalBytes);
   }
@@ -238,6 +247,7 @@ async function uploadToBunnyDirect({
   libraryId,
   apiKey,
   onProgress,
+  signal,
 }) {
   if (!bodyStream) throw new Error("bodyStream is required");
 
@@ -247,6 +257,10 @@ async function uploadToBunnyDirect({
     async start(controller) {
       try {
         for await (const piece of bodyStream) {
+          if (signal?.aborted) {
+            controller.error(new Error("aborted"));
+            return;
+          }
           sent += piece.byteLength || piece.length || 0;
           if (onProgress) onProgress(sent, totalBytes);
           controller.enqueue(piece);
@@ -265,6 +279,7 @@ async function uploadToBunnyDirect({
       headers: { AccessKey: apiKey },
       body: counted,
       duplex: "half",
+      signal,
     },
   );
   if (!res.ok) {
@@ -274,10 +289,26 @@ async function uploadToBunnyDirect({
   return sent;
 }
 
+/** Best-effort delete of a Bunny video by GUID. Returns true if Bunny
+ *  reports success (or 404 — already gone). Used by cancel/rollback. */
+async function deleteBunnyVideo({ libraryId, apiKey, bunnyVideoId }) {
+  if (!bunnyVideoId) return true;
+  try {
+    const r = await fetch(
+      `https://video.bunnycdn.com/library/${libraryId}/videos/${bunnyVideoId}`,
+      { method: "DELETE", headers: { AccessKey: apiKey } },
+    );
+    return r.ok || r.status === 404;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   createBunnyVideo,
   createBunnyCollection,
   bunnyCollectionExists,
   uploadToBunnyTus,
   uploadToBunnyDirect,
+  deleteBunnyVideo,
 };

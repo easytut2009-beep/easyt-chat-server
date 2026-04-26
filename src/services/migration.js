@@ -542,6 +542,14 @@ async function startMatchUpload({ courseId, driveToken, pairs }) {
     startedAt: Date.now(),
     finishedAt: null,
     matchUpload: true,
+    // Cancellation/rollback state. abortController lets us interrupt the
+    // in-flight upload; processedAttachments tracks what we'd need to
+    // un-do if the user hits "إيقاف".
+    cancelled: false,
+    abortController: new AbortController(),
+    processedAttachments: [],
+    currentAttachmentId: null,
+    currentBunnyId: null,
   });
 
   processAttachmentQueue(jobId, driveToken).catch((e) => {
@@ -569,9 +577,12 @@ async function processAttachmentQueue(jobId, driveToken) {
   }
 
   for (let i = 0; i < job.pairs.length; i++) {
+    if (job.cancelled) break;
     job.currentIndex = i;
     job.currentSent = 0;
     job.currentTotal = 0;
+    job.currentAttachmentId = null;
+    job.currentBunnyId = null;
     const { attachmentId, driveFileId } = job.pairs[i];
 
     const { data: att, error: attErr } = await supabase
@@ -589,6 +600,7 @@ async function processAttachmentQueue(jobId, driveToken) {
       continue;
     }
     job.currentTitle = att.name;
+    job.currentAttachmentId = attachmentId;
     if (att.bunny_video_id) {
       job.completed++;
       continue;
@@ -612,6 +624,7 @@ async function processAttachmentQueue(jobId, driveToken) {
         title: att.name,
         collectionId,
       });
+      job.currentBunnyId = bunnyId;
 
       const driveRes = await drive.openFileStream(driveFileId, driveToken);
       // Direct PUT is faster (one HTTP round-trip) but Render's request
@@ -626,6 +639,7 @@ async function processAttachmentQueue(jobId, driveToken) {
           libraryId: BUNNY_LIBRARY_ID,
           apiKey: BUNNY_STREAM_KEY,
           onProgress: (sent) => { job.currentSent = sent; },
+          signal: job.abortController.signal,
         });
       } else {
         await bunny.uploadToBunnyTus({
@@ -636,8 +650,11 @@ async function processAttachmentQueue(jobId, driveToken) {
           apiKey: BUNNY_STREAM_KEY,
           title: att.name,
           onProgress: (sent) => { job.currentSent = sent; },
+          signal: job.abortController.signal,
         });
       }
+
+      if (job.cancelled) break;
 
       const playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
       await supabase
@@ -660,11 +677,19 @@ async function processAttachmentQueue(jobId, driveToken) {
           .eq("teachable_lecture_id", att.lecture_id);
       }
 
+      job.processedAttachments.push({
+        attachmentId,
+        bunnyVideoId: bunnyId,
+        lectureId: att.lecture_id,
+      });
       job.completed++;
       console.log(
         `[migrate] ✓ ${att.name}  →  ${bunnyId}  (${(meta.size / 1024 / 1024).toFixed(1)} MB)`,
       );
     } catch (err) {
+      // If the user cancelled mid-upload the abort throws "aborted".
+      // The cancel handler does the rollback; just exit the loop.
+      if (job.cancelled) break;
       const msg = `${att.name}: ${err.message}`;
       console.error(`[migrate] ✗ ${msg}`);
       if (!job.errors) job.errors = [];
@@ -680,10 +705,88 @@ async function processAttachmentQueue(jobId, driveToken) {
     }
   }
 
+  if (job.cancelled) {
+    // Final state is set by cancelJob() once rollback finishes.
+    return;
+  }
   job.status = job.failed > 0 ? "completed_with_errors" : "completed";
   job.finishedAt = Date.now();
   job.currentIndex = -1;
   job.currentTitle = null;
+}
+
+/** Cancel a running job: abort the in-flight upload, then undo every
+ *  attachment this job already finished — delete the Bunny video and
+ *  reset the DB rows back to pending. Best-effort: failures during
+ *  rollback are logged but don't abort the rollback loop. */
+async function cancelJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job) throw new Error("job not found");
+  if (job.status !== "running") {
+    return { alreadyDone: true, status: job.status };
+  }
+  job.cancelled = true;
+  job.status = "cancelling";
+  try {
+    job.abortController.abort();
+  } catch {}
+
+  const targets = [...job.processedAttachments];
+  // The currently-uploading attachment also needs cleanup if a Bunny
+  // video was created for it (even if upload didn't finish).
+  if (job.currentAttachmentId && job.currentBunnyId) {
+    const alreadyTracked = targets.some(
+      (t) => t.attachmentId === job.currentAttachmentId,
+    );
+    if (!alreadyTracked) {
+      targets.push({
+        attachmentId: job.currentAttachmentId,
+        bunnyVideoId: job.currentBunnyId,
+        lectureId: null,
+      });
+    }
+  }
+
+  for (const t of targets) {
+    try {
+      await bunny.deleteBunnyVideo({
+        libraryId: BUNNY_LIBRARY_ID,
+        apiKey: BUNNY_STREAM_KEY,
+        bunnyVideoId: t.bunnyVideoId,
+      });
+    } catch (e) {
+      console.error(`[cancel] delete bunny ${t.bunnyVideoId} failed: ${e.message}`);
+    }
+    try {
+      await supabase
+        .from("teachable_attachments")
+        .update({
+          bunny_video_id: null,
+          bunny_playback_url: null,
+          migration_status: "pending",
+          migration_error: null,
+          migrated_at: null,
+        })
+        .eq("id", t.attachmentId);
+      if (t.lectureId != null) {
+        await supabase
+          .from("teachable_lectures")
+          .update({ bunny_video_id: null, has_video: false })
+          .eq("teachable_lecture_id", t.lectureId);
+      }
+    } catch (e) {
+      console.error(`[cancel] db reset attachment=${t.attachmentId} failed: ${e.message}`);
+    }
+  }
+
+  job.status = "cancelled";
+  job.finishedAt = Date.now();
+  job.currentIndex = -1;
+  job.currentTitle = null;
+  job.currentSent = 0;
+  job.currentTotal = 0;
+  console.log(`[migrate] cancelled job ${jobId} — rolled back ${targets.length} videos`);
+  return { rolledBack: targets.length };
 }
 
 module.exports = {
@@ -691,6 +794,7 @@ module.exports = {
   resumeCourse,
   startMatchUpload,
   getJob,
+  cancelJob,
   listIncompleteCourses,
   listMissingLectures,
 };

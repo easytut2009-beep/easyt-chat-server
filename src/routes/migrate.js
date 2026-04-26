@@ -220,6 +220,21 @@ function registerMigrateRoutes(app) {
     res.json({ success: true, job });
   });
 
+  /** ----- Cancel + rollback -----
+   *  POST /api/migrate/jobs/:jobId/cancel
+   *  Aborts the in-flight upload, deletes any Bunny videos this job
+   *  already created, and resets the corresponding DB rows back to
+   *  pending so the user can start fresh.
+   */
+  app.post("/api/migrate/jobs/:jobId/cancel", async (req, res) => {
+    try {
+      const out = await migration.cancelJob(req.params.jobId);
+      res.json({ success: true, ...out });
+    } catch (e) {
+      res.status(404).json({ success: false, error: e.message });
+    }
+  });
+
   /** ----- Sidebar: courses that still need video uploads -----
    *  GET /api/migrate/incomplete
    *

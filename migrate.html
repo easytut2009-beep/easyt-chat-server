@@ -149,7 +149,10 @@
 
     <!-- Progress (shared) -->
     <div id="progress-card" class="card" style="display:none;">
-      <h3>التقدم</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <h3 style="margin:0;">التقدم</h3>
+        <button id="cancel-btn" class="ghost" style="display:none; border-color:var(--err); color:var(--err);">إيقاف الرفع</button>
+      </div>
       <div id="progress-summary" style="font-size:14px; margin-bottom:8px;">—</div>
       <div class="progress-bar"><div id="progress-overall" class="progress-fill" style="width:0%"></div></div>
       <div style="margin-top:6px; font-size:12px; color:var(--muted);" id="progress-current">—</div>
@@ -621,7 +624,6 @@ async function onSubfolderAction(act, id, name) {
 document.getElementById("start-btn").addEventListener("click", async () => {
   const ready = matches.filter((m) => m.videoId);
   if (ready.length === 0) return;
-  if (!confirm(`سيتم رفع ${ready.length} فيديو ومطابقتهم بالدروس. متأكد؟`)) return;
   const j = await api.fetch("/api/migrate/match-and-upload", {
     method: "POST",
     body: JSON.stringify({
@@ -633,10 +635,33 @@ document.getElementById("start-btn").addEventListener("click", async () => {
   startPolling(j.jobId);
 });
 
+/* ----- Cancel + rollback — undo every video uploaded by this job ----- */
+let activeJobId = null;
+document.getElementById("cancel-btn").addEventListener("click", async () => {
+  if (!activeJobId) return;
+  if (!confirm("سيتم إلغاء الرفع وحذف كل الفيديوهات اللى رُفعت فى هذه الجلسة. متأكد؟")) return;
+  const btn = document.getElementById("cancel-btn");
+  btn.disabled = true;
+  btn.textContent = "جارى الإلغاء…";
+  try {
+    await api.fetch(`/api/migrate/jobs/${activeJobId}/cancel`, { method: "POST" });
+    appendLog("تم طلب الإلغاء — انتظر اكتمال الـ rollback", "err");
+  } catch (e) {
+    appendLog("خطأ فى الإلغاء: " + e.message, "err");
+    btn.disabled = false;
+    btn.textContent = "إيقاف الرفع";
+  }
+});
+
 /* ════ Progress polling ════ */
 let pollTimer = null;
 function startPolling(jobId) {
+  activeJobId = jobId;
   document.getElementById("progress-card").style.display = "block";
+  const cancelBtn = document.getElementById("cancel-btn");
+  cancelBtn.style.display = "inline-block";
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "إيقاف الرفع";
   document.getElementById("log").innerHTML = "";
   appendLog("بدأ الـ job " + jobId);
   if (pollTimer) clearInterval(pollTimer);
@@ -659,13 +684,20 @@ async function poll(jobId) {
       document.getElementById("progress-current").textContent = "—";
       document.getElementById("progress-current-fill").style.width = "0%";
     }
-    if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
+    const TERMINAL = ["completed", "completed_with_errors", "failed", "cancelled"];
+    if (TERMINAL.includes(job.status)) {
       clearInterval(pollTimer); pollTimer = null;
-      appendLog(`انتهى — ${job.completed} ناجح، ${job.failed} فشل`, job.failed > 0 ? "err" : "ok");
-      // Surface up to 10 detailed error messages so the user knows WHY.
-      if (job.errors && job.errors.length > 0) {
-        for (const msg of job.errors.slice(0, 10)) appendLog("✗ " + msg, "err");
-        if (job.errors.length > 10) appendLog(`... و ${job.errors.length - 10} خطأ آخر`, "err");
+      activeJobId = null;
+      document.getElementById("cancel-btn").style.display = "none";
+      if (job.status === "cancelled") {
+        appendLog("تم الإلغاء — تم حذف كل ما رُفع فى هذه الجلسة", "err");
+      } else {
+        appendLog(`انتهى — ${job.completed} ناجح، ${job.failed} فشل`, job.failed > 0 ? "err" : "ok");
+        // Surface up to 10 detailed error messages so the user knows WHY.
+        if (job.errors && job.errors.length > 0) {
+          for (const msg of job.errors.slice(0, 10)) appendLog("✗ " + msg, "err");
+          if (job.errors.length > 10) appendLog(`... و ${job.errors.length - 10} خطأ آخر`, "err");
+        }
       }
       loadIncomplete();
     }
