@@ -610,13 +610,14 @@ async function processAttachmentQueue(jobId, driveToken) {
       });
 
       const driveRes = await drive.openFileStream(driveFileId, driveToken);
-      await bunny.uploadToBunnyTus({
+      // Direct PUT — faster than TUS for typical sub-1GB course videos and
+      // doesn't suffer the timeouts we hit on Render with TUS chunking.
+      await bunny.uploadToBunnyDirect({
         bodyStream: driveRes.body,
         totalBytes: meta.size,
         bunnyVideoId: bunnyId,
         libraryId: BUNNY_LIBRARY_ID,
         apiKey: BUNNY_STREAM_KEY,
-        title: att.name,
         onProgress: (sent) => { job.currentSent = sent; },
       });
 

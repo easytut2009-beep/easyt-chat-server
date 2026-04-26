@@ -226,6 +226,52 @@ async function uploadToBunnyTus({
   return offset;
 }
 
+/** Direct PUT upload (the original method). Faster for files <1GB and
+ *  doesn't depend on TUS server quirks. We wrap the stream to count bytes
+ *  so progress can still update. */
+async function uploadToBunnyDirect({
+  bodyStream,
+  totalBytes,
+  bunnyVideoId,
+  libraryId,
+  apiKey,
+  onProgress,
+}) {
+  if (!bodyStream) throw new Error("bodyStream is required");
+
+  let sent = 0;
+  // Wrap the web ReadableStream so we can tap each chunk for progress.
+  const counted = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const piece of bodyStream) {
+          sent += piece.byteLength || piece.length || 0;
+          if (onProgress) onProgress(sent, totalBytes);
+          controller.enqueue(piece);
+        }
+        controller.close();
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+  });
+
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/videos/${bunnyVideoId}`,
+    {
+      method: "PUT",
+      headers: { AccessKey: apiKey },
+      body: counted,
+      duplex: "half",
+    },
+  );
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Bunny PUT upload failed: ${res.status} ${t}`);
+  }
+  return sent;
+}
+
 module.exports = {
   createBunnyVideo,
   createBunnyCollection,
