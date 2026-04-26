@@ -266,7 +266,11 @@ async function ensureBunnyCollectionForCourse(courseId) {
     );
   }
 
-  const collectionName = course.name_original || course.name || `Course ${courseId}`;
+  // Prefix with the teachable_course_id so the website's duration scanner
+  // (lib/bunny.ts → /^(\d+)\s*-/) can map the Bunny collection back to a
+  // course. Without this prefix, course cards show "0 س 0د".
+  const baseName = course.name_original || course.name || `Course ${courseId}`;
+  const collectionName = `${courseId} - ${baseName}`;
   const id = await bunny.createBunnyCollection({
     libraryId: BUNNY_LIBRARY_ID,
     apiKey: BUNNY_STREAM_KEY,
