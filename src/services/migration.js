@@ -378,18 +378,84 @@ async function listIncompleteCourses() {
 }
 
 async function listMissingLectures(courseId) {
+  // Any published lecture that doesn't have a Bunny video yet — covers both
+  // legacy lectures (no upload attempted) and previously-failed migrations.
   const { data } = await supabase
     .from("teachable_lectures")
     .select("id,name,position,drive_upload_status,last_error,drive_file_id")
     .eq("course_id", courseId)
-    .in("drive_upload_status", ["pending", "failed", "uploading"])
+    .eq("is_published", true)
+    .is("bunny_video_id", null)
     .order("position", { ascending: true });
   return data || [];
+}
+
+/** Match-and-upload: the user manually paired existing lectures with Drive
+ *  files (sidebar-driven mode). For each pair we just need to fetch the
+ *  Drive video and stamp the bunny_video_id onto the existing lecture row —
+ *  NO new lecture rows are created.
+ *
+ *  pairs: [{ lectureId, driveFileId }]
+ */
+async function startMatchUpload({ courseId, driveToken, pairs }) {
+  if (!Number.isFinite(courseId) || courseId <= 0) {
+    throw new Error("courseId required");
+  }
+  if (!driveToken) throw new Error("driveToken required");
+  if (!Array.isArray(pairs) || pairs.length === 0) {
+    throw new Error("pairs required");
+  }
+  if (!BUNNY_LIBRARY_ID || !BUNNY_STREAM_KEY) {
+    throw new Error("BUNNY_LIBRARY_ID / BUNNY_STREAM_KEY env not set");
+  }
+
+  // Persist the chosen drive_file_id on each lecture so retries reuse it.
+  for (const p of pairs) {
+    await supabase
+      .from("teachable_lectures")
+      .update({
+        drive_file_id: p.driveFileId,
+        drive_upload_status: "pending",
+        last_error: null,
+      })
+      .eq("id", p.lectureId);
+  }
+
+  const jobId = newJobId();
+  jobs.set(jobId, {
+    jobId,
+    courseId,
+    sectionId: null,
+    total: pairs.length,
+    completed: 0,
+    failed: 0,
+    currentIndex: -1,
+    currentTitle: null,
+    currentSent: 0,
+    currentTotal: 0,
+    status: "running",
+    error: null,
+    startedAt: Date.now(),
+    finishedAt: null,
+    matchUpload: true,
+  });
+
+  processQueue(jobId, driveToken, pairs.map((p) => p.lectureId)).catch((e) => {
+    const j = jobs.get(jobId);
+    if (j) {
+      j.status = "failed";
+      j.error = e.message;
+      j.finishedAt = Date.now();
+    }
+  });
+
+  return { jobId };
 }
 
 module.exports = {
   startMigration,
   resumeCourse,
+  startMatchUpload,
   getJob,
   listIncompleteCourses,
   listMissingLectures,

@@ -130,8 +130,47 @@ async function openFileStream(fileId, accessToken) {
   return res;
 }
 
+/** ------------------------------------------------------------
+ *  GET /drive/v3/files — full-Drive folder search by substring.
+ *  Used by the in-page folder picker (replaces the popup Picker).
+ *  ------------------------------------------------------------ */
+async function searchFolders(query, accessToken, opts = {}) {
+  if (!accessToken) throw new Error("accessToken required");
+  const q = String(query || "").trim();
+  // Drive's `name contains` works on full words/substrings. Quote-safe.
+  const safe = q.replace(/'/g, "\\'");
+  const driveQ = q
+    ? `mimeType='${FOLDER_MIME}' and trashed=false and name contains '${safe}'`
+    : `mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`;
+  const params = new URLSearchParams({
+    q: driveQ,
+    fields: "files(id,name,modifiedTime,parents,owners(displayName))",
+    pageSize: String(opts.pageSize || 50),
+    orderBy: "modifiedTime desc",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+  });
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Drive search failed: ${res.status} ${t}`);
+  }
+  const json = await res.json();
+  return (json.files || []).map((f) => ({
+    id: f.id,
+    name: f.name,
+    modifiedTime: f.modifiedTime || null,
+    owner:
+      (f.owners && f.owners[0] && f.owners[0].displayName) || null,
+  }));
+}
+
 module.exports = {
   listFolderContents,
   getFileMetadata,
   openFileStream,
+  searchFolders,
 };

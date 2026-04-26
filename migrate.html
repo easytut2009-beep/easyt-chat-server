@@ -96,61 +96,44 @@
 
   <main>
     <div id="main-view">
-      <!-- Mode-A: new upload -->
-      <div class="card">
-        <h3>1) اختر الكورس</h3>
-        <div class="grid-2">
-          <div style="position:relative;">
-            <label style="display:flex; justify-content:space-between; align-items:center;">
-              <span>الكورس</span>
-              <label style="display:flex; align-items:center; gap:4px; font-size:11px; cursor:pointer;">
-                <input type="checkbox" id="course-show-all" />
-                <span>إظهار كل الكورسات</span>
-              </label>
-            </label>
-            <input id="course-search" type="text" placeholder="اضغط لعرض الكورسات الناقصة، أو ابحث بالاسم…" autocomplete="off" />
-            <input id="course-id" type="hidden" />
-            <div id="course-list" class="combo-list" style="display:none;"></div>
+      <!-- Empty state — shown until the user picks a course from sidebar -->
+      <div id="empty-state" class="card" style="text-align:center; padding:48px 16px;">
+        <div style="font-size:48px; margin-bottom:12px;">←</div>
+        <div style="font-size:15px; color:var(--muted);">اضغط على كورس من القائمة اليمين لتبدأ الرفع</div>
+      </div>
+
+      <div id="course-view" style="display:none;">
+        <!-- Header: which course we're working on -->
+        <div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <div style="min-width:0;">
+            <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">الكورس الحالى</div>
+            <div id="current-course-name" style="font-size:16px; font-weight:bold; margin-top:2px;">—</div>
+            <div id="current-course-meta" style="font-size:11px; color:var(--muted); margin-top:4px;">—</div>
           </div>
-          <div>
-            <label>القسم (اختياري)</label>
-            <select id="section-select"><option value="">— رفع من Drive (تلقائى) —</option></select>
+          <div style="display:flex; flex-direction:column; gap:4px; align-items:end;">
+            <label style="font-size:11px; color:var(--muted);">القسم (اختياري)</label>
+            <select id="section-select" style="min-width:200px;"><option value="">— رفع من Drive (تلقائى) —</option></select>
           </div>
         </div>
-      </div>
 
-      <div class="card">
-        <h3>2) اختر مجلدات من Drive</h3>
-        <div class="toolbar-row">
-          <button id="pick-folder-btn" disabled>اختر مجلد</button>
-          <button id="clear-tree-btn" class="ghost" disabled>مسح الكل</button>
-          <span id="tree-count" class="signin-state"></span>
+        <!-- Drive folder picker — inline search -->
+        <div class="card">
+          <h3>اختر مجلدات من Drive</h3>
+          <div class="toolbar-row">
+            <input id="drive-search" type="text" placeholder="ابحث عن مجلد بأى جزء من اسمه…" style="flex:1; min-width:200px;" />
+            <button id="clear-tree-btn" class="ghost" disabled>مسح الكل</button>
+            <span id="tree-count" class="signin-state"></span>
+          </div>
+          <div id="drive-results" class="combo-list" style="position:static; margin:8px 0; display:none;"></div>
+          <div id="tree" class="tree"><div class="empty" style="padding:30px; text-align:center; color:var(--muted);">ابحث عن مجلد فوق ثم اختر منه</div></div>
         </div>
-        <div id="tree" class="tree"><div class="empty" style="padding:40px; text-align:center; color:var(--muted);">اختر مجلد من Drive لتظهر الفيديوهات هنا</div></div>
-      </div>
 
-      <div class="card">
-        <h3>3) ابدأ الرفع</h3>
-        <div class="toolbar-row">
-          <button id="start-btn" disabled>ابدأ</button>
-          <span id="start-help" class="signin-state">اختر الكورس والمجلدات الأول</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Resume view -->
-    <div id="resume-view" style="display:none;">
-      <div class="resume-banner">
-        أنت تعرض الدروس الناقصة لكورس: <strong id="resume-course-name"></strong>
-        <button id="resume-back-btn" class="ghost" style="float:inline-end; padding:4px 12px;">← رجوع</button>
-      </div>
-      <div class="card">
-        <h3>الدروس الناقصة</h3>
-        <div id="pending-list" class="pending-list"></div>
-        <hr>
-        <div class="toolbar-row">
-          <button id="resume-start-btn" disabled>إعادة محاولة الرفع للكل</button>
-          <span class="signin-state">سيتم إعادة استخدام Drive file id المحفوظ مع كل درس</span>
+        <div class="card">
+          <h3>ابدأ الرفع</h3>
+          <div class="toolbar-row">
+            <button id="start-btn" disabled>ابدأ</button>
+            <span id="start-help" class="signin-state">اختر مجلد فيديوهات الأول</span>
+          </div>
         </div>
       </div>
     </div>
@@ -212,7 +195,6 @@ function gisLoaded() {
       driveAccessToken = resp.access_token;
       document.getElementById("signin-state").textContent = "مسجّل ✓";
       document.getElementById("signin-state").classList.add("ok");
-      document.getElementById("pick-folder-btn").disabled = false;
       checkStartReady();
     },
   });
@@ -238,41 +220,64 @@ document.getElementById("signin-btn").addEventListener("click", () => {
   tokenClient.requestAccessToken({ prompt: "" });
 });
 
-/* ════ Picker ════ */
-function openPicker() {
-  if (!pickerInited || !driveAccessToken) { alert("سجّل دخول الأول"); return; }
-  // Folders view of "My Drive" — shows all folders, search bar at top
-  // filters by any substring of the name across the entire Drive.
-  const myFolders = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-    .setSelectFolderEnabled(true)
-    .setIncludeFolders(true);
-
-  const sharedWithMe = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-    .setSelectFolderEnabled(true)
-    .setIncludeFolders(true)
-    .setOwnedByMe(false)
-    .setLabel("مشاركة معى");
-
-  const picker = new google.picker.PickerBuilder()
-    .addView(myFolders)
-    .addView(sharedWithMe)
-    .setOAuthToken(driveAccessToken)
-    .setDeveloperKey(GOOGLE_API_KEY)
-    .setAppId(GOOGLE_APP_ID)
-    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-    .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
-    .setCallback((data) => {
-      if (data.action === google.picker.Action.PICKED) {
-        const folders = (data.docs || []).filter(d => d.mimeType === "application/vnd.google-apps.folder");
-        for (const f of folders) addRootFolder(f.id, f.name);
-      }
-    })
-    .build();
-  picker.setVisible(true);
-}
-document.getElementById("pick-folder-btn").addEventListener("click", openPicker);
 document.getElementById("clear-tree-btn").addEventListener("click", () => {
   pickedTrees = []; renderTree();
+});
+
+/* ════ In-page Drive folder search ════
+   Debounced input that calls /api/migrate/drive/search and shows matching
+   folders. Click a result to add it as a root in the tree below. */
+let driveSearchTimer = null;
+const driveSearchInput = document.getElementById("drive-search");
+const driveResults = document.getElementById("drive-results");
+
+function showDriveResults(folders) {
+  if (!folders || folders.length === 0) {
+    driveResults.innerHTML = '<div class="combo-empty">لا توجد مجلدات</div>';
+  } else {
+    driveResults.innerHTML = folders
+      .map((f) => `<div class="combo-item" data-id="${f.id}" data-name="${(f.name || "").replace(/"/g, "&quot;")}">📁 ${f.name}${f.owner ? ` <span style="float:left; font-size:10px; color:var(--muted);">${f.owner}</span>` : ""}</div>`)
+      .join("");
+  }
+  driveResults.style.display = "block";
+  driveResults.querySelectorAll(".combo-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      addRootFolder(el.dataset.id, el.dataset.name);
+      driveSearchInput.value = "";
+      driveResults.style.display = "none";
+    });
+  });
+}
+
+async function runDriveSearch(query) {
+  if (!driveAccessToken) {
+    driveResults.innerHTML = '<div class="combo-empty">سجّل دخول جوجل الأول</div>';
+    driveResults.style.display = "block";
+    return;
+  }
+  driveResults.innerHTML = '<div class="combo-empty">جارى البحث…</div>';
+  driveResults.style.display = "block";
+  try {
+    const j = await api.fetch("/api/migrate/drive/search", {
+      method: "POST",
+      body: JSON.stringify({ query, accessToken: driveAccessToken }),
+    });
+    showDriveResults(j.folders);
+  } catch (e) {
+    driveResults.innerHTML = `<div class="combo-empty" style="color:var(--err);">${e.message}</div>`;
+  }
+}
+
+driveSearchInput.addEventListener("input", (e) => {
+  clearTimeout(driveSearchTimer);
+  driveSearchTimer = setTimeout(() => runDriveSearch(e.target.value), 350);
+});
+driveSearchInput.addEventListener("focus", () => {
+  // On first focus with empty query, show the recent root folders.
+  if (!driveSearchInput.value.trim()) runDriveSearch("");
+});
+driveSearchInput.addEventListener("blur", () => {
+  setTimeout(() => { driveResults.style.display = "none"; }, 200);
 });
 
 /* ════ Tree state ════
@@ -426,140 +431,204 @@ function checkStartReady() {
     `جاهز — ${countVideos()} فيديو سيتم رفعهم بالترتيب`;
 }
 
-/* ════ Course combobox — substring search anywhere in the name ════ */
-let allCourses = [];          // [{ id, name, missing_count? }]
-let comboActiveIndex = -1;
-let courseMode = "incomplete"; // "incomplete" (default) | "all"
+/* ════ Sidebar-driven course state ════
+   Click an "incomplete" course in the sidebar → set as current target
+   and load its missing lectures so we can match them to Drive videos. */
+let currentCourseId = null;
+let currentCourseName = null;
+let missingLectures = []; // [{ id, name, position, drive_file_id }]
 
-async function loadCourses(mode) {
-  courseMode = mode || courseMode;
+async function selectCourseFromSidebar(courseId, courseName) {
+  currentCourseId = courseId;
+  currentCourseName = courseName;
+  pickedTrees = []; renderTree();
+  document.getElementById("empty-state").style.display = "none";
+  document.getElementById("course-view").style.display = "block";
+  document.getElementById("current-course-name").textContent = courseName;
+  document.getElementById("current-course-meta").textContent = "جارى تحميل الدروس الناقصة…";
   try {
-    const j = await api.fetch(`/api/migrate/courses?mode=${courseMode}`);
-    allCourses = j.courses || [];
-    document.getElementById("course-search").placeholder =
-      courseMode === "incomplete"
-        ? `اضغط لعرض الكورسات الناقصة (${allCourses.length})، أو ابحث بالاسم…`
-        : `اضغط لعرض كل الكورسات (${allCourses.length})، أو ابحث بالاسم…`;
+    const j = await api.fetch(`/api/migrate/incomplete/${courseId}`);
+    missingLectures = j.lectures || [];
+    document.getElementById("current-course-meta").textContent =
+      `${missingLectures.length} درس بدون فيديو — اختر مجلد فيديوهاتهم`;
   } catch (e) {
-    document.getElementById("course-search").placeholder = "خطأ: " + e.message;
+    missingLectures = [];
+    document.getElementById("current-course-meta").textContent = "خطأ: " + e.message;
   }
+  renderMatching();
+  checkStartReady();
 }
 
-// Arabic-friendly substring match: normalize alef variants + tashkeel.
-function normalizeAr(s) {
+/* ════ Matching: lecture name ↔ Drive video filename ════
+   For each missing lecture, find the best Drive video. Strategy:
+   - Normalize Arabic + lowercase + strip punctuation.
+   - Score = longest common substring length.
+   - Each video can match at most one lecture (greedy by best score).
+*/
+function normalizeName(s) {
   return String(s || "")
     .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "") // strip extension
     .replace(/[ً-ْ]/g, "")
     .replace(/[إأآا]/g, "ا")
     .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه");
+    .replace(/ة/g, "ه")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
-function filterCourses(query) {
-  const q = normalizeAr(query.trim());
-  // No query → show the full filtered set (incomplete is usually small;
-  // for "all" we cap at 100 to keep the dropdown snappy).
-  if (!q) {
-    const cap = courseMode === "incomplete" ? 200 : 100;
-    return allCourses.slice(0, cap);
-  }
-  return allCourses
-    .filter((c) => normalizeAr(c.name).includes(q))
-    .slice(0, 100);
+function similarityScore(a, b) {
+  const na = normalizeName(a);
+  const nb = normalizeName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1000;
+  if (nb.includes(na) || na.includes(nb)) return Math.min(na.length, nb.length);
+  // Token overlap
+  const ta = new Set(na.split(" "));
+  const tb = new Set(nb.split(" "));
+  let overlap = 0;
+  for (const t of ta) if (tb.has(t) && t.length >= 2) overlap += t.length;
+  return overlap;
 }
 
-function renderCourseList(items) {
-  const box = document.getElementById("course-list");
-  if (items.length === 0) {
-    box.innerHTML = '<div class="combo-empty">مفيش نتائج</div>';
-  } else {
-    box.innerHTML = items
-      .map((c, i) => {
-        const badge = c.missing_count
-          ? `<span style="float:left; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 6px; border-radius:3px; font-size:10px;">${c.missing_count} ناقص</span>`
-          : "";
-        return `<div class="combo-item${i === comboActiveIndex ? " active" : ""}" data-id="${c.id}" data-name="${c.name.replace(/"/g, "&quot;")}" data-i="${i}">${badge}${c.name}</div>`;
-      })
-      .join("");
+let videoPool = []; // [{ driveFileId, name, size }] — flattened from tree
+let matches = [];   // [{ lectureId, lectureName, position, driveFileId, videoName, manual }]
+
+function refreshVideoPool() {
+  videoPool = flattenForUpload().map((v) => ({
+    driveFileId: v.driveFileId,
+    name: v.lecture_title,
+  }));
+}
+
+function autoMatch() {
+  refreshVideoPool();
+  // Build score matrix lecture × video.
+  const used = new Set();
+  matches = missingLectures.map((lec) => {
+    let best = null, bestScore = 0;
+    for (const v of videoPool) {
+      if (used.has(v.driveFileId)) continue;
+      const s = similarityScore(lec.name, v.name);
+      if (s > bestScore) { bestScore = s; best = v; }
+    }
+    if (best) used.add(best.driveFileId);
+    return {
+      lectureId: lec.id,
+      lectureName: lec.name,
+      position: lec.position,
+      driveFileId: best ? best.driveFileId : null,
+      videoName: best ? best.name : null,
+      score: bestScore,
+      manual: false,
+    };
+  });
+}
+
+function renderMatching() {
+  const tree = document.getElementById("tree");
+  // After auto-matching, render the side-by-side table inside the tree pane.
+  if (missingLectures.length === 0) {
+    tree.innerHTML = '<div class="empty" style="padding:30px; text-align:center; color:var(--muted);">لا توجد دروس ناقصة لهذا الكورس</div>';
+    return;
   }
-  box.style.display = "block";
-  box.querySelectorAll(".combo-item").forEach((el) => {
-    el.addEventListener("mousedown", (ev) => {
-      ev.preventDefault(); // keep input focus
-      selectCourse(Number(el.dataset.id), el.dataset.name);
+  if (videoPool.length === 0) {
+    tree.innerHTML = '<div class="empty" style="padding:30px; text-align:center; color:var(--muted);">ابحث عن مجلد فيديوهات أعلاه</div>';
+    return;
+  }
+  if (!matches.length) autoMatch();
+
+  const usedVideoIds = new Set(matches.filter((m) => m.driveFileId).map((m) => m.driveFileId));
+  const unmatched = videoPool.filter((v) => !usedVideoIds.has(v.driveFileId));
+
+  tree.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:var(--surface-2); color:var(--muted); text-align:start;">
+          <th style="padding:8px; width:40px;">#</th>
+          <th style="padding:8px;">اسم الدرس فى الكورس</th>
+          <th style="padding:8px; width:30px; text-align:center;">←→</th>
+          <th style="padding:8px;">الفيديو على Drive</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${matches.map((m, i) => `
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:8px; color:var(--muted);">${m.position || (i + 1)}</td>
+            <td style="padding:8px;">${m.lectureName}</td>
+            <td style="padding:8px; text-align:center; color:${m.driveFileId ? "var(--ok)" : "var(--err)"};">${m.driveFileId ? "✓" : "✗"}</td>
+            <td style="padding:8px;">
+              <select data-i="${i}" class="match-select" style="width:100%; font-size:12px; padding:5px;">
+                <option value="">— لم يتم المطابقة —</option>
+                ${videoPool.map((v) => `
+                  <option value="${v.driveFileId}" ${v.driveFileId === m.driveFileId ? "selected" : ""}>${v.name}</option>
+                `).join("")}
+              </select>
+            </td>
+          </tr>
+        `).join("")}
+        ${unmatched.length > 0 ? `
+          <tr><td colspan="4" style="padding:14px 8px 4px; font-size:12px; color:var(--muted);">فيديوهات بدون مطابقة (${unmatched.length})</td></tr>
+          ${unmatched.map((v) => `<tr><td colspan="4" style="padding:4px 14px; font-size:11px; color:var(--muted);">• ${v.name}</td></tr>`).join("")}
+        ` : ""}
+      </tbody>
+    </table>
+  `;
+
+  tree.querySelectorAll(".match-select").forEach((sel) => {
+    sel.addEventListener("change", (e) => {
+      const i = Number(e.target.dataset.i);
+      const fid = e.target.value || null;
+      // Clear any other match using the same video.
+      if (fid) {
+        for (const m of matches) {
+          if (m.driveFileId === fid) { m.driveFileId = null; m.videoName = null; }
+        }
+      }
+      matches[i].driveFileId = fid;
+      matches[i].videoName = fid
+        ? (videoPool.find((v) => v.driveFileId === fid) || {}).name
+        : null;
+      matches[i].manual = true;
+      renderMatching();
     });
   });
 }
 
-async function selectCourse(courseId, courseName) {
-  document.getElementById("course-id").value = String(courseId);
-  document.getElementById("course-search").value = courseName;
-  document.getElementById("course-list").style.display = "none";
-  // Load sections for this course.
-  const sec = document.getElementById("section-select");
-  sec.innerHTML = '<option value="">— رفع من Drive (تلقائى) —</option>';
-  try {
-    const j = await api.fetch(`/api/migrate/courses/${courseId}/sections`);
-    for (const s of j.sections) sec.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-  } catch {}
-  checkStartReady();
+// Hook tree changes to re-run matching.
+const _origRenderTree = renderTree;
+window.renderTree = function () {
+  _origRenderTree.apply(this, arguments);
+  if (currentCourseId && missingLectures.length > 0) {
+    matches = []; // re-auto-match
+    renderMatching();
+  }
+};
+
+function checkStartReady() {
+  const matched = matches.filter((m) => m.driveFileId).length;
+  const ready = !!currentCourseId && matched > 0 && driveAccessToken;
+  const btn = document.getElementById("start-btn");
+  if (!btn) return;
+  btn.disabled = !ready;
+  document.getElementById("start-help").textContent =
+    !driveAccessToken ? "سجّل دخول جوجل الأول" :
+    !currentCourseId ? "اختر كورس من اليمين" :
+    matched === 0 ? "لازم تطابق درس واحد على الأقل" :
+    `جاهز — ${matched}/${matches.length} درس مطابق سيتم رفعه`;
 }
 
-const courseSearchInput = document.getElementById("course-search");
-courseSearchInput.addEventListener("input", (e) => {
-  // Typing invalidates the previous selection until a click.
-  document.getElementById("course-id").value = "";
-  comboActiveIndex = -1;
-  renderCourseList(filterCourses(e.target.value));
-  checkStartReady();
-});
-courseSearchInput.addEventListener("focus", () => {
-  renderCourseList(filterCourses(courseSearchInput.value));
-});
-// Click also re-opens the list (in case it was closed via Escape or outside-click).
-courseSearchInput.addEventListener("click", () => {
-  renderCourseList(filterCourses(courseSearchInput.value));
-});
-courseSearchInput.addEventListener("blur", () => {
-  // Slight delay so the mousedown handler fires first.
-  setTimeout(() => { document.getElementById("course-list").style.display = "none"; }, 150);
-});
-
-// Toggle: incomplete-only vs. all courses.
-document.getElementById("course-show-all").addEventListener("change", async (e) => {
-  await loadCourses(e.target.checked ? "all" : "incomplete");
-  // Re-render the open list if the input has focus.
-  if (document.activeElement === courseSearchInput) {
-    renderCourseList(filterCourses(courseSearchInput.value));
-  }
-});
-courseSearchInput.addEventListener("keydown", (e) => {
-  const items = filterCourses(courseSearchInput.value);
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    comboActiveIndex = Math.min(items.length - 1, comboActiveIndex + 1);
-    renderCourseList(items);
-  } else if (e.key === "ArrowUp") {
-    e.preventDefault();
-    comboActiveIndex = Math.max(0, comboActiveIndex - 1);
-    renderCourseList(items);
-  } else if (e.key === "Enter" && comboActiveIndex >= 0 && items[comboActiveIndex]) {
-    e.preventDefault();
-    selectCourse(items[comboActiveIndex].id, items[comboActiveIndex].name);
-  } else if (e.key === "Escape") {
-    document.getElementById("course-list").style.display = "none";
-  }
-});
-
-/* ════ Start migration ════ */
+/* ════ Start upload (resume mode — fills bunny_video_id on existing lectures) ════ */
 document.getElementById("start-btn").addEventListener("click", async () => {
-  const courseId = Number(document.getElementById("course-id").value);
-  const sectionId = document.getElementById("section-select").value || null;
-  const items = flattenForUpload();
-  if (items.length === 0) return;
-  if (!confirm(`سيتم رفع ${items.length} فيديو بالترتيب. متأكد؟`)) return;
-  const j = await api.fetch("/api/migrate/start", {
+  const ready = matches.filter((m) => m.driveFileId);
+  if (ready.length === 0) return;
+  if (!confirm(`سيتم رفع ${ready.length} فيديو ومطابقتها بالدروس. متأكد؟`)) return;
+  const j = await api.fetch("/api/migrate/match-and-upload", {
     method: "POST",
-    body: JSON.stringify({ courseId, sectionId, driveToken: driveAccessToken, items }),
+    body: JSON.stringify({
+      courseId: currentCourseId,
+      driveToken: driveAccessToken,
+      pairs: ready.map((m) => ({ lectureId: m.lectureId, driveFileId: m.driveFileId })),
+    }),
   });
   startPolling(j.jobId);
 });
@@ -630,7 +699,7 @@ async function loadIncomplete() {
           ${c.failed > 0 ? `<span class="pill pill-failed">${c.failed} فشل</span>` : ""}
           ${c.pending > 0 ? `<span class="pill pill-pending">${c.pending} قيد الانتظار</span>` : ""}
         </div>`;
-      item.addEventListener("click", () => openResume(c.courseId, c.name));
+      item.addEventListener("click", () => selectCourseFromSidebar(c.courseId, c.name));
       list.appendChild(item);
     }
   } catch (e) {
@@ -638,52 +707,7 @@ async function loadIncomplete() {
   }
 }
 
-/* ════ Resume mode ════ */
-let resumeCourseId = null;
-async function openResume(courseId, name) {
-  resumeCourseId = courseId;
-  document.getElementById("main-view").style.display = "none";
-  document.getElementById("resume-view").style.display = "block";
-  document.getElementById("resume-course-name").textContent = name;
-  const list = document.getElementById("pending-list");
-  list.innerHTML = '<div style="padding:20px; text-align:center; color:var(--muted);">جارى التحميل…</div>';
-  try {
-    const j = await api.fetch(`/api/migrate/incomplete/${courseId}`);
-    list.innerHTML = "";
-    for (const lec of j.lectures) {
-      const row = document.createElement("div");
-      row.className = "pending-row";
-      row.innerHTML = `
-        <span class="pos">#${lec.position}</span>
-        <div style="flex:1;">
-          <div class="name">${lec.name}</div>
-          ${lec.last_error ? `<div class="err-text">${lec.last_error}</div>` : ""}
-        </div>
-        <span class="pill pill-${lec.drive_upload_status === "failed" ? "failed" : "pending"}">${lec.drive_upload_status}</span>`;
-      list.appendChild(row);
-    }
-    document.getElementById("resume-start-btn").disabled = j.lectures.length === 0 || !driveAccessToken;
-  } catch (e) {
-    list.innerHTML = '<div style="color:var(--err);">' + e.message + '</div>';
-  }
-}
-document.getElementById("resume-back-btn").addEventListener("click", () => {
-  resumeCourseId = null;
-  document.getElementById("main-view").style.display = "block";
-  document.getElementById("resume-view").style.display = "none";
-});
-document.getElementById("resume-start-btn").addEventListener("click", async () => {
-  if (!resumeCourseId || !driveAccessToken) return;
-  if (!confirm("إعادة محاولة رفع الدروس الناقصة؟")) return;
-  const j = await api.fetch("/api/migrate/resume", {
-    method: "POST",
-    body: JSON.stringify({ courseId: resumeCourseId, driveToken: driveAccessToken }),
-  });
-  if (j.jobId) startPolling(j.jobId);
-});
-
 /* ════ Boot ════ */
-loadCourses();
 loadIncomplete();
 setInterval(loadIncomplete, 30000);
 </script>

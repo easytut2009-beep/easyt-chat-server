@@ -28,6 +28,20 @@ function registerMigrateRoutes(app) {
     }
   });
 
+  /** ----- Drive folder search (in-page picker) -----
+   *  POST /api/migrate/drive/search { query, accessToken }
+   *  Empty query → root folders of My Drive.
+   */
+  app.post("/api/migrate/drive/search", async (req, res) => {
+    try {
+      const { query, accessToken } = req.body || {};
+      const folders = await drive.searchFolders(query, accessToken);
+      res.json({ success: true, folders });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   /** ----- Course list (for picker dropdown) -----
    *  GET /api/migrate/courses?mode=all|incomplete  (default: incomplete)
    *
@@ -157,6 +171,26 @@ function registerMigrateRoutes(app) {
     }
   });
 
+  /** ----- Match & upload (sidebar-driven) -----
+   *  POST /api/migrate/match-and-upload
+   *  body: { courseId, driveToken, pairs: [{ lectureId, driveFileId }] }
+   *  Existing lecture rows get their bunny_video_id filled in. No new
+   *  lectures are created — this is for resuming/completing a course.
+   */
+  app.post("/api/migrate/match-and-upload", async (req, res) => {
+    try {
+      const { courseId, driveToken, pairs } = req.body || {};
+      const job = await migration.startMatchUpload({
+        courseId: Number(courseId),
+        driveToken,
+        pairs,
+      });
+      res.json({ success: true, ...job });
+    } catch (e) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
   /** ----- Resume an existing course's pending/failed lectures -----
    *  POST /api/migrate/resume
    *  body: { courseId, driveToken }
@@ -186,14 +220,57 @@ function registerMigrateRoutes(app) {
     res.json({ success: true, job });
   });
 
-  /** ----- Sidebar: courses with pending|failed|uploading lectures -----
+  /** ----- Sidebar: courses that still need video uploads -----
    *  GET /api/migrate/incomplete
-   *  → [{ courseId, name, pending, failed }]
+   *
+   *  "Incomplete" here = published course with at least one published
+   *  lecture lacking `bunny_video_id`. Counts split into:
+   *    - failed   : lectures whose drive_upload_status='failed'
+   *    - pending  : everything else missing a video
    */
   app.get("/api/migrate/incomplete", async (_req, res) => {
     try {
-      const list = await migration.listIncompleteCourses();
-      res.json({ success: true, courses: list });
+      const { data: lectures, error } = await supabase
+        .from("teachable_lectures")
+        .select("course_id,drive_upload_status")
+        .is("bunny_video_id", null)
+        .eq("is_published", true)
+        .limit(50000);
+      if (error) throw error;
+
+      const buckets = new Map();
+      for (const row of lectures || []) {
+        if (row.course_id == null) continue;
+        const cur = buckets.get(row.course_id) || { pending: 0, failed: 0 };
+        if (row.drive_upload_status === "failed") cur.failed++;
+        else cur.pending++;
+        buckets.set(row.course_id, cur);
+      }
+      if (buckets.size === 0) {
+        return res.json({ success: true, courses: [] });
+      }
+      const courseIds = Array.from(buckets.keys());
+
+      const { data: courses } = await supabase
+        .from("teachable_courses")
+        .select("teachable_course_id,name,name_original")
+        .in("teachable_course_id", courseIds)
+        .eq("is_published", true)
+        .limit(5000);
+
+      const out = (courses || [])
+        .map((c) => {
+          const b = buckets.get(c.teachable_course_id) || { pending: 0, failed: 0 };
+          return {
+            courseId: c.teachable_course_id,
+            name: c.name_original || c.name || `كورس #${c.teachable_course_id}`,
+            pending: b.pending,
+            failed: b.failed,
+          };
+        })
+        .sort((a, b) => b.failed - a.failed || b.pending - a.pending);
+
+      res.json({ success: true, courses: out });
     } catch (e) {
       res.status(500).json({ success: false, error: e.message });
     }
