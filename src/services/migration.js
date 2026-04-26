@@ -428,11 +428,31 @@ async function listMissingLectures(courseId) {
   // Pull every published lecture with no Bunny video yet.
   const { data } = await supabase
     .from("teachable_lectures")
-    .select("id,name,position,section_id,drive_upload_status,last_error,drive_file_id")
+    .select("id,teachable_lecture_id,name,position,section_id,drive_upload_status,last_error,drive_file_id")
     .eq("course_id", courseId)
     .eq("is_published", true)
     .is("bunny_video_id", null);
-  const lectures = data || [];
+  let lectures = data || [];
+
+  // Drop lectures that were already uploaded by the OLD tool — those keep
+  // their bunny_video_id on teachable_attachments rather than on the lecture
+  // row, so without this filter they'd appear as "pending".
+  if (lectures.length > 0) {
+    const externalIds = lectures.map((l) => l.teachable_lecture_id).filter(Boolean);
+    const alreadyUploaded = new Set();
+    for (let i = 0; i < externalIds.length; i += 500) {
+      const batch = externalIds.slice(i, i + 500);
+      const { data: atts } = await supabase
+        .from("teachable_attachments")
+        .select("lecture_id")
+        .in("lecture_id", batch)
+        .not("bunny_video_id", "is", null);
+      for (const a of atts || []) alreadyUploaded.add(a.lecture_id);
+    }
+    lectures = lectures.filter(
+      (l) => !alreadyUploaded.has(l.teachable_lecture_id),
+    );
+  }
 
   // For each lecture, fetch the original video attachment filename — this is
   // what gets matched against Drive filenames (e.g. "3.mp4" ↔ "3.mp4"). The

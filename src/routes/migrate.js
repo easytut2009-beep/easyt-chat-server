@@ -233,19 +233,46 @@ function registerMigrateRoutes(app) {
       // Supabase caps any single SELECT at 1000 rows by default. Paginate
       // to walk the entire pending-lectures set (~9k rows when the whole
       // catalogue still hasn't been migrated).
-      const buckets = new Map();
+      // First: collect every external teachable_lecture_id that the OLD
+      // migration tool already uploaded to Bunny — those rows live in
+      // teachable_attachments (not on the lecture row itself). We must
+      // treat them as "complete" or the count balloons.
       const PAGE = 1000;
+      const alreadyUploadedLectureIds = new Set();
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error } = await supabase
+          .from("teachable_attachments")
+          .select("lecture_id")
+          .not("bunny_video_id", "is", null)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!page || page.length === 0) break;
+        for (const row of page) {
+          if (row.lecture_id != null) alreadyUploadedLectureIds.add(row.lecture_id);
+        }
+        if (page.length < PAGE) break;
+      }
+
+      // Now walk pending lectures, skipping any whose teachable_lecture_id
+      // appears in the already-uploaded set.
+      const buckets = new Map();
+      const seenLectureIds = new Set();
       for (let from = 0; ; from += PAGE) {
         const { data: page, error } = await supabase
           .from("teachable_lectures")
-          .select("course_id,drive_upload_status")
+          .select("id,teachable_lecture_id,course_id,drive_upload_status")
           .is("bunny_video_id", null)
           .eq("is_published", true)
+          .order("id", { ascending: true })
           .range(from, from + PAGE - 1);
         if (error) throw error;
         if (!page || page.length === 0) break;
         for (const row of page) {
           if (row.course_id == null) continue;
+          if (seenLectureIds.has(row.id)) continue;
+          if (alreadyUploadedLectureIds.has(row.teachable_lecture_id)) continue;
+          seenLectureIds.add(row.id);
           const cur = buckets.get(row.course_id) || { pending: 0, failed: 0 };
           if (row.drive_upload_status === "failed") cur.failed++;
           else cur.pending++;
