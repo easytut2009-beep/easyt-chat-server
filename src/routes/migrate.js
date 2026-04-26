@@ -230,35 +230,50 @@ function registerMigrateRoutes(app) {
    */
   app.get("/api/migrate/incomplete", async (_req, res) => {
     try {
-      const { data: lectures, error } = await supabase
-        .from("teachable_lectures")
-        .select("course_id,drive_upload_status")
-        .is("bunny_video_id", null)
-        .eq("is_published", true)
-        .limit(50000);
-      if (error) throw error;
-
+      // Supabase caps any single SELECT at 1000 rows by default. Paginate
+      // to walk the entire pending-lectures set (~9k rows when the whole
+      // catalogue still hasn't been migrated).
       const buckets = new Map();
-      for (const row of lectures || []) {
-        if (row.course_id == null) continue;
-        const cur = buckets.get(row.course_id) || { pending: 0, failed: 0 };
-        if (row.drive_upload_status === "failed") cur.failed++;
-        else cur.pending++;
-        buckets.set(row.course_id, cur);
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error } = await supabase
+          .from("teachable_lectures")
+          .select("course_id,drive_upload_status")
+          .is("bunny_video_id", null)
+          .eq("is_published", true)
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!page || page.length === 0) break;
+        for (const row of page) {
+          if (row.course_id == null) continue;
+          const cur = buckets.get(row.course_id) || { pending: 0, failed: 0 };
+          if (row.drive_upload_status === "failed") cur.failed++;
+          else cur.pending++;
+          buckets.set(row.course_id, cur);
+        }
+        if (page.length < PAGE) break;
       }
+
       if (buckets.size === 0) {
         return res.json({ success: true, courses: [] });
       }
       const courseIds = Array.from(buckets.keys());
 
-      const { data: courses } = await supabase
-        .from("teachable_courses")
-        .select("teachable_course_id,name,name_original")
-        .in("teachable_course_id", courseIds)
-        .eq("is_published", true)
-        .limit(5000);
+      // Same trick for courses — could be 400+ ids, well under 1000 but
+      // we cap anyway.
+      const courses = [];
+      for (let i = 0; i < courseIds.length; i += PAGE) {
+        const batch = courseIds.slice(i, i + PAGE);
+        const { data, error } = await supabase
+          .from("teachable_courses")
+          .select("teachable_course_id,name,name_original")
+          .in("teachable_course_id", batch)
+          .eq("is_published", true);
+        if (error) throw error;
+        if (data) courses.push(...data);
+      }
 
-      const out = (courses || [])
+      const out = courses
         .map((c) => {
           const b = buckets.get(c.teachable_course_id) || { pending: 0, failed: 0 };
           return {
