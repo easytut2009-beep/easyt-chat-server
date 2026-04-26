@@ -31,6 +31,12 @@ function registerStaticAndMiscRoutes(app) {
     };
     const inject = `<script>window.__DRIVE_CONFIG__=${JSON.stringify(cfg)};</script>`;
     html = html.replace("</head>", `${inject}</head>`);
+    // Allow the Google Sign-In popup to communicate back via window.opener.
+    // The default `same-origin` blocks it; `same-origin-allow-popups` keeps
+    // isolation for our own pages but unblocks the postMessage handshake
+    // that GIS uses to deliver the access token to our page.
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
     res.type("text/html").send(html);
   });
 
