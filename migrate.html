@@ -94,6 +94,7 @@
       <span>كورسات ناقصة</span>
       <span id="incomplete-count" style="background:var(--brand); color:#fff; font-size:11px; font-weight:bold; padding:2px 10px; border-radius:10px; min-width:24px; text-align:center;">—</span>
     </h2>
+    <input id="incomplete-search" type="search" placeholder="ابحث عن كورس…" autocomplete="off" style="margin-bottom:10px;" />
     <div id="incomplete-list" class="empty">لا يوجد</div>
   </aside>
 
@@ -683,37 +684,72 @@ function appendLog(msg, cls) {
 }
 
 /* ════ Incomplete sidebar ════ */
-async function loadIncomplete() {
+let incompleteCache = [];
+
+// Arabic-aware normalization so "احمد"/"أحمد"/"احمذ" all match.
+function normalizeAr(s) {
+  return (s || "")
+    .toString()
+    .toLowerCase()
+    .replace(/[ً-ْٰ]/g, "")
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ىي]/g, "ي")
+    .replace(/ة/g, "ه")
+    .trim();
+}
+
+function renderIncomplete() {
   const list = document.getElementById("incomplete-list");
   const counter = document.getElementById("incomplete-count");
+  const q = normalizeAr(document.getElementById("incomplete-search").value);
+  const filtered = q
+    ? incompleteCache.filter((c) => normalizeAr(c.name).includes(q))
+    : incompleteCache;
+
+  const total = incompleteCache.length;
+  counter.textContent = q ? `${filtered.length}/${total}` : total;
+  counter.style.background = total === 0 ? "var(--ok)" : "var(--brand)";
+
+  if (total === 0) {
+    list.className = "empty";
+    list.textContent = "لا يوجد";
+    return;
+  }
+  if (filtered.length === 0) {
+    list.className = "empty";
+    list.textContent = "لا يوجد كورس بهذا الاسم";
+    return;
+  }
+  list.className = "";
+  list.innerHTML = "";
+  for (const c of filtered) {
+    const item = document.createElement("div");
+    item.className = "incomplete-item";
+    item.innerHTML = `
+      <div class="name">${c.name}</div>
+      <div class="meta">
+        ${c.failed > 0 ? `<span class="pill pill-failed">${c.failed} فشل</span>` : ""}
+        ${c.pending > 0 ? `<span class="pill pill-pending">${c.pending} قيد الانتظار</span>` : ""}
+      </div>`;
+    item.addEventListener("click", () => selectCourseFromSidebar(c.courseId, c.name));
+    list.appendChild(item);
+  }
+}
+
+async function loadIncomplete() {
+  const list = document.getElementById("incomplete-list");
   try {
     const j = await api.fetch("/api/migrate/incomplete");
-    const total = (j.courses || []).length;
-    counter.textContent = total;
-    counter.style.background = total === 0 ? "var(--ok)" : "var(--brand)";
-    if (total === 0) {
-      list.className = "empty";
-      list.textContent = "لا يوجد";
-      return;
-    }
-    list.className = "";
-    list.innerHTML = "";
-    for (const c of j.courses) {
-      const item = document.createElement("div");
-      item.className = "incomplete-item";
-      item.innerHTML = `
-        <div class="name">${c.name}</div>
-        <div class="meta">
-          ${c.failed > 0 ? `<span class="pill pill-failed">${c.failed} فشل</span>` : ""}
-          ${c.pending > 0 ? `<span class="pill pill-pending">${c.pending} قيد الانتظار</span>` : ""}
-        </div>`;
-      item.addEventListener("click", () => selectCourseFromSidebar(c.courseId, c.name));
-      list.appendChild(item);
-    }
+    incompleteCache = j.courses || [];
+    renderIncomplete();
   } catch (e) {
     list.textContent = "خطأ: " + e.message;
   }
 }
+
+document
+  .getElementById("incomplete-search")
+  .addEventListener("input", renderIncomplete);
 
 /* ════ Boot ════ */
 loadIncomplete();
