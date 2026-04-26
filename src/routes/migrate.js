@@ -29,25 +29,74 @@ function registerMigrateRoutes(app) {
   });
 
   /** ----- Course list (for picker dropdown) -----
-   *  GET /api/migrate/courses
-   *  → [{ id, name }] keyed by teachable_course_id
+   *  GET /api/migrate/courses?mode=all|incomplete  (default: incomplete)
+   *
+   *  - mode=incomplete (default): courses that have at least one lecture
+   *      with bunny_video_id IS NULL AND is_published=true. Practical
+   *      "what's left to upload to" view.
+   *  - mode=all: every published course (legacy dropdown behaviour).
+   *
+   *  Returns: [{ id, name, missing_count? }] — missing_count only on incomplete mode.
    */
-  app.get("/api/migrate/courses", async (_req, res) => {
+  app.get("/api/migrate/courses", async (req, res) => {
+    const mode = req.query.mode === "all" ? "all" : "incomplete";
     try {
-      const { data, error } = await supabase
+      if (mode === "all") {
+        const { data, error } = await supabase
+          .from("teachable_courses")
+          .select("teachable_course_id,name")
+          .eq("is_published", true)
+          .order("name", { ascending: true })
+          .limit(5000);
+        if (error) throw error;
+        return res.json({
+          success: true,
+          mode,
+          courses: (data || []).map((c) => ({
+            id: c.teachable_course_id,
+            name: c.name,
+          })),
+        });
+      }
+
+      // mode=incomplete: pull every lecture that is published but has no
+      // bunny_video_id, then group by course_id and count.
+      const { data: lectures, error: lecErr } = await supabase
+        .from("teachable_lectures")
+        .select("course_id")
+        .is("bunny_video_id", null)
+        .eq("is_published", true)
+        .limit(50000);
+      if (lecErr) throw lecErr;
+
+      const counts = new Map();
+      for (const row of lectures || []) {
+        if (row.course_id == null) continue;
+        counts.set(row.course_id, (counts.get(row.course_id) || 0) + 1);
+      }
+      const courseIds = Array.from(counts.keys());
+      if (courseIds.length === 0) {
+        return res.json({ success: true, mode, courses: [] });
+      }
+
+      const { data: courses, error: courseErr } = await supabase
         .from("teachable_courses")
         .select("teachable_course_id,name")
+        .in("teachable_course_id", courseIds)
         .eq("is_published", true)
         .order("name", { ascending: true })
-        .limit(2000);
-      if (error) throw error;
-      res.json({
-        success: true,
-        courses: (data || []).map((c) => ({
+        .limit(5000);
+      if (courseErr) throw courseErr;
+
+      const out = (courses || [])
+        .map((c) => ({
           id: c.teachable_course_id,
           name: c.name,
-        })),
-      });
+          missing_count: counts.get(c.teachable_course_id) || 0,
+        }))
+        .sort((a, b) => b.missing_count - a.missing_count);
+
+      res.json({ success: true, mode, courses: out });
     } catch (e) {
       res.status(500).json({ success: false, error: e.message });
     }

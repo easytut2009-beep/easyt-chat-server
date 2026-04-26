@@ -101,8 +101,14 @@
         <h3>1) اختر الكورس</h3>
         <div class="grid-2">
           <div style="position:relative;">
-            <label>الكورس</label>
-            <input id="course-search" type="text" placeholder="ابحث بأى جزء من اسم الكورس…" autocomplete="off" />
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>الكورس</span>
+              <label style="display:flex; align-items:center; gap:4px; font-size:11px; cursor:pointer;">
+                <input type="checkbox" id="course-show-all" />
+                <span>إظهار كل الكورسات</span>
+              </label>
+            </label>
+            <input id="course-search" type="text" placeholder="اضغط لعرض الكورسات الناقصة، أو ابحث بالاسم…" autocomplete="off" />
             <input id="course-id" type="hidden" />
             <div id="course-list" class="combo-list" style="display:none;"></div>
           </div>
@@ -235,40 +241,26 @@ document.getElementById("signin-btn").addEventListener("click", () => {
 /* ════ Picker ════ */
 function openPicker() {
   if (!pickerInited || !driveAccessToken) { alert("سجّل دخول الأول"); return; }
-  // Three views so the user can:
-  //   1. Browse "My Drive" folder tree
-  //   2. Browse shared/with-me folders
-  //   3. Free-text search across the entire Drive (any substring of name)
-  const myDrive = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+  // Folders view of "My Drive" — shows all folders, search bar at top
+  // filters by any substring of the name across the entire Drive.
+  const myFolders = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
     .setSelectFolderEnabled(true)
-    .setMimeTypes("application/vnd.google-apps.folder")
-    .setIncludeFolders(true)
-    .setMode(google.picker.DocsViewMode.LIST);
+    .setIncludeFolders(true);
 
   const sharedWithMe = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
     .setSelectFolderEnabled(true)
-    .setMimeTypes("application/vnd.google-apps.folder")
     .setIncludeFolders(true)
     .setOwnedByMe(false)
     .setLabel("مشاركة معى");
 
-  // The main "All folders" view: search bar at top filters across full Drive.
-  const allFolders = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-    .setSelectFolderEnabled(true)
-    .setMimeTypes("application/vnd.google-apps.folder")
-    .setIncludeFolders(true)
-    .setQuery("")
-    .setLabel("ابحث فى كل Drive");
-
   const picker = new google.picker.PickerBuilder()
-    .addView(allFolders)
-    .addView(myDrive)
+    .addView(myFolders)
     .addView(sharedWithMe)
     .setOAuthToken(driveAccessToken)
     .setDeveloperKey(GOOGLE_API_KEY)
     .setAppId(GOOGLE_APP_ID)
     .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-    .enableFeature(google.picker.Feature.SUPPORT_DRIVES) // shared drives
+    .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
     .setCallback((data) => {
       if (data.action === google.picker.Action.PICKED) {
         const folders = (data.docs || []).filter(d => d.mimeType === "application/vnd.google-apps.folder");
@@ -435,13 +427,19 @@ function checkStartReady() {
 }
 
 /* ════ Course combobox — substring search anywhere in the name ════ */
-let allCourses = [];          // [{ id, name }]
+let allCourses = [];          // [{ id, name, missing_count? }]
 let comboActiveIndex = -1;
+let courseMode = "incomplete"; // "incomplete" (default) | "all"
 
-async function loadCourses() {
+async function loadCourses(mode) {
+  courseMode = mode || courseMode;
   try {
-    const j = await api.fetch("/api/migrate/courses");
+    const j = await api.fetch(`/api/migrate/courses?mode=${courseMode}`);
     allCourses = j.courses || [];
+    document.getElementById("course-search").placeholder =
+      courseMode === "incomplete"
+        ? `اضغط لعرض الكورسات الناقصة (${allCourses.length})، أو ابحث بالاسم…`
+        : `اضغط لعرض كل الكورسات (${allCourses.length})، أو ابحث بالاسم…`;
   } catch (e) {
     document.getElementById("course-search").placeholder = "خطأ: " + e.message;
   }
@@ -458,10 +456,15 @@ function normalizeAr(s) {
 }
 function filterCourses(query) {
   const q = normalizeAr(query.trim());
-  if (!q) return allCourses.slice(0, 50);
+  // No query → show the full filtered set (incomplete is usually small;
+  // for "all" we cap at 100 to keep the dropdown snappy).
+  if (!q) {
+    const cap = courseMode === "incomplete" ? 200 : 100;
+    return allCourses.slice(0, cap);
+  }
   return allCourses
     .filter((c) => normalizeAr(c.name).includes(q))
-    .slice(0, 50);
+    .slice(0, 100);
 }
 
 function renderCourseList(items) {
@@ -470,14 +473,19 @@ function renderCourseList(items) {
     box.innerHTML = '<div class="combo-empty">مفيش نتائج</div>';
   } else {
     box.innerHTML = items
-      .map((c, i) => `<div class="combo-item${i === comboActiveIndex ? " active" : ""}" data-id="${c.id}" data-i="${i}">${c.name}</div>`)
+      .map((c, i) => {
+        const badge = c.missing_count
+          ? `<span style="float:left; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 6px; border-radius:3px; font-size:10px;">${c.missing_count} ناقص</span>`
+          : "";
+        return `<div class="combo-item${i === comboActiveIndex ? " active" : ""}" data-id="${c.id}" data-name="${c.name.replace(/"/g, "&quot;")}" data-i="${i}">${badge}${c.name}</div>`;
+      })
       .join("");
   }
   box.style.display = "block";
   box.querySelectorAll(".combo-item").forEach((el) => {
     el.addEventListener("mousedown", (ev) => {
       ev.preventDefault(); // keep input focus
-      selectCourse(Number(el.dataset.id), el.textContent);
+      selectCourse(Number(el.dataset.id), el.dataset.name);
     });
   });
 }
@@ -507,9 +515,22 @@ courseSearchInput.addEventListener("input", (e) => {
 courseSearchInput.addEventListener("focus", () => {
   renderCourseList(filterCourses(courseSearchInput.value));
 });
+// Click also re-opens the list (in case it was closed via Escape or outside-click).
+courseSearchInput.addEventListener("click", () => {
+  renderCourseList(filterCourses(courseSearchInput.value));
+});
 courseSearchInput.addEventListener("blur", () => {
   // Slight delay so the mousedown handler fires first.
   setTimeout(() => { document.getElementById("course-list").style.display = "none"; }, 150);
+});
+
+// Toggle: incomplete-only vs. all courses.
+document.getElementById("course-show-all").addEventListener("change", async (e) => {
+  await loadCourses(e.target.checked ? "all" : "incomplete");
+  // Re-render the open list if the input has focus.
+  if (document.activeElement === courseSearchInput) {
+    renderCourseList(filterCourses(courseSearchInput.value));
+  }
 });
 courseSearchInput.addEventListener("keydown", (e) => {
   const items = filterCourses(courseSearchInput.value);
