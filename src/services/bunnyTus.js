@@ -137,12 +137,14 @@ async function createBunnyVideo({ libraryId, apiKey, title, collectionId }) {
       headers: {
         AccessKey: apiKey,
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify(body),
     },
   );
   if (!res.ok) {
-    throw new Error(`Bunny create video failed: ${res.status}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Bunny create video failed: ${res.status} ${text}`);
   }
   const json = await res.json();
   return json.guid;
