@@ -134,11 +134,10 @@ async function openFileStream(fileId, accessToken) {
  *  GET /drive/v3/files — full-Drive folder search by substring.
  *  Used by the in-page folder picker (replaces the popup Picker).
  *  ------------------------------------------------------------ */
-/** Fetch all (non-trashed) folders the user has access to.
- *  We DON'T pass a name filter to Drive — Drive's `name contains` is a
- *  token-prefix match, not a true substring match. Instead we pull a large
- *  set and let the client filter by exact substring. Max 1000 results
- *  sorted by recently-modified, paginated up to that cap. */
+/** Fetch ROOT (top-level) folders of My Drive only.
+ *  These are the folders the user sees immediately when opening Drive.
+ *  Subfolders are NOT included — they show up once a root is picked
+ *  and we scan it via listFolderContents. */
 async function searchFolders(_query, accessToken, opts = {}) {
   if (!accessToken) throw new Error("accessToken required");
   const cap = Math.min(opts.cap || 1000, 5000);
@@ -146,12 +145,10 @@ async function searchFolders(_query, accessToken, opts = {}) {
   let pageToken = null;
   do {
     const params = new URLSearchParams({
-      q: `mimeType='${FOLDER_MIME}' and trashed=false`,
+      q: `mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`,
       fields: "nextPageToken,files(id,name,modifiedTime,owners(displayName))",
       pageSize: "200",
-      orderBy: "modifiedTime desc",
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true",
+      orderBy: "name",
     });
     if (pageToken) params.set("pageToken", pageToken);
     const res = await fetch(
