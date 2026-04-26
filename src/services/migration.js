@@ -414,88 +414,87 @@ async function listIncompleteCourses() {
     .sort((a, b) => b.failed - a.failed);
 }
 
+/**
+ * List the video attachments still pending for a course. The source is
+ * `teachable_attachments` (kind='video', bunny_video_id IS NULL). For each
+ * attachment we hydrate the parent lecture's name + section so the UI can
+ * display them in curriculum order.
+ *
+ * NOTE: `teachable_attachments.lecture_id` is the EXTERNAL teachable_lecture_id
+ * (not `teachable_lectures.id`). All joins below respect that.
+ */
 async function listMissingLectures(courseId) {
-  // Sections ordered the way the student sees them (1, 2, 3 ...).
+  // 1. Pending video attachments for this course.
+  const { data: attsRaw } = await supabase
+    .from("teachable_attachments")
+    .select("id,name,lecture_id,migration_status,position,file_extension,bunny_video_id")
+    .eq("course_id", courseId)
+    .eq("kind", "video")
+    .is("bunny_video_id", null);
+  const attachments = attsRaw || [];
+  if (attachments.length === 0) return [];
+
+  // 2. Hydrate lecture name + section_id for ordering. Note: lecture_id
+  //    references teachable_lecture_id (external).
+  const externalLectureIds = Array.from(
+    new Set(attachments.map((a) => a.lecture_id).filter(Boolean)),
+  );
+  const lecturesByExt = new Map();
+  for (let i = 0; i < externalLectureIds.length; i += 500) {
+    const batch = externalLectureIds.slice(i, i + 500);
+    const { data: lecRows } = await supabase
+      .from("teachable_lectures")
+      .select("id,teachable_lecture_id,name,position,section_id,is_published")
+      .in("teachable_lecture_id", batch);
+    for (const l of lecRows || []) {
+      lecturesByExt.set(l.teachable_lecture_id, l);
+    }
+  }
+
+  // 3. Section positions for the curriculum-order sort.
   const { data: sectionsData } = await supabase
     .from("teachable_sections")
     .select("teachable_section_id,position")
-    .eq("course_id", courseId)
-    .order("position", { ascending: true });
+    .eq("course_id", courseId);
   const sectionPos = new Map(
     (sectionsData || []).map((s) => [s.teachable_section_id, s.position ?? 999]),
   );
 
-  // Pull every published lecture with no Bunny video yet.
-  const { data } = await supabase
-    .from("teachable_lectures")
-    .select("id,teachable_lecture_id,name,position,section_id,drive_upload_status,last_error,drive_file_id")
-    .eq("course_id", courseId)
-    .eq("is_published", true)
-    .is("bunny_video_id", null);
-  let lectures = data || [];
-
-  // Drop lectures that were already uploaded by the OLD tool — those keep
-  // their bunny_video_id on teachable_attachments rather than on the lecture
-  // row, so without this filter they'd appear as "pending".
-  if (lectures.length > 0) {
-    const externalIds = lectures.map((l) => l.teachable_lecture_id).filter(Boolean);
-    const alreadyUploaded = new Set();
-    for (let i = 0; i < externalIds.length; i += 500) {
-      const batch = externalIds.slice(i, i + 500);
-      const { data: atts } = await supabase
-        .from("teachable_attachments")
-        .select("lecture_id")
-        .in("lecture_id", batch)
-        .not("bunny_video_id", "is", null);
-      for (const a of atts || []) alreadyUploaded.add(a.lecture_id);
-    }
-    lectures = lectures.filter(
-      (l) => !alreadyUploaded.has(l.teachable_lecture_id),
-    );
+  // 4. Build the rows the UI consumes — keyed on the ATTACHMENT id (since
+  //    the unit being uploaded is the attachment, not the lecture). Skip
+  //    attachments whose parent lecture is unpublished.
+  const rows = [];
+  for (const a of attachments) {
+    const lec = lecturesByExt.get(a.lecture_id);
+    if (lec && lec.is_published === false) continue;
+    rows.push({
+      id: a.id,                                 // attachment internal id
+      attachment_id: a.id,
+      lecture_id: lec ? lec.id : null,          // lecture internal id
+      lecture_external_id: a.lecture_id,
+      name: lec ? lec.name : "—",               // human title (display only)
+      video_filename: a.name,                   // what we match on
+      file_extension: a.file_extension || null,
+      position: lec ? lec.position : null,
+      section_id: lec ? lec.section_id : null,
+      drive_upload_status: a.migration_status || null,
+    });
   }
-
-  // For each lecture, fetch the original video attachment filename — this is
-  // what gets matched against Drive filenames (e.g. "3.mp4" ↔ "3.mp4"). The
-  // lecture's `name` is the human title, useless for filename matching.
-  const lectureIds = lectures.map((l) => l.id);
-  const attByLecture = new Map();
-  for (let i = 0; i < lectureIds.length; i += 500) {
-    const batch = lectureIds.slice(i, i + 500);
-    const { data: atts } = await supabase
-      .from("teachable_attachments")
-      .select("lecture_id,name,kind,file_extension,position")
-      .in("lecture_id", batch)
-      .eq("kind", "video")
-      .order("position", { ascending: true });
-    for (const a of atts || []) {
-      // Keep the FIRST video attachment per lecture (lowest position).
-      if (!attByLecture.has(a.lecture_id)) {
-        attByLecture.set(a.lecture_id, a);
-      }
-    }
-  }
-
-  for (const lec of lectures) {
-    const att = attByLecture.get(lec.id);
-    lec.video_filename = att ? att.name : null;
-    lec.file_extension = att ? att.file_extension : null;
-  }
-
-  lectures.sort((a, b) => {
-    const sa = sectionPos.get(a.section_id) ?? 999;
-    const sb = sectionPos.get(b.section_id) ?? 999;
-    if (sa !== sb) return sa - sb;
-    return (a.position ?? 999) - (b.position ?? 999);
+  rows.sort((x, y) => {
+    const sx = sectionPos.get(x.section_id) ?? 999;
+    const sy = sectionPos.get(y.section_id) ?? 999;
+    if (sx !== sy) return sx - sy;
+    return (x.position ?? 999) - (y.position ?? 999);
   });
-  return lectures;
+  return rows;
 }
 
-/** Match-and-upload: the user manually paired existing lectures with Drive
- *  files (sidebar-driven mode). For each pair we just need to fetch the
- *  Drive video and stamp the bunny_video_id onto the existing lecture row —
- *  NO new lecture rows are created.
+/** Match-and-upload: the user paired pending video attachments with Drive
+ *  files. We stream each Drive file → Bunny → stamp bunny_video_id and
+ *  migration_status='done' on the ATTACHMENT row (matching the original
+ *  migration tool's contract).
  *
- *  pairs: [{ lectureId, driveFileId }]
+ *  pairs: [{ attachmentId, driveFileId }]
  */
 async function startMatchUpload({ courseId, driveToken, pairs }) {
   if (!Number.isFinite(courseId) || courseId <= 0) {
@@ -509,23 +508,11 @@ async function startMatchUpload({ courseId, driveToken, pairs }) {
     throw new Error("BUNNY_LIBRARY_ID / BUNNY_STREAM_KEY env not set");
   }
 
-  // Persist the chosen drive_file_id on each lecture so retries reuse it.
-  for (const p of pairs) {
-    await supabase
-      .from("teachable_lectures")
-      .update({
-        drive_file_id: p.driveFileId,
-        drive_upload_status: "pending",
-        last_error: null,
-      })
-      .eq("id", p.lectureId);
-  }
-
   const jobId = newJobId();
   jobs.set(jobId, {
     jobId,
     courseId,
-    sectionId: null,
+    pairs: pairs.slice(),                     // cached for the worker
     total: pairs.length,
     completed: 0,
     failed: 0,
@@ -540,7 +527,7 @@ async function startMatchUpload({ courseId, driveToken, pairs }) {
     matchUpload: true,
   });
 
-  processQueue(jobId, driveToken, pairs.map((p) => p.lectureId)).catch((e) => {
+  processAttachmentQueue(jobId, driveToken).catch((e) => {
     const j = jobs.get(jobId);
     if (j) {
       j.status = "failed";
@@ -550,6 +537,114 @@ async function startMatchUpload({ courseId, driveToken, pairs }) {
   });
 
   return { jobId };
+}
+
+/** Worker that processes attachment-driveFile pairs sequentially. */
+async function processAttachmentQueue(jobId, driveToken) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  let collectionId = null;
+  try {
+    collectionId = await ensureBunnyCollectionForCourse(job.courseId);
+  } catch (e) {
+    console.error(`[migrate] collection setup failed: ${e.message}`);
+  }
+
+  for (let i = 0; i < job.pairs.length; i++) {
+    job.currentIndex = i;
+    job.currentSent = 0;
+    job.currentTotal = 0;
+    const { attachmentId, driveFileId } = job.pairs[i];
+
+    const { data: att } = await supabase
+      .from("teachable_attachments")
+      .select("id,name,lecture_id,course_id,bunny_video_id")
+      .eq("id", attachmentId)
+      .limit(1)
+      .single();
+    if (!att) {
+      job.failed++;
+      continue;
+    }
+    job.currentTitle = att.name;
+    if (att.bunny_video_id) {
+      job.completed++;
+      continue;
+    }
+
+    await supabase
+      .from("teachable_attachments")
+      .update({ migration_status: "uploading", migration_error: null })
+      .eq("id", attachmentId);
+
+    try {
+      const meta = await drive.getFileMetadata(driveFileId, driveToken);
+      if (!meta.size || meta.size <= 0) {
+        throw new Error("Drive metadata returned no size");
+      }
+      job.currentTotal = meta.size;
+
+      const bunnyId = await bunny.createBunnyVideo({
+        libraryId: BUNNY_LIBRARY_ID,
+        apiKey: BUNNY_STREAM_KEY,
+        title: att.name,
+        collectionId,
+      });
+
+      const driveRes = await drive.openFileStream(driveFileId, driveToken);
+      await bunny.uploadToBunnyTus({
+        bodyStream: driveRes.body,
+        totalBytes: meta.size,
+        bunnyVideoId: bunnyId,
+        libraryId: BUNNY_LIBRARY_ID,
+        apiKey: BUNNY_STREAM_KEY,
+        title: att.name,
+        onProgress: (sent) => { job.currentSent = sent; },
+      });
+
+      const playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
+      await supabase
+        .from("teachable_attachments")
+        .update({
+          bunny_video_id: bunnyId,
+          bunny_playback_url: playbackUrl,
+          migration_status: "done",
+          migration_error: null,
+          migrated_at: new Date().toISOString(),
+        })
+        .eq("id", attachmentId);
+
+      // Mirror onto the lecture row so legacy queries that look for
+      // `teachable_lectures.bunny_video_id` also see it.
+      if (att.lecture_id != null) {
+        await supabase
+          .from("teachable_lectures")
+          .update({ bunny_video_id: bunnyId, has_video: true })
+          .eq("teachable_lecture_id", att.lecture_id);
+      }
+
+      job.completed++;
+      console.log(
+        `[migrate] ✓ ${att.name}  →  ${bunnyId}  (${(meta.size / 1024 / 1024).toFixed(1)} MB)`,
+      );
+    } catch (err) {
+      console.error(`[migrate] ✗ ${att.name}: ${err.message}`);
+      job.failed++;
+      await supabase
+        .from("teachable_attachments")
+        .update({
+          migration_status: "error",
+          migration_error: String(err.message).slice(0, 1000),
+        })
+        .eq("id", attachmentId);
+    }
+  }
+
+  job.status = job.failed > 0 ? "completed_with_errors" : "completed";
+  job.finishedAt = Date.now();
+  job.currentIndex = -1;
+  job.currentTitle = null;
 }
 
 module.exports = {

@@ -439,11 +439,11 @@ function rebuildMatches() {
   // Visit folders by order (root=0, then user-ordered subfolders ascending).
   const ordered = [...scannedFolders].sort((a, b) => a.order - b.order);
   const used = new Set();
-  matches = missingLectures.map((lec) => ({
-    lectureId: lec.id,
-    lectureName: lec.name,                  // human title (just for context)
-    expectedFilename: lec.video_filename,   // ← what we match against Drive
-    position: lec.position,
+  matches = missingLectures.map((row) => ({
+    attachmentId: row.attachment_id || row.id,  // attachment is the unit being uploaded
+    lectureName: row.name,                       // human title (just for context)
+    expectedFilename: row.video_filename,        // ← what we match against Drive
+    position: row.position,
     videoId: null,
     videoName: null,
     fromFolder: null,
@@ -620,7 +620,7 @@ document.getElementById("start-btn").addEventListener("click", async () => {
     body: JSON.stringify({
       courseId: currentCourseId,
       driveToken: driveAccessToken,
-      pairs: ready.map((m) => ({ lectureId: m.lectureId, driveFileId: m.videoId })),
+      pairs: ready.map((m) => ({ attachmentId: m.attachmentId, driveFileId: m.videoId })),
     }),
   });
   startPolling(j.jobId);
