@@ -422,6 +422,12 @@ function normalizeName(s) {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
+function fmtBytes(n) {
+  if (!n) return "";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
 function similarityScore(a, b) {
   const na = normalizeName(a);
   const nb = normalizeName(b);
