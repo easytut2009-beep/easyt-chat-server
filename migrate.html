@@ -537,7 +537,7 @@ function renderAll() {
       <tbody>
         ${matches.map((m, i) => `
           <tr style="border-top:1px solid var(--border);">
-            <td style="padding:8px; color:var(--muted);">${m.position || (i + 1)}</td>
+            <td style="padding:8px; color:var(--muted);">${i + 1}</td>
             <td style="padding:8px;">${m.lectureName}</td>
             <td style="padding:8px; text-align:center; color:${m.videoId ? "var(--ok)" : "var(--err)"};">${m.videoId ? "✓" : "✗"}</td>
             <td style="padding:8px;">

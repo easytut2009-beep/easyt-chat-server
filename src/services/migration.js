@@ -380,14 +380,33 @@ async function listIncompleteCourses() {
 async function listMissingLectures(courseId) {
   // Any published lecture that doesn't have a Bunny video yet — covers both
   // legacy lectures (no upload attempted) and previously-failed migrations.
+  // Order is (section.position, lecture.position) so the list reflects the
+  // student-visible curriculum order, not the per-section position which
+  // resets to 1 in every section.
+  const { data: sectionsData } = await supabase
+    .from("teachable_sections")
+    .select("teachable_section_id,position")
+    .eq("course_id", courseId)
+    .order("position", { ascending: true });
+  const sectionPos = new Map(
+    (sectionsData || []).map((s) => [s.teachable_section_id, s.position ?? 999]),
+  );
+
   const { data } = await supabase
     .from("teachable_lectures")
-    .select("id,name,position,drive_upload_status,last_error,drive_file_id")
+    .select("id,name,position,section_id,drive_upload_status,last_error,drive_file_id")
     .eq("course_id", courseId)
     .eq("is_published", true)
-    .is("bunny_video_id", null)
-    .order("position", { ascending: true });
-  return data || [];
+    .is("bunny_video_id", null);
+
+  const lectures = data || [];
+  lectures.sort((a, b) => {
+    const sa = sectionPos.get(a.section_id) ?? 999;
+    const sb = sectionPos.get(b.section_id) ?? 999;
+    if (sa !== sb) return sa - sb;
+    return (a.position ?? 999) - (b.position ?? 999);
+  });
+  return lectures;
 }
 
 /** Match-and-upload: the user manually paired existing lectures with Drive
