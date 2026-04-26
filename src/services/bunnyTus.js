@@ -76,7 +76,9 @@ async function createTusSession({
   }
   const location = res.headers.get("Location");
   if (!location) throw new Error("TUS create response missing Location header");
-  return { uploadUrl: location, signature, expiration };
+  // Bunny may return a relative Location ("/tusupload/<id>"); fetch needs absolute.
+  const uploadUrl = new URL(location, TUS_ENDPOINT).toString();
+  return { uploadUrl, signature, expiration };
 }
 
 async function uploadChunk({
@@ -277,4 +279,5 @@ module.exports = {
   createBunnyCollection,
   bunnyCollectionExists,
   uploadToBunnyTus,
+  uploadToBunnyDirect,
 };
