@@ -44,7 +44,7 @@ function registerMigrateRoutes(app) {
       if (mode === "all") {
         const { data, error } = await supabase
           .from("teachable_courses")
-          .select("teachable_course_id,name")
+          .select("teachable_course_id,name,name_original")
           .eq("is_published", true)
           .order("name", { ascending: true })
           .limit(5000);
@@ -54,7 +54,9 @@ function registerMigrateRoutes(app) {
           mode,
           courses: (data || []).map((c) => ({
             id: c.teachable_course_id,
-            name: c.name,
+            // Prefer the original (pre-translation/abbreviation) name; fall
+            // back to whichever shorter name exists.
+            name: c.name_original || c.name,
           })),
         });
       }
@@ -81,7 +83,7 @@ function registerMigrateRoutes(app) {
 
       const { data: courses, error: courseErr } = await supabase
         .from("teachable_courses")
-        .select("teachable_course_id,name")
+        .select("teachable_course_id,name,name_original")
         .in("teachable_course_id", courseIds)
         .eq("is_published", true)
         .order("name", { ascending: true })
@@ -91,7 +93,7 @@ function registerMigrateRoutes(app) {
       const out = (courses || [])
         .map((c) => ({
           id: c.teachable_course_id,
-          name: c.name,
+          name: c.name_original || c.name,
           missing_count: counts.get(c.teachable_course_id) || 0,
         }))
         .sort((a, b) => b.missing_count - a.missing_count);
