@@ -72,6 +72,11 @@
   .pending-row .name { flex:1; font-size:13px; }
   .pending-row .err-text { font-size:11px; color:var(--err); margin-top:2px; }
   hr { border:0; border-top:1px solid var(--border); margin:16px 0; }
+  .combo-list { position:absolute; inset-inline-start:0; inset-inline-end:0; top:100%; margin-top:2px; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; max-height:280px; overflow-y:auto; z-index:50; box-shadow:0 6px 24px rgba(0,0,0,0.6); }
+  .combo-item { padding:8px 10px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--border); }
+  .combo-item:last-child { border-bottom:0; }
+  .combo-item:hover, .combo-item.active { background:var(--brand); color:#fff; }
+  .combo-empty { padding:14px; text-align:center; color:var(--muted); font-size:12px; }
 </style>
 </head>
 <body>
@@ -95,9 +100,11 @@
       <div class="card">
         <h3>1) اختر الكورس</h3>
         <div class="grid-2">
-          <div>
+          <div style="position:relative;">
             <label>الكورس</label>
-            <select id="course-select"><option value="">جارى التحميل…</option></select>
+            <input id="course-search" type="text" placeholder="ابحث بأى جزء من اسم الكورس…" autocomplete="off" />
+            <input id="course-id" type="hidden" />
+            <div id="course-list" class="combo-list" style="display:none;"></div>
           </div>
           <div>
             <label>القسم (اختياري)</label>
@@ -228,15 +235,40 @@ document.getElementById("signin-btn").addEventListener("click", () => {
 /* ════ Picker ════ */
 function openPicker() {
   if (!pickerInited || !driveAccessToken) { alert("سجّل دخول الأول"); return; }
-  const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+  // Three views so the user can:
+  //   1. Browse "My Drive" folder tree
+  //   2. Browse shared/with-me folders
+  //   3. Free-text search across the entire Drive (any substring of name)
+  const myDrive = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
     .setSelectFolderEnabled(true)
-    .setMimeTypes("application/vnd.google-apps.folder");
+    .setMimeTypes("application/vnd.google-apps.folder")
+    .setIncludeFolders(true)
+    .setMode(google.picker.DocsViewMode.LIST);
+
+  const sharedWithMe = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+    .setSelectFolderEnabled(true)
+    .setMimeTypes("application/vnd.google-apps.folder")
+    .setIncludeFolders(true)
+    .setOwnedByMe(false)
+    .setLabel("مشاركة معى");
+
+  // The main "All folders" view: search bar at top filters across full Drive.
+  const allFolders = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+    .setSelectFolderEnabled(true)
+    .setMimeTypes("application/vnd.google-apps.folder")
+    .setIncludeFolders(true)
+    .setQuery("")
+    .setLabel("ابحث فى كل Drive");
+
   const picker = new google.picker.PickerBuilder()
-    .addView(view)
+    .addView(allFolders)
+    .addView(myDrive)
+    .addView(sharedWithMe)
     .setOAuthToken(driveAccessToken)
     .setDeveloperKey(GOOGLE_API_KEY)
     .setAppId(GOOGLE_APP_ID)
     .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .enableFeature(google.picker.Feature.SUPPORT_DRIVES) // shared drives
     .setCallback((data) => {
       if (data.action === google.picker.Action.PICKED) {
         const folders = (data.docs || []).filter(d => d.mimeType === "application/vnd.google-apps.folder");
@@ -391,7 +423,7 @@ function flattenForUpload() {
 function countVideos() { return flattenForUpload().length; }
 
 function checkStartReady() {
-  const hasCourse = !!document.getElementById("course-select").value;
+  const hasCourse = !!document.getElementById("course-id").value;
   const hasVideos = countVideos() > 0;
   const ready = hasCourse && hasVideos && driveAccessToken;
   document.getElementById("start-btn").disabled = !ready;
@@ -402,33 +434,104 @@ function checkStartReady() {
     `جاهز — ${countVideos()} فيديو سيتم رفعهم بالترتيب`;
 }
 
-/* ════ Course + Sections dropdowns ════ */
+/* ════ Course combobox — substring search anywhere in the name ════ */
+let allCourses = [];          // [{ id, name }]
+let comboActiveIndex = -1;
+
 async function loadCourses() {
-  const sel = document.getElementById("course-select");
   try {
     const j = await api.fetch("/api/migrate/courses");
-    sel.innerHTML = '<option value="">— اختر كورس —</option>';
-    for (const c of j.courses) sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    allCourses = j.courses || [];
   } catch (e) {
-    sel.innerHTML = '<option value="">' + e.message + '</option>';
+    document.getElementById("course-search").placeholder = "خطأ: " + e.message;
   }
 }
-document.getElementById("course-select").addEventListener("change", async (e) => {
-  const cid = e.target.value;
+
+// Arabic-friendly substring match: normalize alef variants + tashkeel.
+function normalizeAr(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[ً-ْ]/g, "")
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+}
+function filterCourses(query) {
+  const q = normalizeAr(query.trim());
+  if (!q) return allCourses.slice(0, 50);
+  return allCourses
+    .filter((c) => normalizeAr(c.name).includes(q))
+    .slice(0, 50);
+}
+
+function renderCourseList(items) {
+  const box = document.getElementById("course-list");
+  if (items.length === 0) {
+    box.innerHTML = '<div class="combo-empty">مفيش نتائج</div>';
+  } else {
+    box.innerHTML = items
+      .map((c, i) => `<div class="combo-item${i === comboActiveIndex ? " active" : ""}" data-id="${c.id}" data-i="${i}">${c.name}</div>`)
+      .join("");
+  }
+  box.style.display = "block";
+  box.querySelectorAll(".combo-item").forEach((el) => {
+    el.addEventListener("mousedown", (ev) => {
+      ev.preventDefault(); // keep input focus
+      selectCourse(Number(el.dataset.id), el.textContent);
+    });
+  });
+}
+
+async function selectCourse(courseId, courseName) {
+  document.getElementById("course-id").value = String(courseId);
+  document.getElementById("course-search").value = courseName;
+  document.getElementById("course-list").style.display = "none";
+  // Load sections for this course.
   const sec = document.getElementById("section-select");
   sec.innerHTML = '<option value="">— رفع من Drive (تلقائى) —</option>';
-  if (cid) {
-    try {
-      const j = await api.fetch(`/api/migrate/courses/${cid}/sections`);
-      for (const s of j.sections) sec.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-    } catch {}
-  }
+  try {
+    const j = await api.fetch(`/api/migrate/courses/${courseId}/sections`);
+    for (const s of j.sections) sec.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+  } catch {}
   checkStartReady();
+}
+
+const courseSearchInput = document.getElementById("course-search");
+courseSearchInput.addEventListener("input", (e) => {
+  // Typing invalidates the previous selection until a click.
+  document.getElementById("course-id").value = "";
+  comboActiveIndex = -1;
+  renderCourseList(filterCourses(e.target.value));
+  checkStartReady();
+});
+courseSearchInput.addEventListener("focus", () => {
+  renderCourseList(filterCourses(courseSearchInput.value));
+});
+courseSearchInput.addEventListener("blur", () => {
+  // Slight delay so the mousedown handler fires first.
+  setTimeout(() => { document.getElementById("course-list").style.display = "none"; }, 150);
+});
+courseSearchInput.addEventListener("keydown", (e) => {
+  const items = filterCourses(courseSearchInput.value);
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    comboActiveIndex = Math.min(items.length - 1, comboActiveIndex + 1);
+    renderCourseList(items);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    comboActiveIndex = Math.max(0, comboActiveIndex - 1);
+    renderCourseList(items);
+  } else if (e.key === "Enter" && comboActiveIndex >= 0 && items[comboActiveIndex]) {
+    e.preventDefault();
+    selectCourse(items[comboActiveIndex].id, items[comboActiveIndex].name);
+  } else if (e.key === "Escape") {
+    document.getElementById("course-list").style.display = "none";
+  }
 });
 
 /* ════ Start migration ════ */
 document.getElementById("start-btn").addEventListener("click", async () => {
-  const courseId = Number(document.getElementById("course-select").value);
+  const courseId = Number(document.getElementById("course-id").value);
   const sectionId = document.getElementById("section-select").value || null;
   const items = flattenForUpload();
   if (items.length === 0) return;
