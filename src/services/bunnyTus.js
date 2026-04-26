@@ -173,6 +173,19 @@ async function createBunnyCollection({ libraryId, apiKey, name }) {
   return json.guid;
 }
 
+/** Verify that a stored collection id is still valid in the current
+ *  library. Old DB rows can carry collection ids whose underlying Bunny
+ *  collection was deleted — using them would cause every video create
+ *  to fail with HTTP 400 "Collection does not exist". */
+async function bunnyCollectionExists({ libraryId, apiKey, collectionId }) {
+  if (!collectionId) return false;
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/collections/${encodeURIComponent(collectionId)}`,
+    { headers: { AccessKey: apiKey, Accept: "application/json" } },
+  );
+  return res.ok;
+}
+
 async function uploadToBunnyTus({
   bodyStream,
   totalBytes,
@@ -213,4 +226,9 @@ async function uploadToBunnyTus({
   return offset;
 }
 
-module.exports = { createBunnyVideo, createBunnyCollection, uploadToBunnyTus };
+module.exports = {
+  createBunnyVideo,
+  createBunnyCollection,
+  bunnyCollectionExists,
+  uploadToBunnyTus,
+};

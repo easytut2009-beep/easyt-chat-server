@@ -251,7 +251,20 @@ async function ensureBunnyCollectionForCourse(courseId) {
     .limit(1)
     .single();
   if (!course) return null;
-  if (course.bunny_collection_id) return course.bunny_collection_id;
+
+  // The DB may carry a stale id from the old migration tool whose collection
+  // was since deleted in Bunny. Validate before reusing.
+  if (course.bunny_collection_id) {
+    const ok = await bunny.bunnyCollectionExists({
+      libraryId: BUNNY_LIBRARY_ID,
+      apiKey: BUNNY_STREAM_KEY,
+      collectionId: course.bunny_collection_id,
+    });
+    if (ok) return course.bunny_collection_id;
+    console.log(
+      `[migrate] stale collection ${course.bunny_collection_id} for course ${courseId} — recreating`,
+    );
+  }
 
   const collectionName = course.name_original || course.name || `Course ${courseId}`;
   const id = await bunny.createBunnyCollection({
