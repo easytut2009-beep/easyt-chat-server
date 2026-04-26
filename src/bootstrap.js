@@ -9,6 +9,7 @@ const { testSupabaseConnection, isSupabaseConnected } = require("./lib/clients")
 const { registerChatRoutes } = require("./routes/chat");
 const { registerAdminRoutes } = require("./routes/admin");
 const { registerUploadRoutes } = require("./routes/upload");
+const { registerMigrateRoutes } = require("./routes/migrate");
 const { registerStaticAndMiscRoutes } = require("./routes/staticAndMisc");
 const { registerGuideRoutes } = require("./guide/registerGuideRoutes");
 
@@ -24,6 +25,7 @@ async function start() {
   registerChatRoutes(app);
   registerAdminRoutes(app);
   registerUploadRoutes(app);
+  registerMigrateRoutes(app);
   registerStaticAndMiscRoutes(app);
   registerGuideRoutes(app);
 

@@ -1,0 +1,189 @@
+/* ══════════════════════════════════════════════════════════
+   bunnyTus.js — Resumable upload to Bunny Stream (TUS protocol)
+   ══════════════════════════════════════════════════════════
+   Uploads in 10 MB chunks with retry/backoff so large files
+   (1 GB+) survive HTTP timeouts and transient network failures.
+   ══════════════════════════════════════════════════════════ */
+
+"use strict";
+
+const crypto = require("crypto");
+
+const TUS_ENDPOINT = "https://video.bunnycdn.com/tusupload";
+const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_RETRIES = 6;
+const BACKOFF_MS = [1000, 3000, 5000, 10000, 20000, 60000];
+
+function generateSignature(libraryId, apiKey, videoId, expiration) {
+  return crypto
+    .createHash("sha256")
+    .update(`${libraryId}${apiKey}${expiration}${videoId}`)
+    .digest("hex");
+}
+
+function encodeMetadata(entries) {
+  return Object.entries(entries)
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => `${k} ${Buffer.from(String(v), "utf8").toString("base64")}`)
+    .join(",");
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Aggregate arbitrary-sized stream pieces into fixed-size chunks.
+async function* chunkedReader(stream, chunkSize) {
+  let buf = Buffer.alloc(0);
+  for await (const piece of stream) {
+    const slice = Buffer.isBuffer(piece) ? piece : Buffer.from(piece);
+    buf = buf.length === 0 ? slice : Buffer.concat([buf, slice]);
+    while (buf.length >= chunkSize) {
+      yield buf.subarray(0, chunkSize);
+      buf = buf.subarray(chunkSize);
+    }
+  }
+  if (buf.length > 0) yield buf;
+}
+
+async function createTusSession({
+  totalBytes,
+  bunnyVideoId,
+  libraryId,
+  apiKey,
+  title,
+}) {
+  const expiration = Math.floor(Date.now() / 1000) + 24 * 3600;
+  const signature = generateSignature(libraryId, apiKey, bunnyVideoId, expiration);
+  const metadata = encodeMetadata({
+    filetype: "video/mp4",
+    title: title || "Untitled",
+  });
+
+  const res = await fetch(TUS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Tus-Resumable": "1.0.0",
+      "Upload-Length": String(totalBytes),
+      "Upload-Metadata": metadata,
+      AuthorizationSignature: signature,
+      AuthorizationExpire: String(expiration),
+      VideoId: bunnyVideoId,
+      LibraryId: String(libraryId),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`TUS create failed: ${res.status} ${text}`);
+  }
+  const location = res.headers.get("Location");
+  if (!location) throw new Error("TUS create response missing Location header");
+  return { uploadUrl: location, signature, expiration };
+}
+
+async function uploadChunk({
+  uploadUrl,
+  chunk,
+  offset,
+  signature,
+  expiration,
+  bunnyVideoId,
+  libraryId,
+}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "PATCH",
+        headers: {
+          "Tus-Resumable": "1.0.0",
+          "Content-Type": "application/offset+octet-stream",
+          "Upload-Offset": String(offset),
+          AuthorizationSignature: signature,
+          AuthorizationExpire: String(expiration),
+          VideoId: bunnyVideoId,
+          LibraryId: String(libraryId),
+        },
+        body: chunk,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        const err = new Error(`TUS PATCH failed: ${res.status} ${text}`);
+        // 4xx (except 409 conflict) is non-retryable.
+        if (res.status >= 400 && res.status < 500 && res.status !== 409) {
+          throw err;
+        }
+        lastErr = err;
+      } else {
+        return parseInt(res.headers.get("Upload-Offset") || "0", 10);
+      }
+    } catch (e) {
+      lastErr = e;
+      if (String(e.message).includes("TUS PATCH failed: 4")) throw e;
+    }
+    if (attempt < MAX_RETRIES - 1) await sleep(BACKOFF_MS[attempt]);
+  }
+  throw lastErr || new Error("TUS PATCH failed after retries");
+}
+
+/** Create the Bunny video object then stream-upload via TUS. Returns the
+ *  bunny video guid on success. `onProgress(sent, total)` fires after each
+ *  chunk. */
+async function createBunnyVideo({ libraryId, apiKey, title }) {
+  const res = await fetch(
+    `https://video.bunnycdn.com/library/${libraryId}/videos`,
+    {
+      method: "POST",
+      headers: {
+        AccessKey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: title || "Untitled" }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Bunny create video failed: ${res.status}`);
+  }
+  const json = await res.json();
+  return json.guid;
+}
+
+async function uploadToBunnyTus({
+  bodyStream,
+  totalBytes,
+  bunnyVideoId,
+  libraryId,
+  apiKey,
+  title,
+  onProgress,
+  chunkSize = DEFAULT_CHUNK_SIZE,
+}) {
+  if (!bodyStream) throw new Error("bodyStream is required");
+  if (!totalBytes || totalBytes <= 0) {
+    throw new Error("totalBytes required > 0 (TUS needs Upload-Length up-front)");
+  }
+  const { uploadUrl, signature, expiration } = await createTusSession({
+    totalBytes,
+    bunnyVideoId,
+    libraryId,
+    apiKey,
+    title,
+  });
+  let offset = 0;
+  for await (const chunk of chunkedReader(bodyStream, chunkSize)) {
+    offset = await uploadChunk({
+      uploadUrl,
+      chunk,
+      offset,
+      signature,
+      expiration,
+      bunnyVideoId,
+      libraryId,
+    });
+    if (onProgress) onProgress(offset, totalBytes);
+  }
+  if (offset !== totalBytes) {
+    throw new Error(`TUS ended at ${offset}/${totalBytes} bytes — short stream?`);
+  }
+  return offset;
+}
+
+module.exports = { createBunnyVideo, uploadToBunnyTus };

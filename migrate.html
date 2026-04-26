@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>رفع من Google Drive — easyT</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<style>
+  :root {
+    --brand: #de2422;
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1f1f1f;
+    --text: #fff;
+    --muted: #b3b3b3;
+    --border: #2a2a2a;
+    --ok: #16a34a;
+    --warn: #f59e0b;
+    --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:Tahoma,Cairo,Arial,sans-serif; min-height:100vh; }
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 24px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size:18px; margin:0; color:var(--brand); }
+  .layout { display:grid; grid-template-columns:280px 1fr; gap:0; min-height:calc(100vh - 56px); }
+  aside { background:var(--surface); border-inline-end:1px solid var(--border); padding:16px; overflow-y:auto; }
+  aside h2 { font-size:13px; color:var(--muted); margin:0 0 8px; text-transform:uppercase; letter-spacing:0.5px; }
+  aside .empty { color:var(--muted); font-size:12px; padding:16px 8px; text-align:center; border:1px dashed var(--border); border-radius:6px; }
+  .incomplete-item { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:.15s; }
+  .incomplete-item:hover { border-color:var(--brand); }
+  .incomplete-item .name { font-weight:600; font-size:13px; }
+  .incomplete-item .meta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .incomplete-item .pill { display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; margin-inline-end:4px; }
+  .pill-pending { background:rgba(245,158,11,0.15); color:var(--warn); }
+  .pill-failed { background:rgba(220,38,38,0.15); color:var(--err); }
+  main { padding:20px 24px; overflow-y:auto; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input, select { width:100%; padding:8px 10px; background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:5px; font-size:13px; font-family:inherit; }
+  input:focus, select:focus { outline:none; border-color:var(--brand); }
+  button { background:var(--brand); color:#fff; border:0; padding:8px 16px; border-radius:5px; cursor:pointer; font-weight:600; font-size:13px; transition:.15s; }
+  button:hover:not(:disabled) { background:#b81c1a; }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button.ghost:hover { border-color:var(--brand); }
+  .row { display:flex; gap:8px; align-items:center; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .tree { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px; max-height:55vh; overflow-y:auto; }
+  .node { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:4px; }
+  .node:hover { background:var(--surface-2); }
+  .node .order-input { width:48px; padding:3px 6px; font-size:12px; text-align:center; }
+  .node .icon { width:18px; height:18px; flex-shrink:0; opacity:0.7; }
+  .node .name { flex:1; font-size:13px; word-break:break-all; }
+  .node .size { font-size:11px; color:var(--muted); flex-shrink:0; }
+  .node.folder > .name { font-weight:600; }
+  .node-children { padding-inline-start:22px; border-inline-start:1px dashed var(--border); margin-inline-start:8px; }
+  .node-toggle { background:none; border:none; color:var(--muted); cursor:pointer; padding:2px 4px; font-size:11px; }
+  .progress-bar { background:var(--surface-2); border-radius:4px; overflow:hidden; height:8px; }
+  .progress-fill { background:var(--brand); height:100%; transition:width 0.3s; }
+  .log { background:#000; border-radius:5px; padding:10px; font-family:monospace; font-size:11px; max-height:200px; overflow-y:auto; color:#0f0; }
+  .log .ok { color:#0f0; }
+  .log .err { color:#f55; }
+  .toolbar-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .signin-state { font-size:12px; color:var(--muted); }
+  .signin-state.ok { color:var(--ok); }
+  .resume-banner { background:rgba(245,158,11,0.1); border:1px solid var(--warn); color:var(--warn); padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:13px; }
+  .pending-list { display:flex; flex-direction:column; gap:6px; }
+  .pending-row { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; }
+  .pending-row .pos { width:30px; color:var(--muted); font-size:12px; text-align:center; }
+  .pending-row .name { flex:1; font-size:13px; }
+  .pending-row .err-text { font-size:11px; color:var(--err); margin-top:2px; }
+  hr { border:0; border-top:1px solid var(--border); margin:16px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>رفع من Google Drive → Bunny</h1>
+  <div class="row">
+    <span id="signin-state" class="signin-state">غير مسجل</span>
+    <button id="signin-btn" class="ghost">سجّل دخول</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <h2>كورسات ناقصة</h2>
+    <div id="incomplete-list" class="empty">لا يوجد</div>
+  </aside>
+
+  <main>
+    <div id="main-view">
+      <!-- Mode-A: new upload -->
+      <div class="card">
+        <h3>1) اختر الكورس</h3>
+        <div class="grid-2">
+          <div>
+            <label>الكورس</label>
+            <select id="course-select"><option value="">جارى التحميل…</option></select>
+          </div>
+          <div>
+            <label>القسم (اختياري)</label>
+            <select id="section-select"><option value="">— رفع من Drive (تلقائى) —</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>2) اختر مجلدات من Drive</h3>
+        <div class="toolbar-row">
+          <button id="pick-folder-btn" disabled>اختر مجلد</button>
+          <button id="clear-tree-btn" class="ghost" disabled>مسح الكل</button>
+          <span id="tree-count" class="signin-state"></span>
+        </div>
+        <div id="tree" class="tree"><div class="empty" style="padding:40px; text-align:center; color:var(--muted);">اختر مجلد من Drive لتظهر الفيديوهات هنا</div></div>
+      </div>
+
+      <div class="card">
+        <h3>3) ابدأ الرفع</h3>
+        <div class="toolbar-row">
+          <button id="start-btn" disabled>ابدأ</button>
+          <span id="start-help" class="signin-state">اختر الكورس والمجلدات الأول</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resume view -->
+    <div id="resume-view" style="display:none;">
+      <div class="resume-banner">
+        أنت تعرض الدروس الناقصة لكورس: <strong id="resume-course-name"></strong>
+        <button id="resume-back-btn" class="ghost" style="float:inline-end; padding:4px 12px;">← رجوع</button>
+      </div>
+      <div class="card">
+        <h3>الدروس الناقصة</h3>
+        <div id="pending-list" class="pending-list"></div>
+        <hr>
+        <div class="toolbar-row">
+          <button id="resume-start-btn" disabled>إعادة محاولة الرفع للكل</button>
+          <span class="signin-state">سيتم إعادة استخدام Drive file id المحفوظ مع كل درس</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress (shared) -->
+    <div id="progress-card" class="card" style="display:none;">
+      <h3>التقدم</h3>
+      <div id="progress-summary" style="font-size:14px; margin-bottom:8px;">—</div>
+      <div class="progress-bar"><div id="progress-overall" class="progress-fill" style="width:0%"></div></div>
+      <div style="margin-top:6px; font-size:12px; color:var(--muted);" id="progress-current">—</div>
+      <div class="progress-bar" style="margin-top:4px; height:4px;"><div id="progress-current-fill" class="progress-fill" style="width:0%; background:#16a34a;"></div></div>
+      <div id="log" class="log" style="margin-top:12px;"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════
+   Config priority:
+     1. URL hash params (for dev override)        /migrate#cid=...
+     2. Server-injected window.__DRIVE_CONFIG__   (from env)
+   ════════════════════════════════════════════════ */
+const HASH = new URLSearchParams(location.hash.replace(/^#/, ""));
+const SRV  = (window.__DRIVE_CONFIG__ || {});
+const GOOGLE_CLIENT_ID  = HASH.get("cid")    || SRV.clientId || "";
+const GOOGLE_API_KEY    = HASH.get("apikey") || SRV.apiKey   || "";
+const GOOGLE_APP_ID     = HASH.get("appid")  || SRV.appId    || "";
+
+const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
+
+/* ════════════════════════════════════════════════
+   Admin auth — exchanges password for a bearer token via /api/admin/login.
+   The token caches in localStorage. On any 401, we wipe the cache and ask
+   for the password again. The user never types/sees the token directly.
+   ════════════════════════════════════════════════ */
+let ADMIN_TOKEN = localStorage.getItem("admin_token") || "";
+
+async function adminLogin() {
+  const pwd = prompt("كلمة سر الأدمن:");
+  if (!pwd) throw new Error("password required");
+  const r = await fetch("/admin/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: pwd }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.token) throw new Error(j.error || "login failed");
+  ADMIN_TOKEN = j.token;
+  localStorage.setItem("admin_token", ADMIN_TOKEN);
+  return ADMIN_TOKEN;
+}
+
+const api = {
+  fetch: async (url, opts = {}) => {
+    if (!ADMIN_TOKEN) await adminLogin();
+    const doFetch = () => fetch(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        "Authorization": "Bearer " + ADMIN_TOKEN,
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+    let r = await doFetch();
+    // On 401, the token is stale or wrong — force a re-login and retry once.
+    if (r.status === 401) {
+      localStorage.removeItem("admin_token");
+      ADMIN_TOKEN = "";
+      await adminLogin();
+      r = await doFetch();
+    }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.success === false) throw new Error(j.error || ("HTTP " + r.status));
+    return j;
+  },
+};
+
+let driveAccessToken = null;
+let pickerInited = false;
+let gisInited = false;
+let tokenClient = null;
+let pickedTrees = []; // [{ folder, children, ... }]
+
+/* ════ Google sign-in (GIS) + Picker init ════ */
+function gisLoaded() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp) => {
+      if (resp.error) { alert("OAuth: " + resp.error); return; }
+      driveAccessToken = resp.access_token;
+      document.getElementById("signin-state").textContent = "مسجّل ✓";
+      document.getElementById("signin-state").classList.add("ok");
+      document.getElementById("pick-folder-btn").disabled = false;
+      checkStartReady();
+    },
+  });
+  gisInited = true;
+}
+function gapiLoaded() {
+  gapi.load("picker", () => { pickerInited = true; });
+}
+window.addEventListener("load", () => {
+  const wait = setInterval(() => {
+    if (window.google && google.accounts && google.accounts.oauth2 && !gisInited) gisLoaded();
+    if (window.gapi && !pickerInited) gapiLoaded();
+    if (gisInited && pickerInited) clearInterval(wait);
+  }, 200);
+});
+
+document.getElementById("signin-btn").addEventListener("click", () => {
+  if (!GOOGLE_CLIENT_ID) {
+    alert("GOOGLE_CLIENT_ID غير مضبوط. أضف ?cid=... على آخر URL أو اعدله فى الكود.");
+    return;
+  }
+  if (!gisInited) { alert("Google sign-in lib لسه بتحمل…"); return; }
+  tokenClient.requestAccessToken({ prompt: "" });
+});
+
+/* ════ Picker ════ */
+function openPicker() {
+  if (!pickerInited || !driveAccessToken) { alert("سجّل دخول الأول"); return; }
+  const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+    .setSelectFolderEnabled(true)
+    .setMimeTypes("application/vnd.google-apps.folder");
+  const picker = new google.picker.PickerBuilder()
+    .addView(view)
+    .setOAuthToken(driveAccessToken)
+    .setDeveloperKey(GOOGLE_API_KEY)
+    .setAppId(GOOGLE_APP_ID)
+    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .setCallback((data) => {
+      if (data.action === google.picker.Action.PICKED) {
+        const folders = (data.docs || []).filter(d => d.mimeType === "application/vnd.google-apps.folder");
+        for (const f of folders) addRootFolder(f.id, f.name);
+      }
+    })
+    .build();
+  picker.setVisible(true);
+}
+document.getElementById("pick-folder-btn").addEventListener("click", openPicker);
+document.getElementById("clear-tree-btn").addEventListener("click", () => {
+  pickedTrees = []; renderTree();
+});
+
+/* ════ Tree state ════
+   Each node:
+     { id, name, type:"folder"|"video", order:string, size?, mimeType?, children?: [], expanded?: bool, loading?: bool }
+*/
+async function addRootFolder(folderId, name) {
+  if (pickedTrees.some(t => t.id === folderId)) return;
+  const node = { id: folderId, name, type: "folder", order: String(pickedTrees.length + 1), children: [], expanded: true, loading: true };
+  pickedTrees.push(node);
+  renderTree();
+  await fetchFolder(node);
+  renderTree();
+}
+async function fetchFolder(node) {
+  try {
+    const j = await api.fetch("/api/migrate/drive/list", {
+      method: "POST",
+      body: JSON.stringify({ folderId: node.id, accessToken: driveAccessToken }),
+    });
+    let pos = 1;
+    node.children = [
+      ...j.subfolders.map(f => ({ id: f.id, name: f.name, type: "folder", order: String(pos++), children: [], expanded: false })),
+      ...j.videos.map(v => ({ id: v.id, name: v.name, type: "video", order: String(pos++), size: v.size, mimeType: v.mimeType })),
+    ];
+  } catch (e) { node.error = e.message; }
+  finally { node.loading = false; }
+}
+async function expandFolder(node) {
+  node.expanded = !node.expanded;
+  if (node.expanded && node.children.length === 0 && !node.loading) {
+    node.loading = true; renderTree();
+    await fetchFolder(node); renderTree();
+  } else { renderTree(); }
+}
+
+function fmtBytes(n) {
+  if (!n) return "";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
+function renderTree() {
+  const tree = document.getElementById("tree");
+  if (pickedTrees.length === 0) {
+    tree.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted);">اختر مجلد من Drive لتظهر الفيديوهات هنا</div>';
+    document.getElementById("clear-tree-btn").disabled = true;
+    document.getElementById("tree-count").textContent = "";
+  } else {
+    tree.innerHTML = "";
+    for (const n of pickedTrees) tree.appendChild(renderNode(n, 0));
+    document.getElementById("clear-tree-btn").disabled = false;
+    const total = countVideos();
+    document.getElementById("tree-count").textContent = total > 0 ? `${total} فيديو إجمالاً` : "";
+  }
+  checkStartReady();
+}
+function renderNode(node, depth) {
+  const wrap = document.createElement("div");
+  const row = document.createElement("div");
+  row.className = "node " + (node.type === "folder" ? "folder" : "video");
+
+  const orderInput = document.createElement("input");
+  orderInput.className = "order-input";
+  orderInput.type = "text"; orderInput.value = node.order;
+  orderInput.addEventListener("input", e => { node.order = e.target.value; });
+  row.appendChild(orderInput);
+
+  if (node.type === "folder") {
+    const tog = document.createElement("button");
+    tog.className = "node-toggle";
+    tog.textContent = node.loading ? "…" : (node.expanded ? "▾" : "▸");
+    tog.addEventListener("click", () => expandFolder(node));
+    row.appendChild(tog);
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "icon";
+  icon.textContent = node.type === "folder" ? "📁" : "🎬";
+  row.appendChild(icon);
+
+  const nm = document.createElement("span");
+  nm.className = "name"; nm.textContent = node.name;
+  row.appendChild(nm);
+
+  if (node.type === "video") {
+    const sz = document.createElement("span");
+    sz.className = "size"; sz.textContent = fmtBytes(node.size);
+    row.appendChild(sz);
+  } else if (node.error) {
+    const sz = document.createElement("span");
+    sz.className = "size"; sz.style.color = "var(--err)"; sz.textContent = "error";
+    sz.title = node.error;
+    row.appendChild(sz);
+  }
+
+  wrap.appendChild(row);
+
+  if (node.type === "folder" && node.expanded) {
+    const childWrap = document.createElement("div");
+    childWrap.className = "node-children";
+    if (node.loading) {
+      childWrap.innerHTML = '<div style="padding:6px; color:var(--muted); font-size:12px;">جارى التحميل…</div>';
+    } else if (node.children && node.children.length > 0) {
+      for (const c of node.children) childWrap.appendChild(renderNode(c, depth + 1));
+    } else {
+      childWrap.innerHTML = '<div style="padding:6px; color:var(--muted); font-size:12px;">فاضى</div>';
+    }
+    wrap.appendChild(childWrap);
+  }
+  return wrap;
+}
+
+/* ════ Flatten the tree into the user's order ════
+   Sort siblings by parsed `order` (treat empty/non-numeric as 999), then
+   recurse. Folders contribute their children in-order; videos become items.
+   Returns [{ driveFileId, lecture_title }]. */
+function flattenForUpload() {
+  const out = [];
+  function walk(nodes) {
+    const sorted = [...nodes].sort((a, b) => {
+      const an = parseFloat(a.order); const bn = parseFloat(b.order);
+      const av = isFinite(an) ? an : 9999;
+      const bv = isFinite(bn) ? bn : 9999;
+      if (av !== bv) return av - bv;
+      return a.name.localeCompare(b.name, "ar");
+    });
+    for (const n of sorted) {
+      if (n.type === "video") {
+        out.push({ driveFileId: n.id, lecture_title: n.name });
+      } else if (n.type === "folder" && n.children) {
+        walk(n.children);
+      }
+    }
+  }
+  walk(pickedTrees);
+  return out;
+}
+function countVideos() { return flattenForUpload().length; }
+
+function checkStartReady() {
+  const hasCourse = !!document.getElementById("course-select").value;
+  const hasVideos = countVideos() > 0;
+  const ready = hasCourse && hasVideos && driveAccessToken;
+  document.getElementById("start-btn").disabled = !ready;
+  document.getElementById("start-help").textContent =
+    !driveAccessToken ? "سجّل دخول جوجل الأول" :
+    !hasCourse ? "اختر الكورس" :
+    !hasVideos ? "اختر فيديوهات من Drive" :
+    `جاهز — ${countVideos()} فيديو سيتم رفعهم بالترتيب`;
+}
+
+/* ════ Course + Sections dropdowns ════ */
+async function loadCourses() {
+  const sel = document.getElementById("course-select");
+  try {
+    const j = await api.fetch("/api/migrate/courses");
+    sel.innerHTML = '<option value="">— اختر كورس —</option>';
+    for (const c of j.courses) sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+  } catch (e) {
+    sel.innerHTML = '<option value="">' + e.message + '</option>';
+  }
+}
+document.getElementById("course-select").addEventListener("change", async (e) => {
+  const cid = e.target.value;
+  const sec = document.getElementById("section-select");
+  sec.innerHTML = '<option value="">— رفع من Drive (تلقائى) —</option>';
+  if (cid) {
+    try {
+      const j = await api.fetch(`/api/migrate/courses/${cid}/sections`);
+      for (const s of j.sections) sec.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+    } catch {}
+  }
+  checkStartReady();
+});
+
+/* ════ Start migration ════ */
+document.getElementById("start-btn").addEventListener("click", async () => {
+  const courseId = Number(document.getElementById("course-select").value);
+  const sectionId = document.getElementById("section-select").value || null;
+  const items = flattenForUpload();
+  if (items.length === 0) return;
+  if (!confirm(`سيتم رفع ${items.length} فيديو بالترتيب. متأكد؟`)) return;
+  const j = await api.fetch("/api/migrate/start", {
+    method: "POST",
+    body: JSON.stringify({ courseId, sectionId, driveToken: driveAccessToken, items }),
+  });
+  startPolling(j.jobId);
+});
+
+/* ════ Progress polling ════ */
+let pollTimer = null;
+function startPolling(jobId) {
+  document.getElementById("progress-card").style.display = "block";
+  document.getElementById("log").innerHTML = "";
+  appendLog("بدأ الـ job " + jobId);
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => poll(jobId), 1500);
+  poll(jobId);
+}
+async function poll(jobId) {
+  try {
+    const { job } = await api.fetch(`/api/migrate/jobs/${jobId}`);
+    const pct = job.total > 0 ? Math.round(((job.completed + job.failed) / job.total) * 100) : 0;
+    document.getElementById("progress-overall").style.width = pct + "%";
+    document.getElementById("progress-summary").innerHTML =
+      `${job.completed}/${job.total} مكتمل • <span style="color:var(--err)">${job.failed} فشل</span> • <span style="color:var(--muted)">${job.status}</span>`;
+    if (job.currentTitle) {
+      const cpct = job.currentTotal > 0 ? Math.round((job.currentSent / job.currentTotal) * 100) : 0;
+      document.getElementById("progress-current").textContent =
+        `جارى رفع: ${job.currentTitle} — ${fmtBytes(job.currentSent)} / ${fmtBytes(job.currentTotal)} (${cpct}%)`;
+      document.getElementById("progress-current-fill").style.width = cpct + "%";
+    } else {
+      document.getElementById("progress-current").textContent = "—";
+      document.getElementById("progress-current-fill").style.width = "0%";
+    }
+    if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
+      clearInterval(pollTimer); pollTimer = null;
+      appendLog(`انتهى — ${job.completed} ناجح، ${job.failed} فشل`, job.failed > 0 ? "err" : "ok");
+      loadIncomplete();
+    }
+  } catch (e) {
+    appendLog("polling error: " + e.message, "err");
+    clearInterval(pollTimer); pollTimer = null;
+  }
+}
+function appendLog(msg, cls) {
+  const log = document.getElementById("log");
+  const div = document.createElement("div");
+  if (cls) div.className = cls;
+  div.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ════ Incomplete sidebar ════ */
+async function loadIncomplete() {
+  const list = document.getElementById("incomplete-list");
+  try {
+    const j = await api.fetch("/api/migrate/incomplete");
+    if (!j.courses || j.courses.length === 0) {
+      list.className = "empty";
+      list.textContent = "لا يوجد";
+      return;
+    }
+    list.className = "";
+    list.innerHTML = "";
+    for (const c of j.courses) {
+      const item = document.createElement("div");
+      item.className = "incomplete-item";
+      item.innerHTML = `
+        <div class="name">${c.name}</div>
+        <div class="meta">
+          ${c.failed > 0 ? `<span class="pill pill-failed">${c.failed} فشل</span>` : ""}
+          ${c.pending > 0 ? `<span class="pill pill-pending">${c.pending} قيد الانتظار</span>` : ""}
+        </div>`;
+      item.addEventListener("click", () => openResume(c.courseId, c.name));
+      list.appendChild(item);
+    }
+  } catch (e) {
+    list.textContent = "خطأ: " + e.message;
+  }
+}
+
+/* ════ Resume mode ════ */
+let resumeCourseId = null;
+async function openResume(courseId, name) {
+  resumeCourseId = courseId;
+  document.getElementById("main-view").style.display = "none";
+  document.getElementById("resume-view").style.display = "block";
+  document.getElementById("resume-course-name").textContent = name;
+  const list = document.getElementById("pending-list");
+  list.innerHTML = '<div style="padding:20px; text-align:center; color:var(--muted);">جارى التحميل…</div>';
+  try {
+    const j = await api.fetch(`/api/migrate/incomplete/${courseId}`);
+    list.innerHTML = "";
+    for (const lec of j.lectures) {
+      const row = document.createElement("div");
+      row.className = "pending-row";
+      row.innerHTML = `
+        <span class="pos">#${lec.position}</span>
+        <div style="flex:1;">
+          <div class="name">${lec.name}</div>
+          ${lec.last_error ? `<div class="err-text">${lec.last_error}</div>` : ""}
+        </div>
+        <span class="pill pill-${lec.drive_upload_status === "failed" ? "failed" : "pending"}">${lec.drive_upload_status}</span>`;
+      list.appendChild(row);
+    }
+    document.getElementById("resume-start-btn").disabled = j.lectures.length === 0 || !driveAccessToken;
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--err);">' + e.message + '</div>';
+  }
+}
+document.getElementById("resume-back-btn").addEventListener("click", () => {
+  resumeCourseId = null;
+  document.getElementById("main-view").style.display = "block";
+  document.getElementById("resume-view").style.display = "none";
+});
+document.getElementById("resume-start-btn").addEventListener("click", async () => {
+  if (!resumeCourseId || !driveAccessToken) return;
+  if (!confirm("إعادة محاولة رفع الدروس الناقصة؟")) return;
+  const j = await api.fetch("/api/migrate/resume", {
+    method: "POST",
+    body: JSON.stringify({ courseId: resumeCourseId, driveToken: driveAccessToken }),
+  });
+  if (j.jobId) startPolling(j.jobId);
+});
+
+/* ════ Boot ════ */
+loadCourses();
+loadIncomplete();
+setInterval(loadIncomplete, 30000);
+</script>
+</body>
+</html>

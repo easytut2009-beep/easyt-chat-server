@@ -19,6 +19,21 @@ function registerStaticAndMiscRoutes(app) {
     res.sendFile(path.join(ROOT, "admin.html"));
   });
 
+  app.get("/migrate", (req, res) => {
+    // Inject Drive client config from env so the user doesn't have to paste
+    // the Client ID / API Key / Project Number into the URL fragment every
+    // visit. Falls back to the hash params when the env is not set.
+    let html = fs.readFileSync(path.join(ROOT, "migrate.html"), "utf8");
+    const cfg = {
+      clientId: process.env.GOOGLE_DRIVE_CLIENT_ID || "",
+      apiKey: process.env.GOOGLE_DRIVE_API_KEY || "",
+      appId: process.env.GOOGLE_DRIVE_PROJECT_NUMBER || "",
+    };
+    const inject = `<script>window.__DRIVE_CONFIG__=${JSON.stringify(cfg)};</script>`;
+    html = html.replace("</head>", `${inject}</head>`);
+    res.type("text/html").send(html);
+  });
+
   app.get("/test", (req, res) => {
     if (process.env.NODE_ENV === "production") {
       const secret = process.env.TEST_SUITE_TOKEN;
