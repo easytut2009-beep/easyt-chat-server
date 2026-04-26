@@ -378,11 +378,7 @@ async function listIncompleteCourses() {
 }
 
 async function listMissingLectures(courseId) {
-  // Any published lecture that doesn't have a Bunny video yet — covers both
-  // legacy lectures (no upload attempted) and previously-failed migrations.
-  // Order is (section.position, lecture.position) so the list reflects the
-  // student-visible curriculum order, not the per-section position which
-  // resets to 1 in every section.
+  // Sections ordered the way the student sees them (1, 2, 3 ...).
   const { data: sectionsData } = await supabase
     .from("teachable_sections")
     .select("teachable_section_id,position")
@@ -392,14 +388,42 @@ async function listMissingLectures(courseId) {
     (sectionsData || []).map((s) => [s.teachable_section_id, s.position ?? 999]),
   );
 
+  // Pull every published lecture with no Bunny video yet.
   const { data } = await supabase
     .from("teachable_lectures")
     .select("id,name,position,section_id,drive_upload_status,last_error,drive_file_id")
     .eq("course_id", courseId)
     .eq("is_published", true)
     .is("bunny_video_id", null);
-
   const lectures = data || [];
+
+  // For each lecture, fetch the original video attachment filename — this is
+  // what gets matched against Drive filenames (e.g. "3.mp4" ↔ "3.mp4"). The
+  // lecture's `name` is the human title, useless for filename matching.
+  const lectureIds = lectures.map((l) => l.id);
+  const attByLecture = new Map();
+  for (let i = 0; i < lectureIds.length; i += 500) {
+    const batch = lectureIds.slice(i, i + 500);
+    const { data: atts } = await supabase
+      .from("teachable_attachments")
+      .select("lecture_id,name,kind,file_extension,position")
+      .in("lecture_id", batch)
+      .eq("kind", "video")
+      .order("position", { ascending: true });
+    for (const a of atts || []) {
+      // Keep the FIRST video attachment per lecture (lowest position).
+      if (!attByLecture.has(a.lecture_id)) {
+        attByLecture.set(a.lecture_id, a);
+      }
+    }
+  }
+
+  for (const lec of lectures) {
+    const att = attByLecture.get(lec.id);
+    lec.video_filename = att ? att.name : null;
+    lec.file_extension = att ? att.file_extension : null;
+  }
+
   lectures.sort((a, b) => {
     const sa = sectionPos.get(a.section_id) ?? 999;
     const sb = sectionPos.get(b.section_id) ?? 999;

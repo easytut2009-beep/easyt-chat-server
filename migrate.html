@@ -441,7 +441,8 @@ function rebuildMatches() {
   const used = new Set();
   matches = missingLectures.map((lec) => ({
     lectureId: lec.id,
-    lectureName: lec.name,
+    lectureName: lec.name,                  // human title (just for context)
+    expectedFilename: lec.video_filename,   // ← what we match against Drive
     position: lec.position,
     videoId: null,
     videoName: null,
@@ -450,10 +451,14 @@ function rebuildMatches() {
   for (const folder of ordered) {
     for (const m of matches) {
       if (m.videoId) continue;
+      // Match Drive filename against the lecture's existing video attachment
+      // filename (e.g. "3.mp4"). Falls back to the lecture title when the
+      // lecture has no attachment recorded.
+      const target = m.expectedFilename || m.lectureName;
       let best = null, bestScore = 0;
       for (const v of folder.videos) {
         if (used.has(v.id)) continue;
-        const s = similarityScore(m.lectureName, v.name);
+        const s = similarityScore(target, v.name);
         if (s > bestScore) { bestScore = s; best = v; }
       }
       if (best && bestScore > 0) {
@@ -529,7 +534,7 @@ function renderAll() {
       <thead>
         <tr style="background:var(--surface-2); color:var(--muted); text-align:start;">
           <th style="padding:8px; width:36px;">#</th>
-          <th style="padding:8px;">اسم الدرس (كما هو فى الكورس)</th>
+          <th style="padding:8px;">اسم ملف الفيديو فى الدرس</th>
           <th style="padding:8px; width:30px; text-align:center;">←→</th>
           <th style="padding:8px;">اسم الملف فى Drive</th>
         </tr>
@@ -538,7 +543,10 @@ function renderAll() {
         ${matches.map((m, i) => `
           <tr style="border-top:1px solid var(--border);">
             <td style="padding:8px; color:var(--muted);">${i + 1}</td>
-            <td style="padding:8px;">${m.lectureName}</td>
+            <td style="padding:8px;">
+              <div>${m.expectedFilename || `<span style="color:var(--err); font-size:11px;">(مفيش ملف فيديو مسجل)</span>`}</div>
+              <div style="font-size:11px; color:var(--muted); margin-top:2px;">${m.lectureName}</div>
+            </td>
             <td style="padding:8px; text-align:center; color:${m.videoId ? "var(--ok)" : "var(--err)"};">${m.videoId ? "✓" : "✗"}</td>
             <td style="padding:8px;">
               ${m.videoId
