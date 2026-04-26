@@ -110,12 +110,14 @@
           <div id="current-course-meta" style="font-size:11px; color:var(--muted); margin-top:4px;">—</div>
         </div>
 
-        <!-- Combobox: pick a root folder from My Drive -->
+        <!-- Combobox with search: pick a root folder from Drive -->
         <div class="card">
           <label style="display:block; font-size:13px; color:var(--muted); margin-bottom:6px;">اختر مجلد رئيسى من Google Drive</label>
-          <select id="root-folder-select" style="width:100%;">
-            <option value="">— اختر مجلد —</option>
-          </select>
+          <div style="position:relative;">
+            <input id="root-folder-search" type="text" placeholder="اكتب جزء من اسم المجلد للبحث، أو اضغط للقائمة الكاملة…" autocomplete="off" />
+            <div id="root-folder-list" class="combo-list" style="display:none;"></div>
+            <div id="root-folder-selected" style="margin-top:6px; font-size:12px; color:var(--ok); display:none;"></div>
+          </div>
         </div>
 
         <!-- Subfolders panel (appears when a root has subfolders) -->
@@ -197,7 +199,10 @@ function gisLoaded() {
       document.getElementById("signin-state").textContent = "مسجّل ✓";
       document.getElementById("signin-state").classList.add("ok");
       // If a course is already selected, load Drive root folders now.
-      if (currentCourseId) loadRootFolders();
+      if (currentCourseId) {
+        document.getElementById("root-folder-search").placeholder =
+          "اكتب جزء من اسم المجلد، أو اضغط للقائمة…";
+      }
     },
   });
   gisInited = true;
@@ -266,40 +271,82 @@ async function selectCourseFromSidebar(courseId, courseName) {
     return;
   }
 
-  if (driveAccessToken) await loadRootFolders();
-  else {
-    const sel = document.getElementById("root-folder-select");
-    sel.innerHTML = '<option value="">سجّل دخول جوجل الأول</option>';
+  if (driveAccessToken) {
+    document.getElementById("root-folder-search").placeholder =
+      "اكتب جزء من اسم المجلد، أو اضغط للقائمة…";
+  } else {
+    document.getElementById("root-folder-search").placeholder =
+      "سجّل دخول جوجل الأول";
   }
 }
 
-/* ----- Combobox: My Drive root folders ----- */
-async function loadRootFolders() {
-  const sel = document.getElementById("root-folder-select");
-  sel.innerHTML = '<option value="">جارى التحميل…</option>';
+/* ----- Combobox with substring search across the entire Drive ----- */
+const rootSearchInput = document.getElementById("root-folder-search");
+const rootListBox = document.getElementById("root-folder-list");
+const rootSelectedLabel = document.getElementById("root-folder-selected");
+let rootSearchTimer = null;
+
+async function fetchDriveFolders(query) {
+  if (!driveAccessToken) return [];
   try {
-    // Empty query → searchFolders returns folders directly under "root".
     const j = await api.fetch("/api/migrate/drive/search", {
       method: "POST",
-      body: JSON.stringify({ query: "", accessToken: driveAccessToken }),
+      body: JSON.stringify({ query, accessToken: driveAccessToken }),
     });
-    const folders = j.folders || [];
-    sel.innerHTML = '<option value="">— اختر مجلد —</option>';
-    for (const f of folders) {
-      const opt = document.createElement("option");
-      opt.value = f.id;
-      opt.textContent = f.name;
-      opt.dataset.name = f.name;
-      sel.appendChild(opt);
-    }
+    return j.folders || [];
   } catch (e) {
-    sel.innerHTML = `<option value="">خطأ: ${e.message}</option>`;
+    rootListBox.innerHTML = `<div class="combo-empty" style="color:var(--err);">${e.message}</div>`;
+    rootListBox.style.display = "block";
+    return null;
   }
 }
-document.getElementById("root-folder-select").addEventListener("change", async (e) => {
-  const opt = e.target.selectedOptions[0];
-  if (!opt || !opt.value) return;
-  await pickRootFolder(opt.value, opt.dataset.name || opt.textContent);
+
+function renderRootList(folders) {
+  if (!folders) return; // error already rendered
+  if (folders.length === 0) {
+    rootListBox.innerHTML = '<div class="combo-empty">مفيش مجلدات</div>';
+  } else {
+    rootListBox.innerHTML = folders
+      .map((f) => `<div class="combo-item" data-id="${f.id}" data-name="${(f.name || "").replace(/"/g, "&quot;")}">📁 ${f.name}${f.owner ? ` <span style="float:left; font-size:10px; color:var(--muted);">${f.owner}</span>` : ""}</div>`)
+      .join("");
+  }
+  rootListBox.style.display = "block";
+  rootListBox.querySelectorAll(".combo-item").forEach((el) => {
+    el.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      const id = el.dataset.id;
+      const name = el.dataset.name;
+      rootSearchInput.value = name;
+      rootListBox.style.display = "none";
+      rootSelectedLabel.textContent = `✓ تم اختيار: ${name}`;
+      rootSelectedLabel.style.display = "block";
+      pickRootFolder(id, name);
+    });
+  });
+}
+
+rootSearchInput.addEventListener("input", (e) => {
+  clearTimeout(rootSearchTimer);
+  const q = e.target.value;
+  rootSearchTimer = setTimeout(async () => {
+    rootListBox.innerHTML = '<div class="combo-empty">جارى البحث…</div>';
+    rootListBox.style.display = "block";
+    renderRootList(await fetchDriveFolders(q));
+  }, 300);
+});
+rootSearchInput.addEventListener("focus", async () => {
+  if (!driveAccessToken) {
+    rootListBox.innerHTML = '<div class="combo-empty">سجّل دخول جوجل الأول</div>';
+    rootListBox.style.display = "block";
+    return;
+  }
+  // Empty query → root folders of My Drive (the "main folders" the user wants).
+  rootListBox.innerHTML = '<div class="combo-empty">جارى التحميل…</div>';
+  rootListBox.style.display = "block";
+  renderRootList(await fetchDriveFolders(rootSearchInput.value || ""));
+});
+rootSearchInput.addEventListener("blur", () => {
+  setTimeout(() => { rootListBox.style.display = "none"; }, 200);
 });
 
 /* ----- Scan a single Drive folder (one level only) ----- */
