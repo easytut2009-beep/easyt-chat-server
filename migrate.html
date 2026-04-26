@@ -103,36 +103,39 @@
       </div>
 
       <div id="course-view" style="display:none;">
-        <!-- Header: which course we're working on -->
-        <div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-          <div style="min-width:0;">
-            <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">الكورس الحالى</div>
-            <div id="current-course-name" style="font-size:16px; font-weight:bold; margin-top:2px;">—</div>
-            <div id="current-course-meta" style="font-size:11px; color:var(--muted); margin-top:4px;">—</div>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; align-items:end;">
-            <label style="font-size:11px; color:var(--muted);">القسم (اختياري)</label>
-            <select id="section-select" style="min-width:200px;"><option value="">— رفع من Drive (تلقائى) —</option></select>
-          </div>
+        <!-- Mini header: current course + meta -->
+        <div class="card" style="padding:12px 16px;">
+          <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">الكورس الحالى</div>
+          <div id="current-course-name" style="font-size:15px; font-weight:bold; margin-top:2px;">—</div>
+          <div id="current-course-meta" style="font-size:11px; color:var(--muted); margin-top:4px;">—</div>
         </div>
 
-        <!-- Drive folder picker — inline search -->
+        <!-- Combobox: pick a root folder from My Drive -->
         <div class="card">
-          <h3>اختر مجلدات من Drive</h3>
-          <div class="toolbar-row">
-            <input id="drive-search" type="text" placeholder="ابحث عن مجلد بأى جزء من اسمه…" style="flex:1; min-width:200px;" />
-            <button id="clear-tree-btn" class="ghost" disabled>مسح الكل</button>
-            <span id="tree-count" class="signin-state"></span>
-          </div>
-          <div id="drive-results" class="combo-list" style="position:static; margin:8px 0; display:none;"></div>
-          <div id="tree" class="tree"><div class="empty" style="padding:30px; text-align:center; color:var(--muted);">ابحث عن مجلد فوق ثم اختر منه</div></div>
+          <label style="display:block; font-size:13px; color:var(--muted); margin-bottom:6px;">اختر مجلد رئيسى من Google Drive</label>
+          <select id="root-folder-select" style="width:100%;">
+            <option value="">— اختر مجلد —</option>
+          </select>
         </div>
 
-        <div class="card">
-          <h3>ابدأ الرفع</h3>
+        <!-- Subfolders panel (appears when a root has subfolders) -->
+        <div id="subfolders-card" class="card" style="display:none;">
+          <h3>المجلدات الفرعية — رتّب أولوية المطابقة</h3>
+          <div id="subfolders-list" class="pending-list"></div>
+        </div>
+
+        <!-- Matching table -->
+        <div id="matching-card" class="card" style="display:none;">
+          <h3>المطابقة بين دروس الكورس وفيديوهات Drive</h3>
+          <div id="matching-summary" style="font-size:12px; color:var(--muted); margin-bottom:10px;">—</div>
+          <div id="matching-table"></div>
+        </div>
+
+        <!-- Start upload -->
+        <div id="start-card" class="card" style="display:none;">
           <div class="toolbar-row">
-            <button id="start-btn" disabled>ابدأ</button>
-            <span id="start-help" class="signin-state">اختر مجلد فيديوهات الأول</span>
+            <button id="start-btn" disabled>ابدأ الرفع</button>
+            <span id="start-help" class="signin-state">—</span>
           </div>
         </div>
       </div>
@@ -180,12 +183,10 @@ const api = {
 };
 
 let driveAccessToken = null;
-let pickerInited = false;
 let gisInited = false;
 let tokenClient = null;
-let pickedTrees = []; // [{ folder, children, ... }]
 
-/* ════ Google sign-in (GIS) + Picker init ════ */
+/* ════ Google sign-in (GIS) — token comes back via popup callback ════ */
 function gisLoaded() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
@@ -195,280 +196,153 @@ function gisLoaded() {
       driveAccessToken = resp.access_token;
       document.getElementById("signin-state").textContent = "مسجّل ✓";
       document.getElementById("signin-state").classList.add("ok");
-      checkStartReady();
+      // If a course is already selected, load Drive root folders now.
+      if (currentCourseId) loadRootFolders();
     },
   });
   gisInited = true;
 }
-function gapiLoaded() {
-  gapi.load("picker", () => { pickerInited = true; });
-}
 window.addEventListener("load", () => {
   const wait = setInterval(() => {
-    if (window.google && google.accounts && google.accounts.oauth2 && !gisInited) gisLoaded();
-    if (window.gapi && !pickerInited) gapiLoaded();
-    if (gisInited && pickerInited) clearInterval(wait);
+    if (window.google && google.accounts && google.accounts.oauth2 && !gisInited) {
+      gisLoaded();
+      clearInterval(wait);
+    }
   }, 200);
 });
 
 document.getElementById("signin-btn").addEventListener("click", () => {
   if (!GOOGLE_CLIENT_ID) {
-    alert("GOOGLE_CLIENT_ID غير مضبوط. أضف ?cid=... على آخر URL أو اعدله فى الكود.");
+    alert("GOOGLE_CLIENT_ID غير مضبوط فى env السيرفر.");
     return;
   }
   if (!gisInited) { alert("Google sign-in lib لسه بتحمل…"); return; }
   tokenClient.requestAccessToken({ prompt: "" });
 });
 
-document.getElementById("clear-tree-btn").addEventListener("click", () => {
-  pickedTrees = []; renderTree();
-});
-
-/* ════ In-page Drive folder search ════
-   Debounced input that calls /api/migrate/drive/search and shows matching
-   folders. Click a result to add it as a root in the tree below. */
-let driveSearchTimer = null;
-const driveSearchInput = document.getElementById("drive-search");
-const driveResults = document.getElementById("drive-results");
-
-function showDriveResults(folders) {
-  if (!folders || folders.length === 0) {
-    driveResults.innerHTML = '<div class="combo-empty">لا توجد مجلدات</div>';
-  } else {
-    driveResults.innerHTML = folders
-      .map((f) => `<div class="combo-item" data-id="${f.id}" data-name="${(f.name || "").replace(/"/g, "&quot;")}">📁 ${f.name}${f.owner ? ` <span style="float:left; font-size:10px; color:var(--muted);">${f.owner}</span>` : ""}</div>`)
-      .join("");
-  }
-  driveResults.style.display = "block";
-  driveResults.querySelectorAll(".combo-item").forEach((el) => {
-    el.addEventListener("click", () => {
-      addRootFolder(el.dataset.id, el.dataset.name);
-      driveSearchInput.value = "";
-      driveResults.style.display = "none";
-    });
-  });
-}
-
-async function runDriveSearch(query) {
-  if (!driveAccessToken) {
-    driveResults.innerHTML = '<div class="combo-empty">سجّل دخول جوجل الأول</div>';
-    driveResults.style.display = "block";
-    return;
-  }
-  driveResults.innerHTML = '<div class="combo-empty">جارى البحث…</div>';
-  driveResults.style.display = "block";
-  try {
-    const j = await api.fetch("/api/migrate/drive/search", {
-      method: "POST",
-      body: JSON.stringify({ query, accessToken: driveAccessToken }),
-    });
-    showDriveResults(j.folders);
-  } catch (e) {
-    driveResults.innerHTML = `<div class="combo-empty" style="color:var(--err);">${e.message}</div>`;
-  }
-}
-
-driveSearchInput.addEventListener("input", (e) => {
-  clearTimeout(driveSearchTimer);
-  driveSearchTimer = setTimeout(() => runDriveSearch(e.target.value), 350);
-});
-driveSearchInput.addEventListener("focus", () => {
-  // On first focus with empty query, show the recent root folders.
-  if (!driveSearchInput.value.trim()) runDriveSearch("");
-});
-driveSearchInput.addEventListener("blur", () => {
-  setTimeout(() => { driveResults.style.display = "none"; }, 200);
-});
-
-/* ════ Tree state ════
-   Each node:
-     { id, name, type:"folder"|"video", order:string, size?, mimeType?, children?: [], expanded?: bool, loading?: bool }
-*/
-async function addRootFolder(folderId, name) {
-  if (pickedTrees.some(t => t.id === folderId)) return;
-  const node = { id: folderId, name, type: "folder", order: String(pickedTrees.length + 1), children: [], expanded: true, loading: true };
-  pickedTrees.push(node);
-  renderTree();
-  await fetchFolder(node);
-  renderTree();
-}
-async function fetchFolder(node) {
-  try {
-    const j = await api.fetch("/api/migrate/drive/list", {
-      method: "POST",
-      body: JSON.stringify({ folderId: node.id, accessToken: driveAccessToken }),
-    });
-    let pos = 1;
-    node.children = [
-      ...j.subfolders.map(f => ({ id: f.id, name: f.name, type: "folder", order: String(pos++), children: [], expanded: false })),
-      ...j.videos.map(v => ({ id: v.id, name: v.name, type: "video", order: String(pos++), size: v.size, mimeType: v.mimeType })),
-    ];
-  } catch (e) { node.error = e.message; }
-  finally { node.loading = false; }
-}
-async function expandFolder(node) {
-  node.expanded = !node.expanded;
-  if (node.expanded && node.children.length === 0 && !node.loading) {
-    node.loading = true; renderTree();
-    await fetchFolder(node); renderTree();
-  } else { renderTree(); }
-}
-
-function fmtBytes(n) {
-  if (!n) return "";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
-  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
-  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
-}
-
-function renderTree() {
-  const tree = document.getElementById("tree");
-  if (pickedTrees.length === 0) {
-    tree.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted);">اختر مجلد من Drive لتظهر الفيديوهات هنا</div>';
-    document.getElementById("clear-tree-btn").disabled = true;
-    document.getElementById("tree-count").textContent = "";
-  } else {
-    tree.innerHTML = "";
-    for (const n of pickedTrees) tree.appendChild(renderNode(n, 0));
-    document.getElementById("clear-tree-btn").disabled = false;
-    const total = countVideos();
-    document.getElementById("tree-count").textContent = total > 0 ? `${total} فيديو إجمالاً` : "";
-  }
-  checkStartReady();
-}
-function renderNode(node, depth) {
-  const wrap = document.createElement("div");
-  const row = document.createElement("div");
-  row.className = "node " + (node.type === "folder" ? "folder" : "video");
-
-  const orderInput = document.createElement("input");
-  orderInput.className = "order-input";
-  orderInput.type = "text"; orderInput.value = node.order;
-  orderInput.addEventListener("input", e => { node.order = e.target.value; });
-  row.appendChild(orderInput);
-
-  if (node.type === "folder") {
-    const tog = document.createElement("button");
-    tog.className = "node-toggle";
-    tog.textContent = node.loading ? "…" : (node.expanded ? "▾" : "▸");
-    tog.addEventListener("click", () => expandFolder(node));
-    row.appendChild(tog);
-  }
-
-  const icon = document.createElement("span");
-  icon.className = "icon";
-  icon.textContent = node.type === "folder" ? "📁" : "🎬";
-  row.appendChild(icon);
-
-  const nm = document.createElement("span");
-  nm.className = "name"; nm.textContent = node.name;
-  row.appendChild(nm);
-
-  if (node.type === "video") {
-    const sz = document.createElement("span");
-    sz.className = "size"; sz.textContent = fmtBytes(node.size);
-    row.appendChild(sz);
-  } else if (node.error) {
-    const sz = document.createElement("span");
-    sz.className = "size"; sz.style.color = "var(--err)"; sz.textContent = "error";
-    sz.title = node.error;
-    row.appendChild(sz);
-  }
-
-  wrap.appendChild(row);
-
-  if (node.type === "folder" && node.expanded) {
-    const childWrap = document.createElement("div");
-    childWrap.className = "node-children";
-    if (node.loading) {
-      childWrap.innerHTML = '<div style="padding:6px; color:var(--muted); font-size:12px;">جارى التحميل…</div>';
-    } else if (node.children && node.children.length > 0) {
-      for (const c of node.children) childWrap.appendChild(renderNode(c, depth + 1));
-    } else {
-      childWrap.innerHTML = '<div style="padding:6px; color:var(--muted); font-size:12px;">فاضى</div>';
-    }
-    wrap.appendChild(childWrap);
-  }
-  return wrap;
-}
-
-/* ════ Flatten the tree into the user's order ════
-   Sort siblings by parsed `order` (treat empty/non-numeric as 999), then
-   recurse. Folders contribute their children in-order; videos become items.
-   Returns [{ driveFileId, lecture_title }]. */
-function flattenForUpload() {
-  const out = [];
-  function walk(nodes) {
-    const sorted = [...nodes].sort((a, b) => {
-      const an = parseFloat(a.order); const bn = parseFloat(b.order);
-      const av = isFinite(an) ? an : 9999;
-      const bv = isFinite(bn) ? bn : 9999;
-      if (av !== bv) return av - bv;
-      return a.name.localeCompare(b.name, "ar");
-    });
-    for (const n of sorted) {
-      if (n.type === "video") {
-        out.push({ driveFileId: n.id, lecture_title: n.name });
-      } else if (n.type === "folder" && n.children) {
-        walk(n.children);
-      }
-    }
-  }
-  walk(pickedTrees);
-  return out;
-}
-function countVideos() { return flattenForUpload().length; }
-
-function checkStartReady() {
-  const hasCourse = !!document.getElementById("course-id").value;
-  const hasVideos = countVideos() > 0;
-  const ready = hasCourse && hasVideos && driveAccessToken;
-  document.getElementById("start-btn").disabled = !ready;
-  document.getElementById("start-help").textContent =
-    !driveAccessToken ? "سجّل دخول جوجل الأول" :
-    !hasCourse ? "اختر الكورس" :
-    !hasVideos ? "اختر فيديوهات من Drive" :
-    `جاهز — ${countVideos()} فيديو سيتم رفعهم بالترتيب`;
-}
-
-/* ════ Sidebar-driven course state ════
-   Click an "incomplete" course in the sidebar → set as current target
-   and load its missing lectures so we can match them to Drive videos. */
+/* ════════════════════════════════════════════════
+   Sidebar-driven flow:
+     1. User picks a course from the right sidebar.
+     2. Combobox of My Drive root folders appears.
+     3. User picks a root folder → server scans it (one level).
+     4. Auto-matched videos go into a 2-column table:
+          [اسم الدرس فى الكورس]  ←→  [الفيديو على Drive]
+     5. Subfolders inside the root appear below with reorder controls.
+        Reordering re-runs the match across [root + ordered subfolders].
+   ════════════════════════════════════════════════ */
 let currentCourseId = null;
 let currentCourseName = null;
-let missingLectures = []; // [{ id, name, position, drive_file_id }]
+let missingLectures = [];     // [{ id, name, position }]
+let rootFolderId = null;
+let rootFolderName = null;
+let scannedFolders = [];      // [{ id, name, isRoot, order, videos: [...], subfolders: [...] }]
+let matches = [];             // [{ lectureId, lectureName, position, videoId, videoName, fromFolder }]
 
+/* ----- Sidebar click ----- */
 async function selectCourseFromSidebar(courseId, courseName) {
   currentCourseId = courseId;
   currentCourseName = courseName;
-  pickedTrees = []; renderTree();
+  rootFolderId = null;
+  rootFolderName = null;
+  scannedFolders = [];
+  matches = [];
+
   document.getElementById("empty-state").style.display = "none";
   document.getElementById("course-view").style.display = "block";
   document.getElementById("current-course-name").textContent = courseName;
-  document.getElementById("current-course-meta").textContent = "جارى تحميل الدروس الناقصة…";
+  document.getElementById("current-course-meta").textContent = "جارى تحميل دروس الكورس…";
+  document.getElementById("subfolders-card").style.display = "none";
+  document.getElementById("matching-card").style.display = "none";
+  document.getElementById("start-card").style.display = "none";
+
   try {
     const j = await api.fetch(`/api/migrate/incomplete/${courseId}`);
     missingLectures = j.lectures || [];
     document.getElementById("current-course-meta").textContent =
-      `${missingLectures.length} درس بدون فيديو — اختر مجلد فيديوهاتهم`;
+      `${missingLectures.length} درس بدون فيديو`;
   } catch (e) {
     missingLectures = [];
     document.getElementById("current-course-meta").textContent = "خطأ: " + e.message;
+    return;
   }
-  renderMatching();
-  checkStartReady();
+
+  if (driveAccessToken) await loadRootFolders();
+  else {
+    const sel = document.getElementById("root-folder-select");
+    sel.innerHTML = '<option value="">سجّل دخول جوجل الأول</option>';
+  }
 }
 
-/* ════ Matching: lecture name ↔ Drive video filename ════
-   For each missing lecture, find the best Drive video. Strategy:
-   - Normalize Arabic + lowercase + strip punctuation.
-   - Score = longest common substring length.
-   - Each video can match at most one lecture (greedy by best score).
-*/
+/* ----- Combobox: My Drive root folders ----- */
+async function loadRootFolders() {
+  const sel = document.getElementById("root-folder-select");
+  sel.innerHTML = '<option value="">جارى التحميل…</option>';
+  try {
+    // Empty query → searchFolders returns folders directly under "root".
+    const j = await api.fetch("/api/migrate/drive/search", {
+      method: "POST",
+      body: JSON.stringify({ query: "", accessToken: driveAccessToken }),
+    });
+    const folders = j.folders || [];
+    sel.innerHTML = '<option value="">— اختر مجلد —</option>';
+    for (const f of folders) {
+      const opt = document.createElement("option");
+      opt.value = f.id;
+      opt.textContent = f.name;
+      opt.dataset.name = f.name;
+      sel.appendChild(opt);
+    }
+  } catch (e) {
+    sel.innerHTML = `<option value="">خطأ: ${e.message}</option>`;
+  }
+}
+document.getElementById("root-folder-select").addEventListener("change", async (e) => {
+  const opt = e.target.selectedOptions[0];
+  if (!opt || !opt.value) return;
+  await pickRootFolder(opt.value, opt.dataset.name || opt.textContent);
+});
+
+/* ----- Scan a single Drive folder (one level only) ----- */
+async function scanFolder(folderId) {
+  const j = await api.fetch("/api/migrate/drive/list", {
+    method: "POST",
+    body: JSON.stringify({ folderId, accessToken: driveAccessToken }),
+  });
+  return { videos: j.videos || [], subfolders: j.subfolders || [] };
+}
+
+async function pickRootFolder(folderId, folderName) {
+  rootFolderId = folderId;
+  rootFolderName = folderName;
+  // Reset scanned set with the root folder as the first scan target.
+  scannedFolders = [{
+    id: folderId,
+    name: folderName,
+    isRoot: true,
+    order: 0,
+    videos: [],
+    subfolders: [],
+  }];
+  await refreshScan(scannedFolders[0]);
+  rebuildMatches();
+  renderAll();
+}
+
+async function refreshScan(folder) {
+  try {
+    const r = await scanFolder(folder.id);
+    folder.videos = r.videos;
+    folder.subfolders = r.subfolders;
+  } catch (e) {
+    folder.error = e.message;
+  }
+}
+
+/* ----- Matching: walk scanned folders in priority order, fill lecture slots ----- */
 function normalizeName(s) {
   return String(s || "")
     .toLowerCase()
-    .replace(/\.[a-z0-9]+$/i, "") // strip extension
+    .replace(/\.[a-z0-9]+$/i, "")
     .replace(/[ً-ْ]/g, "")
     .replace(/[إأآا]/g, "ا")
     .replace(/ى/g, "ي")
@@ -482,7 +356,6 @@ function similarityScore(a, b) {
   if (!na || !nb) return 0;
   if (na === nb) return 1000;
   if (nb.includes(na) || na.includes(nb)) return Math.min(na.length, nb.length);
-  // Token overlap
   const ta = new Set(na.split(" "));
   const tb = new Set(nb.split(" "));
   let overlap = 0;
@@ -490,64 +363,103 @@ function similarityScore(a, b) {
   return overlap;
 }
 
-let videoPool = []; // [{ driveFileId, name, size }] — flattened from tree
-let matches = [];   // [{ lectureId, lectureName, position, driveFileId, videoName, manual }]
-
-function refreshVideoPool() {
-  videoPool = flattenForUpload().map((v) => ({
-    driveFileId: v.driveFileId,
-    name: v.lecture_title,
-  }));
-}
-
-function autoMatch() {
-  refreshVideoPool();
-  // Build score matrix lecture × video.
+function rebuildMatches() {
+  // Visit folders by order (root=0, then user-ordered subfolders ascending).
+  const ordered = [...scannedFolders].sort((a, b) => a.order - b.order);
   const used = new Set();
-  matches = missingLectures.map((lec) => {
-    let best = null, bestScore = 0;
-    for (const v of videoPool) {
-      if (used.has(v.driveFileId)) continue;
-      const s = similarityScore(lec.name, v.name);
-      if (s > bestScore) { bestScore = s; best = v; }
+  matches = missingLectures.map((lec) => ({
+    lectureId: lec.id,
+    lectureName: lec.name,
+    position: lec.position,
+    videoId: null,
+    videoName: null,
+    fromFolder: null,
+  }));
+  for (const folder of ordered) {
+    for (const m of matches) {
+      if (m.videoId) continue;
+      let best = null, bestScore = 0;
+      for (const v of folder.videos) {
+        if (used.has(v.id)) continue;
+        const s = similarityScore(m.lectureName, v.name);
+        if (s > bestScore) { bestScore = s; best = v; }
+      }
+      if (best && bestScore > 0) {
+        m.videoId = best.id;
+        m.videoName = best.name;
+        m.fromFolder = folder.name;
+        used.add(best.id);
+      }
     }
-    if (best) used.add(best.driveFileId);
-    return {
-      lectureId: lec.id,
-      lectureName: lec.name,
-      position: lec.position,
-      driveFileId: best ? best.driveFileId : null,
-      videoName: best ? best.name : null,
-      score: bestScore,
-      manual: false,
-    };
-  });
+  }
 }
 
-function renderMatching() {
-  const tree = document.getElementById("tree");
-  // After auto-matching, render the side-by-side table inside the tree pane.
-  if (missingLectures.length === 0) {
-    tree.innerHTML = '<div class="empty" style="padding:30px; text-align:center; color:var(--muted);">لا توجد دروس ناقصة لهذا الكورس</div>';
+/* ----- Render: meta + subfolders list + matching table + start button ----- */
+function renderAll() {
+  // Subfolders panel — show only the root's direct subfolders. The user
+  // promotes one to "scanned" by clicking + (it goes into scannedFolders
+  // with the next available order number). They can re-order in the list
+  // using ▲▼ buttons; reordering re-runs matching.
+  const root = scannedFolders.find((f) => f.isRoot);
+  const card = document.getElementById("subfolders-card");
+  const list = document.getElementById("subfolders-list");
+
+  if (!root || (root.subfolders.length === 0 && scannedFolders.length === 1)) {
+    card.style.display = "none";
+  } else {
+    card.style.display = "block";
+    const enrolled = scannedFolders.filter((f) => !f.isRoot)
+      .sort((a, b) => a.order - b.order);
+    const enrolledIds = new Set(enrolled.map((f) => f.id));
+    const available = root.subfolders.filter((f) => !enrolledIds.has(f.id));
+
+    list.innerHTML = `
+      ${enrolled.length > 0 ? `<div style="font-size:12px; color:var(--muted); margin-bottom:6px;">قيد المطابقة (بالترتيب):</div>` : ""}
+      ${enrolled.map((f, i) => `
+        <div class="pending-row" data-id="${f.id}">
+          <span class="pos">${i + 1}</span>
+          <div style="flex:1; font-size:13px;">📁 ${f.name}${f.error ? ` <span style="color:var(--err); font-size:11px;">${f.error}</span>` : ""}</div>
+          <button data-act="up" data-id="${f.id}" class="ghost" style="padding:2px 8px; font-size:12px;">▲</button>
+          <button data-act="down" data-id="${f.id}" class="ghost" style="padding:2px 8px; font-size:12px;">▼</button>
+          <button data-act="remove" data-id="${f.id}" class="ghost" style="padding:2px 8px; font-size:12px; color:var(--err);">✕</button>
+        </div>
+      `).join("")}
+      ${available.length > 0 ? `<div style="font-size:12px; color:var(--muted); margin:10px 0 6px;">إضافة (اضغط +):</div>` : ""}
+      ${available.map((f) => `
+        <div class="pending-row" data-id="${f.id}">
+          <span class="pos">+</span>
+          <div style="flex:1; font-size:13px;">📁 ${f.name}</div>
+          <button data-act="add" data-id="${f.id}" data-name="${(f.name || "").replace(/"/g, "&quot;")}" class="ghost" style="padding:2px 10px; font-size:12px; color:var(--ok);">إضافة</button>
+        </div>
+      `).join("")}
+    `;
+    list.querySelectorAll("button[data-act]").forEach((btn) => {
+      btn.addEventListener("click", () => onSubfolderAction(btn.dataset.act, btn.dataset.id, btn.dataset.name));
+    });
+  }
+
+  // Matching table
+  const matchCard = document.getElementById("matching-card");
+  const summary = document.getElementById("matching-summary");
+  const table = document.getElementById("matching-table");
+
+  if (!rootFolderId) {
+    matchCard.style.display = "none";
+    document.getElementById("start-card").style.display = "none";
     return;
   }
-  if (videoPool.length === 0) {
-    tree.innerHTML = '<div class="empty" style="padding:30px; text-align:center; color:var(--muted);">ابحث عن مجلد فيديوهات أعلاه</div>';
-    return;
-  }
-  if (!matches.length) autoMatch();
+  matchCard.style.display = "block";
+  const matched = matches.filter((m) => m.videoId).length;
+  summary.innerHTML = `${matched}/${matches.length} درس متطابق ${matched < matches.length ? `<span style="color:var(--warn);">— ${matches.length - matched} باقى</span>` : `<span style="color:var(--ok);">✓ مكتمل</span>`}`;
 
-  const usedVideoIds = new Set(matches.filter((m) => m.driveFileId).map((m) => m.driveFileId));
-  const unmatched = videoPool.filter((v) => !usedVideoIds.has(v.driveFileId));
-
-  tree.innerHTML = `
+  table.innerHTML = `
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <thead>
         <tr style="background:var(--surface-2); color:var(--muted); text-align:start;">
-          <th style="padding:8px; width:40px;">#</th>
-          <th style="padding:8px;">اسم الدرس فى الكورس</th>
+          <th style="padding:8px; width:36px;">#</th>
+          <th style="padding:8px;">اسم الدرس (كما هو فى الكورس)</th>
           <th style="padding:8px; width:30px; text-align:center;">←→</th>
-          <th style="padding:8px;">الفيديو على Drive</th>
+          <th style="padding:8px;">اسم الملف فى Drive</th>
         </tr>
       </thead>
       <tbody>
@@ -555,79 +467,80 @@ function renderMatching() {
           <tr style="border-top:1px solid var(--border);">
             <td style="padding:8px; color:var(--muted);">${m.position || (i + 1)}</td>
             <td style="padding:8px;">${m.lectureName}</td>
-            <td style="padding:8px; text-align:center; color:${m.driveFileId ? "var(--ok)" : "var(--err)"};">${m.driveFileId ? "✓" : "✗"}</td>
+            <td style="padding:8px; text-align:center; color:${m.videoId ? "var(--ok)" : "var(--err)"};">${m.videoId ? "✓" : "✗"}</td>
             <td style="padding:8px;">
-              <select data-i="${i}" class="match-select" style="width:100%; font-size:12px; padding:5px;">
-                <option value="">— لم يتم المطابقة —</option>
-                ${videoPool.map((v) => `
-                  <option value="${v.driveFileId}" ${v.driveFileId === m.driveFileId ? "selected" : ""}>${v.name}</option>
-                `).join("")}
-              </select>
+              ${m.videoId
+                ? `${m.videoName}${m.fromFolder !== rootFolderName ? ` <span style="font-size:10px; color:var(--muted); margin-inline-start:6px;">(فى: ${m.fromFolder})</span>` : ""}`
+                : `<span style="color:var(--muted);">— لم يتم المطابقة —</span>`}
             </td>
           </tr>
         `).join("")}
-        ${unmatched.length > 0 ? `
-          <tr><td colspan="4" style="padding:14px 8px 4px; font-size:12px; color:var(--muted);">فيديوهات بدون مطابقة (${unmatched.length})</td></tr>
-          ${unmatched.map((v) => `<tr><td colspan="4" style="padding:4px 14px; font-size:11px; color:var(--muted);">• ${v.name}</td></tr>`).join("")}
-        ` : ""}
       </tbody>
     </table>
   `;
 
-  tree.querySelectorAll(".match-select").forEach((sel) => {
-    sel.addEventListener("change", (e) => {
-      const i = Number(e.target.dataset.i);
-      const fid = e.target.value || null;
-      // Clear any other match using the same video.
-      if (fid) {
-        for (const m of matches) {
-          if (m.driveFileId === fid) { m.driveFileId = null; m.videoName = null; }
-        }
-      }
-      matches[i].driveFileId = fid;
-      matches[i].videoName = fid
-        ? (videoPool.find((v) => v.driveFileId === fid) || {}).name
-        : null;
-      matches[i].manual = true;
-      renderMatching();
-    });
-  });
-}
-
-// Hook tree changes to re-run matching.
-const _origRenderTree = renderTree;
-window.renderTree = function () {
-  _origRenderTree.apply(this, arguments);
-  if (currentCourseId && missingLectures.length > 0) {
-    matches = []; // re-auto-match
-    renderMatching();
+  // Start card
+  const startCard = document.getElementById("start-card");
+  const startBtn = document.getElementById("start-btn");
+  const startHelp = document.getElementById("start-help");
+  startCard.style.display = "block";
+  if (!driveAccessToken) {
+    startBtn.disabled = true;
+    startHelp.textContent = "سجّل دخول جوجل الأول";
+  } else if (matched === 0) {
+    startBtn.disabled = true;
+    startHelp.textContent = "ولا درس واحد متطابق لسه";
+  } else {
+    startBtn.disabled = false;
+    startHelp.textContent = `جاهز — هيتم رفع ${matched} فيديو`;
   }
-};
-
-function checkStartReady() {
-  const matched = matches.filter((m) => m.driveFileId).length;
-  const ready = !!currentCourseId && matched > 0 && driveAccessToken;
-  const btn = document.getElementById("start-btn");
-  if (!btn) return;
-  btn.disabled = !ready;
-  document.getElementById("start-help").textContent =
-    !driveAccessToken ? "سجّل دخول جوجل الأول" :
-    !currentCourseId ? "اختر كورس من اليمين" :
-    matched === 0 ? "لازم تطابق درس واحد على الأقل" :
-    `جاهز — ${matched}/${matches.length} درس مطابق سيتم رفعه`;
 }
 
-/* ════ Start upload (resume mode — fills bunny_video_id on existing lectures) ════ */
+async function onSubfolderAction(act, id, name) {
+  const idx = scannedFolders.findIndex((f) => f.id === id);
+  const root = scannedFolders.find((f) => f.isRoot);
+
+  if (act === "add") {
+    const nextOrder = Math.max(0, ...scannedFolders.map((f) => f.order)) + 1;
+    const folder = { id, name, isRoot: false, order: nextOrder, videos: [], subfolders: [] };
+    scannedFolders.push(folder);
+    renderAll();
+    await refreshScan(folder);
+    rebuildMatches();
+    renderAll();
+    return;
+  }
+  if (act === "remove") {
+    if (idx >= 0) scannedFolders.splice(idx, 1);
+    rebuildMatches();
+    renderAll();
+    return;
+  }
+  if (act === "up" || act === "down") {
+    // Reorder among non-root folders by swapping adjacent orders.
+    const enrolled = scannedFolders.filter((f) => !f.isRoot)
+      .sort((a, b) => a.order - b.order);
+    const i = enrolled.findIndex((f) => f.id === id);
+    if (i < 0) return;
+    const j = act === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= enrolled.length) return;
+    [enrolled[i].order, enrolled[j].order] = [enrolled[j].order, enrolled[i].order];
+    rebuildMatches();
+    renderAll();
+  }
+}
+
+/* ----- Start upload — fills bunny_video_id on existing lectures ----- */
 document.getElementById("start-btn").addEventListener("click", async () => {
-  const ready = matches.filter((m) => m.driveFileId);
+  const ready = matches.filter((m) => m.videoId);
   if (ready.length === 0) return;
-  if (!confirm(`سيتم رفع ${ready.length} فيديو ومطابقتها بالدروس. متأكد؟`)) return;
+  if (!confirm(`سيتم رفع ${ready.length} فيديو ومطابقتهم بالدروس. متأكد؟`)) return;
   const j = await api.fetch("/api/migrate/match-and-upload", {
     method: "POST",
     body: JSON.stringify({
       courseId: currentCourseId,
       driveToken: driveAccessToken,
-      pairs: ready.map((m) => ({ lectureId: m.lectureId, driveFileId: m.driveFileId })),
+      pairs: ready.map((m) => ({ lectureId: m.lectureId, driveFileId: m.videoId })),
     }),
   });
   startPolling(j.jobId);
