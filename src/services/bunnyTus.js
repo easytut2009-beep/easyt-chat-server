@@ -10,7 +10,9 @@
 const crypto = require("crypto");
 
 const TUS_ENDPOINT = "https://video.bunnycdn.com/tusupload";
-const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB — fewer round trips than 10MB
+// 10 MB. 50MB had fewer round trips but progress only updated per chunk,
+// so users perceived 30–60s of "frozen" UI per chunk on slow links.
+const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024;
 const MAX_RETRIES = 6;
 const BACKOFF_MS = [1000, 3000, 5000, 10000, 20000, 60000];
 
