@@ -134,38 +134,48 @@ async function openFileStream(fileId, accessToken) {
  *  GET /drive/v3/files — full-Drive folder search by substring.
  *  Used by the in-page folder picker (replaces the popup Picker).
  *  ------------------------------------------------------------ */
-async function searchFolders(query, accessToken, opts = {}) {
+/** Fetch all (non-trashed) folders the user has access to.
+ *  We DON'T pass a name filter to Drive — Drive's `name contains` is a
+ *  token-prefix match, not a true substring match. Instead we pull a large
+ *  set and let the client filter by exact substring. Max 1000 results
+ *  sorted by recently-modified, paginated up to that cap. */
+async function searchFolders(_query, accessToken, opts = {}) {
   if (!accessToken) throw new Error("accessToken required");
-  const q = String(query || "").trim();
-  // Drive's `name contains` works on full words/substrings. Quote-safe.
-  const safe = q.replace(/'/g, "\\'");
-  const driveQ = q
-    ? `mimeType='${FOLDER_MIME}' and trashed=false and name contains '${safe}'`
-    : `mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`;
-  const params = new URLSearchParams({
-    q: driveQ,
-    fields: "files(id,name,modifiedTime,parents,owners(displayName))",
-    pageSize: String(opts.pageSize || 50),
-    orderBy: "modifiedTime desc",
-    supportsAllDrives: "true",
-    includeItemsFromAllDrives: "true",
-  });
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${params}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Drive search failed: ${res.status} ${t}`);
-  }
-  const json = await res.json();
-  return (json.files || []).map((f) => ({
-    id: f.id,
-    name: f.name,
-    modifiedTime: f.modifiedTime || null,
-    owner:
-      (f.owners && f.owners[0] && f.owners[0].displayName) || null,
-  }));
+  const cap = Math.min(opts.cap || 1000, 5000);
+  const all = [];
+  let pageToken = null;
+  do {
+    const params = new URLSearchParams({
+      q: `mimeType='${FOLDER_MIME}' and trashed=false`,
+      fields: "nextPageToken,files(id,name,modifiedTime,owners(displayName))",
+      pageSize: "200",
+      orderBy: "modifiedTime desc",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Drive search failed: ${res.status} ${t}`);
+    }
+    const json = await res.json();
+    for (const f of json.files || []) {
+      all.push({
+        id: f.id,
+        name: f.name,
+        modifiedTime: f.modifiedTime || null,
+        owner:
+          (f.owners && f.owners[0] && f.owners[0].displayName) || null,
+      });
+      if (all.length >= cap) break;
+    }
+    pageToken = json.nextPageToken || null;
+  } while (pageToken && all.length < cap);
+  return all;
 }
 
 module.exports = {

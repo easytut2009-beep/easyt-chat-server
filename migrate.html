@@ -280,31 +280,57 @@ async function selectCourseFromSidebar(courseId, courseName) {
   }
 }
 
-/* ----- Combobox with substring search across the entire Drive ----- */
+/* ----- Combobox with TRUE substring search ----- */
 const rootSearchInput = document.getElementById("root-folder-search");
 const rootListBox = document.getElementById("root-folder-list");
 const rootSelectedLabel = document.getElementById("root-folder-selected");
-let rootSearchTimer = null;
+let allFolderCache = null;          // cached list, fetched on first focus
+let allFolderCachePromise = null;   // de-dupe concurrent fetches
 
-async function fetchDriveFolders(query) {
-  if (!driveAccessToken) return [];
-  try {
-    const j = await api.fetch("/api/migrate/drive/search", {
-      method: "POST",
-      body: JSON.stringify({ query, accessToken: driveAccessToken }),
-    });
-    return j.folders || [];
-  } catch (e) {
-    rootListBox.innerHTML = `<div class="combo-empty" style="color:var(--err);">${e.message}</div>`;
-    rootListBox.style.display = "block";
-    return null;
-  }
+async function ensureFolderCache() {
+  if (allFolderCache) return allFolderCache;
+  if (allFolderCachePromise) return allFolderCachePromise;
+  rootListBox.innerHTML = '<div class="combo-empty">جارى تحميل المجلدات من Drive…</div>';
+  rootListBox.style.display = "block";
+  allFolderCachePromise = (async () => {
+    try {
+      const j = await api.fetch("/api/migrate/drive/search", {
+        method: "POST",
+        body: JSON.stringify({ accessToken: driveAccessToken }),
+      });
+      allFolderCache = j.folders || [];
+      return allFolderCache;
+    } catch (e) {
+      rootListBox.innerHTML = `<div class="combo-empty" style="color:var(--err);">${e.message}</div>`;
+      rootListBox.style.display = "block";
+      throw e;
+    } finally {
+      allFolderCachePromise = null;
+    }
+  })();
+  return allFolderCachePromise;
+}
+
+// Substring filter — case-insensitive, Arabic-aware (ا/أ/إ/آ unified, ة/ه, ى/ي).
+function normalizeForSearch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[ً-ْ]/g, "")
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+}
+function filterFolders(query, list) {
+  const q = normalizeForSearch(query.trim());
+  if (!q) return list.slice(0, 100);
+  return list
+    .filter((f) => normalizeForSearch(f.name).includes(q))
+    .slice(0, 100);
 }
 
 function renderRootList(folders) {
-  if (!folders) return; // error already rendered
   if (folders.length === 0) {
-    rootListBox.innerHTML = '<div class="combo-empty">مفيش مجلدات</div>';
+    rootListBox.innerHTML = '<div class="combo-empty">مفيش نتائج</div>';
   } else {
     rootListBox.innerHTML = folders
       .map((f) => `<div class="combo-item" data-id="${f.id}" data-name="${(f.name || "").replace(/"/g, "&quot;")}">📁 ${f.name}${f.owner ? ` <span style="float:left; font-size:10px; color:var(--muted);">${f.owner}</span>` : ""}</div>`)
@@ -325,26 +351,22 @@ function renderRootList(folders) {
   });
 }
 
-rootSearchInput.addEventListener("input", (e) => {
-  clearTimeout(rootSearchTimer);
-  const q = e.target.value;
-  rootSearchTimer = setTimeout(async () => {
-    rootListBox.innerHTML = '<div class="combo-empty">جارى البحث…</div>';
-    rootListBox.style.display = "block";
-    renderRootList(await fetchDriveFolders(q));
-  }, 300);
-});
-rootSearchInput.addEventListener("focus", async () => {
+async function showFilteredFolders(query) {
   if (!driveAccessToken) {
     rootListBox.innerHTML = '<div class="combo-empty">سجّل دخول جوجل الأول</div>';
     rootListBox.style.display = "block";
     return;
   }
-  // Empty query → root folders of My Drive (the "main folders" the user wants).
-  rootListBox.innerHTML = '<div class="combo-empty">جارى التحميل…</div>';
-  rootListBox.style.display = "block";
-  renderRootList(await fetchDriveFolders(rootSearchInput.value || ""));
-});
+  try {
+    const list = await ensureFolderCache();
+    renderRootList(filterFolders(query, list));
+  } catch {
+    /* error already shown by ensureFolderCache */
+  }
+}
+
+rootSearchInput.addEventListener("input", (e) => showFilteredFolders(e.target.value));
+rootSearchInput.addEventListener("focus", () => showFilteredFolders(rootSearchInput.value));
 rootSearchInput.addEventListener("blur", () => {
   setTimeout(() => { rootListBox.style.display = "none"; }, 200);
 });
