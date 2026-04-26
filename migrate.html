@@ -90,7 +90,10 @@
 
 <div class="layout">
   <aside>
-    <h2>كورسات ناقصة</h2>
+    <h2 style="display:flex; justify-content:space-between; align-items:center;">
+      <span>كورسات ناقصة</span>
+      <span id="incomplete-count" style="background:var(--brand); color:#fff; font-size:11px; font-weight:bold; padding:2px 10px; border-radius:10px; min-width:24px; text-align:center;">—</span>
+    </h2>
     <div id="incomplete-list" class="empty">لا يوجد</div>
   </aside>
 
@@ -663,9 +666,13 @@ function appendLog(msg, cls) {
 /* ════ Incomplete sidebar ════ */
 async function loadIncomplete() {
   const list = document.getElementById("incomplete-list");
+  const counter = document.getElementById("incomplete-count");
   try {
     const j = await api.fetch("/api/migrate/incomplete");
-    if (!j.courses || j.courses.length === 0) {
+    const total = (j.courses || []).length;
+    counter.textContent = total;
+    counter.style.background = total === 0 ? "var(--ok)" : "var(--brand)";
+    if (total === 0) {
       list.className = "empty";
       list.textContent = "لا يوجد";
       return;
