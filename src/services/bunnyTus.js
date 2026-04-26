@@ -10,7 +10,7 @@
 const crypto = require("crypto");
 
 const TUS_ENDPOINT = "https://video.bunnycdn.com/tusupload";
-const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB
+const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB — fewer round trips than 10MB
 const MAX_RETRIES = 6;
 const BACKOFF_MS = [1000, 3000, 5000, 10000, 20000, 60000];
 

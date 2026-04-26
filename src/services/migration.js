@@ -614,18 +614,30 @@ async function processAttachmentQueue(jobId, driveToken) {
       });
 
       const driveRes = await drive.openFileStream(driveFileId, driveToken);
-      // TUS (10MB chunks). Direct PUT was timing out on Render mid-stream
-      // for files >~400MB; TUS retries each failed chunk in place so a
-      // dropped connection costs one chunk, not the whole upload.
-      await bunny.uploadToBunnyTus({
-        bodyStream: driveRes.body,
-        totalBytes: meta.size,
-        bunnyVideoId: bunnyId,
-        libraryId: BUNNY_LIBRARY_ID,
-        apiKey: BUNNY_STREAM_KEY,
-        title: att.name,
-        onProgress: (sent) => { job.currentSent = sent; },
-      });
+      // Direct PUT is faster (one HTTP round-trip) but Render's request
+      // timeout drops connections around 400MB. Use TUS (chunked) only
+      // for files large enough to risk a timeout.
+      const TUS_THRESHOLD = 300 * 1024 * 1024;
+      if (meta.size <= TUS_THRESHOLD) {
+        await bunny.uploadToBunnyDirect({
+          bodyStream: driveRes.body,
+          totalBytes: meta.size,
+          bunnyVideoId: bunnyId,
+          libraryId: BUNNY_LIBRARY_ID,
+          apiKey: BUNNY_STREAM_KEY,
+          onProgress: (sent) => { job.currentSent = sent; },
+        });
+      } else {
+        await bunny.uploadToBunnyTus({
+          bodyStream: driveRes.body,
+          totalBytes: meta.size,
+          bunnyVideoId: bunnyId,
+          libraryId: BUNNY_LIBRARY_ID,
+          apiKey: BUNNY_STREAM_KEY,
+          title: att.name,
+          onProgress: (sent) => { job.currentSent = sent; },
+        });
+      }
 
       const playbackUrl = `https://${BUNNY_CDN_HOST}/${bunnyId}/playlist.m3u8`;
       await supabase
