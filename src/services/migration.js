@@ -557,13 +557,17 @@ async function processAttachmentQueue(jobId, driveToken) {
     job.currentTotal = 0;
     const { attachmentId, driveFileId } = job.pairs[i];
 
-    const { data: att } = await supabase
+    const { data: att, error: attErr } = await supabase
       .from("teachable_attachments")
       .select("id,name,lecture_id,course_id,bunny_video_id")
       .eq("id", attachmentId)
       .limit(1)
       .single();
-    if (!att) {
+    if (attErr || !att) {
+      const msg = `attachment id=${attachmentId} not found: ${attErr?.message || "no row"}`;
+      console.error("[migrate]", msg);
+      if (!job.errors) job.errors = [];
+      job.errors.push(msg);
       job.failed++;
       continue;
     }
@@ -629,7 +633,10 @@ async function processAttachmentQueue(jobId, driveToken) {
         `[migrate] ✓ ${att.name}  →  ${bunnyId}  (${(meta.size / 1024 / 1024).toFixed(1)} MB)`,
       );
     } catch (err) {
-      console.error(`[migrate] ✗ ${att.name}: ${err.message}`);
+      const msg = `${att.name}: ${err.message}`;
+      console.error(`[migrate] ✗ ${msg}`);
+      if (!job.errors) job.errors = [];
+      job.errors.push(msg);
       job.failed++;
       await supabase
         .from("teachable_attachments")

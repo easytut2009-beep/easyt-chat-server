@@ -655,6 +655,11 @@ async function poll(jobId) {
     if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
       clearInterval(pollTimer); pollTimer = null;
       appendLog(`انتهى — ${job.completed} ناجح، ${job.failed} فشل`, job.failed > 0 ? "err" : "ok");
+      // Surface up to 10 detailed error messages so the user knows WHY.
+      if (job.errors && job.errors.length > 0) {
+        for (const msg of job.errors.slice(0, 10)) appendLog("✗ " + msg, "err");
+        if (job.errors.length > 10) appendLog(`... و ${job.errors.length - 10} خطأ آخر`, "err");
+      }
       loadIncomplete();
     }
   } catch (e) {
