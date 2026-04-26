@@ -168,47 +168,15 @@ const GOOGLE_APP_ID     = HASH.get("appid")  || SRV.appId    || "";
 
 const SCOPES = "https://www.googleapis.com/auth/drive.readonly";
 
-/* ════════════════════════════════════════════════
-   Admin auth — exchanges password for a bearer token via /api/admin/login.
-   The token caches in localStorage. On any 401, we wipe the cache and ask
-   for the password again. The user never types/sees the token directly.
-   ════════════════════════════════════════════════ */
-let ADMIN_TOKEN = localStorage.getItem("admin_token") || "";
-
-async function adminLogin() {
-  const pwd = prompt("كلمة سر الأدمن:");
-  if (!pwd) throw new Error("password required");
-  const r = await fetch("/admin/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: pwd }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.token) throw new Error(j.error || "login failed");
-  ADMIN_TOKEN = j.token;
-  localStorage.setItem("admin_token", ADMIN_TOKEN);
-  return ADMIN_TOKEN;
-}
-
 const api = {
   fetch: async (url, opts = {}) => {
-    if (!ADMIN_TOKEN) await adminLogin();
-    const doFetch = () => fetch(url, {
+    const r = await fetch(url, {
       ...opts,
       headers: {
         ...(opts.headers || {}),
-        "Authorization": "Bearer " + ADMIN_TOKEN,
         ...(opts.body ? { "Content-Type": "application/json" } : {}),
       },
     });
-    let r = await doFetch();
-    // On 401, the token is stale or wrong — force a re-login and retry once.
-    if (r.status === 401) {
-      localStorage.removeItem("admin_token");
-      ADMIN_TOKEN = "";
-      await adminLogin();
-      r = await doFetch();
-    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.success === false) throw new Error(j.error || ("HTTP " + r.status));
     return j;

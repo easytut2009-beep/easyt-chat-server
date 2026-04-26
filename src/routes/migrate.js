@@ -8,7 +8,6 @@
 
 "use strict";
 
-const { adminAuth } = require("../auth/admin");
 const drive = require("../services/drive");
 const migration = require("../services/migration");
 const { supabase } = require("../lib/clients");
@@ -19,7 +18,7 @@ function registerMigrateRoutes(app) {
    *  body: { folderId, accessToken }
    *  → { videos:[{id,name,mimeType,size,duration}], subfolders:[{id,name}] }
    */
-  app.post("/api/migrate/drive/list", adminAuth, async (req, res) => {
+  app.post("/api/migrate/drive/list", async (req, res) => {
     try {
       const { folderId, accessToken } = req.body || {};
       const out = await drive.listFolderContents(folderId, accessToken);
@@ -33,7 +32,7 @@ function registerMigrateRoutes(app) {
    *  GET /api/migrate/courses
    *  → [{ id, name }] keyed by teachable_course_id
    */
-  app.get("/api/migrate/courses", adminAuth, async (_req, res) => {
+  app.get("/api/migrate/courses", async (_req, res) => {
     try {
       const { data, error } = await supabase
         .from("teachable_courses")
@@ -93,7 +92,7 @@ function registerMigrateRoutes(app) {
    *  }
    *  → { jobId }
    */
-  app.post("/api/migrate/start", adminAuth, async (req, res) => {
+  app.post("/api/migrate/start", async (req, res) => {
     try {
       const { courseId, sectionId, driveToken, items } = req.body || {};
       const job = await migration.startMigration({
@@ -112,7 +111,7 @@ function registerMigrateRoutes(app) {
    *  POST /api/migrate/resume
    *  body: { courseId, driveToken }
    */
-  app.post("/api/migrate/resume", adminAuth, async (req, res) => {
+  app.post("/api/migrate/resume", async (req, res) => {
     try {
       const { courseId, driveToken } = req.body || {};
       const job = await migration.resumeCourse({
@@ -129,7 +128,7 @@ function registerMigrateRoutes(app) {
    *  GET /api/migrate/jobs/:jobId
    *  → { total, completed, failed, currentIndex, currentTitle, currentSent, currentTotal, status }
    */
-  app.get("/api/migrate/jobs/:jobId", adminAuth, (req, res) => {
+  app.get("/api/migrate/jobs/:jobId", (req, res) => {
     const job = migration.getJob(req.params.jobId);
     if (!job) {
       return res.status(404).json({ success: false, error: "job not found" });
@@ -141,7 +140,7 @@ function registerMigrateRoutes(app) {
    *  GET /api/migrate/incomplete
    *  → [{ courseId, name, pending, failed }]
    */
-  app.get("/api/migrate/incomplete", adminAuth, async (_req, res) => {
+  app.get("/api/migrate/incomplete", async (_req, res) => {
     try {
       const list = await migration.listIncompleteCourses();
       res.json({ success: true, courses: list });
@@ -154,7 +153,7 @@ function registerMigrateRoutes(app) {
    *  GET /api/migrate/incomplete/:courseId
    *  → [{ id, name, position, drive_upload_status, last_error, drive_file_id }]
    */
-  app.get("/api/migrate/incomplete/:courseId", adminAuth, async (req, res) => {
+  app.get("/api/migrate/incomplete/:courseId", async (req, res) => {
     try {
       const courseId = Number(req.params.courseId);
       const list = await migration.listMissingLectures(courseId);
