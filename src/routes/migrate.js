@@ -58,7 +58,6 @@ function registerMigrateRoutes(app) {
    */
   app.get(
     "/api/migrate/courses/:courseId/sections",
-    adminAuth,
     async (req, res) => {
       try {
         const courseId = Number(req.params.courseId);
