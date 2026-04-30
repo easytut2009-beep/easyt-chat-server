@@ -27,13 +27,22 @@
   aside { background:var(--surface); border-inline-end:1px solid var(--border); padding:16px; overflow-y:auto; }
   aside h2 { font-size:13px; color:var(--muted); margin:0 0 8px; text-transform:uppercase; letter-spacing:0.5px; }
   aside .empty { color:var(--muted); font-size:12px; padding:16px 8px; text-align:center; border:1px dashed var(--border); border-radius:6px; }
-  .incomplete-item { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:.15s; }
+  .incomplete-item { position:relative; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; padding-inline-end:36px; margin-bottom:8px; cursor:pointer; transition:.15s; }
   .incomplete-item:hover { border-color:var(--brand); }
+  .incomplete-item.flagged { background:rgba(245,158,11,0.08); border-color:rgba(245,158,11,0.35); opacity:0.85; }
+  .incomplete-item.flagged .name { color:var(--warn); }
   .incomplete-item .name { font-weight:600; font-size:13px; }
   .incomplete-item .meta { font-size:11px; color:var(--muted); margin-top:4px; }
   .incomplete-item .pill { display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; margin-inline-end:4px; }
   .pill-pending { background:rgba(245,158,11,0.15); color:var(--warn); }
   .pill-failed { background:rgba(220,38,38,0.15); color:var(--err); }
+  .pill-flag { background:rgba(245,158,11,0.18); color:var(--warn); border:1px solid rgba(245,158,11,0.35); }
+  .flag-btn { position:absolute; top:6px; inset-inline-end:6px; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border:1px solid transparent; border-radius:4px; cursor:pointer; padding:0; font-size:14px; color:var(--muted); transition:.15s; }
+  .flag-btn:hover { background:var(--surface); border-color:var(--border); color:var(--warn); }
+  .incomplete-item.flagged .flag-btn { color:var(--warn); }
+  .flag-btn[aria-pressed="true"] { color:var(--warn); }
+  .sidebar-divider { border:0; border-top:1px dashed var(--border); margin:8px 0 6px; }
+  .sidebar-divider-label { display:block; text-align:center; color:var(--muted); font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
   main { padding:20px 24px; overflow-y:auto; }
   .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; }
   .card h3 { margin:0 0 12px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
@@ -718,6 +727,41 @@ function appendLog(msg, cls) {
 /* ════ Incomplete sidebar ════ */
 let incompleteCache = [];
 
+// Per-browser flag store: course IDs the admin has marked as "needs
+// follow-up later". Flagged courses still appear in the sidebar but
+// drop to the bottom so the day's actionable list is on top.
+const FLAG_KEY = "migrate.flaggedCourseIds";
+function loadFlaggedSet() {
+  try {
+    const raw = localStorage.getItem(FLAG_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.map(Number) : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveFlaggedSet(set) {
+  try {
+    localStorage.setItem(FLAG_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    // Quota / private mode — silent. Flag still works for the session.
+  }
+}
+let flaggedSet = loadFlaggedSet();
+
+function toggleFlag(courseId, ev) {
+  if (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  const id = Number(courseId);
+  if (flaggedSet.has(id)) flaggedSet.delete(id);
+  else flaggedSet.add(id);
+  saveFlaggedSet(flaggedSet);
+  renderIncomplete();
+}
+
 // Arabic-aware normalization so "احمد"/"أحمد"/"احمذ" all match.
 function normalizeAr(s) {
   return (s || "")
@@ -739,6 +783,9 @@ function renderIncomplete() {
     : incompleteCache;
 
   const total = incompleteCache.length;
+  const flaggedCount = filtered.filter((c) =>
+    flaggedSet.has(Number(c.courseId)),
+  ).length;
   counter.textContent = q ? `${filtered.length}/${total}` : total;
   counter.style.background = total === 0 ? "var(--ok)" : "var(--brand)";
 
@@ -752,20 +799,62 @@ function renderIncomplete() {
     list.textContent = "لا يوجد كورس بهذا الاسم";
     return;
   }
+
+  // Stable two-bucket sort: unflagged first (preserving server order),
+  // flagged last. This way the action list is always on top, the
+  // "park for later" pile stays out of the way at the bottom.
+  const unflagged = filtered.filter(
+    (c) => !flaggedSet.has(Number(c.courseId)),
+  );
+  const flagged = filtered.filter((c) =>
+    flaggedSet.has(Number(c.courseId)),
+  );
+
   list.className = "";
   list.innerHTML = "";
-  for (const c of filtered) {
+
+  const renderItem = (c) => {
+    const isFlagged = flaggedSet.has(Number(c.courseId));
     const item = document.createElement("div");
-    item.className = "incomplete-item";
+    item.className = "incomplete-item" + (isFlagged ? " flagged" : "");
     item.innerHTML = `
+      <button
+        type="button"
+        class="flag-btn"
+        aria-pressed="${isFlagged}"
+        title="${isFlagged ? "إزالة العلامة" : "تعليم للمراجعة لاحقاً"}"
+      >${isFlagged ? "🚩" : "⚐"}</button>
       <div class="name">${c.name}</div>
       <div class="meta">
         ${c.failed > 0 ? `<span class="pill pill-failed">${c.failed} فشل</span>` : ""}
         ${c.pending > 0 ? `<span class="pill pill-pending">${c.pending} قيد الانتظار</span>` : ""}
+        ${isFlagged ? `<span class="pill pill-flag">للمراجعة</span>` : ""}
       </div>`;
-    item.addEventListener("click", () => selectCourseFromSidebar(c.courseId, c.name));
+    item.addEventListener("click", () =>
+      selectCourseFromSidebar(c.courseId, c.name),
+    );
+    item.querySelector(".flag-btn").addEventListener("click", (ev) =>
+      toggleFlag(c.courseId, ev),
+    );
     list.appendChild(item);
+  };
+
+  for (const c of unflagged) renderItem(c);
+
+  if (flagged.length > 0 && unflagged.length > 0) {
+    const sep = document.createElement("div");
+    sep.className = "sidebar-divider-label";
+    sep.textContent = `للمراجعة لاحقاً (${flagged.length})`;
+    list.appendChild(sep);
+    const hr = document.createElement("hr");
+    hr.className = "sidebar-divider";
+    list.appendChild(hr);
   }
+
+  for (const c of flagged) renderItem(c);
+
+  // Avoid linter warnings: flaggedCount used only for future tooltips.
+  void flaggedCount;
 }
 
 async function loadIncomplete() {
