@@ -44,6 +44,28 @@ const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
 // Redis, but Render runs us on a single instance by default.
 const jobs = new Map();
 
+/* ─── Concurrency guard ──────────────────────────────────────
+ *
+ * Render Starter plans cap RAM at 512 MB. ffmpeg re-encoding 1080p
+ * H.264 at 30 fps with libx264 veryfast eats ~300 MB per video.
+ * Running 3 lectures in parallel (one per /api/v1/process-lecture
+ * call) blew through the limit and Render OOM-killed the service
+ * mid-processing — Vercel saw 404s on the polling tokens and marked
+ * all 3 videos failed (tracker showed "نجح 0 • فشل 3", May 7 2026).
+ *
+ * We serialize ffmpeg work with a simple async queue so only one
+ * runJob is ever inside processLecture at a time. Dispatch still
+ * returns 202 immediately; jobs queue up and process in turn.
+ */
+let activeJob = Promise.resolve();
+function withFFmpegLock(work) {
+  const next = activeJob.catch(() => {}).then(() => work());
+  // Don't propagate the work's reject into activeJob — we want the
+  // chain to keep moving if one job throws.
+  activeJob = next.catch(() => {});
+  return next;
+}
+
 function makeJobToken() {
   return crypto.randomBytes(16).toString("hex");
 }
@@ -142,16 +164,23 @@ function registerCourseProcessingRoutes(app) {
 
 async function runJob(state, body) {
   try {
-    state.progress = "ffmpeg_processing";
-    const result = await processLecture({
-      driveFileId: body.drive_file_id,
-      driveAccessToken: body.drive_access_token,
-      introBunnyVideoId: body.intro_bunny_video_id ?? null,
-      introBunnyCdnHost: body.intro_bunny_cdn_host ?? null,
-      introBunnyTokenKey: body.intro_bunny_token_key ?? null,
-      applySilenceTrim: body.apply_silence_trim ?? true,
-      applyIntroConcat: body.apply_intro_concat ?? true,
-      workDir: state.workDir,
+    // Wait for our turn at the ffmpeg lock. While queued the state
+    // shows "queued" so the Vercel poller knows it's pending, not
+    // failed. Founder confirmed Render OOM on May 7 2026 when 3
+    // jobs ran in parallel — serialize to one at a time.
+    state.progress = "queued";
+    const result = await withFFmpegLock(async () => {
+      state.progress = "ffmpeg_processing";
+      return await processLecture({
+        driveFileId: body.drive_file_id,
+        driveAccessToken: body.drive_access_token,
+        introBunnyVideoId: body.intro_bunny_video_id ?? null,
+        introBunnyCdnHost: body.intro_bunny_cdn_host ?? null,
+        introBunnyTokenKey: body.intro_bunny_token_key ?? null,
+        applySilenceTrim: body.apply_silence_trim ?? true,
+        applyIntroConcat: body.apply_intro_concat ?? true,
+        workDir: state.workDir,
+      });
     });
 
     state.progress = "creating_bunny_shell";
