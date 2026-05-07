@@ -37,8 +37,20 @@ const crypto = require("node:crypto");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const ffprobePath = require("@ffprobe-installer/ffprobe").path;
 
-const TRIM_THRESHOLD_DB = -35; // anything below -35 dB counts as silence
-const TRIM_MIN_DURATION = 0.5; // seconds — silence shorter than this is ignored
+// Silence detection — the previous values (-35 dB, 0.5 s) were too
+// aggressive: lecturer pauses 1-2s mid-sentence at -40 dB got flagged
+// as silence and the trim chopped 80% of the content (test job 8).
+// -50 dB only catches the actual mic noise floor; 2s requires a real
+// breath-pause-end, not a sentence breath.
+const TRIM_THRESHOLD_DB = -50;
+const TRIM_MIN_DURATION = 2.0;
+// Hard cap on how long "trailing silence" is allowed to be before we
+// treat the detection as suspicious and ignore it. Real outros are
+// usually 1-3 seconds. If silencedetect says the last 600 seconds of
+// the video are silent, it's almost certainly wrong (quiet speech
+// fooled the threshold) and trimming that would destroy the lecture.
+const MAX_TRAILING_TRIM_SECONDS = 15;
+
 const TAIL_HOLD_SECONDS = 0.5; // hold last frame
 const TAIL_FADE_SECONDS = 0.5; // fade to black over
 
@@ -127,22 +139,30 @@ async function detectSilenceBoundaries(file, durationSeconds) {
     }
   }
 
-  // Trailing silence: only counts if it ends within the last 0.5s
-  // of the file (i.e. genuine dead air at the very end). Otherwise
-  // it's just a long pause we want to keep.
+  // Trailing silence: only counts if (1) it ends within the last
+  // 0.5s of the file AND (2) the silent stretch is shorter than
+  // MAX_TRAILING_TRIM_SECONDS. Condition 2 protects against the
+  // common failure mode where silencedetect flags a long stretch of
+  // quiet speech as silence (lecturer's voice dipping below the
+  // threshold during normal speech). Real outros are 1-3 seconds.
   let trimEnd = durationSeconds;
   for (let i = events.length - 1; i >= 0; i--) {
     if (events[i].kind === "start") {
       const candidate = events[i].t;
-      // Look for the matching end after this start
       const matchingEnd = events
         .slice(i + 1)
         .find((e) => e.kind === "end");
       const endsAt = matchingEnd?.t ?? durationSeconds;
-      // True trailing silence: extends to within 0.5s of EOF
-      if (endsAt >= durationSeconds - 0.5) {
+      const silenceDuration = endsAt - candidate;
+      const reachesEof = endsAt >= durationSeconds - 0.5;
+      const isReasonableLength =
+        silenceDuration <= MAX_TRAILING_TRIM_SECONDS;
+      if (reachesEof && isReasonableLength) {
         trimEnd = Math.max(trimStart + 1, candidate);
       }
+      // If the silence is too long, leave trimEnd at full duration
+      // — better to keep some trailing dead air than chop off real
+      // content. Founder rule: trim only TRUE trailing silence.
       break;
     }
   }
@@ -251,75 +271,60 @@ async function buildTailClip(sourceFile, outputFile) {
 /* ─── Concat multiple files into one ─────────────────────────── */
 
 async function concatFiles(inputFiles, outputFile) {
-  // Build a concat-demuxer list file. Each line: `file '<path>'`.
-  const tmpDir = path.dirname(outputFile);
-  const listFile = path.join(
-    tmpDir,
-    `concat-${crypto.randomBytes(4).toString("hex")}.txt`,
-  );
-  const listBody = inputFiles
-    .map((f) => `file '${f.replace(/'/g, "'\\''")}'`)
-    .join("\n");
-  await fsp.writeFile(listFile, listBody, "utf8");
-
-  try {
-    // Try stream-copy first (fast). Falls back to re-encode below
-    // if codecs don't match.
-    try {
-      await runProcess(ffmpegPath, [
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        listFile,
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        outputFile,
-      ]);
-      return;
-    } catch (eCopy) {
-      // Re-encode fallback: needed when the intro / tail / lecture
-      // have mismatched timebase or codec config.
-      await runProcess(ffmpegPath, [
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        listFile,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "23",
-        "-pix_fmt",
-        "yuv420p",
-        "-r",
-        "30",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-movflags",
-        "+faststart",
-        outputFile,
-      ]);
-    }
-  } finally {
-    await fsp.unlink(listFile).catch(() => {});
+  // Always re-encode. Stream-copy concat is fast but produces
+  // playback artifacts (audio plays, video shows black) when the
+  // input streams have mismatched SPS/PPS/timebase/pix_fmt — which
+  // is the common case when one input was uploaded by the founder
+  // and another came from our own ffmpeg tail generator. The cost
+  // is ~3-5 minutes per video on Render. Worth it for a video that
+  // actually plays.
+  //
+  // Use the concat FILTER (not demuxer) — the filter handles
+  // resolution/fps/sample-rate normalization automatically by
+  // resampling each input first.
+  if (inputFiles.length === 1) {
+    await fsp.copyFile(inputFiles[0], outputFile);
+    return;
   }
+  const args = ["-y", "-hide_banner", "-loglevel", "error"];
+  for (const f of inputFiles) args.push("-i", f);
+
+  // Build the concat filter expression. Each input gets normalized
+  // to 1920x1080 30fps yuv420p + stereo 44100 AAC, then concatenated.
+  // Founder rule: stretch to 1920x1080 even at the cost of aspect
+  // distortion. Matches what Bunny library 655188 does at delivery.
+  const filterParts = inputFiles
+    .map((_, i) => {
+      return `[${i}:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v${i}];[${i}:a]aresample=44100,aformat=channel_layouts=stereo[a${i}]`;
+    })
+    .join(";");
+  const concatInputs = inputFiles
+    .map((_, i) => `[v${i}][a${i}]`)
+    .join("");
+  const filter = `${filterParts};${concatInputs}concat=n=${inputFiles.length}:v=1:a=1[v][a]`;
+
+  args.push(
+    "-filter_complex",
+    filter,
+    "-map",
+    "[v]",
+    "-map",
+    "[a]",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "23",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "128k",
+    "-movflags",
+    "+faststart",
+    outputFile,
+  );
+  await runProcess(ffmpegPath, args);
 }
 
 /* ─── Drive download → /tmp ──────────────────────────────────── */
