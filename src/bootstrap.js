@@ -12,6 +12,9 @@ const { registerUploadRoutes } = require("./routes/upload");
 const { registerMigrateRoutes } = require("./routes/migrate");
 const { registerStaticAndMiscRoutes } = require("./routes/staticAndMisc");
 const { registerGuideRoutes } = require("./guide/registerGuideRoutes");
+const {
+  registerCourseProcessingRoutes,
+} = require("./routes/courseProcessing");
 
 async function start() {
   logMissingEnv();
@@ -28,6 +31,7 @@ async function start() {
   registerMigrateRoutes(app);
   registerStaticAndMiscRoutes(app);
   registerGuideRoutes(app);
+  registerCourseProcessingRoutes(app);
 
   app.listen(PORT, () => {
     console.log(`
