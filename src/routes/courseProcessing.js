@@ -38,7 +38,14 @@ const {
   uploadToBunnyTus,
 } = require("../services/bunnyTus");
 
-const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Job state TTL — must be longer than the worst-case queue wait. With
+// the ffmpeg mutex serializing 1 video at a time on Render Standard
+// (~6 min/video), a 17-video course needs ~100 min for the LAST job to
+// reach processing. The previous 1-hour TTL caused tokens 9-17 to be
+// garbage-collected before they were processed (founder report
+// 2026-05-07: job 15, "نجح 8 • فشل 9"). Bumped to 4 hours so courses
+// up to ~40 videos finish without token expiry.
+const JOB_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // In-memory job state. For multi-instance deploy on Render we'd need
 // Redis, but Render runs us on a single instance by default.
