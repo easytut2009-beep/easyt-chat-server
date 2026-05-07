@@ -37,44 +37,145 @@ const {
   createBunnyVideo,
   uploadToBunnyTus,
 } = require("../services/bunnyTus");
+const { supabase } = require("../lib/clients");
 
-// Job state TTL — must be longer than the worst-case queue wait. With
-// the ffmpeg mutex serializing 1 video at a time on Render Standard
-// (~6 min/video), a 17-video course needs ~100 min for the LAST job to
-// reach processing. The previous 1-hour TTL caused tokens 9-17 to be
-// garbage-collected before they were processed (founder report
-// 2026-05-07: job 15, "نجح 8 • فشل 9"). Bumped to 4 hours so courses
-// up to ~40 videos finish without token expiry.
-const JOB_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+// Job state TTL — guards against truly stuck or abandoned tokens.
+// Generous so even pathological cases don't lose state. With persistence
+// enabled (PERSIST_TO_SUPABASE below), TTL is mostly cosmetic; on a
+// server restart Supabase repopulates the in-memory cache from the
+// surviving rows.
+const JOB_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-// In-memory job state. For multi-instance deploy on Render we'd need
-// Redis, but Render runs us on a single instance by default.
+// In-memory job state. Authoritative source is Supabase
+// (chat_processing_jobs table); this Map is just a hot cache so the
+// poll endpoint doesn't round-trip to the DB on every tick.
 const jobs = new Map();
 
 /* ─── Concurrency guard ──────────────────────────────────────
  *
- * Render Starter plans cap RAM at 512 MB. ffmpeg re-encoding 1080p
- * H.264 at 30 fps with libx264 veryfast eats ~300 MB per video.
- * Running 3 lectures in parallel (one per /api/v1/process-lecture
- * call) blew through the limit and Render OOM-killed the service
- * mid-processing — Vercel saw 404s on the polling tokens and marked
- * all 3 videos failed (tracker showed "نجح 0 • فشل 3", May 7 2026).
+ * Render Starter (512 MB) couldn't run more than 1 ffmpeg at a time —
+ * each libx264 re-encode peaks ~300 MB. Now on Standard (2 GB) we have
+ * headroom for 3 concurrent jobs (~900 MB peak ffmpeg + ~400 MB Node
+ * runtime + ~700 MB OS = under cap with margin).
  *
- * We serialize ffmpeg work with a simple async queue so only one
- * runJob is ever inside processLecture at a time. Dispatch still
- * returns 202 immediately; jobs queue up and process in turn.
+ * The smart-concat upgrade (2026-05-07) cut per-video re-encode time
+ * from ~10 min to ~30-60 sec, but Drive download + Bunny upload still
+ * dominate. Parallelism here lets I/O-bound stages overlap across
+ * videos while keeping ffmpeg-bound stages serialized enough to fit
+ * RAM.
+ *
+ * MAX_CONCURRENT=3 was picked by:
+ *   peak_ram = MAX_CONCURRENT × ffmpeg_peak + node_baseline + OS
+ *            = 3 × 300 + 400 + 700 ≈ 2.0 GB → matches Standard cap.
+ * If Render cap changes, retune this number — running 4+ on 2 GB OOMs.
  */
-let activeJob = Promise.resolve();
-function withFFmpegLock(work) {
-  const next = activeJob.catch(() => {}).then(() => work());
-  // Don't propagate the work's reject into activeJob — we want the
-  // chain to keep moving if one job throws.
-  activeJob = next.catch(() => {});
-  return next;
+const MAX_CONCURRENT_FFMPEG = 3;
+let activeFFmpegCount = 0;
+const ffmpegQueue = [];
+async function withFFmpegSlot(work) {
+  if (activeFFmpegCount >= MAX_CONCURRENT_FFMPEG) {
+    // Wait in line. resolve() is called below when a slot frees up.
+    await new Promise((resolve) => ffmpegQueue.push(resolve));
+  }
+  activeFFmpegCount += 1;
+  try {
+    return await work();
+  } finally {
+    activeFFmpegCount -= 1;
+    const next = ffmpegQueue.shift();
+    if (next) next();
+  }
 }
 
 function makeJobToken() {
   return crypto.randomBytes(16).toString("hex");
+}
+
+/* ─── Supabase persistence ──────────────────────────────────────
+ *
+ * Job state is mirrored to public.chat_processing_jobs so a Render
+ * restart doesn't lose in-flight tokens. The in-memory `jobs` Map
+ * stays as a hot cache (avoids a DB round-trip on every poll), but
+ * it's no longer the source of truth.
+ *
+ * Failures here are logged and swallowed — a Supabase blip should
+ * never break the upstream FFmpeg work.
+ */
+async function persistJobState(state) {
+  if (!supabase) return; // dev / no-DB mode
+  try {
+    await supabase.from("chat_processing_jobs").upsert(
+      {
+        token: state.token,
+        status: state.status,
+        progress: state.progress ?? null,
+        result_json: state.result ?? null,
+        error: state.error ?? null,
+        work_dir: state.workDir ?? null,
+        body_json: state.body ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "token" },
+    );
+  } catch (e) {
+    console.error("[persistJobState]", state.token, e?.message ?? e);
+  }
+}
+
+/** Marks every job that was still running when the server died as
+ *  'failed'. Called once at startup. The Vercel poller picks up the
+ *  failure and surfaces the Retry button on the tracker. */
+async function recoverOrphanedJobsOnStartup() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase
+      .from("chat_processing_jobs")
+      .update({
+        status: "failed",
+        error: "server_restart",
+        updated_at: new Date().toISOString(),
+      })
+      .in("status", ["queued", "running"])
+      .select("token");
+    if (error) {
+      console.error("[recoverOrphanedJobsOnStartup]", error.message);
+      return;
+    }
+    if (data?.length) {
+      console.log(
+        `[recoverOrphanedJobsOnStartup] marked ${data.length} orphaned jobs as failed`,
+      );
+    }
+  } catch (e) {
+    console.error("[recoverOrphanedJobsOnStartup]", e?.message ?? e);
+  }
+}
+
+/** Load a job by token from Supabase. Used as fallback when the
+ *  in-memory cache misses (e.g. just after a server restart). */
+async function loadJobFromDb(token) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("chat_processing_jobs")
+      .select("*")
+      .eq("token", token)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      token: data.token,
+      status: data.status,
+      progress: data.progress,
+      result: data.result_json,
+      error: data.error,
+      workDir: data.work_dir,
+      body: data.body_json,
+      created_at: new Date(data.created_at).getTime(),
+    };
+  } catch (e) {
+    console.error("[loadJobFromDb]", token, e?.message ?? e);
+    return null;
+  }
 }
 
 /** Internal-token gate for the Vercel → chat-server hop. */
@@ -120,8 +221,12 @@ function registerCourseProcessingRoutes(app) {
       result: null,
       error: null,
       workDir,
+      // Stash the dispatch body so a post-restart resume can re-launch
+      // the job without Vercel re-sending it.
+      body,
     };
     jobs.set(token, state);
+    await persistJobState(state); // mirror to Supabase before responding
 
     // Respond immediately. The actual work runs in background.
     res.status(202).json({ ok: true, job_token: token });
@@ -131,6 +236,7 @@ function registerCourseProcessingRoutes(app) {
     runJob(state, body).catch((e) => {
       state.status = "failed";
       state.error = e.message ?? String(e);
+      void persistJobState(state);
       console.error("[process-lecture] job", token, "failed:", e);
     });
   });
@@ -139,10 +245,17 @@ function registerCourseProcessingRoutes(app) {
   app.get(
     "/api/v1/process-lecture/:token",
     internalAuth,
-    (req, res) => {
-      const state = jobs.get(req.params.token);
+    async (req, res) => {
+      let state = jobs.get(req.params.token);
       if (!state) {
-        return res.status(404).json({ error: "unknown_token" });
+        // Cache miss — likely a Render restart wiped the in-memory
+        // map. Fall back to Supabase.
+        state = await loadJobFromDb(req.params.token);
+        if (!state) {
+          return res.status(404).json({ error: "unknown_token" });
+        }
+        // Re-populate the cache for subsequent polls.
+        jobs.set(state.token, state);
       }
       const safe = {
         token: state.token,
@@ -165,19 +278,28 @@ function registerCourseProcessingRoutes(app) {
       }
     }
   }, 5 * 60 * 1000).unref?.();
+
+  // On startup, mark every still-running job in Supabase as 'failed'
+  // with reason 'server_restart'. Without this the Vercel poller would
+  // see the old status forever (no process is actually running them
+  // anymore). Marking failed lets the founder hit Retry on the
+  // tracker, which mints fresh tokens and re-dispatches them.
+  void recoverOrphanedJobsOnStartup();
 }
 
 /* ─── Background runner ─────────────────────────────────────── */
 
 async function runJob(state, body) {
   try {
-    // Wait for our turn at the ffmpeg lock. While queued the state
-    // shows "queued" so the Vercel poller knows it's pending, not
-    // failed. Founder confirmed Render OOM on May 7 2026 when 3
-    // jobs ran in parallel — serialize to one at a time.
+    // Wait for an ffmpeg slot. We allow 3 concurrent jobs (see
+    // MAX_CONCURRENT_FFMPEG). While queued, state shows "queued" so
+    // the Vercel poller knows it's pending, not failed. The slot
+    // releases automatically when this function exits.
     state.progress = "queued";
-    const result = await withFFmpegLock(async () => {
+    await persistJobState(state); // Supabase-backed durability
+    const result = await withFFmpegSlot(async () => {
       state.progress = "ffmpeg_processing";
+      await persistJobState(state);
       return await processLecture({
         driveFileId: body.drive_file_id,
         driveAccessToken: body.drive_access_token,
@@ -191,6 +313,7 @@ async function runJob(state, body) {
     });
 
     state.progress = "creating_bunny_shell";
+    await persistJobState(state);
     const bunnyVideoId = await createBunnyVideo({
       libraryId: body.target_library_id,
       apiKey: body.target_api_key,
@@ -215,6 +338,7 @@ async function runJob(state, body) {
     }
 
     state.progress = "uploading_to_bunny";
+    await persistJobState(state);
     const stat = await fs.promises.stat(result.finalPath);
     const fileStream = fs.createReadStream(result.finalPath);
     await uploadToBunnyTus({
@@ -234,9 +358,11 @@ async function runJob(state, body) {
       trim_end_seconds: result.trimEnd,
       final_duration_seconds: result.finalDuration,
     };
+    await persistJobState(state);
   } catch (e) {
     state.status = "failed";
     state.error = e.message ?? String(e);
+    await persistJobState(state).catch(() => {});
     throw e;
   } finally {
     // Clean up working files. We keep the job state in memory until
