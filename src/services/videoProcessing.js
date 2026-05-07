@@ -437,6 +437,8 @@ async function processLecture({
   const introPath = path.join(workDir, "intro.mp4");
   const finalPath = path.join(workDir, "final.mp4");
 
+  console.log(`[processLecture] start: drive=${driveFileId} intro=${introBunnyVideoId ?? "none"} workDir=${workDir}`);
+
   // 1. Download from Drive
   await downloadDriveFile({
     driveFileId,
@@ -444,6 +446,8 @@ async function processLecture({
     destPath: rawPath,
   });
   const rawDuration = await probeDurationSeconds(rawPath);
+  const rawSize = (await fsp.stat(rawPath)).size;
+  console.log(`[processLecture] raw downloaded: dur=${rawDuration.toFixed(2)}s size=${rawSize}B`);
 
   // 2. Detect silence boundaries
   let trimStart = 0;
@@ -453,6 +457,7 @@ async function processLecture({
     trimStart = detected.trimStart;
     trimEnd = detected.trimEnd;
   }
+  console.log(`[processLecture] silence detected: trim_start=${trimStart.toFixed(2)} trim_end=${trimEnd.toFixed(2)}`);
 
   // 3. Trim (stream copy)
   if (trimStart > 0 || trimEnd < rawDuration - 0.05) {
@@ -461,9 +466,13 @@ async function processLecture({
     // No trim needed — symlink-style fallback (just rename)
     await fsp.copyFile(rawPath, trimmedPath);
   }
+  const trimmedDuration = await probeDurationSeconds(trimmedPath);
+  console.log(`[processLecture] trimmed: dur=${trimmedDuration.toFixed(2)}s`);
 
   // 4. Build tail clip (held last frame + fade)
   await buildTailClip(trimmedPath, tailPath);
+  const tailDuration = await probeDurationSeconds(tailPath);
+  console.log(`[processLecture] tail: dur=${tailDuration.toFixed(2)}s`);
 
   // 5. Optional intro download + concat
   const concatList = [];
@@ -478,9 +487,13 @@ async function processLecture({
       tokenKey: introBunnyTokenKey,
       destPath: introPath,
     });
+    const introDuration = await probeDurationSeconds(introPath);
+    console.log(`[processLecture] intro downloaded: dur=${introDuration.toFixed(2)}s`);
     concatList.push(introPath);
   }
   concatList.push(trimmedPath, tailPath);
+
+  console.log(`[processLecture] concat inputs: ${concatList.length} files, total expected ~${concatList.length === 3 ? "intro+" + trimmedDuration.toFixed(0) + "s+1s" : trimmedDuration.toFixed(0) + "s+1s"}`);
 
   if (concatList.length === 1) {
     // Just the trimmed lecture — no concat needed
@@ -490,6 +503,9 @@ async function processLecture({
   }
 
   const finalDuration = await probeDurationSeconds(finalPath);
+  const finalSize = (await fsp.stat(finalPath)).size;
+  console.log(`[processLecture] FINAL: dur=${finalDuration.toFixed(2)}s size=${finalSize}B path=${finalPath}`);
+
   return {
     finalPath,
     trimStart,
