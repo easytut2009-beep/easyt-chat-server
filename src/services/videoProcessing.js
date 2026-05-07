@@ -270,46 +270,23 @@ async function buildTailClip(sourceFile, outputFile) {
 
 /* ─── Concat multiple files into one ─────────────────────────── */
 
-async function concatFiles(inputFiles, outputFile) {
-  // Always re-encode. Stream-copy concat is fast but produces
-  // playback artifacts (audio plays, video shows black) when the
-  // input streams have mismatched SPS/PPS/timebase/pix_fmt — which
-  // is the common case when one input was uploaded by the founder
-  // and another came from our own ffmpeg tail generator. The cost
-  // is ~3-5 minutes per video on Render. Worth it for a video that
-  // actually plays.
-  //
-  // Use the concat FILTER (not demuxer) — the filter handles
-  // resolution/fps/sample-rate normalization automatically by
-  // resampling each input first.
-  if (inputFiles.length === 1) {
-    await fsp.copyFile(inputFiles[0], outputFile);
-    return;
-  }
-  const args = ["-y", "-hide_banner", "-loglevel", "error"];
-  for (const f of inputFiles) args.push("-i", f);
-
-  // Build the concat filter expression. Each input gets normalized
-  // to 1920x1080 30fps yuv420p + stereo 44100 AAC, then concatenated.
-  // Founder rule: stretch to 1920x1080 even at the cost of aspect
-  // distortion. Matches what Bunny library 655188 does at delivery.
-  const filterParts = inputFiles
-    .map((_, i) => {
-      return `[${i}:v]scale=1920:1080,setsar=1,fps=30,format=yuv420p[v${i}];[${i}:a]aresample=44100,aformat=channel_layouts=stereo[a${i}]`;
-    })
-    .join(";");
-  const concatInputs = inputFiles
-    .map((_, i) => `[v${i}][a${i}]`)
-    .join("");
-  const filter = `${filterParts};${concatInputs}concat=n=${inputFiles.length}:v=1:a=1[v][a]`;
-
-  args.push(
-    "-filter_complex",
-    filter,
-    "-map",
-    "[v]",
-    "-map",
-    "[a]",
+/** Re-encode a single input to a standardized format so concat
+ *  demuxer can stream-copy it later without artifacts. Founder rule:
+ *  1920x1080 stretched (no aspect-ratio preservation), 30 fps,
+ *  yuv420p, AAC stereo 44.1 kHz. Memory per call ~250 MB peak; runs
+ *  sequentially so we never stack two of these in flight. */
+async function normalizeForConcat(inputFile, outputFile) {
+  await runProcess(ffmpegPath, [
+    "-y",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    inputFile,
+    "-vf",
+    "scale=1920:1080,setsar=1,fps=30,format=yuv420p",
+    "-af",
+    "aresample=44100,aformat=channel_layouts=stereo",
     "-c:v",
     "libx264",
     "-preset",
@@ -320,11 +297,87 @@ async function concatFiles(inputFiles, outputFile) {
     "aac",
     "-b:a",
     "128k",
+    // GOP every second so concat boundaries align with keyframes.
+    "-g",
+    "30",
+    "-keyint_min",
+    "30",
+    "-sc_threshold",
+    "0",
     "-movflags",
     "+faststart",
+    "-threads",
+    "1",
     outputFile,
+  ]);
+}
+
+async function concatFiles(inputFiles, outputFile) {
+  // Render Starter has a 512 MB RAM cap. Doing the concat with a
+  // single -filter_complex (filter approach) decodes ALL inputs
+  // simultaneously inside one ffmpeg process and OOMs on a single
+  // 13-minute lecture (founder confirmed via Render's event log on
+  // May 7 2026). Switched to a two-phase approach:
+  //
+  //   Phase 1: re-encode each input separately to a standardized
+  //            format (1920x1080 / 30 fps / yuv420p / AAC stereo)
+  //            with aligned keyframes. One ffmpeg process at a time
+  //            ⇒ peak RAM stays around 250 MB.
+  //   Phase 2: concat demuxer with -c copy. Zero re-encoding, zero
+  //            decoder buffers. Peak RAM negligible.
+  //
+  // Total wall-clock is roughly the same as the old filter approach
+  // (~5 min for a 13-min lecture) but it actually finishes instead
+  // of crashing.
+  if (inputFiles.length === 1) {
+    await fsp.copyFile(inputFiles[0], outputFile);
+    return;
+  }
+
+  const tmpDir = path.dirname(outputFile);
+  const normalized = [];
+  for (let i = 0; i < inputFiles.length; i++) {
+    const norm = path.join(
+      tmpDir,
+      `norm-${i}-${crypto.randomBytes(3).toString("hex")}.mp4`,
+    );
+    await normalizeForConcat(inputFiles[i], norm);
+    normalized.push(norm);
+  }
+
+  const listFile = path.join(
+    tmpDir,
+    `concat-${crypto.randomBytes(4).toString("hex")}.txt`,
   );
-  await runProcess(ffmpegPath, args);
+  const listBody = normalized
+    .map((f) => `file '${f.replace(/'/g, "'\\''")}'`)
+    .join("\n");
+  await fsp.writeFile(listFile, listBody, "utf8");
+
+  try {
+    await runProcess(ffmpegPath, [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      listFile,
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart",
+      outputFile,
+    ]);
+  } finally {
+    await fsp.unlink(listFile).catch(() => {});
+    for (const f of normalized) {
+      await fsp.unlink(f).catch(() => {});
+    }
+  }
 }
 
 /* ─── Drive download → /tmp ──────────────────────────────────── */
