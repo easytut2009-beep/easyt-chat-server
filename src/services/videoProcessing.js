@@ -226,6 +226,10 @@ async function buildTailClip(sourceFile, outputFile) {
   // Match the source's video codec parameters as closely as we can
   // so the concat demuxer can stream-copy. We hardcode H.264 +
   // AAC silent audio at 30fps because those are Bunny's defaults.
+  // Same low-RAM x264 flags as normalizeForConcat — keeps the tail
+  // generation under ~100 MB peak (it's only 1 sec of video, so
+  // memory wouldn't blow up anyway, but consistency keeps concat-
+  // demuxer happy with matched codec params).
   await runProcess(ffmpegPath, [
     "-y",
     "-hide_banner",
@@ -244,17 +248,33 @@ async function buildTailClip(sourceFile, outputFile) {
     "-i",
     "anullsrc=channel_layout=stereo:sample_rate=44100",
     "-vf",
-    `fade=t=out:st=${fadeStart}:d=${fadeDur},format=yuv420p`,
+    `fade=t=out:st=${fadeStart}:d=${fadeDur},scale=1920:1080,setsar=1,format=yuv420p`,
     "-c:v",
     "libx264",
     "-preset",
     "veryfast",
     "-crf",
     "23",
+    "-x264-params",
+    "rc-lookahead=10:ref=1:bframes=0:sync-lookahead=0:sliced-threads=0",
+    "-me_method",
+    "dia",
+    "-trellis",
+    "0",
     "-pix_fmt",
     "yuv420p",
     "-r",
     "30",
+    "-g",
+    "30",
+    "-keyint_min",
+    "30",
+    "-sc_threshold",
+    "0",
+    "-video_track_timescale",
+    "90000",
+    "-vsync",
+    "cfr",
     "-c:a",
     "aac",
     "-b:a",
@@ -262,6 +282,8 @@ async function buildTailClip(sourceFile, outputFile) {
     "-shortest",
     "-movflags",
     "+faststart",
+    "-threads",
+    "1",
     outputFile,
   ]);
 
@@ -273,8 +295,17 @@ async function buildTailClip(sourceFile, outputFile) {
 /** Re-encode a single input to a standardized format so concat
  *  demuxer can stream-copy it later without artifacts. Founder rule:
  *  1920x1080 stretched (no aspect-ratio preservation), 30 fps,
- *  yuv420p, AAC stereo 44.1 kHz. Memory per call ~250 MB peak; runs
- *  sequentially so we never stack two of these in flight. */
+ *  yuv420p, AAC stereo 44.1 kHz.
+ *
+ *  Memory tuning (FFmpeg expert review, 2026-05-07): with the flags
+ *  below libx264 veryfast at 1080p peaks ~150-200 MB. The expensive
+ *  bits cut: rc-lookahead 10 (saves ~40 MB, was 40), refs 1 (saves
+ *  ~20 MB), bf 0 (no B-frames → no reorder buffer), me_method dia
+ *  (smallest motion-estimation window), trellis 0. Combined headroom
+ *  is enough to fit Node + ffmpeg under Render Starter's 512 MB cap.
+ *
+ *  -video_track_timescale 90000 + aligned keyframes lets phase-2
+ *  concat-demuxer stream-copy reliably across boundaries. */
 async function normalizeForConcat(inputFile, outputFile) {
   await runProcess(ffmpegPath, [
     "-y",
@@ -286,13 +317,20 @@ async function normalizeForConcat(inputFile, outputFile) {
     "-vf",
     "scale=1920:1080,setsar=1,fps=30,format=yuv420p",
     "-af",
-    "aresample=44100,aformat=channel_layouts=stereo",
+    "aresample=44100:async=1:first_pts=0,aformat=channel_layouts=stereo",
     "-c:v",
     "libx264",
     "-preset",
     "veryfast",
     "-crf",
     "23",
+    // RAM-trimming x264 flags
+    "-x264-params",
+    "rc-lookahead=10:ref=1:bframes=0:sync-lookahead=0:sliced-threads=0",
+    "-me_method",
+    "dia",
+    "-trellis",
+    "0",
     "-c:a",
     "aac",
     "-b:a",
@@ -304,6 +342,13 @@ async function normalizeForConcat(inputFile, outputFile) {
     "30",
     "-sc_threshold",
     "0",
+    // Stable timebase for clean concat seams across inputs.
+    "-video_track_timescale",
+    "90000",
+    "-vsync",
+    "cfr",
+    "-max_muxing_queue_size",
+    "256",
     "-movflags",
     "+faststart",
     "-threads",
@@ -360,6 +405,8 @@ async function concatFiles(inputFiles, outputFile) {
       "-hide_banner",
       "-loglevel",
       "error",
+      "-fflags",
+      "+genpts",
       "-f",
       "concat",
       "-safe",
@@ -368,6 +415,8 @@ async function concatFiles(inputFiles, outputFile) {
       listFile,
       "-c",
       "copy",
+      "-avoid_negative_ts",
+      "make_zero",
       "-movflags",
       "+faststart",
       outputFile,
@@ -558,6 +607,15 @@ async function processLecture({
   const finalDuration = await probeDurationSeconds(finalPath);
   const finalSize = (await fsp.stat(finalPath)).size;
   console.log(`[processLecture] FINAL: dur=${finalDuration.toFixed(2)}s size=${finalSize}B path=${finalPath}`);
+
+  // Free up Render's tight ephemeral disk (1 GB) before we hand the
+  // final file to the TUS uploader. We keep finalPath; everything
+  // else can go now.
+  await Promise.all(
+    [rawPath, trimmedPath, tailPath, introPath].map((p) =>
+      fsp.unlink(p).catch(() => {}),
+    ),
+  );
 
   return {
     finalPath,
