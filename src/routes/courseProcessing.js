@@ -37,6 +37,7 @@ const {
   createBunnyVideo,
   uploadToBunnyTus,
 } = require("../services/bunnyTus");
+const { transcribeFromVideo } = require("../services/deepgram");
 const { supabase } = require("../lib/clients");
 
 // Job state TTL — guards against truly stuck or abandoned tokens.
@@ -337,11 +338,27 @@ async function runJob(state, body) {
       ).catch(() => {});
     }
 
+    // ─── Parallel: TUS upload + Deepgram transcribe ──────────────
+    //
+    // Founder rule 2026-05-08: stop waiting on Bunny encoding before
+    // moving on. The reason the Vercel pipeline used to wait was
+    // Deepgram pulling the encoded MP4 from Bunny CDN — that hard-
+    // serialized the flow. Now we transcribe locally from the same
+    // finalPath that ffmpeg just produced (intro already prepended,
+    // so timestamps line up with the eventual Bunny stream), and run
+    // it in parallel with TUS upload.
+    //
+    // Wall-clock saving for a typical 25-min lecture: TUS ~5 min,
+    // Deepgram ~2 min — they overlap, total ≈ 5 min instead of 7+.
+    // Combined with skipping the Vercel-side Bunny-encoding poll,
+    // the Vercel pipeline finishes when the chat-server response
+    // returns; no more waiting on Bunny to transcode.
     state.progress = "uploading_to_bunny";
     await persistJobState(state);
     const stat = await fs.promises.stat(result.finalPath);
     const fileStream = fs.createReadStream(result.finalPath);
-    await uploadToBunnyTus({
+
+    const uploadPromise = uploadToBunnyTus({
       bodyStream: fileStream,
       totalBytes: stat.size,
       bunnyVideoId,
@@ -350,6 +367,43 @@ async function runJob(state, body) {
       title: body.title,
     });
 
+    const deepgramKey = process.env.DEEPGRAM_API_KEY;
+    const transcribePromise = deepgramKey
+      ? transcribeFromVideo({
+          videoPath: result.finalPath,
+          workDir: state.workDir,
+          apiKey: deepgramKey,
+        })
+      : Promise.resolve(null);
+
+    // allSettled so a Deepgram failure doesn't kill the upload, and
+    // vice-versa. Each side reports its own status on the result.
+    const [uploadOutcome, transcribeOutcome] = await Promise.allSettled([
+      uploadPromise,
+      transcribePromise,
+    ]);
+
+    if (uploadOutcome.status === "rejected") {
+      // Upload failure is hard — without bunny_video_id the lecture
+      // can't be wired to a video. Bubble up so the job is marked
+      // failed and the founder can hit retry.
+      throw uploadOutcome.reason;
+    }
+
+    let transcriptResult = null;
+    let transcribeError = null;
+    if (transcribeOutcome.status === "fulfilled") {
+      transcriptResult = transcribeOutcome.value;
+    } else {
+      transcribeError =
+        transcribeOutcome.reason?.message ?? String(transcribeOutcome.reason);
+      console.warn(
+        "[process-lecture] Deepgram failed for",
+        state.token,
+        transcribeError,
+      );
+    }
+
     state.status = "done";
     state.progress = "complete";
     state.result = {
@@ -357,6 +411,9 @@ async function runJob(state, body) {
       trim_start_seconds: result.trimStart,
       trim_end_seconds: result.trimEnd,
       final_duration_seconds: result.finalDuration,
+      transcript: transcriptResult?.transcript ?? null,
+      utterances: transcriptResult?.utterances ?? null,
+      transcribe_error: transcribeError,
     };
     await persistJobState(state);
   } catch (e) {
