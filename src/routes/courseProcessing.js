@@ -368,13 +368,19 @@ async function runJob(state, body) {
     });
 
     const deepgramKey = process.env.DEEPGRAM_API_KEY;
-    const transcribePromise = deepgramKey
-      ? transcribeFromVideo({
-          videoPath: result.finalPath,
-          workDir: state.workDir,
-          apiKey: deepgramKey,
-        })
-      : Promise.resolve(null);
+    // Founder rule 2026-05-08: apply_transcription is a per-job
+    // checkbox on the start form. When false, skip Deepgram entirely
+    // — the lecture ships without chunks (Zico tutor can't answer
+    // questions on it) and the publish step skips exam generation.
+    const transcriptionRequested = body.apply_transcription !== false;
+    const transcribePromise =
+      transcriptionRequested && deepgramKey
+        ? transcribeFromVideo({
+            videoPath: result.finalPath,
+            workDir: state.workDir,
+            apiKey: deepgramKey,
+          })
+        : Promise.resolve(null);
 
     // allSettled so a Deepgram failure doesn't kill the upload, and
     // vice-versa. Each side reports its own status on the result.
