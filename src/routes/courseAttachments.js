@@ -50,7 +50,7 @@ function fromB64Url(s) {
   return Buffer.from(s, "base64");
 }
 
-function verifyToken(token) {
+function verifyToken(token, requireField) {
   if (typeof token !== "string" || !token.includes(".")) return null;
   const [payloadB64, sigB64] = token.split(".");
   if (!payloadB64 || !sigB64) return null;
@@ -72,7 +72,10 @@ function verifyToken(token) {
   if (typeof payload.exp !== "number" || Date.now() / 1000 > payload.exp) {
     return null;
   }
-  if (typeof payload.course_id !== "number" || payload.course_id <= 0) {
+  if (
+    typeof payload[requireField] !== "number" ||
+    payload[requireField] <= 0
+  ) {
     return null;
   }
   if (typeof payload.admin_email !== "string" || !payload.admin_email) {
@@ -105,7 +108,7 @@ function registerCourseAttachmentRoutes(app) {
     express.raw({ type: "*/*", limit: MAX_BYTES }),
     async (req, res) => {
       const token = req.get("x-easyt-token");
-      const payload = verifyToken(token);
+      const payload = verifyToken(token, "course_id");
       if (!payload) {
         return res
           .status(401)
@@ -250,6 +253,212 @@ function registerCourseAttachmentRoutes(app) {
       }
 
       return res.json({ ok: true, attachment: entry });
+    },
+  );
+
+  // ─── Lecture-level attachments ────────────────────────────────
+  // Same proxy pattern, different DB shape: writes to
+  // teachable_attachments (per-lecture), bumps the lecture's
+  // attachments_count, mints a synthetic teachable_attachment_id
+  // above the legacy id space (9 trillion+) so admin-created rows
+  // never collide with imported Teachable ids.
+  const SYNTHETIC_ATT_BASE = 9_000_000_000_000;
+  const inferLectureKind = (ext, forced) => {
+    if (forced === "image" || forced === "file") return forced;
+    const e = String(ext).toLowerCase();
+    if (e === "pdf") return "pdf_embed";
+    if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(e))
+      return "image";
+    return "file";
+  };
+  app.post(
+    "/api/v1/upload-lecture-attachment",
+    express.raw({ type: "*/*", limit: MAX_BYTES }),
+    async (req, res) => {
+      const token = req.get("x-easyt-token");
+      const payload = verifyToken(token, "lecture_id");
+      if (!payload) {
+        return res
+          .status(401)
+          .json({ error: "invalid_token", detail: "missing or expired" });
+      }
+
+      const filenameEncoded = req.get("x-filename");
+      if (!filenameEncoded) {
+        return res.status(400).json({ error: "missing_filename" });
+      }
+      let filename;
+      try {
+        filename = decodeURIComponent(filenameEncoded).trim();
+      } catch {
+        return res.status(400).json({ error: "bad_filename_encoding" });
+      }
+      if (!filename) {
+        return res.status(400).json({ error: "missing_filename" });
+      }
+
+      const displayNameEncoded = req.get("x-display-name");
+      let displayName = filename;
+      if (displayNameEncoded) {
+        try {
+          displayName =
+            decodeURIComponent(displayNameEncoded).trim().slice(0, 200) ||
+            filename;
+        } catch {
+          displayName = filename;
+        }
+      }
+
+      const forcedKind = req.get("x-kind"); // "image" | "file" | null
+
+      const body = req.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return res.status(400).json({ error: "empty_body" });
+      }
+      if (body.length > MAX_BYTES) {
+        return res.status(413).json({
+          error: "file_too_large",
+          detail: `max ${MAX_BYTES} bytes`,
+        });
+      }
+
+      const accessKey = (process.env.BUNNY_STORAGE_ZONE || "").trim();
+      if (!accessKey) {
+        return res.status(500).json({ error: "storage_env_missing" });
+      }
+
+      // Resolve the lecture's external id + course_id (the FK target
+      // for teachable_attachments).
+      const { data: lec, error: lecErr } = await supabase
+        .from("teachable_lectures")
+        .select("id, teachable_lecture_id, course_id")
+        .eq("id", payload.lecture_id)
+        .maybeSingle();
+      if (lecErr || !lec || !lec.teachable_lecture_id) {
+        return res
+          .status(404)
+          .json({ error: "lecture_not_found", detail: lecErr?.message });
+      }
+
+      // Synthetic teachable_attachment_id (admin-created rows live
+      // above 9 trillion to avoid colliding with imported Teachable
+      // ids that are typically below 1 billion).
+      const { data: maxRow } = await supabase
+        .from("teachable_attachments")
+        .select("teachable_attachment_id")
+        .gte("teachable_attachment_id", SYNTHETIC_ATT_BASE)
+        .order("teachable_attachment_id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const newTAId =
+        (maxRow?.teachable_attachment_id || SYNTHETIC_ATT_BASE - 1) + 1;
+
+      const dotIdx = filename.lastIndexOf(".");
+      const ext = dotIdx > 0 ? filename.slice(dotIdx + 1).toLowerCase() : "";
+      const kind = inferLectureKind(ext, forcedKind);
+      const sanitized = sanitizeFilename(
+        dotIdx > 0 ? filename.slice(0, dotIdx) : filename,
+      );
+      const safeName = ext
+        ? `${sanitized}_${newTAId}.${ext}`
+        : `${sanitized}_${newTAId}`;
+      const storagePath = `attachments/${safeName}`;
+      const publicUrl = `${PUBLIC_CDN_BASE}/${storagePath}`;
+      const storageEndpoint = `${STORAGE_ENDPOINT_BASE}/${STORAGE_ZONE_NAME}/${storagePath}`;
+
+      // Upload to Bunny.
+      let bunnyRes;
+      try {
+        bunnyRes = await fetch(storageEndpoint, {
+          method: "PUT",
+          headers: {
+            AccessKey: accessKey,
+            "Content-Type": "application/octet-stream",
+          },
+          body: body,
+        });
+      } catch (e) {
+        return res
+          .status(502)
+          .json({ error: "bunny_network", detail: e.message });
+      }
+      if (!bunnyRes.ok) {
+        const txt = await bunnyRes.text().catch(() => "");
+        return res.status(502).json({
+          error: `bunny_${bunnyRes.status}`,
+          detail: txt.slice(0, 200),
+        });
+      }
+
+      // Compute next position.
+      const { data: lastRow } = await supabase
+        .from("teachable_attachments")
+        .select("position")
+        .eq("lecture_id", lec.teachable_lecture_id)
+        .order("position", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      const nextPosition = (lastRow?.position || 0) + 1;
+
+      const { data: inserted, error: insErr } = await supabase
+        .from("teachable_attachments")
+        .insert({
+          teachable_attachment_id: newTAId,
+          lecture_id: lec.teachable_lecture_id,
+          course_id: lec.course_id,
+          kind,
+          name: displayName,
+          url: publicUrl,
+          file_size: body.length,
+          file_extension: ext || null,
+          position: nextPosition,
+          migration_status: "uploaded_admin",
+        })
+        .select("id, kind, name, url, file_size, file_extension, position")
+        .single();
+      if (insErr || !inserted) {
+        return res.status(500).json({
+          error: "db_insert_failed",
+          detail: insErr?.message,
+        });
+      }
+
+      // Bump lecture's attachments_count (excludes video +
+      // native_comments — those aren't user-facing attachments).
+      try {
+        const { count } = await supabase
+          .from("teachable_attachments")
+          .select("id", { count: "exact", head: true })
+          .eq("lecture_id", lec.teachable_lecture_id)
+          .neq("kind", "video")
+          .neq("kind", "native_comments");
+        await supabase
+          .from("teachable_lectures")
+          .update({ attachments_count: count || 0 })
+          .eq("id", payload.lecture_id);
+      } catch {
+        /* non-fatal */
+      }
+
+      // Audit log.
+      try {
+        await supabase.from("admin_audit_logs").insert({
+          actor_email: payload.admin_email,
+          action: "attachment.init",
+          meta: {
+            lecture_id: payload.lecture_id,
+            attachment_id: inserted.id,
+            filename: safeName,
+            kind,
+            file_size: body.length,
+            via: "chat-server-proxy",
+          },
+        });
+      } catch {
+        /* ignore */
+      }
+
+      return res.json({ ok: true, attachment: inserted });
     },
   );
 }
