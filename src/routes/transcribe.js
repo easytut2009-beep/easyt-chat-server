@@ -12,14 +12,22 @@
  * can't probe the secret byte-by-byte.
  *
  * Concurrency: capped at MAX_CONCURRENT ffmpeg jobs at any one time;
- * over-limit callers get 429 with retry_after. Each job holds an
+ * over-limit callers get 429 with Retry-After. Each job holds an
  * ffmpeg process (~60-100 MB RSS) plus a Deepgram upload, and the
  * server also serves chat / zico / course-build — without the cap a
  * burst from the cron would OOM Render.
  *
- * Hardening per 5-agent review (2026-05-24): GUID validation on
- * bunny_video_id, allowlist on cdn_host (SSRF defense-in-depth), and
- * a scrubbed error body so signed URLs never bubble back to caller.
+ * Signing model: the Vercel caller pre-signs the Bunny HLS URL with
+ * its own BUNNY_STREAM_TOKEN_KEY (already set on Vercel) and POSTs the
+ * full signed URL here. The chat-server validates the URL's hostname
+ * is on the ALLOWED_CDN_HOSTS allowlist before passing it to ffmpeg.
+ * This means the chat-server doesn't need the Bunny token key in its
+ * env at all — secret stays on the side that's already responsible
+ * for it.
+ *
+ * Hardening per 5-agent reviews (2026-05-24): constant-time auth,
+ * hostname allowlist (SSRF defense-in-depth), https-only enforcement,
+ * scrubbed error bodies, structured logs on every code path.
  */
 
 "use strict";
@@ -28,8 +36,8 @@ const crypto = require("node:crypto");
 const { transcribeBunnyHls } = require("../services/transcribeBunnyHls");
 
 // Render Starter (512 MB) safely fits 2-3 ffmpeg audio-only processes
-// alongside the rest of the server. Vercel cron PER_TICK_LIMIT=3 so
-// MAX_CONCURRENT=3 leaves no headroom for ad-hoc calls — start at 2.
+// alongside the rest of the server. Vercel cron PER_TICK_LIMIT=2 so
+// MAX_CONCURRENT=2 leaves no headroom for ad-hoc calls — start at 2.
 // Defensive parse: `Number("0")` is 0 which collapses under `|| 2`,
 // hiding an operator's deliberate drain/pause intent. Treat any
 // finite, ≥1 integer as authoritative; otherwise fall back to default.
@@ -48,8 +56,6 @@ const ALLOWED_CDN_HOSTS = new Set([
   "vz-1b5f7566-8e8.b-cdn.net", // library 643309 (legacy / migration)
   "vz-643309-d22.b-cdn.net",   // historical alias for 643309, kept for safety
 ]);
-
-const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function constantTimeStringEq(a, b) {
   const aBuf = Buffer.from(a || "");
@@ -74,6 +80,37 @@ function internalAuth(req, res, next) {
   next();
 }
 
+/** Validate the caller-supplied signed_hls_url:
+ *   - https only
+ *   - hostname in the allowlist
+ *   - path looks like Bunny Stream playlist (/<guid>/playlist.m3u8...)
+ *  Returns { ok: true } or { ok: false, error: "<tag>" }. */
+function validateSignedHlsUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || rawUrl.length > 2048) {
+    return { ok: false, error: "invalid_hls_url" };
+  }
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return { ok: false, error: "invalid_hls_url" };
+  }
+  if (u.protocol !== "https:") {
+    return { ok: false, error: "hls_url_not_https" };
+  }
+  if (!ALLOWED_CDN_HOSTS.has(u.hostname)) {
+    return { ok: false, error: "cdn_host_not_allowed" };
+  }
+  // Path pattern: /<guid>/playlist.m3u8 — also accepts longer Bunny
+  // variants like /<guid>/library_playlist.drm.m3u8 by checking the
+  // .m3u8 suffix on the last segment.
+  const lastSeg = u.pathname.split("/").pop() || "";
+  if (!/\.m3u8$/i.test(lastSeg)) {
+    return { ok: false, error: "hls_url_not_m3u8" };
+  }
+  return { ok: true };
+}
+
 function registerTranscribeRoutes(app) {
   app.get("/api/v1/transcribe-bunny-hls/health", (_req, res) => {
     res.json({
@@ -86,165 +123,127 @@ function registerTranscribeRoutes(app) {
 
   /** POST /api/v1/transcribe-bunny-hls
    *
-   * Body:    { bunny_video_id: GUID,
-   *            cdn_host?: string,
-   *            expected_duration_seconds?: number }
-   * Returns: { ok: true, transcript, utterances: [{start,end,transcript}],
+   * Body:    { signed_hls_url: string,
+   *            expected_duration_seconds?: number,
+   *            tag?: string }            // optional caller-supplied log tag
+   * Returns: { ok: true, transcript, utterances: [{start,end,text}],
    *            audio_seconds, elapsed_ms }
    *      or: 400 { ok: false, error }   — bad input
    *      or: 401 { error: "unauthorized" }
+   *      or: 422 { ok: false, error: "deepgram_empty" }
    *      or: 429 { ok: false, error: "busy", retry_after_seconds }
    *      or: 500 { ok: false, error }   — internal failure (scrubbed)
    */
-  // Body parsing — the global express.json in middleware/setup is
-  // already set to 50 MB. Mounting a smaller per-route limit here is
-  // dead code (body-parser short-circuits on the second pass), so we
-  // skip it. The defense for this route is GUID validation + host
-  // allowlist below; the request body itself is at most ~200 bytes
-  // (small JSON with a GUID, host, and number) so the 50 MB ceiling
-  // isn't a practical attack surface here.
-  app.post(
-    "/api/v1/transcribe-bunny-hls",
-    internalAuth,
-    async (req, res) => {
-      const body = req.body || {};
+  app.post("/api/v1/transcribe-bunny-hls", internalAuth, async (req, res) => {
+    const body = req.body || {};
 
-      const bunnyVideoId = body.bunny_video_id;
-      if (typeof bunnyVideoId !== "string" || !GUID_RE.test(bunnyVideoId)) {
-        // Don't log the raw value — it could be hostile input
-        console.warn(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.bad_input",
-            reason: "invalid_guid",
-            got_type: typeof bunnyVideoId,
-          }),
-        );
-        return res
-          .status(400)
-          .json({ ok: false, error: "invalid_bunny_video_id" });
-      }
-
-      const cdnHost =
-        (typeof body.cdn_host === "string" && body.cdn_host) ||
-        process.env.BUNNY_STREAM_CDN_HOST ||
-        "vz-1b5f7566-8e8.b-cdn.net";
-      if (!ALLOWED_CDN_HOSTS.has(cdnHost)) {
-        console.warn(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.bad_input",
-            reason: "host_not_allowed",
-            host: cdnHost,
-            guid: bunnyVideoId,
-          }),
-        );
-        return res
-          .status(400)
-          .json({ ok: false, error: "cdn_host_not_allowed" });
-      }
-
-      const expectedDurationSeconds =
-        typeof body.expected_duration_seconds === "number" &&
-        Number.isFinite(body.expected_duration_seconds)
-          ? body.expected_duration_seconds
-          : undefined;
-
-      const tokenKey = process.env.BUNNY_STREAM_TOKEN_KEY;
-      const deepgramKey = process.env.DEEPGRAM_API_KEY;
-      if (!deepgramKey) {
-        console.error(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.misconfig",
-            reason: "deepgram_key_not_configured",
-            guid: bunnyVideoId,
-          }),
-        );
-        return res
-          .status(500)
-          .json({ ok: false, error: "deepgram_key_not_configured" });
-      }
-
-      // Concurrency gate — log every saturation event so a 742-lecture
-      // burst doesn't go silent behind MAX_CONCURRENT.
-      if (activeJobs >= MAX_CONCURRENT) {
-        console.warn(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.busy",
-            guid: bunnyVideoId,
-            active_jobs: activeJobs,
-            max_concurrent: MAX_CONCURRENT,
-          }),
-        );
-        res.setHeader("Retry-After", "30");
-        return res.status(429).json({
-          ok: false,
-          error: "busy",
-          retry_after_seconds: 30,
-          active_jobs: activeJobs,
-          max_concurrent: MAX_CONCURRENT,
-        });
-      }
-
-      activeJobs++;
-      const startedAt = Date.now();
-      console.log(
+    const signedUrl = body.signed_hls_url;
+    const validation = validateSignedHlsUrl(signedUrl);
+    if (!validation.ok) {
+      console.warn(
         JSON.stringify({
-          ev: "transcribe-bunny-hls.start",
-          guid: bunnyVideoId,
-          host: cdnHost,
-          active_jobs: activeJobs,
+          ev: "transcribe-bunny-hls.bad_input",
+          reason: validation.error,
         }),
       );
-      try {
-        const result = await transcribeBunnyHls({
-          bunnyVideoId,
-          cdnHost,
-          tokenKey,
-          deepgramKey,
-          expectedDurationSeconds,
-        });
-        const elapsedMs = Date.now() - startedAt;
-        // Structured single-line log so Render's search across 742
-        // calls stays usable.
-        console.log(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.ok",
-            guid: bunnyVideoId,
-            host: cdnHost,
-            utterances: result.utterances.length,
-            audio_seconds: result.audio_seconds,
-            elapsed_ms: elapsedMs,
-          }),
-        );
-        return res.json({
-          ok: true,
-          transcript: result.transcript,
-          utterances: result.utterances,
+      return res.status(400).json({ ok: false, error: validation.error });
+    }
+
+    const tag = typeof body.tag === "string" ? body.tag.slice(0, 80) : "";
+
+    const expectedDurationSeconds =
+      typeof body.expected_duration_seconds === "number" &&
+      Number.isFinite(body.expected_duration_seconds)
+        ? body.expected_duration_seconds
+        : undefined;
+
+    const deepgramKey = process.env.DEEPGRAM_API_KEY;
+    if (!deepgramKey) {
+      console.error(
+        JSON.stringify({
+          ev: "transcribe-bunny-hls.misconfig",
+          reason: "deepgram_key_not_configured",
+          tag,
+        }),
+      );
+      return res
+        .status(500)
+        .json({ ok: false, error: "deepgram_key_not_configured" });
+    }
+
+    // Concurrency gate — log every saturation event so a 742-lecture
+    // burst doesn't go silent behind MAX_CONCURRENT.
+    if (activeJobs >= MAX_CONCURRENT) {
+      console.warn(
+        JSON.stringify({
+          ev: "transcribe-bunny-hls.busy",
+          tag,
+          active_jobs: activeJobs,
+          max_concurrent: MAX_CONCURRENT,
+        }),
+      );
+      res.setHeader("Retry-After", "30");
+      return res.status(429).json({
+        ok: false,
+        error: "busy",
+        retry_after_seconds: 30,
+        active_jobs: activeJobs,
+        max_concurrent: MAX_CONCURRENT,
+      });
+    }
+
+    activeJobs++;
+    const startedAt = Date.now();
+    console.log(
+      JSON.stringify({
+        ev: "transcribe-bunny-hls.start",
+        tag,
+        active_jobs: activeJobs,
+      }),
+    );
+    try {
+      const result = await transcribeBunnyHls({
+        hlsUrl: signedUrl,
+        deepgramKey,
+        expectedDurationSeconds,
+        logTag: tag,
+      });
+      const elapsedMs = Date.now() - startedAt;
+      console.log(
+        JSON.stringify({
+          ev: "transcribe-bunny-hls.ok",
+          tag,
+          utterances: result.utterances.length,
           audio_seconds: result.audio_seconds,
           elapsed_ms: elapsedMs,
-        });
-      } catch (e) {
-        const msg = e && e.message ? e.message : String(e);
-        const elapsedMs = Date.now() - startedAt;
-        console.error(
-          JSON.stringify({
-            ev: "transcribe-bunny-hls.err",
-            guid: bunnyVideoId,
-            host: cdnHost,
-            elapsed_ms: elapsedMs,
-            error: msg,
-          }),
-        );
-        // Map empty-Deepgram to a dedicated 422 so the caller can mark
-        // the lecture as "tried — got nothing" instead of retrying.
-        if (msg === "deepgram_empty") {
-          return res.status(422).json({ ok: false, error: "deepgram_empty" });
-        }
-        return res.status(500).json({ ok: false, error: msg });
-      } finally {
-        activeJobs--;
+        }),
+      );
+      return res.json({
+        ok: true,
+        transcript: result.transcript,
+        utterances: result.utterances,
+        audio_seconds: result.audio_seconds,
+        elapsed_ms: elapsedMs,
+      });
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      const elapsedMs = Date.now() - startedAt;
+      console.error(
+        JSON.stringify({
+          ev: "transcribe-bunny-hls.err",
+          tag,
+          elapsed_ms: elapsedMs,
+          error: msg,
+        }),
+      );
+      if (msg === "deepgram_empty") {
+        return res.status(422).json({ ok: false, error: "deepgram_empty" });
       }
-    },
-  );
+      return res.status(500).json({ ok: false, error: msg });
+    } finally {
+      activeJobs--;
+    }
+  });
 }
 
-module.exports = { registerTranscribeRoutes, ALLOWED_CDN_HOSTS };
+module.exports = { registerTranscribeRoutes, ALLOWED_CDN_HOSTS, validateSignedHlsUrl };

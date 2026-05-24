@@ -38,7 +38,6 @@
 
 "use strict";
 
-const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
@@ -56,18 +55,6 @@ const { transcribeAudioFile } = require("./deepgram");
 // Deepgram upload + response on the chat-server side.
 const FFMPEG_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 const TMP_PREFIX = "transcribe-hls-";
-
-function signBunnyUrl(host, path_, key, ttlSec = 3600) {
-  const expires = Math.floor(Date.now() / 1000) + ttlSec;
-  const hash = crypto
-    .createHash("sha256")
-    .update(key + path_ + expires)
-    .digest("base64")
-    .replace(/=+$/, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-  return `https://${host}${path_}?token=${hash}&expires=${expires}`;
-}
 
 /** Strip absolute file paths, signed URLs (token/expires query params)
  *  and tmp dir names from ffmpeg stderr before bubbling it back to the
@@ -184,22 +171,21 @@ async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
 
 /** End-to-end. Returns { transcript, utterances, audio_seconds }.
  *  Throws with a tagged, scrubbed message on any failure so the caller
- *  can surface a useful status without leaking signed URLs. */
+ *  can surface a useful status without leaking signed URLs.
+ *
+ *  Caller is responsible for producing the already-signed HLS URL —
+ *  keeping the Bunny token-signing key on the Vercel side means
+ *  chat-server doesn't need BUNNY_STREAM_TOKEN_KEY in its env at all.
+ *  The route layer validates the URL's hostname against an allowlist
+ *  before calling here. */
 async function transcribeBunnyHls({
-  bunnyVideoId,
-  cdnHost,
-  tokenKey,
+  hlsUrl,
   deepgramKey,
   expectedDurationSeconds, // optional — caller may pass lecture duration
+  logTag,                  // optional — string for ffmpeg log lines (e.g. "guid=...")
 }) {
-  if (!bunnyVideoId) throw new Error("missing_bunny_video_id");
-  if (!cdnHost) throw new Error("missing_cdn_host");
+  if (!hlsUrl) throw new Error("missing_hls_url");
   if (!deepgramKey) throw new Error("missing_deepgram_key");
-
-  const hlsPath = `/${bunnyVideoId}/playlist.m3u8`;
-  const hlsUrl = tokenKey
-    ? signBunnyUrl(cdnHost, hlsPath, tokenKey, 3600)
-    : `https://${cdnHost}${hlsPath}`;
 
   const tmpDir = path.join(
     os.tmpdir(),
@@ -209,7 +195,7 @@ async function transcribeBunnyHls({
   const audioPath = path.join(tmpDir, "audio.mp3");
 
   try {
-    await extractAudioFromHls(hlsUrl, audioPath, `guid=${bunnyVideoId}`);
+    await extractAudioFromHls(hlsUrl, audioPath, logTag || "");
 
     const stat = await fsp.stat(audioPath);
     if (stat.size < 1024) {
@@ -296,7 +282,6 @@ async function sweepStaleTmpDirs() {
 module.exports = {
   transcribeBunnyHls,
   extractAudioFromHls,
-  signBunnyUrl,
   sweepStaleTmpDirs,
   FFMPEG_HARD_TIMEOUT_MS,
 };

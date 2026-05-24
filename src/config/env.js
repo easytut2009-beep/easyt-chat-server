@@ -11,11 +11,14 @@ const REQUIRED_ENV = {
 // Optional env vars used by specific routes — logged as a "soft"
 // warning at boot so misconfig surfaces fast instead of producing
 // a confusing 500 on the first real request.
+//
+// Note: BUNNY_STREAM_TOKEN_KEY is intentionally NOT here. The
+// /api/v1/transcribe-bunny-hls route receives the already-signed HLS
+// URL from the Vercel caller and just validates the hostname before
+// handing it to ffmpeg — the Bunny token-signing key stays on Vercel.
 const OPTIONAL_ENV = {
   // /api/v1/transcribe-bunny-hls
   DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
-  BUNNY_STREAM_TOKEN_KEY: process.env.BUNNY_STREAM_TOKEN_KEY,
-  BUNNY_STREAM_CDN_HOST: process.env.BUNNY_STREAM_CDN_HOST,
   CHATSERVER_INTERNAL_TOKEN: process.env.CHATSERVER_INTERNAL_TOKEN,
 };
 
