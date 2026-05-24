@@ -8,6 +8,17 @@ const REQUIRED_ENV = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 };
 
+// Optional env vars used by specific routes — logged as a "soft"
+// warning at boot so misconfig surfaces fast instead of producing
+// a confusing 500 on the first real request.
+const OPTIONAL_ENV = {
+  // /api/v1/transcribe-bunny-hls
+  DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
+  BUNNY_STREAM_TOKEN_KEY: process.env.BUNNY_STREAM_TOKEN_KEY,
+  BUNNY_STREAM_CDN_HOST: process.env.BUNNY_STREAM_CDN_HOST,
+  CHATSERVER_INTERNAL_TOKEN: process.env.CHATSERVER_INTERNAL_TOKEN,
+};
+
 function getMissingEnv() {
   return Object.entries(REQUIRED_ENV)
     .filter(([, val]) => !val)
@@ -18,6 +29,14 @@ function logMissingEnv() {
   const missing = getMissingEnv();
   if (missing.length > 0) {
     console.error(`\n❌ CRITICAL: Missing env vars: ${missing.join(", ")}\n`);
+  }
+  const softMissing = Object.entries(OPTIONAL_ENV)
+    .filter(([, val]) => !val)
+    .map(([key]) => key);
+  if (softMissing.length > 0) {
+    console.warn(
+      `\n⚠️  Optional env vars missing (related routes will fail at request time): ${softMissing.join(", ")}\n`,
+    );
   }
   return missing;
 }

@@ -18,6 +18,8 @@ const {
 const {
   registerCourseAttachmentRoutes,
 } = require("./routes/courseAttachments");
+const { registerTranscribeRoutes } = require("./routes/transcribe");
+const { sweepStaleTmpDirs } = require("./services/transcribeBunnyHls");
 
 async function start() {
   logMissingEnv();
@@ -28,6 +30,10 @@ async function start() {
 
   await testSupabaseConnection();
 
+  // Best-effort cleanup of /tmp/transcribe-hls-* dirs left over from a
+  // prior SIGKILL (Render deploy / OOM / crash). Non-blocking.
+  void sweepStaleTmpDirs();
+
   registerChatRoutes(app);
   registerAdminRoutes(app);
   registerUploadRoutes(app);
@@ -36,6 +42,7 @@ async function start() {
   registerGuideRoutes(app);
   registerCourseProcessingRoutes(app);
   registerCourseAttachmentRoutes(app);
+  registerTranscribeRoutes(app);
 
   app.listen(PORT, () => {
     console.log(`
