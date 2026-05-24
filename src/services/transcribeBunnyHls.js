@@ -44,8 +44,14 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 
-const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
-const ffprobePath = require("@ffprobe-installer/ffprobe").path;
+// Use the system "ffmpeg" / "ffprobe" command — matches what
+// services/deepgram.js does and is already proven working on Render.
+// The @ffmpeg-installer path resolved fine but spawning the bundled
+// binary exited with code=null + empty stderr in 145ms on Render
+// 2026-05-24 (probably a missing dynamic lib in the installer's
+// pinned 2018 build). System ffmpeg is provided by Render's image.
+const FFMPEG_BIN = "ffmpeg";
+const FFPROBE_BIN = "ffprobe";
 const { transcribeAudioFile } = require("./deepgram");
 
 // Vercel function maxDuration is 300s. We cap ffmpeg at 240s so the
@@ -72,7 +78,7 @@ function scrubStderr(s) {
 async function ffprobeDurationSeconds(file) {
   return new Promise((resolve) => {
     const proc = spawn(
-      ffprobePath,
+      FFPROBE_BIN,
       [
         "-v", "error",
         "-show_entries", "format=duration",
@@ -125,7 +131,7 @@ async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
       "-acodec", "libmp3lame",
       outputPath,
     ];
-    const proc = spawn(ffmpegPath, args, {
+    const proc = spawn(FFMPEG_BIN, args, {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -152,17 +158,22 @@ async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
       clearTimeout(kill);
       reject(new Error(`ffmpeg_spawn_failed: ${e.message}`));
     });
-    proc.on("close", (code) => {
+    proc.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(kill);
       if (code === 0) return resolve();
-      // Don't leak the signed URL — it's in stderr verbatim
+      // Don't leak the signed URL — it's in stderr verbatim. Capture
+      // BOTH code and signal because code===null means "killed by
+      // signal", and the signal name tells us why (SIGKILL = us /
+      // OOM, SIGSEGV = ffmpeg crash, SIGTERM = systemd, etc).
       console.error(
-        `[ffmpeg]${logTag ? " " + logTag : ""} exit ${code}\n${stderr}`,
+        `[ffmpeg]${logTag ? " " + logTag : ""} exit code=${code} signal=${signal}\n${stderr}`,
       );
-      const err = new Error(`ffmpeg_hls_extract_${code}: ${scrubStderr(stderr)}`);
+      const tag = code === null ? `signal_${signal || "unknown"}` : String(code);
+      const err = new Error(`ffmpeg_hls_extract_${tag}: ${scrubStderr(stderr)}`);
       err.exitCode = code;
+      err.signal = signal;
       err.kind = "ffmpeg_exit";
       reject(err);
     });
