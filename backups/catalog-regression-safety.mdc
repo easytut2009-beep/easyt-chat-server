@@ -1,0 +1,25 @@
+---
+description: Protect catalog retrieval behavior from regressions
+alwaysApply: true
+---
+
+# Catalog Regression Safety (Mandatory)
+
+Any change touching chat/catalog retrieval (`src/brain`, `src/routes/chat.js`, prompt text, ranking, filters, cards) must preserve current working behavior.
+
+## Non-negotiable
+
+- Do not ship changes that degrade exact-name course lookup quality.
+- Current stable behavior (exact course-name asks return correct matching courses) is a protected baseline.
+- New logic must be additive and guarded; avoid broad fallbacks that can reintroduce off-topic results.
+- Keep project policy: intent-driven routing (model JSON intent), no keyword-routing lists for user-topic classification.
+
+## Before finishing a related change
+
+- Run tests: `npm test`.
+- Run manual regression checks on local `/chat` or `/ziko-dev`:
+  - Ask by exact course/tool name and confirm relevant courses are returned.
+  - Confirm previous session topic does not hijack a new explicit topic.
+  - Confirm no obvious off-topic cards appear when query is narrow.
+- If a new change conflicts with this baseline, revert/redesign that change before completion.
+

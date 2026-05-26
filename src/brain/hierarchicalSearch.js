@@ -23,8 +23,15 @@ const {
   CHUNK_EMBEDDING_MODEL,
   COURSE_SELECT_COLS,
 } = require("../config/constants");
-const { normalizeArabic, prepareSearchTerms } = require("./textUtils");
-const { buildCatalogCardsAppendHtml } = require("./catalogCards");
+const {
+  normalizeArabic,
+  prepareSearchTerms,
+  expandLatinLexicalVariants,
+} = require("./textUtils");
+const {
+  buildCatalogCardsAppendHtml,
+  buildChunkCardsAppendHtml,
+} = require("./catalogCards");
 
 /** كاش خريطة دبلوم ↔ كورس لشارات الكروت (مثل المحرك القديم). */
 let _gptDiplomaMapCache = { data: null, ts: 0 };
@@ -132,7 +139,6 @@ async function mergeChunkMatchesIntoCourses(
   chunks,
   options = {}
 ) {
-  const allowChunkOnlyNewCourses = options.allowChunkOnlyNewCourses !== false;
   if (!supabase || !chunks?.length) return;
 
   const byCourse = new Map();
@@ -152,7 +158,7 @@ async function mergeChunkMatchesIntoCourses(
       g.lessons.set(lk, {
         lesson_id: ch.lesson_id || null,
         title: ch.lesson_title || "درس",
-        timestamp_start: ch.timestamp_start || null,
+        timestamp_start: ch.timestamp_start ?? null,
         excerpt: String(ch.excerpt || "").trim().slice(0, 200),
         similarity: sim,
       });
@@ -160,18 +166,33 @@ async function mergeChunkMatchesIntoCourses(
   }
 
   const existingById = new Map(courses.map((c) => [c.id, c]));
-  const chunkOnlyIds = allowChunkOnlyNewCourses
-    ? [...byCourse.entries()]
-        .filter(
-          ([id, g]) =>
-            !existingById.has(id) && g.maxSim >= CHUNK_ONLY_NEW_COURSE_MIN_SIM
-        )
-        .sort((a, b) => b[1].maxSim - a[1].maxSim)
-        .slice(0, 3)
-        .map(([id]) => id)
-    : [];
+  const addWhenSearchLayerEmpty = options.allowChunkOnlyNewCourses === true;
+  const addSupplement =
+    options.supplementNewCoursesFromChunks === true &&
+    options.allowChunkOnlyNewCourses === false;
+  const maxChunkOnlySlots = addWhenSearchLayerEmpty
+    ? 3
+    : Math.min(
+        6,
+        Number.isFinite(Number(options.maxSupplementChunkCourses)) &&
+          Number(options.maxSupplementChunkCourses) > 0
+          ? Number(options.maxSupplementChunkCourses)
+          : 4
+      );
 
-  if (allowChunkOnlyNewCourses && chunkOnlyIds.length > 0) {
+  const chunkOnlyIds =
+    addWhenSearchLayerEmpty || addSupplement
+      ? [...byCourse.entries()]
+          .filter(
+            ([id, g]) =>
+              !existingById.has(id) && g.maxSim >= CHUNK_ONLY_NEW_COURSE_MIN_SIM
+          )
+          .sort((a, b) => b[1].maxSim - a[1].maxSim)
+          .slice(0, maxChunkOnlySlots)
+          .map(([id]) => id)
+      : [];
+
+  if (chunkOnlyIds.length > 0) {
     const { data: fetched } = await supabase
       .from("courses")
       .select(COURSE_SELECT_COLS)
@@ -402,6 +423,19 @@ function isUltraGenericCatalogEvidenceTerm(t) {
   return _CATALOG_EVIDENCE_ULTRA_GENERIC.has(nt);
 }
 
+/** لا تُظلَّل كلمات «كورس/دورة/…» ولا «الكورسات» (بعد إزالة التعريف) — تظهر في كل الوصف فتضلل عشوائياً. */
+function shouldOmitFromCardHighlightToken(t) {
+  const s = String(t || "").trim();
+  if (s.length < 2) return true;
+  if (isUltraGenericCatalogEvidenceTerm(s)) return true;
+  const nt = normalizeArabic(s.toLowerCase());
+  if (nt.startsWith("ال") && nt.length > 4) {
+    const rest = nt.slice(2);
+    if (_CATALOG_EVIDENCE_ULTRA_GENERIC.has(rest)) return true;
+  }
+  return false;
+}
+
 function termsForCourseLexical(limitedTerms, userClean) {
   const filtered = limitedTerms.filter((t) => !isCourseLexicalNoiseTerm(t));
   if (filtered.length > 0) return filtered;
@@ -421,7 +455,7 @@ function escapeRegExp(s) {
 }
 
 /**
- * يزيل مصطلحات لاتينية قصيرة تُغطّيها كلمة أطول في القائمة (مثل work ← workflow)
+ * يزيل مصطلحات لاتينية قصيرة تُغطّيها مصطلح أطول في نفس القائمة (بادئة/لاحقة بفرق ≥ حرفين)
  * حتى لا يُبنى ilike.%work% ويطابق SolidWorks أو غيره.
  */
 function pruneEnglishSubstringsFromTerms(terms) {
@@ -474,49 +508,12 @@ function englishWholeWord(hayRaw, word) {
   return re.test(hayRaw);
 }
 
-/**
- * «workflow» متعدّد المعاني: كلمة كاملة في «PBR Workflow» ليست نفس طلب المستخدم عن سير عمل/أتمتة.
- * نختبر نافذة قصيرة حول التطابق — بدون قوائم مواضيع طويلة.
- */
-function isWorkflowTechnicalCompoundContext(hayRaw) {
-  const r = String(hayRaw || "").toLowerCase();
-  return (
-    /\b(?:pbr|physically\s+based|git|gitea|gitlab|github|ci\/cd|ci\s*cd)\s+workflow\b/.test(
-      r
-    ) ||
-    /\b(?:render|shader|uv|material|texture|bump|normal\s*map|topology|rigging|sculpt)\s+workflow\b/.test(
-      r
-    ) ||
-    /\bworkflow\s+(?:shader|render|texture|map|node|uv|pbr)\b/.test(r)
-  );
-}
-
-/** أول ظهور لـ workflow مقبول للبحث (ليس ضمن مركب تقني مثل PBR Workflow). */
-function findFirstAllowedWorkflowMatch(plain) {
-  const p = String(plain || "");
-  const re = /\bworkflow\b/gi;
-  let m;
-  while ((m = re.exec(p)) !== null) {
-    const win = p.slice(
-      Math.max(0, m.index - 28),
-      Math.min(p.length, m.index + m[0].length + 36)
-    );
-    if (!isWorkflowTechnicalCompoundContext(win)) {
-      return { start: m.index, end: m.index + m[0].length };
-    }
-  }
-  return null;
-}
-
 function textFieldMatchesTerm(fieldNorm, fieldRaw, term) {
   const nt = normalizeArabic(String(term).toLowerCase().trim());
   if (nt.length < 2 || isCourseLexicalNoiseTerm(term)) return false;
   const raw = String(fieldRaw || "").toLowerCase();
   if (/[a-z]{2,}/i.test(String(term).trim())) {
     const word = String(term).trim();
-    if (/^workflow$/i.test(word)) {
-      return findFirstAllowedWorkflowMatch(raw) !== null;
-    }
     return englishWholeWord(raw, word);
   }
   return arabicBoundedOccurrence(fieldNorm, nt);
@@ -1105,6 +1102,76 @@ function fallbackIntentFromMessage(userMessage) {
 }
 
 /**
+ * إن فُعّل الكتالوج ولم تُملأ terms_en/tools من الجولة الأولى، نستدعي نموذجاً ثانياً صغيراً
+ * لاستخراج الشكل اللاتيني للمركّبات الصوتية العربية — بدون regex موضوعي على نص المستخدم.
+ */
+async function maybeAugmentIntentLatinTerms(trimmed, intent) {
+  /** يُستدعى حتى لو skip_catalog: true من الجولة الأولى — إن أضاف النموذج terms_en نفتح الكتالوج. */
+  if (!openai || !trimmed) return intent;
+  if (
+    /^(1|true|yes)$/i.test(
+      String(process.env.SKIP_INTENT_LATIN_TOPUP || "").trim()
+    )
+  ) {
+    return intent;
+  }
+  const te = intent.terms_en || [];
+  const tl = intent.tools || [];
+  if (
+    te.some((x) => String(x).trim().length >= 2) ||
+    tl.some((x) => String(x).trim().length >= 2)
+  ) {
+    return intent;
+  }
+  const u = String(trimmed).trim();
+  if (u.length < 3 || u.length > 200) return intent;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      temperature: 0.04,
+      max_tokens: 160,
+      messages: [
+        {
+          role: "system",
+          content: `رسالة قد تكون طلب **كورس/دورة/تعلّم** مع **اسم تقني مكتوب عربياً صوتياً** (مثل أدوات برمجية أو مفاهيم تُسجَّل عالمياً باللاتينية).
+أعد **JSON فقط**:
+{"terms_en":[],"terms_ar":[]}
+- terms_en: الشكل اللاتيني/الإنجليزي المعياري في عناوين المنصات التعليمية. **لا تتركه فارغاً** إن كان واضحاً أن المستخدم يقصد مركّباً تقنياً له شكل لاتيني شائع.
+- terms_ar: عبارات عربية تساعد البحث في العناوين (اختياري).
+إن كانت الرسالة تحية أو سؤالاً إدارياً بلا تقنية: أعد مصفوفات فارغة.
+- إن كان الشكل المسجّل في عناوين الدروس قد يختلف بحرف واحد عن المعياري، أضف ذلك الشكل في **terms_en** إن كان مميزاً (أخطاء إملاء شائعة في العناوين).
+لا مفاتيح أخرى ولا شرح.`,
+        },
+        { role: "user", content: u.slice(0, 200) },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content || "{}";
+    const j = JSON.parse(text);
+    const extraEn = Array.isArray(j.terms_en) ? j.terms_en : [];
+    const extraAr = Array.isArray(j.terms_ar) ? j.terms_ar : [];
+    const mergeS = (arr) =>
+      [...new Set(arr.map((x) => String(x).trim()).filter((s) => s.length >= 2))];
+    const fromAugmentOnly = mergeS([...extraEn]);
+    const mergedEn = mergeS([...te, ...extraEn]).slice(0, 12);
+    const mergedAr = mergeS([...(intent.terms_ar || []), ...extraAr]).slice(0, 12);
+    if (fromAugmentOnly.length === 0) {
+      return intent;
+    }
+    return {
+      ...intent,
+      terms_en: mergedEn,
+      terms_ar: mergedAr,
+      skip_catalog: false,
+    };
+  } catch (e) {
+    console.error("maybeAugmentIntentLatinTerms:", e.message);
+    return intent;
+  }
+}
+
+/**
  * يستخرج نصاً للتضمين + كلمات للـ ilike؛ المعنى من نموذج النية لا من مطابقة كلمات في الكود.
  */
 async function extractSearchIntent(userMessage, options = {}) {
@@ -1121,7 +1188,7 @@ async function extractSearchIntent(userMessage, options = {}) {
       model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
       response_format: { type: "json_object" },
       temperature: 0.12,
-      max_tokens: 640,
+      max_tokens: 520,
       messages: [
         {
           role: "system",
@@ -1152,6 +1219,10 @@ async function extractSearchIntent(userMessage, options = {}) {
 - skill_level: "beginner" | "intermediate" | "advanced" | null.
 - response_style: "brief" | "detailed" | "normal" | null.
 - terms_ar، terms_en، tools: كما يلزم للبحث؛ terms_en للمصطلحات اللاتينية/الإنجليزية الصحيحة عند الحاجة (من المقصد، دون حشو).
+- **مصطلح تقني مكتوب بحروف عربية (كتابة صوتية)** لكن مقصوده اسم/مركب شائع بالإنجليزية في عناوين المحتوى: أضف الشكل الإنجليزي القياسي في **terms_en** (و**tools** إن كان أداة) حتى يطابق الاسترجاع اللاتيني في القاعدة؛ اترك **search_text** يعكس فهم المستخدم.
+- **إلزامي عند طلب كورس/تعلّم ومركّب تقني يبدو «منطوقاً بالعربي» (حروف عربية لكنه في الأصل أجنبي):** املأ **terms_en** بالشكل اللاتيني المرجّح الذي تُسجَّل به أغلب العناوين والدروس في منصات تعليمية — وإلا يفشل البحث المعجمي داخل نصوص الحصص. لا تكتفي بالنص العربي الصوتي في **search_text** وحده عندما يكون المركب معروفاً إملائياً باللاتينية.
+- **جمل قصيرة جداً** (مثل طلب «كورس» مع اسم تقني مكتوب عربياً صوتياً فقط): **skip_catalog: false** و**terms_en** يجب أن يحتوي الشكل اللاتيني المعياري للمركب؛ لا تترك **terms_en** فارغاً في هذه الحالة.
+- للمصطلح اللاتيني في **terms_en** يكفي شكل قياسي واحد؛ الخادم يضيف تلقائياً توسيعات **شكلية عامة** للبحث (جمع s لكلمة لاتينية مفردة، تفكيك camelCase، وواصلة ↔ مسافة). عندما يهمّك أكثر من شكل إملائي (مثلاً مركّب مكتوب متصلاً أو مفصولاً)، أضف الأشكال المرجّحة في **terms_en** بنفسك.
 
 لا تضف شرحاً خارج JSON.`,
         },
@@ -1169,6 +1240,7 @@ async function extractSearchIntent(userMessage, options = {}) {
     if (intent.browse_all_diplomas && intent.skip_catalog) {
       intent = { ...intent, skip_catalog: false };
     }
+    intent = await maybeAugmentIntentLatinTerms(trimmed, intent);
     return intent;
   } catch (e) {
     console.error("extractSearchIntent:", e.message);
@@ -1177,17 +1249,34 @@ async function extractSearchIntent(userMessage, options = {}) {
 }
 
 function buildSearchTerms(intent, userClean) {
-  const parts = [];
-  if (intent.search_text) parts.push(intent.search_text);
-  if (intent.search_text_secondary) parts.push(intent.search_text_secondary);
-  if (intent.primary_goal) parts.push(intent.primary_goal);
-  for (const t of intent.constraints || []) parts.push(t);
-  for (const t of intent.terms_ar || []) parts.push(t);
-  for (const t of intent.terms_en || []) parts.push(t);
-  for (const t of intent.tools || []) parts.push(t);
-  if (parts.length === 0 && userClean) parts.push(userClean);
+  /** حقول النية الصريحة أولاً — prepareSearchTerms كانت تتوقف بعد ~15 رمزاً فتُسقط terms_en لو ورد بعد search_text الطويل. */
+  const techParts = [];
+  for (const t of intent.terms_en || []) {
+    const s = String(t).trim();
+    if (s) techParts.push(s);
+  }
+  for (const t of intent.tools || []) {
+    const s = String(t).trim();
+    if (s) techParts.push(s);
+  }
+  for (const t of intent.terms_ar || []) {
+    const s = String(t).trim();
+    if (s) techParts.push(s);
+  }
+  const restParts = [];
+  if (intent.search_text) restParts.push(intent.search_text);
+  if (intent.search_text_secondary) restParts.push(intent.search_text_secondary);
+  if (intent.primary_goal) restParts.push(intent.primary_goal);
+  for (const t of intent.constraints || []) restParts.push(t);
+  if (techParts.length === 0 && restParts.length === 0 && userClean) {
+    restParts.push(userClean);
+  }
 
-  let merged = prepareSearchTerms(parts);
+  const techMerged = prepareSearchTerms(techParts);
+  const restMerged = prepareSearchTerms(restParts);
+  let merged = [...new Set([...techMerged, ...restMerged])].filter(
+    (t) => String(t).length > 1
+  );
   const uc = String(userClean || "").trim();
   if (uc.length >= 2) {
     const userTokens = prepareSearchTerms([uc]);
@@ -1195,7 +1284,69 @@ function buildSearchTerms(intent, userClean) {
       (t) => String(t).length > 1
     );
   }
-  return pruneEnglishSubstringsFromTerms(merged.slice(0, 16));
+  const withLatinShapes = new Set(merged);
+  for (const t of merged) {
+    for (const v of expandLatinLexicalVariants(t)) {
+      if (v.length > 1) withLatinShapes.add(v);
+    }
+  }
+  merged = [...withLatinShapes];
+  return pruneEnglishSubstringsFromTerms(merged.slice(0, 22));
+}
+
+/**
+ * مصطلحات تظليل الكروت فقط — لا تستخدم searchTerms بعد prepareSearchTerms
+ * (لأنها تفجّر الجمل إلى كلمات عامة مثل «إدارة» فتُظلِّل كل الوصف).
+ * المصدر: رسالة المستخدم + حقول نية صريحة + search_text قصير كعبارة كاملة.
+ */
+function collectCardHighlightTerms(intent, userClean) {
+  const intentEff = intent || {};
+  const raw = [];
+  const uc = String(userClean || "").trim();
+  if (uc.length >= 2) {
+    raw.push(uc);
+    for (const w of uc.split(/\s+/)) {
+      const tw = w.trim();
+      if (tw.length >= 3 && !shouldOmitFromCardHighlightToken(tw)) raw.push(tw);
+    }
+  }
+  for (const t of intentEff.terms_ar || []) {
+    const s = String(t || "").trim();
+    if (s.length >= 2) raw.push(s);
+  }
+  for (const t of intentEff.terms_en || []) {
+    const s = String(t || "").trim();
+    if (s.length >= 2) {
+      raw.push(s);
+      for (const v of expandLatinLexicalVariants(s)) raw.push(v);
+    }
+  }
+  for (const t of intentEff.tools || []) {
+    const s = String(t || "").trim();
+    if (s.length >= 2) {
+      raw.push(s);
+      for (const v of expandLatinLexicalVariants(s)) raw.push(v);
+    }
+  }
+  const st = String(intentEff.search_text || "").trim();
+  if (st.length >= 2 && st.length <= 120 && st.split(/\s+/).length <= 8) {
+    raw.push(st);
+  }
+  const st2 = String(intentEff.search_text_secondary || "").trim();
+  if (st2.length >= 2 && st2.length <= 120 && st2.split(/\s+/).length <= 8) {
+    raw.push(st2);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const r of raw) {
+    const s = String(r || "").trim();
+    if (s.length < 2) continue;
+    const k = normalizeArabic(s.toLowerCase());
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out.sort((a, b) => b.length - a.length);
 }
 
 function embeddingQueryText(intent, userClean, conversationSnippet = "") {
@@ -1254,31 +1405,52 @@ function enrichEmbeddingQueryForChunks(
   return q.slice(0, 2000);
 }
 
-async function searchDiplomasLayer(searchTerms, queryForEmb, intent = {}) {
+async function embedCatalogQueryVector(queryForEmb) {
+  if (!openai || !String(queryForEmb || "").trim()) return null;
+  try {
+    const embResponse = await openai.embeddings.create({
+      model: COURSE_EMBEDDING_MODEL,
+      input: String(queryForEmb).substring(0, 2000),
+    });
+    return embResponse.data[0].embedding;
+  } catch (e) {
+    console.error("embedCatalogQueryVector:", e.message);
+    return null;
+  }
+}
+
+async function searchDiplomasLayer(
+  searchTerms,
+  queryForEmb,
+  intent = {},
+  sharedQueryEmbedding = null
+) {
   if (!supabase) return [];
   let rawResults = [];
   const isChild = intentUsesChildSensitiveRetrieval(intent);
 
   if (openai && queryForEmb) {
     try {
-      const embResponse = await openai.embeddings.create({
-        model: COURSE_EMBEDDING_MODEL,
-        input: queryForEmb,
-      });
-      const { data: semanticResults, error: semErr } = await supabase.rpc(
-        "match_diplomas",
-        {
-          query_embedding: embResponse.data[0].embedding,
-          match_threshold: isChild ? 0.87 : 0.86,
-          match_count: isChild ? 6 : 8,
+      let embedding = sharedQueryEmbedding;
+      if (!embedding) {
+        embedding = await embedCatalogQueryVector(queryForEmb);
+      }
+      if (embedding) {
+        const { data: semanticResults, error: semErr } = await supabase.rpc(
+          "match_diplomas",
+          {
+            query_embedding: embedding,
+            match_threshold: isChild ? 0.87 : 0.86,
+            match_count: isChild ? 6 : 8,
+          }
+        );
+        if (!semErr && semanticResults?.length) {
+          rawResults = semanticResults.filter((d) => {
+            const s = d.similarity;
+            if (typeof s !== "number") return true;
+            return s >= (isChild ? 0.85 : 0.84);
+          });
         }
-      );
-      if (!semErr && semanticResults?.length) {
-        rawResults = semanticResults.filter((d) => {
-          const s = d.similarity;
-          if (typeof s !== "number") return true;
-          return s >= (isChild ? 0.85 : 0.84);
-        });
       }
     } catch (e) {
       console.error("match_diplomas:", e.message);
@@ -1381,10 +1553,18 @@ async function searchCoursesLayer(
   queryForEmb,
   userClean = "",
   intent = {},
-  conversationSnippet = ""
+  conversationSnippet = "",
+  sharedQueryEmbedding = null
 ) {
   if (!supabase) return [];
-  const limitedTerms = searchTerms.slice(0, 8);
+  const intentHead = [
+    ...(intent.terms_en || []).map((x) => String(x).trim()).filter(Boolean),
+    ...(intent.tools || []).map((x) => String(x).trim()).filter(Boolean),
+    ...(intent.terms_ar || []).map((x) => String(x).trim()).filter(Boolean),
+  ];
+  const limitedTerms = [
+    ...new Set([...intentHead, ...searchTerms]),
+  ].slice(0, 16);
   if (limitedTerms.length === 0) return [];
 
   const isChild = intentUsesChildSensitiveRetrieval(intent);
@@ -1419,18 +1599,28 @@ async function searchCoursesLayer(
 
   let allCourses = [];
 
+  const retrievalBoost = intentHasModelBackedLatinOrTools(intent);
+  const matchThresholdRpc = isChild
+    ? 0.88
+    : retrievalBoost
+      ? 0.802
+      : 0.86;
+  const minSemOnlyMerge = isChild ? 0.88 : retrievalBoost ? 0.775 : 0.84;
+  const narrowSemFloor = retrievalBoost ? 0.775 : 0.84;
+
   const semanticPromise =
     !openai || !queryForEmb
       ? Promise.resolve([])
       : (async () => {
           try {
-            const embResp = await openai.embeddings.create({
-              model: COURSE_EMBEDDING_MODEL,
-              input: queryForEmb,
-            });
+            let emb = sharedQueryEmbedding;
+            if (!emb) {
+              emb = await embedCatalogQueryVector(queryForEmb);
+            }
+            if (!emb) return [];
             const { data } = await supabase.rpc("match_courses", {
-              query_embedding: embResp.data[0].embedding,
-              match_threshold: isChild ? 0.88 : 0.86,
+              query_embedding: emb,
+              match_threshold: matchThresholdRpc,
               match_count: isChild ? 12 : 22,
             });
             return data || [];
@@ -1529,7 +1719,7 @@ async function searchCoursesLayer(
     }
   }
 
-  const MIN_SEM_ONLY = isChild ? 0.88 : 0.84;
+  const MIN_SEM_ONLY = minSemOnlyMerge;
   if (semanticMap.size > 0) {
     const ilikeIds = new Set(allCourses.map((c) => c.id));
     const semanticOnlyIds = [...semanticMap.entries()]
@@ -1569,7 +1759,7 @@ async function searchCoursesLayer(
     } else {
       const semOnly = deduped.filter((c) => {
         const sim = semanticMap.get(c.id);
-        return typeof sim === "number" && sim >= 0.84;
+        return typeof sim === "number" && sim >= narrowSemFloor;
       });
       if (semOnly.length > 0) {
         deduped = semOnly;
@@ -1611,6 +1801,9 @@ async function mergeCoursesFromLessonHits(
 ) {
   const MAX = MAX_COURSE_CATALOG_CARDS;
   const supplement = Boolean(options.supplementWhenFew);
+  const latinLessonBoost =
+    Boolean(options.intent) &&
+    intentHasModelBackedLatinOrTools(options.intent);
   const st = options.searchTerms || [];
   let lessonRows = lessons || [];
   if (st.length && lessonRows.length) {
@@ -1619,7 +1812,7 @@ async function mergeCoursesFromLessonHits(
   const base = (courses || []).filter((c) => c?.id);
   if (!supabase || !lessonRows.length) return base.slice(0, MAX);
   if (base.length > 0 && !supplement) return base.slice(0, MAX);
-  if (supplement && base.length >= 4) return base.slice(0, MAX);
+  if (supplement && base.length >= 4 && !latinLessonBoost) return base.slice(0, MAX);
 
   const byId = new Map(base.map((c) => [c.id, c]));
   let capSup = 5;
@@ -1654,9 +1847,37 @@ async function mergeCoursesFromLessonHits(
   }
 }
 
-async function searchLessonsLayer(searchTerms) {
+function buildLessonLayerSearchSeeds(searchTerms, intent = {}) {
+  const seeds = [];
+  if (Array.isArray(searchTerms)) {
+    for (const t of searchTerms) seeds.push(String(t));
+  }
+  for (const t of intent?.terms_en || []) {
+    const s = String(t).trim();
+    if (s.length < 2) continue;
+    seeds.push(s);
+    for (const v of expandLatinLexicalVariants(s)) {
+      const z = String(v).trim();
+      if (z.length >= 3) seeds.push(z);
+    }
+  }
+  for (const t of intent?.tools || []) {
+    const s = String(t).trim();
+    if (s.length < 2) continue;
+    seeds.push(s);
+    for (const v of expandLatinLexicalVariants(s)) {
+      const z = String(v).trim();
+      if (z.length >= 3) seeds.push(z);
+    }
+  }
+  return seeds;
+}
+
+async function searchLessonsLayer(searchTerms, intent = {}) {
   if (!supabase) return [];
-  const allTerms = prepareLessonLayerTerms(searchTerms);
+  const allTerms = prepareLessonLayerTerms(
+    buildLessonLayerSearchSeeds(searchTerms, intent)
+  );
   if (allTerms.length === 0) return [];
 
   const orFilters = allTerms
@@ -1752,7 +1973,13 @@ function buildChunkSearchNeedles(userClean, searchTerms, intent) {
     if (String(s).length >= 2) needles.add(s);
   }
   const list = [...needles].filter((n) => String(n).length >= 2);
-  return pruneNeedlesSubsumedByLongerNeedles(list);
+  const expanded = new Set(list);
+  for (const n of list) {
+    for (const v of expandLatinLexicalVariants(n)) {
+      if (v.length >= 2) expanded.add(v);
+    }
+  }
+  return pruneNeedlesSubsumedByLongerNeedles([...expanded]);
 }
 
 function compactIndexToPlainRange(plain, cStart, cLen) {
@@ -1776,11 +2003,6 @@ function findMatchBoundsInPlain(plain, needles) {
   for (const n of needles) {
     const ns = String(n);
     if (ns.length < 2) continue;
-    if (/^workflow$/i.test(ns.trim())) {
-      const fb = findFirstAllowedWorkflowMatch(plain);
-      if (fb) return fb;
-      continue;
-    }
     try {
       const re = new RegExp(ns.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       const m = plain.match(re);
@@ -1883,33 +2105,88 @@ function sanitizeForOrIlike(t) {
  */
 async function fetchChunksLexicalHits(supabase, userClean, searchTerms, intent) {
   if (!supabase) return [];
-  const terms = buildLexicalIlikeTerms(userClean, searchTerms, intent)
+  if (
+    /^(1|true|yes)$/i.test(
+      String(process.env.CATALOG_CHUNKS_LEXICAL_DISABLE || "").trim()
+    )
+  ) {
+    return [];
+  }
+  const rawTerms = buildLexicalIlikeTerms(userClean, searchTerms, intent)
     .map(sanitizeForOrIlike)
     .filter((t) => t.length >= 3);
-  if (terms.length === 0) return [];
-  const orFilters = terms
-    .map((t) => `content.ilike.%${t}%`)
-    .join(",");
-  try {
-    const { data, error } = await supabase
-      .from("chunks")
-      .select("id, content, lesson_id, timestamp_start")
-      .or(orFilters)
-      .limit(24);
-    if (error) {
-      console.error("chunks lexical:", error.message);
-      return [];
-    }
-    if (!data?.length) return [];
+  if (rawTerms.length === 0) return [];
 
-    const needles = buildChunkSearchNeedles(userClean, searchTerms, intent);
-    const dataFiltered = data.filter((chunk) => {
-      const plain = stripChunkPlainText(chunk.content || "");
-      if (!plain) return false;
-      if (!needles.some((x) => /^workflow$/i.test(String(x).trim()))) return true;
-      if (!/\bworkflow\b/i.test(plain)) return true;
-      return findFirstAllowedWorkflowMatch(plain) !== null;
-    });
+  const ordered = [...rawTerms].sort((a, b) => {
+    const aLat = /^[a-z0-9._+-]+$/i.test(a);
+    const bLat = /^[a-z0-9._+-]+$/i.test(b);
+    if (aLat !== bLat) return aLat ? -1 : 1;
+    return b.length - a.length;
+  });
+
+  /** افتراضي 1 مصطلح وتسلسل — استعلامات ilike على content بالتوازي كانت تسبب statement timeout على جداول كبيرة. */
+  const maxTerms = Math.min(
+    3,
+    Math.max(
+      1,
+      Number.parseInt(
+        String(process.env.CATALOG_CHUNKS_LEXICAL_MAX_TERMS || "").trim(),
+        10
+      ) || 1
+    )
+  );
+  const perLimit = Math.min(
+    6,
+    Math.max(
+      2,
+      Number.parseInt(
+        String(process.env.CATALOG_CHUNKS_LEXICAL_PER_LIMIT || "").trim(),
+        10
+      ) || 4
+    )
+  );
+  const terms = ordered.slice(0, maxTerms);
+  const acc = [];
+  const seenIds = new Set();
+
+  try {
+    const fetchOne = async (t) => {
+      const safePat = String(t).replace(/%/g, "").replace(/_/g, "");
+      if (safePat.length < 3) return { rows: [], err: null };
+      const { data, error } = await supabase
+        .from("chunks")
+        .select("id, content, lesson_id, timestamp_start")
+        .ilike("content", `%${safePat}%`)
+        .limit(perLimit);
+      if (error) {
+        return { rows: [], err: error };
+      }
+      return { rows: data || [], err: null };
+    };
+    for (const t of terms) {
+      const { rows, err } = await fetchOne(t);
+      if (err) {
+        console.error("chunks lexical:", err.message);
+        if (/timeout|canceling statement/i.test(String(err.message || ""))) {
+          break;
+        }
+        continue;
+      }
+      for (const row of rows) {
+        if (row?.id && !seenIds.has(row.id)) {
+          seenIds.add(row.id);
+          acc.push(row);
+          if (acc.length >= 16) break;
+        }
+      }
+      if (acc.length >= 16) break;
+    }
+
+    if (!acc.length) return [];
+
+    const dataFiltered = acc.filter((chunk) =>
+      Boolean(stripChunkPlainText(chunk.content || ""))
+    );
 
     const lessonIds = [
       ...new Set(dataFiltered.map((c) => c.lesson_id).filter(Boolean)),
@@ -2030,6 +2307,11 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms, intent) {
     }
 
     const lessonTerms = prepareLessonLayerTerms(searchTerms);
+    const { strictSemantic: strictChunkEvidence } = catalogEvidenceMatchBundle(
+      userClean,
+      searchTerms,
+      intent
+    );
 
     merged = merged.filter((r) => {
       if (r._lexicalHit) return true;
@@ -2039,6 +2321,8 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms, intent) {
       if (lessonTitleMatchesSearchTerms(r.lesson_title || "", lessonTerms)) {
         return sim >= MIN_LESSON_CHUNK_SIMILARITY;
       }
+      /** نية ضيقة (من JSON النية): لا نعرض chunk دلالي ضعيف بدون إبراز في المحتوى أو عنوان الدرس. */
+      if (strictChunkEvidence) return false;
       return sim >= SEMANTIC_CHUNK_ONLY_MIN_SIM;
     });
 
@@ -2355,6 +2639,16 @@ function catalogSemanticThresholdsForGate(intent, strictSemantic) {
     : { minVs: 0.62, minCh: 0.78 };
 }
 
+/**
+ * عند نية ضيقة: كلمة في عنوان درس فقط لا تثبت صلة الكورس بدون تشابه استعلام معقول.
+ */
+const LEXICAL_LESSON_ONLY_MIN_VEC = 0.66;
+const LEXICAL_LESSON_ONLY_MIN_CHUNK = 0.76;
+/** احتياط دلالي عام (بدون تطابق عنوان بـ terms_en): عتبة عالية لتفادي كورسات بعيدة. */
+const PREFER_LEXICAL_SEMANTIC_FALLBACK_MIN_VEC = 0.88;
+/** احتياط دلالي عندما يوجد terms_en/tools من النية وتطابق عنوان/فرعي لتلك المصطلحات رغم تشابه تضمين أقل من عتبة القائمة الخام. */
+const PREFER_LEXICAL_INTENT_TITLE_FALLBACK_MIN_VEC = 0.76;
+
 function catalogMustRejectSemanticOnlyWithoutStrongSignal(intent) {
   return (
     intent?.audience === "child" ||
@@ -2368,6 +2662,69 @@ function catalogTitleVerticalMismatchPenalty() {
   return 0;
 }
 
+/** نية صريحة بلاتيني/أداة (غير فائقة العمومية) — نخفّض عتبة match_courses ونوسّع الدمج الدلالي. */
+function intentHasModelBackedLatinOrTools(intent) {
+  if (!intent || typeof intent !== "object") return false;
+  const ok = (x) => {
+    const s = String(x || "").trim();
+    return s.length >= 2 && !isUltraGenericCatalogEvidenceTerm(s);
+  };
+  return (
+    (intent.terms_en || []).some(ok) || (intent.tools || []).some(ok)
+  );
+}
+
+/**
+ * ما أعلنه استخراج النية في JSON (terms_en / tools / terms_ar) يطابق عنوان أو فرعي الكورس —
+ * من دون الاعتماد على collectRelevanceTermsForCatalogEvidence التي قد تُسقط terms_en عن القائمة.
+ */
+function courseMatchesIntentDeclaredTopic(course, intent) {
+  if (!course || !intent || typeof intent !== "object") return false;
+  const title = normalizeArabic((course.title || "").toLowerCase());
+  const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
+  const titleRaw = String(course.title || "").toLowerCase();
+  const subtitleRaw = String(course.subtitle || "").toLowerCase();
+
+  const tryPhrase = (raw) => {
+    const base = String(raw || "").trim();
+    if (base.length < 2 || isUltraGenericCatalogEvidenceTerm(base))
+      return false;
+    if (isCourseLexicalNoiseTerm(base)) return false;
+    if (/[a-z]{2,}/i.test(base)) {
+      for (const v of expandLatinLexicalVariants(base)) {
+        if (isCourseLexicalNoiseTerm(v)) continue;
+        if (textFieldMatchesTerm(title, titleRaw, v)) return true;
+        if (textFieldMatchesTerm(subtitle, subtitleRaw, v)) return true;
+      }
+      return false;
+    }
+    if (textFieldMatchesTerm(title, titleRaw, base)) return true;
+    if (textFieldMatchesTerm(subtitle, subtitleRaw, base)) return true;
+    return false;
+  };
+
+  for (const t of intent.terms_en || []) {
+    if (tryPhrase(t)) return true;
+  }
+  for (const t of intent.tools || []) {
+    if (tryPhrase(t)) return true;
+  }
+  for (const t of intent.terms_ar || []) {
+    if (tryPhrase(t)) return true;
+  }
+  return false;
+}
+
+/** نفس قواعد النية على عناوين الدروس المدمجة — غالباً اللاتيني يظهر في الدرس لا في عنوان الكورس. */
+function courseMatchesIntentDeclaredTopicInLessons(course, intent) {
+  if (!course?.matchedLessons?.length) return false;
+  for (const l of course.matchedLessons) {
+    if (courseMatchesIntentDeclaredTopic({ title: l.title || "", subtitle: "" }, intent))
+      return true;
+  }
+  return false;
+}
+
 /**
  * دليل معجمي ظاهر للمستخدم: عنوان/فرعي كورس أو عنوان درس (لا نعتمد keywords وحدها — غالباً وسوم SEO عامة).
  */
@@ -2377,19 +2734,42 @@ function catalogCourseHasLexicalTopicEvidence(
   searchTerms,
   intent
 ) {
-  const { terms, matchTerms } = catalogEvidenceMatchBundle(
+  if (courseMatchesIntentDeclaredTopic(course, intent)) return true;
+  if (courseMatchesIntentDeclaredTopicInLessons(course, intent)) return true;
+
+  const { terms, matchTerms, strictSemantic } = catalogEvidenceMatchBundle(
     userClean,
     searchTerms,
     intent
   );
   if (terms.length === 0) return false;
   if (courseTitleOrSubtitleHitsTerm(course, matchTerms)) return true;
+
   for (const l of course.matchedLessons || []) {
     const lt = normalizeArabic((l.title || "").toLowerCase());
     const lr = String(l.title || "").toLowerCase();
     for (const term of matchTerms) {
       if (isCourseLexicalNoiseTerm(term)) continue;
       if (textFieldMatchesTerm(lt, lr, term)) return true;
+    }
+    const rawEx = String(l.excerpt || "");
+    if (
+      rawEx &&
+      chunkContentHasSearchHit(rawEx, userClean, searchTerms, intent)
+    ) {
+      return true;
+    }
+  }
+
+  if (strictSemantic) {
+    const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
+    const ch =
+      typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
+    if (
+      vs < LEXICAL_LESSON_ONLY_MIN_VEC &&
+      ch < LEXICAL_LESSON_ONLY_MIN_CHUNK
+    ) {
+      return false;
     }
   }
   return false;
@@ -2418,6 +2798,9 @@ function catalogCoursePassesTopicGate(
   const vs = typeof course._vecSim === "number" ? course._vecSim : 0;
   const ch = typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
 
+  if (courseMatchesIntentDeclaredTopic(course, intent)) return true;
+  if (courseMatchesIntentDeclaredTopicInLessons(course, intent)) return true;
+
   if (terms.length === 0) {
     return vs >= 0.88 || ch >= 0.88;
   }
@@ -2445,6 +2828,7 @@ function catalogCoursePassesTopicGate(
 /**
  * إن وُجدت على الأقل كورس واحد فيه دليل معجمي (عنوان/درس)، نعرض فقط هذه الكورسات —
  * ثم نقطع النتائج الضعيفة نسبةً لأفضل درجة (نفس السؤال قد يمرّر كورسين بمطابقة مصطلح عام من terms_en).
+ * عند وجود مصطلحات صلة ولا يوجد أي دليل معجمي على المرشّحين: احتياط تشابه كورس عالٍ فقط أو فراغ — لا القائمة الخام كلها.
  */
 function preferLexicalCatalogCourses(
   courses,
@@ -2466,7 +2850,41 @@ function preferLexicalCatalogCourses(
   if (catalogMustRejectSemanticOnlyWithoutStrongSignal(intent) && !anyLex) {
     return [];
   }
-  if (!anyLex) return courses;
+  if (!anyLex) {
+    /**
+     * وُجدت مصطلحات صلة لكن لا كورس عليه دليل معجمي: لا نعيد كل استرجاع match_courses/ilike —
+     * كان يحدث عندما كل مصطلحات الأدلة «عامة» فيُستنتج strictSemantic=false فيمرّر إنفوجرافيك/جرافيك بلا صلة.
+     */
+    const byVecStrong = [...courses]
+      .map((c) => ({
+        c,
+        s: typeof c._vecSim === "number" ? c._vecSim : 0,
+      }))
+      .filter((x) => x.s >= PREFER_LEXICAL_SEMANTIC_FALLBACK_MIN_VEC)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, MAX_COURSE_CATALOG_CARDS)
+      .map((x) => x.c);
+    if (byVecStrong.length > 0) return byVecStrong;
+
+    if (intentHasModelBackedLatinOrTools(intent)) {
+      const byIntentTitle = [...courses]
+        .map((c) => ({
+          c,
+          s: typeof c._vecSim === "number" ? c._vecSim : 0,
+        }))
+        .filter(
+          (x) =>
+            x.s >= PREFER_LEXICAL_INTENT_TITLE_FALLBACK_MIN_VEC &&
+            (courseMatchesIntentDeclaredTopic(x.c, intent) ||
+              courseMatchesIntentDeclaredTopicInLessons(x.c, intent))
+        )
+        .sort((a, b) => b.s - a.s)
+        .slice(0, MAX_COURSE_CATALOG_CARDS)
+        .map((x) => x.c);
+      if (byIntentTitle.length > 0) return byIntentTitle;
+    }
+    return [];
+  }
   let kept = courses.filter(hasLex);
   const scored = kept.map((c) => ({
     c,
@@ -2480,7 +2898,8 @@ function preferLexicalCatalogCourses(
   }));
   scored.sort((a, b) => b.s - a.s);
   const best = scored[0]?.s ?? 0;
-  if (best > 0 && scored.length > 1) {
+  const latinIntent = intentHasModelBackedLatinOrTools(intent);
+  if (best > 0 && scored.length > 1 && !latinIntent) {
     const minRatio = 0.52;
     kept = scored
       .filter((x) => x.s >= best * minRatio)
@@ -2493,6 +2912,49 @@ function preferLexicalCatalogCourses(
 }
 
 /**
+ * يكمل قائمة المراجع اللغوي بعد course_ids: كورسات ظهر فيها المطلوب في درس/مقتطف لكن عنوان الكورس لا يذكر terms_en.
+ */
+function fillCoursesFromLexicalEvidenceBeyondLlm(
+  llmOrdered,
+  fullPool,
+  userClean,
+  searchTerms,
+  intent,
+  maxCards = MAX_COURSE_CATALOG_CARDS
+) {
+  const max =
+    Number.isFinite(Number(maxCards)) && Number(maxCards) > 0
+      ? Number(maxCards)
+      : MAX_COURSE_CATALOG_CARDS;
+  const out = [];
+  const seen = new Set();
+  for (const c of llmOrdered || []) {
+    if (!c?.id || seen.has(c.id)) continue;
+    seen.add(c.id);
+    out.push(c);
+    if (out.length >= max) return out;
+  }
+  if (!fullPool?.length || out.length >= max) return out;
+  for (const c of fullPool) {
+    if (!c?.id || seen.has(c.id)) continue;
+    if (
+      !catalogCourseHasLexicalTopicEvidence(
+        c,
+        userClean,
+        searchTerms,
+        intent
+      )
+    ) {
+      continue;
+    }
+    seen.add(c.id);
+    out.push(c);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
  * مراجعة صلة **عناوين** منتجات الكتالوج بالنموذج: قراءة المعنى من العنوان/الفرعي وليس مطابقة كلمات في الكود.
  * يعطّل بـ SKIP_LLM_CATALOG_TITLE_FILTER=1
  */
@@ -2502,11 +2964,16 @@ async function llmPruneCatalogRowsByTitleFit(
   intent,
   userClean,
   conversationSnippet,
-  broadDiplomaListing = false
+  broadDiplomaListing = false,
+  searchTerms = []
 ) {
-  const skip = /^(1|true|yes)$/i.test(
-    String(process.env.SKIP_LLM_CATALOG_TITLE_FILTER || "").trim()
-  );
+  const skip =
+    /^(1|true|yes)$/i.test(
+      String(process.env.SKIP_LLM_CATALOG_TITLE_FILTER || "").trim()
+    ) ||
+    /^(1|true|yes)$/i.test(
+      String(process.env.CATALOG_SKIP_TITLE_LLM || "").trim()
+    );
   if (skip || !openai) {
     return { diplomas: diplomas || [], courses: courses || [] };
   }
@@ -2543,7 +3010,7 @@ async function llmPruneCatalogRowsByTitleFit(
       model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
       response_format: { type: "json_object" },
       temperature: 0.06,
-      max_tokens: 500,
+      max_tokens: 380,
       messages: [
         {
           role: "system",
@@ -2551,11 +3018,17 @@ async function llmPruneCatalogRowsByTitleFit(
 
 المطلوب: قراءة **كل عنوان** (والنص المساعد المختصر إن وُجد) وفهم **ما يعلنه المنتج فعلياً**، ثم مقارنته **برسالة المستخدم الحالية أولاً**، ثم ملخص النية والسياق — قرارك دلالي بالكامل.
 
+إن وُجدت **terms_en** أو **tools** في intent_summary: قد يغطّي المطلوب **محتوى الدروس** رغم أن عنوان الكورس عاماً — إن كان عدة عناوين **منطقياً قد تستضيف** ذلك المفهوم في سياق تعليمي واحد، فلا تقتصر على **id** واحد دون سبب واضح للاستبعاد.
+
 قواعد:
 - **أولوية رسالة المستخدم الحالية (user_message):** إذا حدّد موضوعاً تقنياً أو أداة أو مجالاً تعليمياً **باسم أو وصف واضح في نفس الرسالة** فاقبل العناوين التي تتطابق **دلالياً** مع ذلك الموضوع حتى لو سياق المحادثة السابق يتحدث عن مهنة أو فئة عمرية في موضوع مختلف.
 - إن كان المستخدم يطلب مساراً **لصغير أو مبتدئ صغير** فاقبل فقط ما يوحي العنوان بأنه **مناسب للعمر أو المستوى المبتدئ للصغار**؛ ارفض العناوين التي توحي بمسارات **احترافية للكبار** أو **مجالات غير طلبها** (مثل أعمال أو تسويق عام عندما المقصد تعليم تقني للصغار).
 - إن كان المستخدم يطلب مهارات **لشغل أو حرفة** فاقبل ما يوحي العنوان بذلك المجال؛ ارفض ما يبدو عاماً أو بعيداً عن المقصد.
-- **لا تُرجع مصفوفة course_ids فارغة** إذا بقي في القائمة كورس يتطابق **بوضوح** مع **user_message**؛ الفراغ يُستخدم فقط عندما **كل** العناوين بعيدة جداً عن الطلب الحالي.
+- **terms_en و tools و search_text** في intent_summary: استخدمها لربط طلب المستخدم (بما فيه كتابة عربية صوتية لمصطلح أجنبي) بالعناوين المسجّلة غالباً باللاتينية.
+- إن وُجدت **terms_en** أو **tools** غير فارغة: لا تدرج **id** كورس إلا إذا يتضح من **عنوانه أو فرعيه** أنه يغطي ذلك المقصد (أو يذكره صراحة)؛ لا تكتفِ بقرب دلالي من موضوع أوسع طالما طلب المستخدم مفهوماً أو أداة محددة وردت في حقول النية.
+- إذا **عنوان أو فرعي** كورس يذكر **صراحة** الأداة أو المادة التي طلبها المستخدم (مثل إكسيل / Excel / محاسبة عند طلب محاسبة) فأدرج **id** ذلك الكورس في course_ids — حتى لو بقي الاسترجاع الدلالي ضعيفاً.
+- ارفض المرشّحين البعيدين جداً (مثل كتابة محتوى عام عندما المقصد أداة تقنية محددة في الرسالة أو terms_en).
+- أعد **course_ids فارغة** فقط عندما **كل** المرشّحين بعيدين عن الطلب ولا يوجد تطابق معقول مع user_message أو terms_en أو أداة صريحة في العنوان.
 
 أعد JSON فقط بهذا الشكل:
 {"diploma_ids":[أرقام],"course_ids":[أرقام]}
@@ -2575,6 +3048,9 @@ async function llmPruneCatalogRowsByTitleFit(
                 primary_goal: intent?.primary_goal || "",
                 search_text: intent?.search_text || "",
                 search_text_secondary: intent?.search_text_secondary || "",
+                terms_en: Array.isArray(intent?.terms_en) ? intent.terms_en : [],
+                terms_ar: Array.isArray(intent?.terms_ar) ? intent.terms_ar : [],
+                tools: Array.isArray(intent?.tools) ? intent.tools : [],
                 audience: intent?.audience,
                 code_learning_segment: intent?.code_learning_segment,
                 focus_audience: intent?.focus_audience,
@@ -2623,16 +3099,85 @@ async function llmPruneCatalogRowsByTitleFit(
       }
     }
     /**
-     * إن رجع النموذج course_ids فارغة رغم وجود مرشّحات من البحث الدلالي/المعجمي،
-     * نفقد كل الكروت عند تحوّل سؤال لاحق لموضوع مختلف عن سياق الجلسة السابق.
-     * الاحتياط: الإبقاء على ترتيب الاسترجاع السابق.
+     * course_ids فارغة من المراجع: لا نعيد كل الاسترجاع الخام (كان يعيد كورسات عشوائية).
+     * نحتفظ بكورسات فيها دليل معجمي واضح في العنوان/الدرس (إكسيل، إلخ)؛ ثم احتياط البيئة.
      */
     let coursesFinal = coursesOut;
-    if (coursesFinal.length === 0 && cIn.length > 0) {
-      console.warn(
-        "llmPruneCatalogRowsByTitleFit: empty course_ids; keeping pre-prune courses"
+    if (
+      intentHasModelBackedLatinOrTools(intent) &&
+      coursesFinal.length > 0 &&
+      coursesFinal.length < MAX_COURSE_CATALOG_CARDS &&
+      cIn.length > coursesFinal.length
+    ) {
+      coursesFinal = fillCoursesFromLexicalEvidenceBeyondLlm(
+        coursesFinal,
+        cIn,
+        userClean,
+        searchTerms,
+        intent,
+        MAX_COURSE_CATALOG_CARDS
       );
-      coursesFinal = cIn.slice(0, MAX_COURSE_CATALOG_CARDS);
+    }
+    if (coursesFinal.length === 0 && cIn.length > 0) {
+      const st = Array.isArray(searchTerms) ? searchTerms : [];
+      const intentTopicOrdered = cIn.filter(
+        (c) =>
+          courseMatchesIntentDeclaredTopic(c, intent) ||
+          courseMatchesIntentDeclaredTopicInLessons(c, intent)
+      );
+      const lexicalIds = new Set(
+        cIn
+          .filter((c) =>
+            catalogCourseHasLexicalTopicEvidence(c, userClean, st, intent)
+          )
+          .map((c) => c.id)
+      );
+      const lexicalOrdered = cIn.filter((c) => lexicalIds.has(c.id));
+      const restoreRaw =
+        /^(1|true|yes)$/i.test(
+          String(process.env.LLM_CATALOG_KEEP_ON_EMPTY_IDS || "").trim()
+        );
+      if (intentTopicOrdered.length > 0) {
+        console.warn(
+          "llmPruneCatalogRowsByTitleFit: empty LLM course_ids; keeping intent-declared-topic matches (title/subtitle)"
+        );
+        coursesFinal = intentTopicOrdered.slice(0, MAX_COURSE_CATALOG_CARDS);
+      } else if (lexicalOrdered.length > 0) {
+        console.warn(
+          "llmPruneCatalogRowsByTitleFit: empty LLM course_ids; keeping lexical-evidence courses only"
+        );
+        coursesFinal = lexicalOrdered.slice(0, MAX_COURSE_CATALOG_CARDS);
+      } else if (restoreRaw) {
+        console.warn(
+          "llmPruneCatalogRowsByTitleFit: empty course_ids; keeping pre-prune (LLM_CATALOG_KEEP_ON_EMPTY_IDS)"
+        );
+        coursesFinal = cIn.slice(0, MAX_COURSE_CATALOG_CARDS);
+      } else {
+        const semRescue = cIn
+          .map((c) => ({
+            c,
+            s: typeof c._vecSim === "number" ? c._vecSim : 0,
+          }))
+          .filter(
+            (x) =>
+              x.s >= PREFER_LEXICAL_SEMANTIC_FALLBACK_MIN_VEC &&
+              intentHasModelBackedLatinOrTools(intent)
+          )
+          .sort((a, b) => b.s - a.s)
+          .slice(0, MAX_COURSE_CATALOG_CARDS)
+          .map((x) => x.c);
+        if (semRescue.length > 0) {
+          console.warn(
+            "llmPruneCatalogRowsByTitleFit: empty course_ids; semantic rescue (high vec + intent terms_en/tools)"
+          );
+          coursesFinal = semRescue;
+        } else {
+          console.warn(
+            "llmPruneCatalogRowsByTitleFit: empty course_ids; no fallback — no course cards"
+          );
+          coursesFinal = [];
+        }
+      }
     }
     let diplomasFinal = skipDiplomaReview ? dIn : diplomasOut;
     if (!skipDiplomaReview && diplomasFinal.length === 0 && dIn.length > 0) {
@@ -2758,34 +3303,52 @@ function rankCatalogCoursesByRelevance(
   if (best < 8) {
     return pool.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
   }
-  const cutoff = Math.max(5, best * 0.22);
+  const latinIntent = intentHasModelBackedLatinOrTools(intent);
+  const scoreRatio = latinIntent ? 0.09 : 0.22;
+  const cutoff = Math.max(latinIntent ? 4 : 5, best * scoreRatio);
   let kept = pool.filter((x) => x.s >= cutoff);
   if (kept.length === 0) {
     kept = pool.slice(0, Math.min(3, pool.length));
   } else if (kept.length === 1 && pool.length >= 2) {
     const rest = pool
       .slice(1)
-      .filter((x) =>
-        catalogCoursePassesTopicGate(
-          x.c,
-          userClean,
-          searchTerms,
-          intent,
-          conversationSnippet
-        )
+      .filter(
+        (x) =>
+          catalogCoursePassesTopicGate(
+            x.c,
+            userClean,
+            searchTerms,
+            intent,
+            conversationSnippet
+          ) ||
+          (latinIntent &&
+            catalogCourseHasLexicalTopicEvidence(
+              x.c,
+              userClean,
+              searchTerms,
+              intent
+            ))
       );
     kept = [kept[0], ...rest].slice(0, MAX_COURSE_CATALOG_CARDS);
   }
 
-  const gated = kept.filter((x) =>
+  const passesTopicOrLessonLexical = (x) =>
     catalogCoursePassesTopicGate(
       x.c,
       userClean,
       searchTerms,
       intent,
       conversationSnippet
-    )
-  );
+    ) ||
+    (latinIntent &&
+      catalogCourseHasLexicalTopicEvidence(
+        x.c,
+        userClean,
+        searchTerms,
+        intent
+      ));
+
+  const gated = kept.filter((x) => passesTopicOrLessonLexical(x));
   if (gated.length > 0) {
     kept = gated;
   } else if (kept.length > 0) {
@@ -2865,14 +3428,16 @@ async function runCatalogSearch(userClean, intent, options = {}) {
     chunks = [];
     diplomasForCatalog = diplomas;
   } else {
+    const sharedCatEmb = await embedCatalogQueryVector(queryForEmb);
     [diplomas, courses] = await Promise.all([
-      searchDiplomasLayer(searchTerms, queryForEmb, intentEff),
+      searchDiplomasLayer(searchTerms, queryForEmb, intentEff, sharedCatEmb),
       searchCoursesLayer(
         searchTerms,
         queryForEmb,
         userClean,
         intentEff,
-        conversationSnippet
+        conversationSnippet,
+        sharedCatEmb
       ),
     ]);
     nCoursesFromSearchLayer = courses.length;
@@ -2884,14 +3449,16 @@ async function runCatalogSearch(userClean, intent, options = {}) {
         conversationSnippet
       );
       if (qSec.length >= 12) {
+        const sharedSecEmb = await embedCatalogQueryVector(qSec);
         const [dip2, crs2] = await Promise.all([
-          searchDiplomasLayer(searchTerms, qSec, intentEff),
+          searchDiplomasLayer(searchTerms, qSec, intentEff, sharedSecEmb),
           searchCoursesLayer(
             searchTerms,
             qSec,
             userClean,
             intentEff,
-            conversationSnippet
+            conversationSnippet,
+            sharedSecEmb
           ),
         ]);
         diplomas = mergeDiplomasByIdPreferOrder(diplomas, dip2);
@@ -2908,6 +3475,10 @@ async function runCatalogSearch(userClean, intent, options = {}) {
       broadDiplomaListing
     );
 
+    const lessonSupplementCap = intentHasModelBackedLatinOrTools(intentEff)
+      ? 5
+      : 2;
+
     lessons = [];
     chunks = [];
     /**
@@ -2916,7 +3487,7 @@ async function runCatalogSearch(userClean, intent, options = {}) {
      */
     if (diplomasForCatalog.length === 0 && courses.length === 0) {
       [lessons, chunks] = await Promise.all([
-        searchLessonsLayer(searchTerms),
+        searchLessonsLayer(searchTerms, intentEff),
         searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
@@ -2924,13 +3495,25 @@ async function runCatalogSearch(userClean, intent, options = {}) {
       });
     } else if (diplomasForCatalog.length === 0 && courses.length > 0) {
       [lessons, chunks] = await Promise.all([
-        searchLessonsLayer(searchTerms),
+        searchLessonsLayer(searchTerms, intentEff),
         searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
       ]);
       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
         supplementWhenFew: true,
         searchTerms,
-        maxSupplementCourses: 2,
+        maxSupplementCourses: lessonSupplementCap,
+        intent: intentEff,
+      });
+    } else {
+      [lessons, chunks] = await Promise.all([
+        searchLessonsLayer(searchTerms, intentEff),
+        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
+      ]);
+      courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+        supplementWhenFew: courses.length > 0,
+        searchTerms,
+        maxSupplementCourses: lessonSupplementCap,
+        intent: intentEff,
       });
     }
   }
@@ -2939,6 +3522,8 @@ async function runCatalogSearch(userClean, intent, options = {}) {
   mergeLessonsIntoCourses(coursesForCards, lessons);
   await mergeChunkMatchesIntoCourses(supabase, coursesForCards, chunks, {
     allowChunkOnlyNewCourses: nCoursesFromSearchLayer === 0,
+    supplementNewCoursesFromChunks: nCoursesFromSearchLayer > 0,
+    maxSupplementChunkCourses: 4,
   });
   for (const c of coursesForCards) {
     pruneMatchedLessonsForSearchTerms(c, userClean, searchTerms, intentEff);
@@ -2963,7 +3548,8 @@ async function runCatalogSearch(userClean, intent, options = {}) {
     intentEff,
     userClean,
     conversationSnippet,
-    broadDiplomaListing
+    broadDiplomaListing,
+    searchTerms
   );
   diplomasForCatalog = titleFit.diplomas;
   coursesForCards = titleFit.courses;
@@ -2971,37 +3557,31 @@ async function runCatalogSearch(userClean, intent, options = {}) {
   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
   }
-  await injectDiplomaInfoForGpt(supabase, coursesForCards);
-  const instructors = await fetchInstructorsForCourses(
-    supabase,
-    coursesForCards
-  );
+  const [, instructors] = await Promise.all([
+    injectDiplomaInfoForGpt(supabase, coursesForCards),
+    fetchInstructorsForCourses(supabase, coursesForCards),
+  ]);
+  const highlightTerms = collectCardHighlightTerms(intentEff, userClean);
+  const cardHighlightOpts = { highlightTerms };
+
   let cardsAppendHtml = buildCatalogCardsAppendHtml(
     diplomasForCatalog,
     coursesForCards,
-    instructors
+    instructors,
+    cardHighlightOpts
   );
-  /**
-   * لا نلحق كروت «مقتطفات دروس» بدل منتجات الكتالوج. بعد `skip_catalog`/`browse_all` كل دخول هنا
-   * استكشاف كتالوج؛ الـ chunk fallback كان يملأ الواجهة بدرسات وصلتها بكلمات عرضية (مثل «أطفال»).
-   */
-  const catalogListingIntent =
-    !intentEff.skip_catalog || broadDiplomaListing === true;
-  const chunksForCatalogText =
-    catalogListingIntent && !cardsAppendHtml && chunks.length > 0
-      ? []
-      : chunks;
+  if (!cardsAppendHtml && chunks.length > 0) {
+    cardsAppendHtml = buildChunkCardsAppendHtml(chunks, cardHighlightOpts);
+  }
 
   const text = formatCatalogBlock(
     diplomasForCatalog,
     courses,
     lessons,
-    chunksForCatalogText,
+    chunks,
     {
       omitListsForCards: Boolean(cardsAppendHtml),
-      omitChunkExcerptList: Boolean(
-        cardsAppendHtml && chunksForCatalogText.length > 0
-      ),
+      omitChunkExcerptList: Boolean(cardsAppendHtml && chunks.length > 0),
     }
   );
   const catalogProductTitles = collectCatalogProductTitles(
@@ -3021,4 +3601,14 @@ async function runCatalogSearch(userClean, intent, options = {}) {
 module.exports = {
   extractSearchIntent,
   runCatalogSearch,
+  collectCardHighlightTerms,
+  /** اختبارات وحدة فقط — لا تعتمد عليها من الإنتاج */
+  _testCatalog: {
+    buildSearchTerms,
+    courseMatchesIntentDeclaredTopic,
+    courseMatchesIntentDeclaredTopicInLessons,
+    fillCoursesFromLexicalEvidenceBeyondLlm,
+    preferLexicalCatalogCourses,
+    rankCatalogCoursesByRelevance,
+  },
 };

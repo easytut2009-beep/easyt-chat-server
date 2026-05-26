@@ -2,7 +2,8 @@
 
 /**
  * محرك دردشة يعتمد على GPT بشكل أساسي:
- * - بدون مسارات regex / كلمات مفتاحية للردود الجاهزة
+ * - بدون مسارات regex على رسالة المستخدم لاستنتاج النية
+ * - عند «لا نتائج كتالوج»: تصفية مخرجات النموذج إن خالفت سياسة النفي/الاقتراحات الوهمية
  * - السياق: تعليمات الأدمن، تاريخ المحادثة، نتائج كتالوج عند الطلب، أسئلة شائعة
  */
 
@@ -33,6 +34,83 @@ let botInstructionsCache = { sales: "", ts: 0 };
 let faqCache = { text: "", ts: 0 };
 
 const activeChatSessions = new Set();
+
+/**
+ * يستبدل صيغ نفي/اقتراح وهمي شائعة في رد المساعد حول الكتالوج.
+ * يُطبَّق على **نص رد المساعد** فقط.
+ */
+function matchForbiddenCatalogReplyPatterns(text) {
+  const t = String(text || "");
+  const denial =
+    /للأسف\s*[،,]?\s*لا\s+يوجد\s+كورس\s+محدد/i.test(t) ||
+    /لكن\s+للأسف\s+لا\s+يوجد\s+كورس/i.test(t) ||
+    /للأسف\s+لا\s+يوجد\s+كورس/i.test(t) ||
+    /لا\s+يوجد\s+كورس\s+محدد\s+بعنوان/i.test(t) ||
+    /لا\s+يوجد\s+كورس[^.:\n]{0,160}بعنوان/i.test(t) ||
+    /لا\s+يوجد\s+كورس\s+بهذا\s+الاسم/i.test(t) ||
+    /لا\s+يوجد\s+كورس[^.!\n]{0,120}في\s+الكتالوج/i.test(t) ||
+    /ما\s+فيش\s+كورس\s+بعنوان/i.test(t) ||
+    /مفيش\s+كورس\s+بعنوان/i.test(t) ||
+    /ما\s+فيش\s+كورس[^.!\n]{0,120}الكتالوج/i.test(t);
+  const fakeSuggestions =
+    /يمكنك\s+استكشاف\s+الكورسات\s+المتعلقة/i.test(t) ||
+    /استكشاف\s+الكورسات\s+المتعلقة/i.test(t) ||
+    /يمكنك\s+البحث\s+عن\s+كورسات\s+أخرى/i.test(t) ||
+    /لكن\s+يمكنك\s+استكشاف/i.test(t) ||
+    /كورسات\s+أخرى\s+تتعلق/i.test(t) ||
+    /ممكن\s+تلاقي\s+كورسات/i.test(t) ||
+    /كورسات\s+تانية\s+تتعلق/i.test(t) ||
+    /كورسات\s+تانيه\s+تتعلق/i.test(t) ||
+    /إدارة\s+المشاريع\s+أو\s+تحسين\s+سير\s+العمل/i.test(t);
+  return { denial, fake: fakeSuggestions };
+}
+
+function shouldSanitizeCatalogAssistantReply(t, ctx) {
+  const { denial, fake } = matchForbiddenCatalogReplyPatterns(t);
+  if (!denial && !fake) return false;
+  const catalogMention =
+    /الكتالوج|كتالوج\s*المتاح|المتاح\s+لدينا|المتاح\s+حالياً|المتاح\s+حاليا/i.test(
+      t
+    );
+  const catalogSignals =
+    !ctx.skipCatalog ||
+    ctx.hasCatalogCards ||
+    ctx.strictNoInvented ||
+    ctx.catalogBlockNonEmpty ||
+    ctx.catalogTitlesCount > 0;
+  if (!ctx.skipCatalog && (ctx.strictNoInvented || ctx.hasCatalogCards) && (denial || fake)) {
+    return true;
+  }
+  if (denial && fake && (catalogSignals || catalogMention)) {
+    return true;
+  }
+  if (
+    catalogMention &&
+    (/ما\s+فيش\s+كورس\s+بعنوان/i.test(t) ||
+      /مفيش\s+كورس\s+بعنوان/i.test(t))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function sanitizeStrictEmptyCatalogReply(text, hasCatalogCardsBelow, ctx) {
+  const t = String(text || "").trim();
+  if (!t) return text;
+  if (!shouldSanitizeCatalogAssistantReply(t, ctx)) return text;
+  const coursesMd = `[صفحة كل الدورات](${ALL_COURSES_URL})`;
+  if (hasCatalogCardsBelow) {
+    return (
+      `في كروت تحت الرسالة 👇 فيها نتيجة البحث على المنصة؛ راجعها الأول. ` +
+      `أحياناً العناوين أو الدروس مكتوبة بالإنجليزي فجرّب نفس الفكرة باللاتيني لو محتاج.<br><br>` +
+      `ولو حابب دور أوسع: ${coursesMd}`
+    );
+  }
+  return (
+    `ما ظهرش في نتيجة البحث الحالية عنوان يطابق صياغتك حرفياً — غالباً العناوين أو الدروس متسجّلة **بالإنجليزي** مش بالعربي الصوتي. ` +
+    `جرّب تكتب نفس الفكرة باللاتيني في رسالة تانية، أو تصفّح ${coursesMd}.`
+  );
+}
 
 /**
  * تعليمات متغيرة: اشتراك عام شهري/سنوي + كوبونات/عروض تخص الاشتراك (BOT_DYNAMIC | PRICING).
@@ -375,6 +453,8 @@ async function smartChat(message, sessionId) {
 - ممنوع أن تقول إن «الكتالوج لا يحتوي تفاصيل» أو «لا أملك معلومات» عن موضوع إذا وُجدت **مقتطفات من محتوى الدروس** في نتائج البحث — هذه المقتطفات هي مصدر رسمي من الدروس؛ لخّصها واذكر الكورس والدرس.
 - إذا وُجد قسم «نتائج البحث في الكتالوج» **بدون** كروت دبلومات/كورسات ملحقة: رتّب الرد عند الحاجة؛ وإن وُجدت «مقتطفات من محتوى الدروس» فاعتمدها للإجابة عن مصطلحات لا تظهر في عناوين الدبلومات/الكورسات.
 - إذا وُجدت كروت دبلومات/كورسات أسفل ردك: **لا تكرر** العناوين أو الأسعار كنص؛ يمكنك جملة أو جملتين توجيه/ترحيب فقط تربط سؤال المستخدم بالنتائج.
+- **اتساق مع الكروت:** ممنوع نفي وجود كورس/محتوى عن موضوع السؤال بصيغة مطلقة ثم عرض كروت منتجات في نفس الرسالة؛ إن وُجدت كروات فاعتبرها نتيجة بحث المنصة ووجّه إليها بجملة قصيرة متسقة.
+- **كتابة صوتية عربية لمركب تقني:** إن سأل المستخدم عن موضوع كتبه بحروف عربية لكنه في الأصل مركب أجنبي شائع في التقنية، لا تقدّم **نفياً مطلقاً** كأن عدم الظهور في هذه الجولة يعني عدم وجود أي محتوى ذي صلة؛ العناوين والدروس قد تُسجَّل باللاتينية. التزم بما يظهر في قسم نتائج الكتالوج أدناه؛ إن لم يظهر شيء فوجّه للتصفح/البحث دون نفي حاسم لصياغة المستخدم.
 - استخدم <br> عند الحاجة؛ روابط HTML بسيطة (نص واضح + href).
 - لا تذكر أنك نموذج لغوي.
 
@@ -435,6 +515,7 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
     system += `
 ═══ كروت HTML جاهزة ═══
 سيتم عرض كروت دبلومات/كورسات أسفل رسالتك. التزم بقسم «عناوين منتجات حقيقية» إن وُجد؛ وإلا **لا تسمّ** أي منتجاً نصاً — العناوين فقط داخل الكروت.
+**ممنوع** الجمع بين كروت حقيقية ونص ينفي وجود كورسات/محتوى أو يقترح «ابحث عن كورسات أخرى في مجال…» بلا عناوين من القائمة الرسمية.
 `;
   }
 
@@ -444,7 +525,15 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 قاعدة البيانات **لم تُرجع** لهذه الصياغة قائمة عناوين كورسات/دبلومات ولا كروت HTML.
 - **ممنوع** الجمع بين «ما عنديش أسماء دقيقة» أو «ما فيش قائمة» وبين **أي** أمثلة لاحقة تبدو أسماء برامج على easyT (مثل صياغات «زي… أو…»، «مثل كورس…»، «فيه كورسات في…» مع تسمية مجال).
 - **ممنوع** تسمية كورسات للبالغ **وللطفل** في نفس الرد إلا من قائمة «عناوين منتجات حقيقية» أعلاه — وهنا القائمة **فارغة**.
-- **المطلوب:** جملة أو جملتان كحد أقصى بلهجة مصرية ودودة: العناوين الدقيقة من **صفحة الدورات** والتصنيفات أو البحث في الموقع؛ ثم رابط HTML واحد واضح: <a href="${ALL_COURSES_URL}">صفحة كل الدورات</a>. يمكنك دعوته يكتب المجال أو عمر الطفل في رسالة تالية للبحث. **لا نقاط ولا قوائم بأسماء كورسات وهمية.**
+- **ممنوع** افتتاح الرد أو التركيز عليه ب**نفي مطلق** لوجود أي كورس يطابق **لفظ المستخدم حرفياً** — قد يكون البحث لم يطابق **كتابة صوتية عربية** لمركب مسجّل باللاتينية في العناوين أو في نصوص الدروس؛ عبّر بلطف أن النتائج لم تظهر في هذه الجولة ووجّه لصفحة الدورات دون ادّعاء أن المنصة خالية من الموضوع.
+- **المطلوب:** جملة واحدة قصيرة بلهجة مصرية ودودة ثم رابط HTML واحد: <a href="${ALL_COURSES_URL}">صفحة كل الدورات</a>. اذكر بلطف أن النتيجة الحالية فاضية وأن التطابق الحرفي مع كتابة عربية صوتية قد يختلف عن العناوين المسجّلة. **ممنوع** جمل تبدأ بـ «للأسف» هنا. **ممنوع** صيغ «يمكنك استكشاف/البحث عن كورسات متعلقة بـ…» أو اقتراح مجالات كبديل — القائمة فارغة وليست لديك عناوين حقيقية.
+`;
+  }
+
+  if (strictNoInventedCourseExamples) {
+    system += `
+═══ تذكير ختامي (أولوية على أسلوب عام) ═══
+ردّك الآن: **جملة واحدة** + **رابط صفحة كل الدورات** فقط. لا تقترح تخصصات أو مجالات أو «كورسات في…».
 `;
   }
 
@@ -475,7 +564,9 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
       ? Math.min(temperature, 0.18)
       : temperature;
     if (strictNoInventedCourseExamples) {
-      temperatureEff = Math.min(temperatureEff, 0.14);
+      temperatureEff = Math.min(temperatureEff, 0.08);
+    } else if (hasCatalogCards) {
+      temperatureEff = Math.min(temperatureEff, 0.1);
     }
     const completion = await openai.chat.completions.create({
       model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
@@ -490,6 +581,14 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
     console.error("gptPrimary smartChat:", e.message);
     replyText = "عذراً، حصلت مشكلة تقنية 😅 حاول تاني كمان شوية 🙏";
   }
+
+  replyText = sanitizeStrictEmptyCatalogReply(replyText, hasCatalogCards, {
+    skipCatalog: !!searchIntent.skip_catalog,
+    strictNoInvented: strictNoInventedCourseExamples,
+    hasCatalogCards,
+    catalogBlockNonEmpty: Boolean(String(catalogBlock || "").trim()),
+    catalogTitlesCount: catalogProductTitles.length,
+  });
 
   let reply = markdownToHtml(replyText || "");
   if (hasCatalogCards) {
@@ -529,4 +628,5 @@ module.exports = {
   prepareSearchTerms,
   getBrainDebugStats,
   clearFaqCache,
+  sanitizeStrictEmptyCatalogReply,
 };

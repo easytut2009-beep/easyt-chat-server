@@ -58,7 +58,9 @@ function prepareSearchTerms(terms) {
     }
     const normT = normalizeArabic(t);
     if (normT.length > 1) result.add(normT);
+    let wi = 0;
     for (const word of t.split(/\s+/)) {
+      if (wi++ >= 28) break;
       const w = word.trim();
       if (w.length <= 1) continue;
       result.add(w);
@@ -76,9 +78,62 @@ function prepareSearchTerms(terms) {
         result.add("ال" + nw.substring(2));
       }
     }
-    if (result.size >= 15) break;
   }
-  return [...result].filter((t) => t.length > 1).slice(0, 12);
+  return [...result].filter((t) => t.length > 1).slice(0, 22);
+}
+
+/**
+ * توسيع **شكلي** عام للمصطلحات اللاتينية (من النية أو الأدوات):
+ * جمع s لكلمة واحدة، تفكيك camelCase، وواصلة ↔ مسافة.
+ * بدون لاحقات/كلمات موضوعية ثابتة.
+ */
+function expandLatinLexicalVariants(term) {
+  const raw = String(term || "").trim();
+  if (!raw) return [];
+  const out = new Set();
+  const push = (x) => {
+    const z = String(x).trim();
+    if (z.length >= 2 && z.length <= 90) out.add(z);
+  };
+  push(raw);
+  const lower = raw.toLowerCase();
+  if (lower !== raw) push(lower);
+
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(raw)) {
+    const spaced = raw.replace(/-/g, " ");
+    push(spaced);
+    const spacedLower = spaced.toLowerCase();
+    if (spacedLower !== spaced) push(spacedLower);
+  }
+
+  if (/[a-z0-9][a-z0-9]*[A-Z]/.test(raw)) {
+    const spaced = raw.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+    push(spaced);
+    const spacedLower = spaced.toLowerCase();
+    if (spacedLower !== spaced) push(spacedLower);
+    const compact = spaced.replace(/\s+/g, "").toLowerCase();
+    if (compact.length >= 2) push(compact);
+  }
+
+  if (!/^[a-z][a-z0-9]*$/i.test(raw)) {
+    return [...out];
+  }
+  if (raw.length < 4) return [...out];
+  /**
+   * فصل عند منتصف تقريبي لمركّب لاتيني مفرد طويل — يطابق عناوين مكتوبة «كلمتين» في الدروس
+   * (مثل work|flow) بدون لاحقة موضوعية ثابتة.
+   */
+  if (raw.length >= 8 && raw.length <= 36) {
+    const mid = Math.floor(lower.length / 2);
+    if (mid >= 4 && lower.length - mid >= 4) {
+      push(`${lower.slice(0, mid)} ${lower.slice(mid)}`);
+    }
+  }
+  if (!/s$/i.test(raw)) {
+    push(raw + "s");
+    push(lower + "s");
+  }
+  return [...out];
 }
 
 function finalizeReply(html) {
@@ -113,6 +168,7 @@ module.exports = {
   levenshteinDistance,
   similarityRatio,
   prepareSearchTerms,
+  expandLatinLexicalVariants,
   finalizeReply,
   markdownToHtml,
 };

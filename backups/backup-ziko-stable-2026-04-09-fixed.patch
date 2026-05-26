@@ -1,0 +1,1207 @@
+diff --git a/.env.example b/.env.example
+index 9da5276..df8e879 100644
+--- a/.env.example
++++ b/.env.example
+@@ -28,6 +28,10 @@ PORT=3000
+ 
+ # ╪¬╪╣╪╖┘è┘ä ┘à╪▒╪º╪¼╪╣╪⌐ ╪╣┘å╪º┘ê┘è┘å ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ╪¿╪º┘ä┘å┘à┘ê╪░╪¼ (╪º╪│╪¬╪«╪▒╪º╪¼ + ╪¬╪╢┘à┘è┘å ┘ü┘é╪╖)
+ # SKIP_LLM_CATALOG_TITLE_FILTER=1
++# ╪Ñ╪½╪▒╪º╪í ╪º┘ä┘â╪▒┘ê╪¬ ┘à┘å ╪¼╪»┘ê┘ä chunks: ┘à╪╣╪╖┘æ┘ä ╪¬┘ä┘é╪º╪ª┘è╪º┘ï ╪╣┘å╪» ┘ê╪¼┘ê╪» ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ┘à┘å ╪º┘ä┘å┘è╪⌐/╪º┘ä╪▒╪│╪º┘ä╪⌐ (┘è┘é┘ä┘ä timeout ╪╣┘ä┘ë Supabase)
++# CATALOG_FORCE_CHUNKS=1
++# ╪¬╪╣╪╖┘è┘ä ╪Ñ╪½╪▒╪º╪í ╪º┘ä┘Ç chunks ┘ü┘è ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ╪»╪º╪ª┘à╪º┘ï (╪¡╪¬┘ë ┘ä┘ä╪º╪│╪¬┘â╪┤╪º┘ü ╪º┘ä╪╣╪º┘à)
++# CATALOG_SKIP_CHUNKS_ENRICHMENT=1
+ 
+ # ╪º╪¡╪¬┘è╪º╪╖┘è ┘ä╪│╪╣╪▒ ╪º┘ä╪º╪┤╪¬╪▒╪º┘â ╪º┘ä╪┤┘ç╪▒┘è/╪º┘ä╪│┘å┘ê┘è ┘ü┘é╪╖ ╪Ñ╪░╪º ┘ä┘à ┘è┘Å╪╢┘ü ╪╡┘ü ┘ü┘è bot_instructions (BOT_DYNAMIC | PRICING)
+ # ╪ú╪│╪╣╪º╪▒ ╪º┘ä┘â┘ê╪▒╪│╪º╪¬/╪º┘ä╪»╪¿┘ä┘ê┘à╪º╪¬ ┘à┘å ╪º┘ä╪¼╪»╪º┘ê┘ä ╪╣╪¿╪▒ ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ΓÇö ┘ä┘è╪│╪¬ ┘à┘å env
+diff --git a/public/ziko-embed.html b/public/ziko-embed.html
+index f199d53..77e7e63 100644
+--- a/public/ziko-embed.html
++++ b/public/ziko-embed.html
+@@ -3,7 +3,7 @@
+ #ziko-chat-box,#ziko-chat-box *,#ziko-toggle{font-family:Tahoma,Geneva,sans-serif!important;box-sizing:border-box}
+ #ziko-toggle{position:fixed;bottom:20px;left:20px;width:64px;height:64px;cursor:pointer;z-index:2147483646;background:transparent;border:0;padding:0}
+ #ziko-toggle img{width:100%;height:100%;object-fit:contain;display:block}
+-#ziko-chat-box{position:fixed;bottom:20px;left:20px;width:95vw;max-width:400px;height:min(560px,calc(100vh - 48px));background:#f5f5f5;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden;direction:rtl;z-index:2147483647}
++#ziko-chat-box{position:fixed!important;bottom:20px!important;left:20px!important;width:95vw!important;max-width:400px!important;height:calc(100vh - 40px)!important;max-height:calc(100vh - 40px)!important;background:#f5f5f5;border-radius:16px!important;box-shadow:0 16px 48px rgba(0,0,0,.22)!important;display:none;flex-direction:column;overflow:hidden;direction:rtl;z-index:2147483647}
+ #ziko-chat-box.ziko-visible{display:flex}
+ #ziko-header{background:linear-gradient(135deg,#d91c1c,#a30000);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+ #ziko-close{cursor:pointer;font-size:18px;color:#fff;background:none;border:none}
+diff --git a/src/brain/catalogCards.js b/src/brain/catalogCards.js
+index 2b62d6a..76058fa 100644
+--- a/src/brain/catalogCards.js
++++ b/src/brain/catalogCards.js
+@@ -15,6 +15,44 @@ function escapeHtml(text) {
+     .replace(/"/g, "&quot;");
+ }
+ 
++/**
++ * ┘è┘å╪╕┘ü ┘à┘é╪¬╪╖┘ü╪º╪¬ ╪º┘ä┘Ç chunks ┘é╪¿┘ä ╪º┘ä╪╣╪▒╪╢:
++ * - ╪Ñ╪▓╪º┘ä╪⌐ ╪ó╪½╪º╪▒ HTML/encoding
++ * - ╪¬┘ê╪¡┘è╪» ╪º┘ä┘à╪│╪º┘ü╪º╪¬ ┘ê╪º┘ä╪╣┘ä╪º┘à╪º╪¬
++ * - ╪¬┘é╪╡┘è╪▒ ╪░┘â┘è ╪╣┘ä┘ë ╪¡╪»┘ê╪» ╪º┘ä╪¼┘à┘ä╪⌐ ╪¡╪¬┘ë ┘ä╪º ┘è╪╕┘ç╪▒ ╪º┘ä┘å╪╡ "┘à┘â╪│┘æ╪▒"
++ */
++function cleanChunkSnippet(text, maxLen = 170) {
++  if (!text) return "";
++  let s = String(text)
++    .replace(/<[^>]*>/g, " ")
++    .replace(/&nbsp;/gi, " ")
++    .replace(/&amp;/gi, "&")
++    .replace(/&quot;/gi, '"')
++    .replace(/&#39;/g, "'")
++    .replace(/&[a-z]+;/gi, " ")
++    .replace(/[\r\n\t]+/g, " ")
++    .replace(/\s+/g, " ")
++    .replace(/\s*([,╪î;╪¢:.!?╪ƒ])\s*/g, "$1 ")
++    .trim();
++
++  // ╪Ñ╪▓╪º┘ä╪⌐ ╪¿╪»╪º┘è╪º╪¬/┘å┘ç╪º┘è╪º╪¬ ╪║┘è╪▒ ┘à┘ü┘è╪»╪⌐ ╪┤╪º╪ª╪╣╪⌐ ┘ü┘è ╪º┘ä╪¬┘ü╪▒┘è╪║.
++  s = s.replace(/^[\-ΓÇôΓÇöΓÇó.:╪î╪¢!?╪ƒ\s]+/, "").replace(/[\-ΓÇôΓÇöΓÇó.:╪î╪¢!?╪ƒ\s]+$/, "");
++  if (!s) return "";
++
++  if (s.length <= maxLen) return s;
++
++  // ┘é╪╡ ╪╣┘å╪» ╪ó╪«╪▒ ┘ü╪º╪╡┘ä ╪¼┘à┘ä╪⌐/╪╣╪¿╪º╪▒╪⌐ ┘é╪▒┘è╪¿ ┘à┘å ╪º┘ä╪¡╪».
++  const cutZone = s.slice(0, maxLen + 24);
++  const breakpoints = [". ", "╪ƒ ", "! ", "╪î ", " - ", ": ", "╪¢ "];
++  let cutAt = -1;
++  for (const bp of breakpoints) {
++    const idx = cutZone.lastIndexOf(bp);
++    if (idx > 90) cutAt = Math.max(cutAt, idx + bp.trim().length);
++  }
++  if (cutAt === -1) cutAt = maxLen;
++  return s.slice(0, cutAt).trim() + "ΓÇª";
++}
++
+ function formatCourseCard(course, instructors, index) {
+   const instructor = course.instructor_id
+     ? (instructors || []).find((i) => String(i.id) === String(course.instructor_id))
+@@ -74,7 +112,10 @@ function formatCourseCard(course, instructors, index) {
+       }
+       card += `<br>`;
+       if (l.excerpt) {
+-        card += `<span style="display:block;color:#666;font-size:11px;line-height:1.45;margin:2px 0 6px 8px;border-right:2px solid #e63946;padding-right:6px">Γå│ ${escapeHtml(l.excerpt)}</span>`;
++        const niceExcerpt = cleanChunkSnippet(l.excerpt, 165);
++        if (niceExcerpt) {
++          card += `<span style="display:block;color:#666;font-size:11px;line-height:1.45;margin:2px 0 6px 8px;border-right:2px solid #e63946;padding-right:6px">Γå│ ${escapeHtml(niceExcerpt)}</span>`;
++        }
+       }
+     });
+     card += `</div>`;
+@@ -104,7 +145,7 @@ function formatCourseCard(course, instructors, index) {
+ function formatChunkCard(chunk, index) {
+   const courseTitle = chunk.course_title || "┘â┘ê╪▒╪│";
+   const lessonTitle = chunk.lesson_title || "";
+-  const excerpt = chunk.excerpt || "";
++  const excerpt = cleanChunkSnippet(chunk.excerpt || "", 190);
+   const url = chunk.course_link || ALL_COURSES_URL;
+   const num = index !== undefined ? `${index}. ` : "";
+ 
+diff --git a/src/brain/gptPrimaryEngine.js b/src/brain/gptPrimaryEngine.js
+index a704fc0..e0f0af5 100644
+--- a/src/brain/gptPrimaryEngine.js
++++ b/src/brain/gptPrimaryEngine.js
+@@ -374,7 +374,7 @@ async function smartChat(message, sessionId) {
+ - ┘ä╪º ╪¬╪«╪¬╪▒╪╣ ╪ú╪│┘à╪º╪í ┘â┘ê╪▒╪│╪º╪¬ ╪ú┘ê ╪»╪¿┘ä┘ê┘à╪º╪¬ ╪ú┘ê ╪▒┘ê╪º╪¿╪╖ ╪║┘è╪▒ ┘à╪░┘â┘ê╪▒╪⌐ ┘ü┘è ┘å╪¬╪º╪ª╪¼ ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ╪ú┘ê ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä┘à╪▒╪¼╪╣┘è╪⌐ ╪ú┘ê ╪º┘ä╪▒┘ê╪º╪¿╪╖ ╪º┘ä╪▒╪│┘à┘è╪⌐ ╪ú┘ê ╪▒╪│╪º┘ä╪⌐ ╪º┘ä┘à╪│╪¬╪«╪»┘à. **┘à┘à┘å┘ê╪╣** ╪º╪«╪¬╪▒╪º╪╣ ╪╣┘å┘ê╪º┘å ┘è╪¿╪»┘ê ┘à┘å╪╖┘é┘è╪º┘ï ┘ä┘â┘å┘ç **╪║┘è╪▒ ╪╕╪º┘ç╪▒** ┘ü┘è ┘é╪º╪ª┘à╪⌐ ┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¿╪¡╪½ ╪º┘ä╪▒╪│┘à┘è╪⌐ ┘ä┘ç╪░┘ç ╪º┘ä╪¼┘ê┘ä╪⌐.
+ - ┘à┘à┘å┘ê╪╣ ╪ú┘å ╪¬┘é┘ê┘ä ╪Ñ┘å ┬½╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ┘ä╪º ┘è╪¡╪¬┘ê┘è ╪¬┘ü╪º╪╡┘è┘ä┬╗ ╪ú┘ê ┬½┘ä╪º ╪ú┘à┘ä┘â ┘à╪╣┘ä┘ê┘à╪º╪¬┬╗ ╪╣┘å ┘à┘ê╪╢┘ê╪╣ ╪Ñ╪░╪º ┘ê┘Å╪¼╪»╪¬ **┘à┘é╪¬╪╖┘ü╪º╪¬ ┘à┘å ┘à╪¡╪¬┘ê┘ë ╪º┘ä╪»╪▒┘ê╪│** ┘ü┘è ┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¿╪¡╪½ ΓÇö ┘ç╪░┘ç ╪º┘ä┘à┘é╪¬╪╖┘ü╪º╪¬ ┘ç┘è ┘à╪╡╪»╪▒ ╪▒╪│┘à┘è ┘à┘å ╪º┘ä╪»╪▒┘ê╪│╪¢ ┘ä╪«┘æ╪╡┘ç╪º ┘ê╪º╪░┘â╪▒ ╪º┘ä┘â┘ê╪▒╪│ ┘ê╪º┘ä╪»╪▒╪│.
+ - ╪Ñ╪░╪º ┘ê┘Å╪¼╪» ┘é╪│┘à ┬½┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¿╪¡╪½ ┘ü┘è ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼┬╗ **╪¿╪»┘ê┘å** ┘â╪▒┘ê╪¬ ╪»╪¿┘ä┘ê┘à╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ┘à┘ä╪¡┘é╪⌐: ╪▒╪¬┘æ╪¿ ╪º┘ä╪▒╪» ╪╣┘å╪» ╪º┘ä╪¡╪º╪¼╪⌐╪¢ ┘ê╪Ñ┘å ┘ê┘Å╪¼╪»╪¬ ┬½┘à┘é╪¬╪╖┘ü╪º╪¬ ┘à┘å ┘à╪¡╪¬┘ê┘ë ╪º┘ä╪»╪▒┘ê╪│┬╗ ┘ü╪º╪╣╪¬┘à╪»┘ç╪º ┘ä┘ä╪Ñ╪¼╪º╪¿╪⌐ ╪╣┘å ┘à╪╡╪╖┘ä╪¡╪º╪¬ ┘ä╪º ╪¬╪╕┘ç╪▒ ┘ü┘è ╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪»╪¿┘ä┘ê┘à╪º╪¬/╪º┘ä┘â┘ê╪▒╪│╪º╪¬.
+-- ╪Ñ╪░╪º ┘ê┘Å╪¼╪»╪¬ ┘â╪▒┘ê╪¬ ╪»╪¿┘ä┘ê┘à╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ╪ú╪│┘ü┘ä ╪▒╪»┘â: **┘ä╪º ╪¬┘â╪▒╪▒** ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪ú┘ê ╪º┘ä╪ú╪│╪╣╪º╪▒ ┘â┘å╪╡╪¢ ┘è┘à┘â┘å┘â ╪¼┘à┘ä╪⌐ ╪ú┘ê ╪¼┘à┘ä╪¬┘è┘å ╪¬┘ê╪¼┘è┘ç/╪¬╪▒╪¡┘è╪¿ ┘ü┘é╪╖ ╪¬╪▒╪¿╪╖ ╪│╪ñ╪º┘ä ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪¿╪º┘ä┘å╪¬╪º╪ª╪¼.
++- ╪Ñ╪░╪º ┘ê┘Å╪¼╪»╪¬ ┘â╪▒┘ê╪¬ ╪»╪¿┘ä┘ê┘à╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ╪ú╪│┘ü┘ä ╪▒╪»┘â (╪ú┘ê ╪╣┘å╪º┘ê┘è┘å ┘à┘å╪¬╪¼╪º╪¬ ╪▒╪│┘à┘è╪⌐ ┘ü┘è ╪º┘ä╪│┘è╪º┘é): **╪Ñ┘ä╪▓╪º┘à┘è** ΓÇö ╪º┘ä╪▒╪» ╪º┘ä┘å╪╡┘è **╪¼┘à┘ä╪¬╪º┘å ┘é╪╡┘è╪▒╪¬╪º┘å ┘â╪¡╪» ╪ú┘é╪╡┘ë**╪¢ **┘à┘à┘å┘ê╪╣** ┘é┘ê╪º╪ª┘à ┘à╪▒┘é┘æ┘à╪⌐ ╪ú┘ê ┘å┘é╪º╪╖ ╪¬╪╣╪»╪º╪» (╪┤╪▒╪╖╪⌐ ╪ú┘ê ╪¬╪╣╪»╪º╪» ╪»╪º╪ª╪▒┘è)╪¢ **┘à┘à┘å┘ê╪╣** ╪│╪▒╪» ╪ú╪│┘à╪º╪í ┘â┘ê╪▒╪│╪º╪¬/╪»╪¿┘ä┘ê┘à╪º╪¬ ╪ú┘ê ╪ú╪│╪╣╪º╪▒ ┘ü┘è ╪º┘ä┘å╪╡ (╪º┘ä┘â╪▒┘ê╪¬ ╪¬╪╣╪▒╪╢┘ç╪º). ╪º┘â╪¬┘ü┘É ╪¿╪¬╪▒╪¡┘è╪¿/╪¬┘ê╪¼┘è┘ç ╪╣╪º┘à ╪½┘à ╪¬┘ê┘é┘æ┘ü.
+ - ╪º╪│╪¬╪«╪»┘à <br> ╪╣┘å╪» ╪º┘ä╪¡╪º╪¼╪⌐╪¢ ╪▒┘ê╪º╪¿╪╖ HTML ╪¿╪│┘è╪╖╪⌐ (┘å╪╡ ┘ê╪º╪╢╪¡ + href).
+ - ┘ä╪º ╪¬╪░┘â╪▒ ╪ú┘å┘â ┘å┘à┘ê╪░╪¼ ┘ä╪║┘ê┘è.
+ 
+@@ -412,18 +412,18 @@ ${linksBlock}
+ 
+   if (catalogProductTitles.length > 0) {
+     system += `
+-ΓòÉΓòÉΓòÉ ╪╣┘å╪º┘ê┘è┘å ┘à┘å╪¬╪¼╪º╪¬ **╪¡┘é┘è┘é┘è╪⌐** ╪▒╪¼╪╣╪¬ ┘à┘å ┘é╪º╪╣╪»╪⌐ ╪º┘ä╪¿┘è╪º┘å╪º╪¬ ┘ä┘ç╪░╪º ╪º┘ä╪╖┘ä╪¿ ΓòÉΓòÉΓòÉ
++ΓòÉΓòÉΓòÉ ╪╣┘å╪º┘ê┘è┘å ┘à┘å╪¬╪¼╪º╪¬ **╪¡┘é┘è┘é┘è╪⌐** ╪▒╪¼╪╣╪¬ ┘à┘å ┘é╪º╪╣╪»╪⌐ ╪º┘ä╪¿┘è╪º┘å╪º╪¬ ┘ä┘ç╪░╪º ╪º┘ä╪╖┘ä╪¿ (┘ä┘ä┘à╪▒╪¼╪╣ ╪º┘ä╪»╪º╪«┘ä┘è ┘ü┘é╪╖) ΓòÉΓòÉΓòÉ
+ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+ 
+ ┘é┘ê╪º╪╣╪» ╪╡╪º╪▒┘à╪⌐:
+-- **┘à┘à┘å┘ê╪╣** ╪░┘â╪▒ ╪╣┘å┘ê╪º┘å ╪»╪¿┘ä┘ê┘à╪⌐ ╪ú┘ê ┘â┘ê╪▒╪│ ┘ü┘è ╪▒╪»┘â ╪Ñ┘ä╪º ╪Ñ╪░╪º ┘â╪º┘å **┘å┘ü╪│ ╪º┘ä┘å╪╡ ╪¡╪▒┘ü┘è╪º┘ï** ╪ú╪¡╪» ╪º┘ä╪ú╪│╪╖╪▒ ╪ú╪╣┘ä╪º┘ç (┘è┘à┘â┘å┘â ╪¡╪░┘ü ╪▒┘é┘à ╪º┘ä╪│╪╖╪▒ ╪╣┘å╪» ╪º┘ä┘å╪│╪«).
+-- **┘à┘à┘å┘ê╪╣** ╪º╪¿╪¬┘â╪º╪▒ ╪ú┘ê╪╡╪º┘ü ┘ä┘à┘å╪¬╪¼╪º╪¬ ╪║┘è╪▒ ┘à┘ê╪¼┘ê╪»╪⌐ ┘ü┘è ╪º┘ä┘é╪º╪ª┘à╪⌐╪¢ ┘ä╪º ╪¬╪│┘à┘æ┘è ┬½╪»╪¿┘ä┘ê┘à╪⌐ΓÇª┬╗ ╪ú┘ê ┬½┘â┘ê╪▒╪│ΓÇª┬╗ ╪¿╪º╪│┘à ╪¼╪»┘è╪».
+-- ╪º┘ä╪ú┘ü╪╢┘ä ╪║╪º┘ä╪¿╪º┘ï: ╪¼┘à┘ä╪⌐ ╪ú┘ê ╪¼┘à┘ä╪¬╪º┘å ╪╣╪º┘à╪¬╪º┘å (╪¿╪»┘ê┘å ╪ú╪│┘à╪º╪í) + ╪º┘ä╪Ñ╪┤╪º╪▒╪⌐ ╪Ñ┘ä┘ë ╪ú┘å ╪º┘ä╪¬┘ü╪º╪╡┘è┘ä ┘ê╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪»┘é┘è┘é╪⌐ ┘ü┘è **╪º┘ä┘â╪▒┘ê╪¬** ╪ú╪│┘ü┘ä ╪º┘ä╪▒╪│╪º┘ä╪⌐.
++- **┘à┘à┘å┘ê╪╣** ┘å╪│╪« ┘ç╪░┘ç ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪ú┘ê ╪│╪▒╪»┘ç╪º ┘ü┘è ╪▒╪»┘â ╪º┘ä┘å╪╡┘è ΓÇö ╪│╪¬╪╕┘ç╪▒ ┘ä┘ä┘à╪│╪¬╪«╪»┘à ╪»╪º╪«┘ä **╪º┘ä┘â╪▒┘ê╪¬** ╪ú╪│┘ü┘ä ╪º┘ä╪▒╪│╪º┘ä╪⌐.
++- **┘à┘à┘å┘ê╪╣** ┘é┘ê╪º╪ª┘à ┘å┘é╪º╪╖ ╪ú┘ê ╪¬╪▒┘é┘è┘à ┘ü┘è ╪º┘ä╪▒╪»╪¢ **╪¼┘à┘ä╪¬╪º┘å ┘é╪╡┘è╪▒╪¬╪º┘å ┘â╪¡╪» ╪ú┘é╪╡┘ë** ┘ü┘é╪╖.
++- **┘à┘à┘å┘ê╪╣** ╪º╪¿╪¬┘â╪º╪▒ ┘à┘å╪¬╪¼╪º╪¬ ╪║┘è╪▒ ┘à┘ê╪¼┘ê╪»╪⌐ ┘ü┘è ╪º┘ä┘é╪º╪ª┘à╪⌐ ╪ú╪╣┘ä╪º┘ç.
+ `;
+   } else if (hasCatalogCards) {
+     system += `
+ ΓòÉΓòÉΓòÉ ┘â╪▒┘ê╪¬ ┘à┘å ╪º┘ä┘â╪¬╪º┘ä┘ê╪¼ ╪¿╪»┘ê┘å ┘é╪º╪ª┘à╪⌐ ╪╣┘å╪º┘ê┘è┘å ┘à┘å┘ü╪╡┘ä╪⌐ ΓòÉΓòÉΓòÉ
+-**┘à┘à┘å┘ê╪╣** ╪░┘â╪▒ ╪ú┘è ╪╣┘å┘ê╪º┘å ╪»╪¿┘ä┘ê┘à╪⌐ ╪ú┘ê ┘â┘ê╪▒╪│ ╪ú┘ê ┘ê╪╡┘ü ┘à┘å╪¬╪¼ ┘ü┘è ┘å╪╡┘â╪¢ ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪¡┘é┘è┘é┘è╪⌐ ╪¬╪╕┘ç╪▒ **┘ü┘é╪╖** ╪»╪º╪«┘ä ╪º┘ä┘â╪▒┘ê╪¬ HTML. ╪º┘â╪¬╪¿ ╪¼┘à┘ä╪⌐ ╪╣╪º┘à╪⌐ ┘é╪╡┘è╪▒╪⌐ ╪½┘à ╪ú┘ê┘é┘ü.
++**┘à┘à┘å┘ê╪╣** ╪░┘â╪▒ ╪ú┘è ╪╣┘å┘ê╪º┘å ╪»╪¿┘ä┘ê┘à╪⌐ ╪ú┘ê ┘â┘ê╪▒╪│ ┘ü┘è ╪º┘ä┘å╪╡╪¢ **┘à┘à┘å┘ê╪╣** ┘é┘ê╪º╪ª┘à ╪ú┘ê ┘å┘é╪º╪╖. **╪¼┘à┘ä╪¬╪º┘å ┘é╪╡┘è╪▒╪¬╪º┘å ┘â╪¡╪» ╪ú┘é╪╡┘ë** ╪½┘à ╪¬┘ê┘é┘æ┘ü.
+ `;
+   }
+ 
+@@ -434,7 +434,7 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+   if (hasCatalogCards) {
+     system += `
+ ΓòÉΓòÉΓòÉ ┘â╪▒┘ê╪¬ HTML ╪¼╪º┘ç╪▓╪⌐ ΓòÉΓòÉΓòÉ
+-╪│┘è╪¬┘à ╪╣╪▒╪╢ ┘â╪▒┘ê╪¬ ╪»╪¿┘ä┘ê┘à╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ╪ú╪│┘ü┘ä ╪▒╪│╪º┘ä╪¬┘â. ╪º┘ä╪¬╪▓┘à ╪¿┘é╪│┘à ┬½╪╣┘å╪º┘ê┘è┘å ┘à┘å╪¬╪¼╪º╪¬ ╪¡┘é┘è┘é┘è╪⌐┬╗ ╪Ñ┘å ┘ê┘Å╪¼╪»╪¢ ┘ê╪Ñ┘ä╪º **┘ä╪º ╪¬╪│┘à┘æ** ╪ú┘è ┘à┘å╪¬╪¼╪º┘ï ┘å╪╡╪º┘ï ΓÇö ╪º┘ä╪╣┘å╪º┘ê┘è┘å ┘ü┘é╪╖ ╪»╪º╪«┘ä ╪º┘ä┘â╪▒┘ê╪¬.
++╪│┘è╪¬┘à ╪╣╪▒╪╢ ┘â╪▒┘ê╪¬ ╪»╪¿┘ä┘ê┘à╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ╪ú╪│┘ü┘ä ╪▒╪│╪º┘ä╪¬┘â. ╪▒╪»┘â ╪º┘ä┘å╪╡┘è: **╪¼┘à┘ä╪¬╪º┘å ┘â╪¡╪» ╪ú┘é╪╡┘ë**╪î ╪¿╪»┘ê┘å ╪ú╪│┘à╪º╪í ┘à┘å╪¬╪¼╪º╪¬ ┘ê╪¿╪»┘ê┘å ┘é┘ê╪º╪ª┘à ΓÇö ╪º┘ä╪¬┘ü╪º╪╡┘è┘ä ┘â┘ä┘ç╪º ┘ü┘è ╪º┘ä┘â╪▒┘ê╪¬.
+ `;
+   }
+ 
+@@ -467,7 +467,7 @@ ${catalogProductTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+     if (searchIntent.response_style === "brief") maxTokens = Math.min(maxTokens, 480);
+     else if (searchIntent.response_style === "detailed") maxTokens = Math.min(1600, maxTokens + 180);
+     if (hasCatalogCards) {
+-      maxTokens = Math.min(220, Math.max(80, maxTokens));
++      maxTokens = Math.min(140, Math.max(64, maxTokens));
+     } else if (strictNoInventedCourseExamples) {
+       maxTokens = Math.min(320, Math.max(120, maxTokens));
+     }
+diff --git a/src/brain/hierarchicalSearch.js b/src/brain/hierarchicalSearch.js
+index 6241548..e60fad1 100644
+--- a/src/brain/hierarchicalSearch.js
++++ b/src/brain/hierarchicalSearch.js
+@@ -10,8 +10,13 @@ const { supabase, openai } = require("../lib/clients");
+ 
+ /** ╪ú┘é╪╡┘ë ╪╣╪»╪» ┘â╪▒┘ê╪¬ ┘â┘ê╪▒╪│╪º╪¬ ┘ü┘è ╪º┘ä╪▒╪» ΓÇö ╪¬╪¼┘å╪¿╪º┘ï ┘ä╪Ñ╪║╪▒╪º┘é ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪¿╪╣╪┤╪▒╪º╪¬ ╪º┘ä┘å╪¬╪º╪ª╪¼ ╪º┘ä╪╢╪╣┘è┘ü╪⌐ ╪º┘ä╪╡┘ä╪⌐ */
+ const MAX_COURSE_CATALOG_CARDS = 6;
++/**
++ * ╪¡╪¼┘à ┘à╪¼┘à┘ê╪╣╪⌐ ╪º┘ä┘à╪▒╪┤╪¡┘è┘å ┘é╪¿┘ä ╪¬╪▒╪¬┘è╪¿ ╪º┘ä╪╡┘ä╪⌐ ┘ê┘à╪▒╪º╪¼╪╣╪⌐ ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪¿╪º┘ä┘å┘à┘ê╪░╪¼.
++ * ┘â╪º┘å ╪º┘ä╪¡╪╡╪▒ ╪╣┘ä┘ë 6 ┘à╪¿┘â╪▒╪º┘ï ┘è┘Å╪│┘é╪╖ ┘â┘ê╪▒╪│╪º╪¬ ╪╡╪º┘ä╪¡╪⌐ (┘à╪½┘ä ╪╣╪»╪⌐ ┘â┘ê╪▒╪│╪º╪¬ ┘ü┘ê╪¬┘ê╪┤┘ê╪¿ ┘à╪«╪¬┘ä┘ü╪⌐).
++ */
++const MAX_COURSE_CATALOG_PIPELINE = 20;
+ /** ╪ú┘é╪╡┘ë ╪╣┘å╪º╪╡╪▒ ╪¬┘Å╪▒╪│┘ä ┘ä┘à╪▒╪º╪¼╪╣╪⌐ ╪╣┘å╪º┘ê┘è┘å ╪¿╪º┘ä┘å┘à┘ê╪░╪¼ (┘â┘ê╪▒╪│╪º╪¬ + ╪»╪¿┘ä┘ê┘à╪º╪¬) */
+-const MAX_LLM_TITLE_FILTER_ITEMS = 14;
++const MAX_LLM_TITLE_FILTER_ITEMS = 18;
+ /** ╪ú╪»┘å┘ë ╪¬╪┤╪º╪¿┘ç ┘ä┘é╪¿┘ê┘ä chunk ┘à┘å match_lesson_chunks (┘â╪º┘å 0.36 ┘ü┘è ╪º┘ä┘Ç RPC ┘ü┘è╪»╪«┘ä ╪ú┘è ┘à╪¡╪¬┘ê┘ë). */
+ const MIN_LESSON_CHUNK_SIMILARITY = 0.52;
+ /** ╪Ñ┘å ┘ä┘à ┘è┘ê╪¼╪» ╪¬╪╖╪º╪¿┘é ┘à╪╣╪¼┘à┘è ┘ü┘è ┘å╪╡ ╪º┘ä┘Ç chunk ╪ú┘ê ╪╣┘å┘ê╪º┘å ╪º┘ä╪»╪▒╪│╪î ┘ä╪º ┘å┘é╪¿┘ä ╪¬╪┤╪º╪¿┘ç╪º┘ï ╪»┘ä╪º┘ä┘è╪º┘ï ╪╢╪╣┘è┘ü╪º┘ï ┘ü┘é╪╖. */
+@@ -229,8 +234,8 @@ async function mergeChunkMatchesIntoCourses(
+   );
+   courses.length = 0;
+   courses.push(...withChunk, ...withoutChunk);
+-  if (courses.length > MAX_COURSE_CATALOG_CARDS) {
+-    courses.splice(MAX_COURSE_CATALOG_CARDS);
++  if (courses.length > MAX_COURSE_CATALOG_PIPELINE) {
++    courses.splice(MAX_COURSE_CATALOG_PIPELINE);
+   }
+ }
+ 
+@@ -474,36 +479,13 @@ function englishWholeWord(hayRaw, word) {
+   return re.test(hayRaw);
+ }
+ 
+-/**
+- * ┬½workflow┬╗ ┘à╪¬╪╣╪»┘æ╪» ╪º┘ä┘à╪╣╪º┘å┘è: ┘â┘ä┘à╪⌐ ┘â╪º┘à┘ä╪⌐ ┘ü┘è ┬½PBR Workflow┬╗ ┘ä┘è╪│╪¬ ┘å┘ü╪│ ╪╖┘ä╪¿ ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪╣┘å ╪│┘è╪▒ ╪╣┘à┘ä/╪ú╪¬┘à╪¬╪⌐.
+- * ┘å╪«╪¬╪¿╪▒ ┘å╪º┘ü╪░╪⌐ ┘é╪╡┘è╪▒╪⌐ ╪¡┘ê┘ä ╪º┘ä╪¬╪╖╪º╪¿┘é ΓÇö ╪¿╪»┘ê┘å ┘é┘ê╪º╪ª┘à ┘à┘ê╪º╪╢┘è╪╣ ╪╖┘ê┘è┘ä╪⌐.
+- */
+-function isWorkflowTechnicalCompoundContext(hayRaw) {
+-  const r = String(hayRaw || "").toLowerCase();
+-  return (
+-    /\b(?:pbr|physically\s+based|git|gitea|gitlab|github|ci\/cd|ci\s*cd)\s+workflow\b/.test(
+-      r
+-    ) ||
+-    /\b(?:render|shader|uv|material|texture|bump|normal\s*map|topology|rigging|sculpt)\s+workflow\b/.test(
+-      r
+-    ) ||
+-    /\bworkflow\s+(?:shader|render|texture|map|node|uv|pbr)\b/.test(r)
+-  );
+-}
+-
+-/** ╪ú┘ê┘ä ╪╕┘ç┘ê╪▒ ┘ä┘Ç workflow ┘à┘é╪¿┘ê┘ä ┘ä┘ä╪¿╪¡╪½ (┘ä┘è╪│ ╪╢┘à┘å ┘à╪▒┘â╪¿ ╪¬┘é┘å┘è ┘à╪½┘ä PBR Workflow). */
++/** ╪ú┘ê┘ä ╪╕┘ç┘ê╪▒ ┘ä┘â┘ä┘à╪⌐ workflow ┘â┘â┘ä┘à╪⌐ ┘à╪│╪¬┘é┘ä╪⌐ (┘ä╪º ┘è╪╖╪º╪¿┘é solidworks). */
+ function findFirstAllowedWorkflowMatch(plain) {
+   const p = String(plain || "");
+   const re = /\bworkflow\b/gi;
+   let m;
+   while ((m = re.exec(p)) !== null) {
+-    const win = p.slice(
+-      Math.max(0, m.index - 28),
+-      Math.min(p.length, m.index + m[0].length + 36)
+-    );
+-    if (!isWorkflowTechnicalCompoundContext(win)) {
+-      return { start: m.index, end: m.index + m[0].length };
+-    }
++    return { start: m.index, end: m.index + m[0].length };
+   }
+   return null;
+ }
+@@ -568,6 +550,17 @@ function hasNarrowTopicTerms(userClean, lexicalTerms, intent) {
+   return anchored.length > 0 || userDerived.length > 0;
+ }
+ 
++/** ╪¬╪╖╪º╪¿┘é ┘ü┘è ╪╣┘å┘ê╪º┘å ╪º┘ä┘â┘ê╪▒╪│ ╪º┘ä╪▒╪ª┘è╪│┘è ┘ü┘é╪╖ ΓÇö ┘ä┘ä╪¬┘à┘è┘è╪▓ ╪¿┘è┘å ┬½┘â┘ê╪▒╪│ ┘ü┘ê╪¬┘ê╪┤┘ê╪¿┬╗ ┘ê┘à╪│╪º╪▒ ┘è╪░┘â╪▒ ╪º┘ä┘ü┘ê╪¬┘ê╪┤┘ê╪¿ ┘ü┘è ╪º┘ä┘ê╪╡┘ü ┘ü┘é╪╖. */
++function courseCatalogPrimaryTitleHitsTerm(course, terms) {
++  const title = normalizeArabic((course.title || "").toLowerCase());
++  const titleRaw = String(course.title || "").toLowerCase();
++  for (const term of terms) {
++    if (isCourseLexicalNoiseTerm(term)) continue;
++    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
++  }
++  return false;
++}
++
+ /** ┘è╪¼╪¿ ╪ú┘å ┘è╪╕┘ç╪▒ ╪ú╪¡╪» ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪º┘ä╪¿╪¡╪½ ┘ü┘è ╪º┘ä╪╣┘å┘ê╪º┘å ╪ú┘ê ╪º┘ä╪╣┘å┘ê╪º┘å ╪º┘ä┘ü╪▒╪╣┘è (╪º┘ä┘ê╪╡┘ü/keywords ┘â╪º┘å ┘è╪»╪«┘ä ┘å╪¬╪º╪ª╪¼ ╪╣╪┤┘ê╪º╪ª┘è╪⌐). */
+ function courseTitleOrSubtitleHitsTerm(course, terms) {
+   const title = normalizeArabic((course.title || "").toLowerCase());
+@@ -722,10 +715,21 @@ function filterDiplomasForAnchoredTitles(
+ function termsAnchoredInQuery(userClean, lexicalTerms, intent) {
+   const u = normalizeArabic(String(userClean || "").toLowerCase());
+   const rawLower = String(userClean || "").toLowerCase();
++  const userDerivedAnchors = prepareSearchTerms([String(userClean || "")]).filter(
++    (t) => !isCourseLexicalNoiseTerm(t)
++  );
++  /**
++   * ╪╣┘å╪» ┘ê╪¼┘ê╪» ╪Ñ╪┤╪º╪▒╪º╪¬ ┘ê╪º╪╢╪¡╪⌐ ┘ü┘è ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐╪î ┘ä╪º ┘å╪╣╪¬╪¿╪▒ terms_en/tools ╪º┘ä┘é╪º╪»┘à╪⌐ ┘à┘å
++   * intent "┘à╪▒╪│╪º╪⌐" ╪¬┘ä┘é╪º╪ª┘è╪º┘ï╪¢ ┘ç╪░╪º ┘è┘à┘å╪╣ ╪¬╪│╪▒┘è╪¿ ┘à┘ê╪╢┘ê╪╣ ╪¼┘ä╪│╪⌐ ┘é╪»┘è┘à ╪╣┘ä┘ë ╪╖┘ä╪¿ ╪¼╪»┘è╪» ╪╡╪▒┘è╪¡.
++   * ┘å╪¡╪¬┘ü╪╕ ╪¿┘ç╪º ┘ü┘é╪╖ ┘â┘Ç fallback ╪╣┘å╪»┘à╪º ╪¬┘â┘ê┘å ╪º┘ä╪▒╪│╪º┘ä╪⌐ ┘é╪╡┘è╪▒╪⌐/╪║╪º┘à╪╢╪⌐ ╪¼╪»╪º┘ï.
++   */
++  const allowIntentTechAsAnchor = userDerivedAnchors.length === 0;
+   const fromIntentTech = new Set();
+-  for (const t of [...(intent?.tools || []), ...(intent?.terms_en || [])]) {
+-    const s = normalizeArabic(String(t).toLowerCase().trim());
+-    if (s.length >= 2) fromIntentTech.add(s);
++  if (allowIntentTechAsAnchor) {
++    for (const t of [...(intent?.tools || []), ...(intent?.terms_en || [])]) {
++      const s = normalizeArabic(String(t).toLowerCase().trim());
++      if (s.length >= 2) fromIntentTech.add(s);
++    }
+   }
+   const out = [];
+   const seen = new Set();
+@@ -820,8 +824,8 @@ function rankAndFilterCourses(
+     const lexOk = courses.filter((c) =>
+       courseTitleOrSubtitleHitsTerm(c, effectiveTerms)
+     );
+-    const semTop = topCoursesBySemanticSimilarity(courses, semanticMap, 8);
+-    if (lexOk.length > 0) {
++      const semTop = topCoursesBySemanticSimilarity(courses, semanticMap, 12);
++      if (lexOk.length > 0) {
+       /** ┘ä╪º ┘å┘â╪¬┘ü┘è ╪¿╪º┘ä┘à╪╣╪¼┘à┘è: ┘å╪»┘à╪¼ ╪ú┘ü╪╢┘ä ╪º┘ä┘å╪¬╪º╪ª╪¼ ╪»┘ä╪º┘ä┘è╪º┘ï ╪¡╪¬┘ë ┘è╪¿┘é┘ë ┘à╪▒╪┤┘æ╪¡ ╪º┘ä╪╣┘å┘ê╪º┘å ╪º┘ä╪Ñ┘å╪¼┘ä┘è╪▓┘è/╪º┘ä┘à╪«╪¬┘ä┘ü ┘ä╪║┘ê┘è╪º┘ï ┘ü┘è ╪º┘ä┘à┘å╪º┘ü╪│╪⌐. */
+       pool = mergeCoursesByIdPreferOrder(lexOk, semTop);
+     } else {
+@@ -885,6 +889,10 @@ function rankAndFilterCourses(
+   );
+   if (hasSem) {
+     kept.sort((a, b) => {
++      if (narrow) {
++        const dlex = b.lexT - a.lexT;
++        if (Math.abs(dlex) > 12) return dlex;
++      }
+       const ds = (b.sim || 0) - (a.sim || 0);
+       if (Math.abs(ds) > 0.015) return ds;
+       return b.total - a.total || b.lexT - a.lexT;
+@@ -905,7 +913,8 @@ function rankAndFilterCourses(
+     }
+   }
+ 
+-  return kept.slice(0, MAX_CARDS).map((x) => x.c);
++  const pipelineCap = childStrict ? 10 : MAX_COURSE_CATALOG_PIPELINE;
++  return kept.slice(0, pipelineCap).map((x) => x.c);
+ }
+ 
+ function expandArabicVariants(terms) {
+@@ -1104,6 +1113,74 @@ function fallbackIntentFromMessage(userMessage) {
+   return defaultIntent();
+ }
+ 
++/**
++ * ╪╣┘å╪»┘à╪º ┘è╪╖┘ä╪¿ ╪º┘ä┘à╪│╪¬╪«╪»┘à ┘à┘ê╪╢┘ê╪╣╪º┘ï ╪¬╪╣┘ä┘è┘à┘è╪º┘ï ╪¿╪╡┘è╪º╪║╪⌐ ╪╣╪▒╪¿┘è╪⌐ ╪╡┘ê╪¬┘è╪⌐ ┘ä┘à╪╡╪╖┘ä╪¡ ╪Ñ┘å╪¼┘ä┘è╪▓┘è
++ * ┘é╪» ┘ä╪º ┘è┘à┘ä╪ú ╪º┘ä┘å┘à┘ê╪░╪¼ terms_en/tools ┘à┘å ╪ú┘ê┘ä ┘à╪▒╪⌐. ┘ç╪░╪º ╪º┘ä╪º╪│╪¬╪»╪╣╪º╪í ┘à╪¡╪º┘ü╪╕ ╪¼╪»╪º┘ï:
++ * ┘è╪▒╪¼╪╣ aliases ┘ä╪º╪¬┘è┘å┘è╪⌐ ┘ü┘é╪╖ ╪╣┘å╪» ╪½┘é╪⌐ ╪╣╪º┘ä┘è╪⌐╪î ┘ê╪Ñ┘ä╪º [].
++ */
++async function inferEnglishAliasesForIntent(userMessage, intent, options = {}) {
++  if (!openai || !userMessage || !intent || intent.skip_catalog) {
++    return { terms_en: [], tools: [] };
++  }
++  const hasLatinInMessage = /[a-z]/i.test(String(userMessage || ""));
++  const hasExistingTech =
++    (intent.terms_en && intent.terms_en.length > 0) ||
++    (intent.tools && intent.tools.length > 0);
++  if (hasLatinInMessage || hasExistingTech) {
++    return { terms_en: [], tools: [] };
++  }
++  const conv = String(options.conversationSnippet || "")
++    .trim()
++    .slice(0, 700);
++  try {
++    const completion = await openai.chat.completions.create({
++      model: process.env.GPT_CHAT_MODEL || "gpt-4o-mini",
++      response_format: { type: "json_object" },
++      temperature: 0.0,
++      max_tokens: 180,
++      messages: [
++        {
++          role: "system",
++          content: `╪º╪│╪¬╪«╪▒╪¼ ┘à┘é╪º╪¿┘ä╪º╪¬ ┘ä╪º╪¬┘è┘å┘è╪⌐ ╪¬┘é┘å┘è╪⌐ ┘à╪¡╪¬┘à┘ä╪⌐ ┘à┘å ╪▒╪│╪º┘ä╪⌐ ╪º┘ä┘à╪│╪¬╪«╪»┘à (╪Ñ╪░╪º ┘ê┘Å╪¼╪»╪¬) ┘ä╪º╪│╪¬╪«╪»╪º┘à ╪º┘ä╪¿╪¡╪½ ┘ü┘é╪╖.
++
++┘é┘ê╪º╪╣╪» ╪╡╪º╪▒┘à╪⌐:
++- ╪ú╪╣╪» JSON ┘ü┘é╪╖: {"terms_en":[],"tools":[]}
++- ╪ú╪╢┘ü ┘à╪╡╪╖┘ä╪¡╪º┘ï ┘ü┘é╪╖ ╪╣┘å╪» ╪½┘é╪⌐ ╪╣╪º┘ä┘è╪⌐ ╪ú┘å┘ç ╪º┘ä┘à┘é╪º╪¿┘ä ╪º┘ä┘ä╪º╪¬┘è┘å┘è ╪º┘ä┘à┘é╪╡┘ê╪» ┘à┘å ╪º┘ä╪╡┘è╪º╪║╪⌐ ╪º┘ä╪╣╪▒╪¿┘è╪⌐ ╪º┘ä╪╡┘ê╪¬┘è╪⌐.
++- ╪Ñ┘å ┘ä┘à ╪¬┘â┘å ┘à╪¬╪ú┘â╪»╪º┘ï: ╪ú╪╣╪» ┘à╪╡┘ü┘ê┘ü╪¬┘è┘å ┘ü╪º╪▒╪║╪¬┘è┘å.
++- ┘ä╪º ╪¬╪╢┘ü ╪ú╪│┘à╪º╪í ┘à┘å╪¬╪¼╪º╪¬/┘â┘ê╪▒╪│╪º╪¬ ┘à┘å ╪╣┘å╪»┘â╪¢ ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪¬┘é┘å┘è╪⌐ ╪╣╪º┘à╪⌐ ┘ü┘é╪╖.
++- ╪¡╪» ╪ú┘é╪╡┘ë 4 ╪╣┘å╪º╪╡╪▒ ╪Ñ╪¼┘à╪º┘ä╪º┘ï.`,
++        },
++        {
++          role: "user",
++          content: JSON.stringify(
++            {
++              message: String(userMessage || "").slice(0, 700),
++              conversation_snippet: conv,
++              primary_goal: intent.primary_goal || "",
++              search_text: intent.search_text || "",
++            },
++            null,
++            0
++          ),
++        },
++      ],
++    });
++    const text = completion.choices[0]?.message?.content || "{}";
++    const j = JSON.parse(text);
++    const normalizeList = (arr) =>
++      (Array.isArray(arr) ? arr : [])
++        .map((x) => String(x || "").trim().toLowerCase())
++        .filter((x) => /^[a-z0-9][a-z0-9 ._+-]{1,40}$/i.test(x))
++        .slice(0, 4);
++    return {
++      terms_en: normalizeList(j.terms_en),
++      tools: normalizeList(j.tools),
++    };
++  } catch (_) {
++    return { terms_en: [], tools: [] };
++  }
++}
++
+ /**
+  * ┘è╪│╪¬╪«╪▒╪¼ ┘å╪╡╪º┘ï ┘ä┘ä╪¬╪╢┘à┘è┘å + ┘â┘ä┘à╪º╪¬ ┘ä┘ä┘Ç ilike╪¢ ╪º┘ä┘à╪╣┘å┘ë ┘à┘å ┘å┘à┘ê╪░╪¼ ╪º┘ä┘å┘è╪⌐ ┘ä╪º ┘à┘å ┘à╪╖╪º╪¿┘é╪⌐ ┘â┘ä┘à╪º╪¬ ┘ü┘è ╪º┘ä┘â┘ê╪».
+  */
+@@ -1137,6 +1214,7 @@ async function extractSearchIntent(userMessage, options = {}) {
+ - **search_text:** ┘è╪╡┘ü **┘à╪│╪º╪▒ ╪º┘ä┘â╪¿╪º╪▒/╪º┘ä╪┤╪║┘ä/╪º┘ä┘à┘ç┘å╪⌐ ┘ü┘é╪╖** ΓÇö ┘à┘å ╪º┘ä╪│┘è╪º┘é (╪¡╪▒┘ü╪⌐╪î ┘ê╪▒╪┤╪⌐╪î ╪Ñ┘å╪¬╪º╪¼╪î ╪▒╪│┘à ╪¬┘å┘ü┘è╪░┘è╪î ┘å┘à╪░╪¼╪⌐ ┘ä┘é╪╖╪╣ ╪ú┘ê ┘à╪┤╪º╪▒┘è╪╣ ╪╣┘à┘ä╪î ╪Ñ┘ä╪«). **┘ä╪º** ╪¬╪│╪¬╪¿╪»┘ä ╪░┘ä┘â ╪¿╪╣╪¿╪º╪▒╪º╪¬ ╪╣╪º┘à╪⌐ ╪╣┘å ┬½╪¬┘â┘å┘ê┘ä┘ê╪¼┘è╪º┬╗ ╪ú┘ê ┬½╪░┘â╪º╪í ╪º╪╡╪╖┘å╪º╪╣┘è┬╗ ╪ú┘ê ┬½╪¿╪▒┘à╪¼╪⌐ ┘à╪¬┘é╪»┘à╪⌐┬╗ ╪Ñ┘ä╪º ╪Ñ╪░╪º ┘â╪º┘å ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪╖┘ä╪¿ ╪░┘ä┘â ╪╡╪▒╪º╪¡╪⌐.
+ - **search_text_secondary:** ┘è╪╡┘ü **┘à╪│╪º╪▒ ╪º┘ä╪╡╪║╪º╪▒/╪º┘ä┘à╪¿╪¬╪»╪ª┘è┘å ╪º┘ä╪╡╪║╪º╪▒ ┘ü┘é╪╖** ΓÇö ┘à╪│╪¬┘ê┘ë ┘ê╪╣┘à╪▒ ┘à┘å╪º╪│╪¿┘è┘å╪î ╪¿╪»╪º┘è╪⌐ ┘ä╪╖┘è┘ü╪⌐╪î ╪¿╪▒┘à╪¼╪⌐ ┘à╪¿╪│╪╖╪⌐ ┘ä┘ä┘ü╪ª╪⌐ ╪º┘ä╪╣┘à╪▒┘è╪⌐╪¢ **┘à╪«╪¬┘ä┘ü ╪¼┘ê┘ç╪▒┘è╪º┘ï** ╪╣┘å ┘à╪│╪º╪▒ ╪º┘ä┘â╪¿╪º╪▒. ╪º╪¬╪▒┘â┘ç "" ╪Ñ╪░╪º ┘ä╪º ┘è┘ê╪¼╪» ╪Ñ┘ä╪º ┘à╪│╪º╪▒ ┘ê╪º╪¡╪».
+ - **╪│┘è╪º┘é ╪º┘ä┘à╪¡╪º╪»╪½╪⌐:** ╪Ñ┘å ┘ê┘Å╪¼╪»╪î ╪º╪│╪¬┘å╪¬╪¼ ┘à┘å┘ç ╪º┘ä┘à┘ç┘å╪⌐ ┘ê╪º┘ä╪║╪▒╪╢ ┘ê┬½╪º┘ä╪┤╪║┘ä┬╗ ╪º┘ä╪╢┘à┘å┘è ╪¡╪¬┘ë ┘ä┘ê ┘ä┘à ╪¬┘Å┘â╪▒╪▒ ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ ╪º┘ä╪¬┘ü╪º╪╡┘è┘ä╪¢ ╪º╪»┘à╪¼ ╪░┘ä┘â ┘ü┘è **primary_goal** ┘ê**constraints** ┘ê**search_text** ┘ê**terms_en** ╪╣┘å╪» ╪º┘ä╪¡╪º╪¼╪⌐.
++- **╪¬╪║┘è┘è╪▒ ╪º┘ä┘à┘ê╪╢┘ê╪╣ ┘ü┘è ╪º┘ä╪¼┘ä╪│╪⌐:** ╪Ñ╪░╪º **╪¡╪»┘æ╪»╪¬** ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ ┘à╪│╪º╪▒ ╪¬╪╣┘ä┘æ┘à ╪ú┘ê ╪ú╪»╪º╪⌐ ╪ú┘ê ┘à╪¼╪º┘ä╪º┘ï ╪¿╪┤┘â┘ä **╪╡╪▒┘è╪¡** ┘ê┘â╪º┘å **┘è╪«╪¬┘ä┘ü ╪¼┘ê┘ç╪▒┘è╪º┘ï** ╪╣┘à┘æ╪º ╪║┘ä╪¿ ╪º┘ä╪│┘è╪º┘é ╪º┘ä╪│╪º╪¿┘é╪î ┘ü**╪ú┘ê┘ä┘ê┘è╪⌐ ╪º╪│╪¬╪«╪▒╪º╪¼ ╪¡┘é┘ê┘ä ╪º┘ä╪¿╪¡╪½** ┘ä┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐╪¢ ┘ä╪º ╪¬╪¿┘é┘É ╪ú┘ç╪»╪º┘ü╪º┘ï ╪ú┘ê ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪º┘ä╪│┘è╪º┘é ╪º┘ä╪│╪º╪¿┘é ┘ü┘è **search_text** ╪ú┘ê **terms_en** ╪Ñ┘ä╪º ╪Ñ╪░╪º ┘â╪º┘å╪¬ ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ **╪Ñ╪┤╪º╪▒╪⌐┘ï ┘ä┘ä╪º╪│╪¬┘à╪▒╪º╪▒** ╪»┘ê┘å ╪¬╪¡╪»┘è╪» ┘à┘ê╪╢┘ê╪╣ ╪¼╪»┘è╪» (┘ü╪¬╪│╪¬┘å╪» ╪¡┘è┘å┘ç╪º ┘ä┘ä╪│┘è╪º┘é ┘â┘à╪º ┘ü┘è ╪º┘ä╪¬╪╣┘ä┘è┘à╪º╪¬ ╪ú╪╣┘ä╪º┘ç).
+ - **╪¬╪╣╪»╪» ┘à╪╣╪º┘å┘è ┬½╪¬╪╡┘à┘è┘à┬╗:** ┘é╪▒┘æ╪▒ ╪»┘ä╪º┘ä┘è╪º┘ï ╪Ñ┘å ┘â╪º┘å ╪º┘ä┘à┘é╪╡╪» **╪¿╪╡╪▒┘è╪º┘ï/┘ü┘è╪▓┘è╪º╪ª┘è╪º┘ï/┘à┘å╪¬╪¼╪º╪¬** ╪ú┘à **╪Ñ╪»╪º╪▒┘è╪º┘ï/┘ç┘è╪º┘â┘ä ┘à╪ñ╪│╪│╪º╪¬**╪¢ ╪╣╪¿┘æ╪▒ ╪╣┘å ╪░┘ä┘â ┘ü┘è **search_text** ╪¿╪»┘é╪⌐ ╪¡╪¬┘ë ┘ä╪º ╪¬╪«╪¬┘ä╪╖ ╪º┘ä┘à╪│╪º╪▒╪º╪¬ ┘ü┘è ╪º┘ä╪º╪│╪¬╪▒╪¼╪º╪╣.
+ - **╪¬╪╣┘ä┘æ┘à ╪º┘ä╪¿╪▒┘à╪¼╪⌐:** ╪Ñ┘å ┘ê┘Å╪¼╪» ╪╖┘ä╪¿ ┘ä┘ä╪╡╪║╪º╪▒ **┘ê╪º┘ä┘â╪¿╪º╪▒ ┘à╪╣╪º┘ï**╪î ╪º╪│╪¬╪«╪»┘à **search_text_secondary** ┘ä┘à╪│╪º╪▒ ╪º┘ä╪╡╪║╪º╪▒ ┘ê**search_text** ┘ä┘à╪│╪º╪▒ ╪º┘ä┘â╪¿╪º╪▒╪¢ ┘ä╪º ╪¬╪╢╪╣ ╪¬╪▒┘â┘è╪▓ ┬½╪¿╪▒┘à╪¼╪⌐ ╪º╪¡╪¬╪▒╪º┘ü┘è╪⌐ ╪ú┘ê ╪░┘â╪º╪í ╪º╪╡╪╖┘å╪º╪╣┘è ┘ä┘ä┘â╪¿╪º╪▒┬╗ ┘ü┘è ┘å┘ü╪│ ╪│╪╖╪▒ ╪¿╪¡╪½ ╪º┘ä╪╡╪║╪º╪▒.
+ - **design_interpretation** (╪º╪«╪¬┘è╪º╪▒┘è╪î ╪Ñ┘å ┘ê┘Å╪¼╪» ┘ä╪¿╪│ ┬½╪¬╪╡┘à┘è┘à┬╗): null | "graphic_spatial" (╪¬╪╡┘à┘è┘à ╪¿╪╡╪▒┘è/┘à┘å╪¬╪¼╪º╪¬/┘à╪│╪º╪¡╪º╪¬/╪¼╪▒╪º┘ü┘è┘â) | "organizational_admin" (┘ç┘è╪º┘â┘ä ┘ê╪¬┘å╪╕┘è┘à ╪Ñ╪»╪º╪▒┘è) ΓÇö ┘è┘Å╪│╪¬┘å╪¬╪¼ ┘à┘å ╪º┘ä┘à╪╣┘å┘ë ┘ä╪º ┘à┘å ┘â┘ä┘à╪º╪¬ ╪¿╪╣┘è┘å┘ç╪º.
+@@ -1152,6 +1230,8 @@ async function extractSearchIntent(userMessage, options = {}) {
+ - skill_level: "beginner" | "intermediate" | "advanced" | null.
+ - response_style: "brief" | "detailed" | "normal" | null.
+ - terms_ar╪î terms_en╪î tools: ┘â┘à╪º ┘è┘ä╪▓┘à ┘ä┘ä╪¿╪¡╪½╪¢ terms_en ┘ä┘ä┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪º┘ä┘ä╪º╪¬┘è┘å┘è╪⌐/╪º┘ä╪Ñ┘å╪¼┘ä┘è╪▓┘è╪⌐ ╪º┘ä╪╡╪¡┘è╪¡╪⌐ ╪╣┘å╪» ╪º┘ä╪¡╪º╪¼╪⌐ (┘à┘å ╪º┘ä┘à┘é╪╡╪»╪î ╪»┘ê┘å ╪¡╪┤┘ê).
++- ╪Ñ╪░╪º ╪░┘â╪▒ ╪º┘ä┘à╪│╪¬╪«╪»┘à **╪ú╪»╪º╪⌐ ╪ú┘ê ╪¿╪▒┘å╪º┘à╪¼╪º┘ï ╪¿╪╡┘è╪º╪║╪⌐ ╪╣╪▒╪¿┘è╪⌐ ╪╡┘ê╪¬┘è╪⌐** ╪¿┘è┘å┘à╪º **╪╣┘å╪º┘ê┘è┘å ╪º┘ä┘â┘ê╪▒╪│╪º╪¬ ┘ü┘è ╪º┘ä┘é╪º╪╣╪»╪⌐ ╪║╪º┘ä╪¿╪º┘ï ╪¿╪º┘ä╪Ñ┘å╪¼┘ä┘è╪▓┘è╪⌐/╪º┘ä┘ä╪º╪¬┘è┘å┘è╪⌐**╪î ╪ú╪╢┘ü ┘ü┘è **terms_en** ╪º┘ä╪º╪│┘à ╪º┘ä┘ä╪º╪¬┘è┘å┘è ╪º┘ä┘à╪╣╪¬╪º╪» ┘ä╪░╪º╪¬ ╪º┘ä╪ú╪»╪º╪⌐ (┘à┘å ╪º┘ä┘à┘é╪╡╪» ┘ü┘é╪╖╪î ┘à┘å ╪»┘ê┘å ╪º╪«╪¬╪▒╪º╪╣ ┘à┘å╪¬╪¼ ╪║┘è╪▒ ┘à╪░┘â┘ê╪▒).
++- ╪╖┘ä╪¿ **╪╣╪º┘à** ╪╣┘å ┘â┘ê╪▒╪│ ╪ú┘ê ╪¬╪╣┘ä┘æ┘à **╪ú╪»╪º╪⌐/╪¿╪▒┘å╪º┘à╪¼** ┘à┘å ╪»┘ê┘å ╪░┘â╪▒ ╪╡╪║╪º╪▒ ╪ú┘ê ┘à╪»╪▒╪│╪⌐: **audience** ╪║╪º┘ä╪¿╪º┘ï **adult**╪¢ ┘ä╪º ╪¬╪╢╪¿╪╖ ┘à╪│╪º╪▒╪º┘ï ┘ä┘ä╪╡╪║╪º╪▒ ╪Ñ┘ä╪º ╪Ñ╪░╪º ╪╕┘ç╪▒ ╪░┘ä┘â ┘ü┘è ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪ú┘ê ╪º┘ä╪│┘è╪º┘é.
+ 
+ ┘ä╪º ╪¬╪╢┘ü ╪┤╪▒╪¡╪º┘ï ╪«╪º╪▒╪¼ JSON.`,
+         },
+@@ -1166,6 +1246,22 @@ async function extractSearchIntent(userMessage, options = {}) {
+     const text = completion.choices[0]?.message?.content || "{}";
+     const j = JSON.parse(text);
+     let intent = normalizeIntent(j);
++    const alias = await inferEnglishAliasesForIntent(trimmed, intent, {
++      conversationSnippet: conv,
++    });
++    if ((alias.terms_en.length || alias.tools.length) && !intent.skip_catalog) {
++      intent = {
++        ...intent,
++        terms_en: [...new Set([...(intent.terms_en || []), ...alias.terms_en])].slice(
++          0,
++          8
++        ),
++        tools: [...new Set([...(intent.tools || []), ...alias.tools])].slice(
++          0,
++          8
++        ),
++      };
++    }
+     if (intent.browse_all_diplomas && intent.skip_catalog) {
+       intent = { ...intent, skip_catalog: false };
+     }
+@@ -1186,6 +1282,20 @@ function buildSearchTerms(intent, userClean) {
+   for (const t of intent.terms_en || []) parts.push(t);
+   for (const t of intent.tools || []) parts.push(t);
+   if (parts.length === 0 && userClean) parts.push(userClean);
++  /**
++   * ╪»┘à╪¼ ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪Ñ┘å╪¼┘ä┘è╪▓┘è╪⌐ ┘à╪¬╪¼╪º┘ê╪▒╪⌐ ┘à┘å ╪º┘ä┘å┘è╪⌐ (work + flow => workflow)
++   * ┘ä╪¬╪¡╪│┘è┘å ╪º┘ä┘à╪╖╪º╪¿┘é╪⌐ ╪╣┘å╪»┘à╪º ┘è╪«╪▒╪¼ ┘à┘å ╪º┘ä┘å┘à┘ê╪░╪¼ ╪╣┘ä┘ë ╪┤┘â┘ä ┘â┘ä┘à╪¬┘è┘å.
++   */
++  const techSeq = [...(intent.terms_en || []), ...(intent.tools || [])]
++    .map((x) => String(x || "").trim().toLowerCase())
++    .filter((x) => /^[a-z0-9._+-]{2,}$/.test(x));
++  for (let i = 0; i < techSeq.length - 1; i++) {
++    const a = techSeq[i];
++    const b = techSeq[i + 1];
++    if (!a || !b) continue;
++    const joined = `${a}${b}`;
++    if (joined.length >= 5) parts.push(joined);
++  }
+ 
+   let merged = prepareSearchTerms(parts);
+   const uc = String(userClean || "").trim();
+@@ -1209,14 +1319,16 @@ function embeddingQueryText(intent, userClean, conversationSnippet = "") {
+     .trim();
+   const snip = String(conversationSnippet || "").trim().slice(0, 1200);
+   /**
+-   * ╪│┘è╪º┘é ╪º┘ä┘à╪¡╪º╪»╪½╪⌐ ╪ú┘ê┘ä╪º┘ï ╪╣┘å╪» ┘ê╪¼┘ê╪»┘ç ΓÇö ┘è╪½╪¿╪¬ ┘à┘ê╪╢┘ê╪╣ ┬½╪º╪»┘è┘å┘è ┘ä┘è┘å┘â / ┘â┘à┘ä┬╗ ╪¿╪╣╪» ╪¡╪»┘è╪½ ╪╣┘å ┘à╪¼╪º┘ä ┘à╪╣┘è┘æ┘å.
+-   * ╪½┘à ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ ╪½┘à ┘à╪º ╪º╪│╪¬╪«╪▒╪¼┘ç ╪º┘ä┘å┘à┘ê╪░╪¼.
++   * ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ ┘ê┘à╪º ╪º╪│╪¬╪«╪▒╪¼┘ç ╪º┘ä┘å┘à┘ê╪░╪¼ ╪ú┘ê┘ä╪º┘ï ╪¡╪¬┘ë ┘ä╪º ┘è╪╖╪║┘ë ┘à┘ê╪╢┘ê╪╣ ╪¼┘ä╪│╪⌐ ╪│╪º╪¿┘é╪⌐ ╪╣┘ä┘ë ╪º┘ä╪¬╪╢┘à┘è┘å
++   * (┘à╪½┘ä ╪│╪ñ╪º┘ä ╪¼╪»┘è╪» ╪╣┘å ┘à┘ç╪º╪▒╪⌐ ┘à╪«╪¬┘ä┘ü╪⌐ ╪¿╪╣╪» ╪¡╪»┘è╪½ ╪╣┘å ╪ú╪«╪▒┘ë). ╪º┘ä╪│┘è╪º┘é ┘è┘ä╪¡┘é ┘â╪»╪╣┘à ┘ä┘ä╪Ñ╪┤╪º╪▒╪º╪¬
++   * ╪╣┘å╪»┘à╪º ╪º┘ä┘å┘à┘ê╪░╪¼ ┘è┘à┘ä╪ú search_text ┘à┘å ╪º┘ä┘à╪¡╪º╪»╪½╪⌐ ┘ä╪▒╪│╪º╪ª┘ä ┘é╪╡┘è╪▒╪⌐ ╪ú┘ê ╪¬╪¬┘à╪⌐.
+    */
+-  const q = [snip, userClean, intent.search_text, extra, tech]
++  const core = [userClean, intent.search_text, extra, tech]
+     .filter(Boolean)
+     .join(" ")
+     .trim();
+-  return q.slice(0, 2000) || String(userClean || "").slice(0, 2000);
++  const q = [core, snip].filter(Boolean).join(" ").trim();
++  return (q.slice(0, 2000) || String(userClean || "").slice(0, 2000)).trim();
+ }
+ 
+ /** ╪º╪│╪¬╪╣┘ä╪º┘à ╪¬╪╢┘à┘è┘å ┘ä┘ä┘à╪│╪º╪▒ ╪º┘ä╪½╪º┘å┘è ΓÇö ┘à┘å ╪¡┘é┘ä ╪º┘ä┘å┘è╪⌐ ┘ü┘é╪╖. */
+@@ -1229,11 +1341,8 @@ function embeddingQueryTextSecondary(
+   if (!sec) return "";
+   const snip = String(conversationSnippet || "").trim().slice(0, 900);
+   const extra = [...(intent.constraints || [])].filter(Boolean).join(" ").trim();
+-  return [snip, userClean, sec, extra]
+-    .filter(Boolean)
+-    .join(" ")
+-    .trim()
+-    .slice(0, 2000);
++  const core = [userClean, sec, extra].filter(Boolean).join(" ").trim();
++  return [core, snip].filter(Boolean).join(" ").trim().slice(0, 2000);
+ }
+ 
+ /** ┘å╪╡ ╪º┘ä╪¿╪¡╪½ ╪º┘ä╪»┘ä╪º┘ä┘è ┘ä┘ä┘Ç chunks ΓÇö ┘è╪╣╪¬┘à╪» ╪╣┘ä┘ë ┘å┘è╪⌐ ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪º┘ä┘à╪│╪¬╪«╪▒╪¼╪⌐ ┘ê┘ä┘è╪│ ┘é┘ê╪º╪ª┘à ┘â┘ä┘à╪º╪¬ ╪½╪º╪¿╪¬╪⌐. */
+@@ -1431,7 +1540,7 @@ async function searchCoursesLayer(
+             const { data } = await supabase.rpc("match_courses", {
+               query_embedding: embResp.data[0].embedding,
+               match_threshold: isChild ? 0.88 : 0.86,
+-              match_count: isChild ? 12 : 22,
++              match_count: isChild ? 12 : 30,
+             });
+             return data || [];
+           } catch (e) {
+@@ -1550,7 +1659,7 @@ async function searchCoursesLayer(
+     if (!c?.id || seen.has(c.id)) continue;
+     seen.add(c.id);
+     deduped.push(c);
+-    if (deduped.length >= 32) break;
++    if (deduped.length >= 52) break;
+   }
+ 
+   const scoreTerms = termsForCourseLexical(limitedTerms, userClean);
+@@ -1563,7 +1672,7 @@ async function searchCoursesLayer(
+     const lexOnly = deduped.filter((c) =>
+       courseTitleOrSubtitleHitsTerm(c, filterTerms)
+     );
+-    const semTop = topCoursesBySemanticSimilarity(deduped, semanticMap, 10);
++    const semTop = topCoursesBySemanticSimilarity(deduped, semanticMap, 12);
+     if (lexOnly.length > 0) {
+       deduped = mergeCoursesByIdPreferOrder(lexOnly, semTop);
+     } else {
+@@ -1609,7 +1718,7 @@ async function mergeCoursesFromLessonHits(
+   lessons,
+   options = {}
+ ) {
+-  const MAX = MAX_COURSE_CATALOG_CARDS;
++  const MAX = MAX_COURSE_CATALOG_PIPELINE;
+   const supplement = Boolean(options.supplementWhenFew);
+   const st = options.searchTerms || [];
+   let lessonRows = lessons || [];
+@@ -1870,7 +1979,8 @@ function buildLexicalIlikeTerms(userClean, searchTerms, intent) {
+     const s = String(n).trim();
+     if (s.length >= 3 && s.length <= 90) out.add(s);
+   }
+-  return [...out].slice(0, 18);
++  /** ╪ú┘é┘ä OR ╪╣┘ä┘ë ╪¼╪»┘ê┘ä chunks ΓÇö ┘è┘é┘ä┘ä statement timeout ╪╣┘ä┘ë Supabase */
++  return [...out].slice(0, 8);
+ }
+ 
+ /** ┘è╪▓┘è┘ä ┘à╪º ┘è┘â╪│╪▒ ┘ü┘ä╪¬╪▒ .or() ┘ü┘è PostgREST */
+@@ -1878,6 +1988,168 @@ function sanitizeForOrIlike(t) {
+   return String(t).replace(/[,()]/g, " ").trim();
+ }
+ 
++/**
++ * ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ┘ä┘Ç ilike ╪º┘ä╪º╪¡╪¬┘è╪º╪╖┘è: ┘à╪▒╪│╪º╪⌐ ┘ü┘è ╪º┘ä╪▒╪│╪º┘ä╪⌐ + ╪¡┘é┘ê┘ä ╪º┘ä┘å┘è╪⌐ ╪º┘ä╪╡╪▒┘è╪¡╪⌐╪î
++ * ╪¿╪»┘ê┘å ┘â┘ä┘à╪º╪¬ ┘ü╪º╪ª┘é╪⌐ ╪º┘ä╪╣┘à┘ê┘à┘è╪⌐ (┘à╪½┘ä ┬½╪¬╪╣┘ä┘è┘à┬╗) ╪º┘ä╪¬┘è ┘â╪º┘å╪¬ ╪¬╪╖╪º╪¿┘é ┬½╪ú┘ä╪╣╪º╪¿ ╪¬╪╣┘ä┘è┘à┘è╪⌐┬╗ ╪╣┘å╪» ╪╖┘ä╪¿ ╪Ñ┘â╪│┘ä.
++ */
++function narrowTermsForTitleKeywordsFallback(userClean, searchTerms, intent) {
++  const seeds = [
++    userClean,
++    ...(searchTerms || []),
++    intent?.search_text,
++    ...(intent?.terms_en || []),
++    ...(intent?.terms_ar || []),
++    ...(intent?.tools || []),
++  ].filter(Boolean);
++  const lexical = prepareSearchTerms(seeds.map(String));
++  const anchored = termsAnchoredInQuery(userClean, lexical, intent);
++  const fromIntent = [
++    ...(intent?.terms_en || []),
++    ...(intent?.terms_ar || []),
++    ...(intent?.tools || []),
++  ]
++    .map((t) => String(t).trim())
++    .filter(Boolean);
++  const merged = [...new Set([...anchored, ...fromIntent])];
++  let cleaned = merged.filter(
++    (t) =>
++      String(t).trim().length >= 2 &&
++      !isCourseLexicalNoiseTerm(t) &&
++      !isUltraGenericCatalogEvidenceTerm(t)
++  );
++  cleaned = pruneEnglishSubstringsFromTerms(cleaned);
++  if (cleaned.length > 0) return cleaned;
++  const userOnly = prepareSearchTerms([String(userClean || "").trim()]).filter(
++    (t) =>
++      !isCourseLexicalNoiseTerm(t) && !isUltraGenericCatalogEvidenceTerm(t)
++  );
++  return pruneEnglishSubstringsFromTerms(userOnly);
++}
++
++function courseTitleSubtitleKeywordsHitNarrow(course, narrowTerms) {
++  if (!narrowTerms?.length) return false;
++  const title = normalizeArabic((course.title || "").toLowerCase());
++  const titleRaw = String(course.title || "").toLowerCase();
++  const subtitle = normalizeArabic((course.subtitle || "").toLowerCase());
++  const subtitleRaw = String(course.subtitle || "").toLowerCase();
++  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
++  const keywordsRaw = String(course.keywords || "").toLowerCase();
++  for (const term of narrowTerms) {
++    if (isCourseLexicalNoiseTerm(term) || isUltraGenericCatalogEvidenceTerm(term))
++      continue;
++    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
++    if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) return true;
++    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) return true;
++  }
++  return false;
++}
++
++/** ╪╣┘å┘ê╪º┘å ╪▒╪ª┘è╪│┘è ╪ú┘ê keywords ┘ü┘é╪╖ ΓÇö ╪¿╪»┘ê┘å ╪º┘ä╪º╪╣╪¬┘à╪º╪» ╪╣┘ä┘ë ╪º┘ä┘ü╪▒╪╣┘è ╪╣┘å╪» ╪º┘ä╪º╪¡╪¬┘è╪º╪╖ ╪º┘ä╪╢┘è┘é. */
++function courseTitleOrKeywordsHitNarrow(course, narrowTerms) {
++  if (!narrowTerms?.length) return false;
++  const title = normalizeArabic((course.title || "").toLowerCase());
++  const titleRaw = String(course.title || "").toLowerCase();
++  const keywords = normalizeArabic((course.keywords || "").toLowerCase());
++  const keywordsRaw = String(course.keywords || "").toLowerCase();
++  for (const term of narrowTerms) {
++    if (isCourseLexicalNoiseTerm(term) || isUltraGenericCatalogEvidenceTerm(term))
++      continue;
++    if (textFieldMatchesTerm(title, titleRaw, term)) return true;
++    if (textFieldMatchesTerm(keywords, keywordsRaw, term)) return true;
++  }
++  return false;
++}
++
++/**
++ * ╪╣┘å╪» ┘ü╪┤┘ä ╪º┘ä╪¬╪▒╪¬┘è╪¿ ╪º┘ä╪»┘ä╪º┘ä┘è/╪¬╪╡┘ü┘è╪⌐ ╪º┘ä╪╣┘å╪º┘ê┘è┘å: ╪¼┘ä╪¿ ┘â┘ê╪▒╪│╪º╪¬ ╪¿┘à╪╖╪º╪¿┘é╪⌐ ┘å╪╡┘è╪⌐ ╪╣┘ä┘ë ╪╣┘å┘ê╪º┘å/┘ü╪▒╪╣┘è/keywords ┘ü┘é╪╖
++ * ┘à┘å ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪º┘ä╪▒╪│╪º┘ä╪⌐ ┘ê╪º┘ä┘å┘è╪⌐ ΓÇö ╪¿╪»┘ê┘å ╪º┘ä╪º╪╣╪¬┘à╪º╪» ╪╣┘ä┘ë chunks (╪º┘ä╪¬┘è ┘é╪» ╪¬timeout).
++ */
++async function fetchCatalogCoursesTitleKeywordsFallback(
++  supabase,
++  userClean,
++  searchTerms,
++  intent
++) {
++  if (!supabase) return [];
++  const strictTerms = narrowTermsForTitleKeywordsFallback(
++    userClean,
++    searchTerms,
++    intent
++  );
++  if (strictTerms.length === 0) return [];
++  const capped = expandArabicVariants(
++    strictTerms.map((t) => sanitizeForOrIlike(String(t).trim()))
++  ).slice(0, 10);
++  if (capped.length === 0) return [];
++  const cols = ["title", "subtitle", "keywords"];
++  const orFilters = capped
++    .flatMap((t) => cols.map((col) => `${col}.ilike.%${t}%`))
++    .join(",");
++  try {
++    const { data, error } = await supabase
++      .from("courses")
++      .select(COURSE_SELECT_COLS)
++      .or(orFilters)
++      .limit(Math.max(48, MAX_COURSE_CATALOG_PIPELINE * 3));
++    if (error) {
++      console.error("catalog title-keywords fallback:", error.message);
++      return [];
++    }
++    const rows = data || [];
++    const filtered = rows.filter((c) =>
++      courseTitleSubtitleKeywordsHitNarrow(c, strictTerms)
++    );
++    return filtered;
++  } catch (_) {
++    return [];
++  }
++}
++
++/**
++ * ┘è╪»┘à╪¼ ┘â┘ê╪▒╪│╪º╪¬ ┘ê┘Å╪¼╪»╪¬ ╪¿┘Ç ilike ╪╣┘ä┘ë ╪╣┘å┘ê╪º┘å/┘ü╪▒╪╣┘è/keywords ┘ü┘é╪╖ ΓÇö ╪º╪│╪¬╪╣┘ä╪º┘à ╪ú╪«┘ü ┘à┘å ╪¼╪»┘ê┘ä chunks.
++ * ┘è┘Å╪│╪¬╪»╪╣┘ë ╪»╪º╪ª┘à╪º┘ï ┘à╪╣ ┘ê╪¼┘ê╪» ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ╪¡╪¬┘ë ┘ä╪º ╪¬┘Å┘ü┘é╪» ╪╣┘å╪º┘ê┘è┘å ╪╡╪º┘ä╪¡╪⌐ ╪╣┘å╪» timeout ╪╣┘ä┘ë match_lesson_chunks.
++ */
++async function mergeTitleKeywordCoursesIntoCatalog(
++  supabase,
++  courses,
++  userClean,
++  searchTerms,
++  intent
++) {
++  if (!supabase) return courses || [];
++  const strict = narrowTermsForTitleKeywordsFallback(
++    userClean,
++    searchTerms,
++    intent
++  );
++  if (strict.length === 0) return courses || [];
++  const extra = await fetchCatalogCoursesTitleKeywordsFallback(
++    supabase,
++    userClean,
++    searchTerms,
++    intent
++  );
++  if (!extra.length) return courses || [];
++  return mergeCoursesByIdPreferOrder(courses || [], extra);
++}
++
++/**
++ * ╪¬╪╣╪╖┘è┘ä ╪Ñ╪½╪▒╪º╪í ╪º┘ä┘â╪▒┘ê╪¬ ┘à┘å chunks ╪╣┘å╪» ┘ê╪¼┘ê╪» ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ┘à┘å ╪º┘ä╪▒╪│╪º┘ä╪⌐/╪º┘ä┘å┘è╪⌐ ΓÇö ┘å┘ü╪│ ╪ú╪│╪º╪│ `mergeTitleKeywordCoursesIntoCatalog`.
++ * ┘è┘é┘ä┘ä statement timeout ┘ê┘è┘à┘å╪╣ ╪»╪«┘ê┘ä ┘â┘ê╪▒╪│╪º╪¬ ┘à┘å ╪¬╪┤╪º╪¿┘ç ╪»╪▒┘ê╪│ ╪╢╪╣┘è┘ü. ┘è┘Å╪¼╪¿╪▒ ╪º┘ä╪¬╪┤╪║┘è┘ä ╪¿┘Ç CATALOG_FORCE_CHUNKS=1.
++ */
++function catalogChunkEnrichmentDisabled(intent, userClean, searchTerms) {
++  if (/^(1|true|yes)$/i.test(String(process.env.CATALOG_FORCE_CHUNKS || "").trim())) {
++    return false;
++  }
++  if (/^(1|true|yes)$/i.test(String(process.env.CATALOG_SKIP_CHUNKS_ENRICHMENT || "").trim())) {
++    return true;
++  }
++  return (
++    narrowTermsForTitleKeywordsFallback(userClean, searchTerms || [], intent || {})
++      .length > 0
++  );
++}
++
+ /**
+  * ╪¿╪¡╪½ ┘å╪╡┘è ┘ü┘è ╪¼╪»┘ê┘ä chunks ΓÇö ┘è┘â┘à┘ä ╪º┘ä┘Ç embedding ┘ä┘à╪º ┘è┘â┘ê┘å ╪º┘ä┘à┘ê╪╢┘ê╪╣ ┘à┘ê╪¼┘ê╪»╪º┘ï ╪¡╪▒┘ü┘è╪º┘ï ┘ü┘è ┘å╪╡ ╪º┘ä╪»╪▒╪│.
+  */
+@@ -1895,7 +2167,7 @@ async function fetchChunksLexicalHits(supabase, userClean, searchTerms, intent)
+       .from("chunks")
+       .select("id, content, lesson_id, timestamp_start")
+       .or(orFilters)
+-      .limit(24);
++      .limit(10);
+     if (error) {
+       console.error("chunks lexical:", error.message);
+       return [];
+@@ -2002,7 +2274,7 @@ async function searchChunksLayer(queryForEmb, userClean, searchTerms, intent) {
+     const { data, error } = await supabase.rpc("match_lesson_chunks", {
+       query_embedding: embResponse.data[0].embedding,
+       match_threshold: MIN_LESSON_CHUNK_SIMILARITY,
+-      match_count: 28,
++      match_count: 16,
+       filter_course_id: null,
+     });
+     if (error) {
+@@ -2350,8 +2622,12 @@ function catalogSemanticThresholdsForGate(intent, strictSemantic) {
+       ? { minVs: 0.55, minCh: 0.76 }
+       : { minVs: 0.68, minCh: 0.82 };
+   }
++  /**
++   * ┘à╪╣ ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ┘à┘å ╪º┘ä╪▒╪│╪º┘ä╪⌐/╪º┘ä┘å┘è╪⌐: ┘ä╪º ┘å┘à╪▒┘æ╪▒ ┘â┘ê╪▒╪│╪º┘ï ┬½╪¼╪º╪▒╪º┘ï┬╗ ╪¿╪º┘ä╪¬╪┤╪º╪¿┘ç ┘ü┘é╪╖
++   * (┘à╪½┘ä ┘à╪│╪º╪▒╪º╪¬ ╪ú╪╖┘ü╪º┘ä/╪¼╪▒╪º┘ü┘è┘â ╪╣╪º┘à) ╪Ñ┘å ┘ä┘à ┘è╪¿┘ä╪║ ╪º┘ä╪¬╪┤╪º╪¿┘ç ╪╣╪¬╪¿╪⌐ ╪ú╪╣┘ä┘ë ╪ú┘ê ┘è╪╕┘ç╪▒ ╪º┘ä╪ú╪»╪º╪⌐ ┘ü┘è ╪º┘ä╪╣┘å┘ê╪º┘å.
++   */
+   return strictSemantic
+-    ? { minVs: 0.5, minCh: 0.74 }
++    ? { minVs: 0.74, minCh: 0.84 }
+     : { minVs: 0.62, minCh: 0.78 };
+ }
+ 
+@@ -2377,12 +2653,24 @@ function catalogCourseHasLexicalTopicEvidence(
+   searchTerms,
+   intent
+ ) {
+-  const { terms, matchTerms } = catalogEvidenceMatchBundle(
++  const { terms, matchTerms, strictSemantic } = catalogEvidenceMatchBundle(
+     userClean,
+     searchTerms,
+     intent
+   );
+   if (terms.length === 0) return false;
++  if (strictSemantic) {
++    if (courseCatalogPrimaryTitleHitsTerm(course, matchTerms)) return true;
++    for (const l of course.matchedLessons || []) {
++      const lt = normalizeArabic((l.title || "").toLowerCase());
++      const lr = String(l.title || "").toLowerCase();
++      for (const term of matchTerms) {
++        if (isCourseLexicalNoiseTerm(term)) continue;
++        if (textFieldMatchesTerm(lt, lr, term)) return true;
++      }
++    }
++    return false;
++  }
+   if (courseTitleOrSubtitleHitsTerm(course, matchTerms)) return true;
+   for (const l of course.matchedLessons || []) {
+     const lt = normalizeArabic((l.title || "").toLowerCase());
+@@ -2422,21 +2710,53 @@ function catalogCoursePassesTopicGate(
+     return vs >= 0.88 || ch >= 0.88;
+   }
+ 
+-  const titleHit = courseTitleOrSubtitleHitsTerm(course, matchTerms);
+-  if (titleHit) return true;
++  const primaryTitleHit = courseCatalogPrimaryTitleHitsTerm(course, matchTerms);
++  if (primaryTitleHit) return true;
+ 
++  let lessonHit = false;
+   for (const l of course.matchedLessons || []) {
+     const lt = normalizeArabic((l.title || "").toLowerCase());
+     const lr = String(l.title || "").toLowerCase();
+     for (const term of matchTerms) {
+       if (isCourseLexicalNoiseTerm(term)) continue;
+-      if (textFieldMatchesTerm(lt, lr, term)) return true;
++      if (textFieldMatchesTerm(lt, lr, term)) {
++        lessonHit = true;
++        break;
++      }
+     }
++    if (lessonHit) break;
++  }
++  if (lessonHit) return true;
++
++  let descriptionHit = false;
++  const descRaw = stripHtml(course.description || "").toLowerCase();
++  const descNorm = normalizeArabic(descRaw);
++  for (const term of matchTerms) {
++    if (isCourseLexicalNoiseTerm(term)) continue;
++    if (textFieldMatchesTerm(descNorm, descRaw, term)) {
++      descriptionHit = true;
++      break;
++    }
++  }
++
++  const subOrLegacyHeading = courseTitleOrSubtitleHitsTerm(course, matchTerms);
++  if (subOrLegacyHeading) {
++    if (strictSemantic && !primaryTitleHit) {
++      return vs >= 0.93 || ch >= 0.92;
++    }
++    return true;
+   }
+ 
+   if (catalogMustRejectSemanticOnlyWithoutStrongSignal(intent)) {
+     return false;
+   }
++  /**
++   * ┘ü┘è ╪º┘ä┘å┘è╪⌐ ╪º┘ä╪╢┘è┘é╪⌐: ┘ä╪º ┘å┘é╪¿┘ä "┘é╪▒╪¿ ╪»┘ä╪º┘ä┘è ┘ü┘é╪╖" ╪¿╪»┘ê┘å ╪ú┘è ╪»┘ä┘è┘ä ┘à╪╣╪¼┘à┘è ╪╕╪º┘ç╪▒
++   * ┘ü┘è ╪╣┘å┘ê╪º┘å ╪º┘ä┘â┘ê╪▒╪│/╪º┘ä┘ê╪╡┘ü/╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪»╪▒┘ê╪│.
++   */
++  if (strictSemantic && !descriptionHit) {
++    return false;
++  }
+   if (vs >= minVs) return true;
+   if (ch >= minCh) return true;
+   return false;
+@@ -2466,7 +2786,20 @@ function preferLexicalCatalogCourses(
+   if (catalogMustRejectSemanticOnlyWithoutStrongSignal(intent) && !anyLex) {
+     return [];
+   }
+-  if (!anyLex) return courses;
++  /**
++   * ┘ä╪º ┘å┘à╪▒┘æ╪▒ ┬½╪ú┘ü╪╢┘ä ╪¬╪┤╪º╪¿┘ç ╪»┘ä╪º┘ä┘è┬╗ ╪╣╪┤┘ê╪º╪ª┘è╪º┘ï ╪╣┘å╪»┘à╪º ┘ä┘ä┘à╪│╪¬╪«╪»┘à ┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐ ┘à┘å ╪º┘ä╪▒╪│╪º┘ä╪⌐/╪º┘ä┘å┘è╪⌐
++   * ┘ê┘ä╪º ┘è┘ê╪¼╪» ╪ú┘è ┘â┘ê╪▒╪│ ┘è╪╖╪º╪¿┘é┘ç╪º ┘à╪╣╪¼┘à┘è╪º┘ï ΓÇö ┘â╪º┘å ┘è╪│╪¿╪¿ ┘â┘ê╪▒╪│╪º╪¬ ╪¿╪╣┘è╪»╪⌐ (┘à╪½┘ä XD ╪╣┘å╪» ╪╖┘ä╪¿ ╪Ñ┘â╪│┘ä).
++   * ╪º┘ä┘ü╪▒╪º╪║ ┘è┘Å╪¬╪¿╪╣ ╪¿╪¼┘ä╪¿ ilike ╪╣┘ä┘ë ╪º┘ä╪╣┘å┘ê╪º┘å ┘ü┘è runCatalogSearch.
++   */
++  if (!anyLex) {
++    const strictTopic = narrowTermsForTitleKeywordsFallback(
++      userClean,
++      searchTerms,
++      intent
++    );
++    if (strictTopic.length > 0) return [];
++    return courses;
++  }
+   let kept = courses.filter(hasLex);
+   const scored = kept.map((c) => ({
+     c,
+@@ -2479,9 +2812,22 @@ function preferLexicalCatalogCourses(
+     ),
+   }));
+   scored.sort((a, b) => b.s - a.s);
++  /**
++   * ┘ä┘ê ┘ü┘è┘ç ╪ú┘â╪½╪▒ ┘à┘å ┘â┘ê╪▒╪│ ╪╣┘å┘ê╪º┘å┘ç ╪º┘ä╪ú╪│╪º╪│┘è ┘è╪╖╪º╪¿┘é ┘à┘ê╪╢┘ê╪╣ ╪º┘ä╪▒╪│╪º┘ä╪⌐ ╪º┘ä╪¡╪º┘ä┘è╪⌐ ╪¿┘ê╪╢┘ê╪¡╪î
++   * ┘ä╪º ┘å┘é╪╡┘æ┘ç ╪¿┘å╪│╪¿╪⌐ score-to-best╪¢ ┘å╪╣╪▒╪╢ ┘â┘ä ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä┘à╪╖╪º╪¿┘é╪⌐ ┘ä┘å┘ü╪│ ╪º┘ä╪ú╪»╪º╪⌐/╪º┘ä┘à╪¼╪º┘ä.
++   */
++  const strongTitleHits = scored.filter(({ c }) =>
++    courseCatalogPrimaryTitleHitsTerm(c, terms)
++  );
++  if (strongTitleHits.length >= 2) {
++    return strongTitleHits
++      .map((x) => x.c)
++      .slice(0, MAX_COURSE_CATALOG_PIPELINE);
++  }
+   const best = scored[0]?.s ?? 0;
+   if (best > 0 && scored.length > 1) {
+-    const minRatio = 0.52;
++    /** ╪ú╪╢┘è┘é ┘à┘å 0.52 ┘â╪º┘å ┘è╪¡╪░┘ü ┘â┘ê╪▒╪│╪º╪¬ ┘ä┘ç╪º ┘å┘ü╪│ ╪º┘ä╪ú╪»╪º╪⌐ ╪¿╪╣┘å┘ê╪º┘å ┘ü╪▒╪╣┘è ┘à╪«╪¬┘ä┘ü (╪░┘â╪º╪í ╪º╪╡╪╖┘å╪º╪╣┘è / ┘à╪╣┘à╪º╪▒┘èΓÇª). */
++    const minRatio = 0.42;
+     kept = scored
+       .filter((x) => x.s >= best * minRatio)
+       .map((x) => x.c);
+@@ -2489,7 +2835,7 @@ function preferLexicalCatalogCourses(
+   } else {
+     kept = scored.map((x) => x.c);
+   }
+-  return kept.slice(0, MAX_COURSE_CATALOG_CARDS);
++  return kept.slice(0, MAX_COURSE_CATALOG_PIPELINE);
+ }
+ 
+ /**
+@@ -2502,7 +2848,8 @@ async function llmPruneCatalogRowsByTitleFit(
+   intent,
+   userClean,
+   conversationSnippet,
+-  broadDiplomaListing = false
++  broadDiplomaListing = false,
++  searchTerms = null
+ ) {
+   const skip = /^(1|true|yes)$/i.test(
+     String(process.env.SKIP_LLM_CATALOG_TITLE_FILTER || "").trim()
+@@ -2556,6 +2903,8 @@ async function llmPruneCatalogRowsByTitleFit(
+ - ╪Ñ┘å ┘â╪º┘å ╪º┘ä┘à╪│╪¬╪«╪»┘à ┘è╪╖┘ä╪¿ ┘à╪│╪º╪▒╪º┘ï **┘ä╪╡╪║┘è╪▒ ╪ú┘ê ┘à╪¿╪¬╪»╪ª ╪╡╪║┘è╪▒** ┘ü╪º┘é╪¿┘ä ┘ü┘é╪╖ ┘à╪º ┘è┘ê╪¡┘è ╪º┘ä╪╣┘å┘ê╪º┘å ╪¿╪ú┘å┘ç **┘à┘å╪º╪│╪¿ ┘ä┘ä╪╣┘à╪▒ ╪ú┘ê ╪º┘ä┘à╪│╪¬┘ê┘ë ╪º┘ä┘à╪¿╪¬╪»╪ª ┘ä┘ä╪╡╪║╪º╪▒**╪¢ ╪º╪▒┘ü╪╢ ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪¬┘è ╪¬┘ê╪¡┘è ╪¿┘à╪│╪º╪▒╪º╪¬ **╪º╪¡╪¬╪▒╪º┘ü┘è╪⌐ ┘ä┘ä┘â╪¿╪º╪▒** ╪ú┘ê **┘à╪¼╪º┘ä╪º╪¬ ╪║┘è╪▒ ╪╖┘ä╪¿┘ç╪º** (┘à╪½┘ä ╪ú╪╣┘à╪º┘ä ╪ú┘ê ╪¬╪│┘ê┘è┘é ╪╣╪º┘à ╪╣┘å╪»┘à╪º ╪º┘ä┘à┘é╪╡╪» ╪¬╪╣┘ä┘è┘à ╪¬┘é┘å┘è ┘ä┘ä╪╡╪║╪º╪▒).
+ - ╪Ñ┘å ┘â╪º┘å ╪º┘ä┘à╪│╪¬╪«╪»┘à ┘è╪╖┘ä╪¿ ┘à┘ç╪º╪▒╪º╪¬ **┘ä╪┤╪║┘ä ╪ú┘ê ╪¡╪▒┘ü╪⌐** ┘ü╪º┘é╪¿┘ä ┘à╪º ┘è┘ê╪¡┘è ╪º┘ä╪╣┘å┘ê╪º┘å ╪¿╪░┘ä┘â ╪º┘ä┘à╪¼╪º┘ä╪¢ ╪º╪▒┘ü╪╢ ┘à╪º ┘è╪¿╪»┘ê ╪╣╪º┘à╪º┘ï ╪ú┘ê ╪¿╪╣┘è╪»╪º┘ï ╪╣┘å ╪º┘ä┘à┘é╪╡╪».
+ - **┘ä╪º ╪¬┘Å╪▒╪¼╪╣ ┘à╪╡┘ü┘ê┘ü╪⌐ course_ids ┘ü╪º╪▒╪║╪⌐** ╪Ñ╪░╪º ╪¿┘é┘è ┘ü┘è ╪º┘ä┘é╪º╪ª┘à╪⌐ ┘â┘ê╪▒╪│ ┘è╪¬╪╖╪º╪¿┘é **╪¿┘ê╪╢┘ê╪¡** ┘à╪╣ **user_message**╪¢ ╪º┘ä┘ü╪▒╪º╪║ ┘è┘Å╪│╪¬╪«╪»┘à ┘ü┘é╪╖ ╪╣┘å╪»┘à╪º **┘â┘ä** ╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪¿╪╣┘è╪»╪⌐ ╪¼╪»╪º┘ï ╪╣┘å ╪º┘ä╪╖┘ä╪¿ ╪º┘ä╪¡╪º┘ä┘è.
++- ╪Ñ╪░╪º ┘â╪º┘å ╪º┘ä╪╖┘ä╪¿ **╪º╪│╪¬┘â╪┤╪º┘ü╪º┘ï ╪╣╪º┘à╪º┘ï** ╪╣┘å ╪ú╪»╪º╪⌐ ╪ú┘ê ┘à┘ç╪º╪▒╪⌐ ┘ê╪╕┘ç╪▒╪¬ ╪╣┘å╪º┘ê┘è┘å **┘à╪¬╪╣╪»╪»╪⌐** ┘ä╪░╪º╪¬ ╪º┘ä╪ú╪»╪º╪⌐ ╪¿╪▓┘ê╪º┘è╪º ╪ú┘ê ╪¬╪«╪╡╪╡╪º╪¬ ┘à╪«╪¬┘ä┘ü╪⌐╪î ┘ü╪╢┘à┘æ┘å ┘ü┘è **course_ids** ╪ú┘â╪½╪▒ ┘à┘å ┘à╪▒╪┤┘æ╪¡ ┘ê╪º╪╢╪¡ ╪º┘ä╪╡┘ä╪⌐ **╪╣┘å╪» ╪¬┘ê┘ü╪▒┘ç╪º ┘ü┘è ╪º┘ä┘é╪º╪ª┘à╪⌐** ΓÇö ╪»┘ê┘å ╪º╪«╪¬╪▓╪º┘ä ┘â┘ä ╪º┘ä┘å╪¬╪º╪ª╪¼ ┘ü┘è ╪¬╪«╪╡╪╡ ┘ê╪º╪¡╪» ┘ü┘é╪╖.
++- **╪¬╪▒╪¬┘è╪¿ ╪º┘ä╪╣╪▒╪╢:** ╪╣┘å╪» ╪╖┘ä╪¿ **╪╣╪º┘à** ╪╣┘å ╪ú╪»╪º╪⌐ ╪ú┘ê ╪¿╪▒┘å╪º┘à╪¼╪î **┘é╪»┘æ┘à ╪ú┘ê┘ä╪º┘ï** ╪º┘ä┘â┘ê╪▒╪│╪º╪¬ ╪º┘ä╪¬┘è ┘è╪╕┘ç╪▒ ┘ü┘è **╪╣┘å┘ê╪º┘å┘ç╪º ╪º┘ä╪▒╪ª┘è╪│┘è** ╪ú┘å ╪º┘ä┘à┘å╪¬╪¼ ┘è╪╣┘ä┘æ┘à **╪░╪º╪¬ ╪º┘ä╪ú╪»╪º╪⌐** ┘à╪¿╪º╪┤╪▒╪⌐╪î ╪½┘à ╪º┘ä┘à╪│╪º╪▒╪º╪¬ ╪º┘ä╪ú┘â╪½╪▒ ╪¬╪«╪╡╪╡╪º┘ï╪¢ **┘ä╪º** ╪¬┘é╪»┘æ┘à ┘à╪│╪º╪▒╪º╪¬ ┘ä┘ü╪ª╪⌐ ╪╣┘à╪▒┘è╪⌐ ╪ú┘ê ┘ç╪»┘ü ╪¬╪╣┘ä┘æ┘à ┘à╪«╪¬┘ä┘ü ╪╣┘à┘æ╪º ╪╖┘ä╪¿┘ç ╪º┘ä┘à╪│╪¬╪«╪»┘à ╪Ñ┘å ┘ä┘à ┘è┘Å╪░┘â╪▒ ╪░┘ä┘â ╪╡╪▒╪º╪¡╪⌐ ┘ü┘è **user_message**.
+ 
+ ╪ú╪╣╪» JSON ┘ü┘é╪╖ ╪¿┘ç╪░╪º ╪º┘ä╪┤┘â┘ä:
+ {"diploma_ids":[╪ú╪▒┘é╪º┘à],"course_ids":[╪ú╪▒┘é╪º┘à]}
+@@ -2623,16 +2972,89 @@ async function llmPruneCatalogRowsByTitleFit(
+       }
+     }
+     /**
+-     * ╪Ñ┘å ╪▒╪¼╪╣ ╪º┘ä┘å┘à┘ê╪░╪¼ course_ids ┘ü╪º╪▒╪║╪⌐ ╪▒╪║┘à ┘ê╪¼┘ê╪» ┘à╪▒╪┤┘æ╪¡╪º╪¬ ┘à┘å ╪º┘ä╪¿╪¡╪½ ╪º┘ä╪»┘ä╪º┘ä┘è/╪º┘ä┘à╪╣╪¼┘à┘è╪î
+-     * ┘å┘ü┘é╪» ┘â┘ä ╪º┘ä┘â╪▒┘ê╪¬ ╪╣┘å╪» ╪¬╪¡┘ê┘æ┘ä ╪│╪ñ╪º┘ä ┘ä╪º╪¡┘é ┘ä┘à┘ê╪╢┘ê╪╣ ┘à╪«╪¬┘ä┘ü ╪╣┘å ╪│┘è╪º┘é ╪º┘ä╪¼┘ä╪│╪⌐ ╪º┘ä╪│╪º╪¿┘é.
+-     * ╪º┘ä╪º╪¡╪¬┘è╪º╪╖: ╪º┘ä╪Ñ╪¿┘é╪º╪í ╪╣┘ä┘ë ╪¬╪▒╪¬┘è╪¿ ╪º┘ä╪º╪│╪¬╪▒╪¼╪º╪╣ ╪º┘ä╪│╪º╪¿┘é.
++     * ╪Ñ┘å ╪▒╪¼╪╣ ╪º┘ä┘å┘à┘ê╪░╪¼ course_ids ┘ü╪º╪▒╪║╪⌐: ┘ä╪º ┘å╪╣┘è╪» ┘â┘ä ┘à╪▒╪┤┘æ╪¡╪º╪¬ ╪º┘ä╪»┘ä┘è┘ä ╪º┘ä╪╢╪╣┘è┘ü (┘â╪º┘å╪¬ ╪¬╪╣╪▒╪╢ ┘ü┘ê╪¬┘ê╪┤┘ê╪¿ ╪╣┘å╪» ╪╖┘ä╪¿ ╪Ñ┘â╪│┘ä).
++     * ┘å╪¿┘é┘è ┘ü┘é╪╖ ┘à┘å ┘ä┘ç ╪»┘ä┘è┘ä ┘à╪╣╪¼┘à┘è ┘ê╪º╪╢╪¡╪¢ ┘ê╪Ñ┘ä╪º [] ╪½┘à ┘è┘Å╪│╪¬╪»╪╣┘ë ╪¼┘ä╪¿ ╪╣┘å┘ê╪º┘å/keywords ┘ü┘è runCatalogSearch.
+      */
+     let coursesFinal = coursesOut;
+     if (coursesFinal.length === 0 && cIn.length > 0) {
+-      console.warn(
+-        "llmPruneCatalogRowsByTitleFit: empty course_ids; keeping pre-prune courses"
++      const st =
++        Array.isArray(searchTerms) && searchTerms.length > 0
++          ? searchTerms
++          : buildSearchTerms(intent, userClean);
++      let lexicalKeep = cIn.filter((c) =>
++        catalogCourseHasLexicalTopicEvidence(c, userClean, st, intent)
+       );
+-      coursesFinal = cIn.slice(0, MAX_COURSE_CATALOG_CARDS);
++      const strictKw = narrowTermsForTitleKeywordsFallback(
++        userClean,
++        st,
++        intent
++      );
++      const bundleFb = catalogEvidenceMatchBundle(userClean, st, intent);
++      if (lexicalKeep.length === 0 && strictKw.length > 0) {
++        lexicalKeep = cIn.filter((c) =>
++          courseTitleOrKeywordsHitNarrow(c, strictKw)
++        );
++      }
++      if (
++        lexicalKeep.length === 0 &&
++        strictKw.length > 0 &&
++        !bundleFb.strictSemantic
++      ) {
++        lexicalKeep = cIn.filter((c) =>
++          courseTitleSubtitleKeywordsHitNarrow(c, strictKw)
++        );
++      }
++      if (lexicalKeep.length === 0) {
++        lexicalKeep = cIn.filter((c) => {
++          const ch = Number(c._chunkMaxSim) || 0;
++          if (ch >= 0.84) return true;
++          for (const l of c.matchedLessons || []) {
++            const ls = Number(l.similarity) || 0;
++            const rawEx = String(l.excerpt || "");
++            if (
++              rawEx &&
++              ls >= 0.68 &&
++              chunkContentHasSearchHit(rawEx, userClean, st, intent)
++            ) {
++              return true;
++            }
++          }
++          return false;
++        });
++      }
++      if (lexicalKeep.length > 0) {
++        const contentEvidence = cIn.filter((c) => {
++          const ch = Number(c._chunkMaxSim) || 0;
++          if (ch >= 0.82) return true;
++          for (const l of c.matchedLessons || []) {
++            const ls = Number(l.similarity) || 0;
++            const rawEx = String(l.excerpt || "");
++            if (
++              rawEx &&
++              ls >= 0.66 &&
++              chunkContentHasSearchHit(rawEx, userClean, st, intent)
++            ) {
++              return true;
++            }
++          }
++          return false;
++        });
++        lexicalKeep = mergeCoursesByIdPreferOrder(lexicalKeep, contentEvidence);
++        const order = new Map(cIn.map((c, i) => [Number(c.id), i]));
++        lexicalKeep.sort(
++          (a, b) =>
++            (order.get(Number(a.id)) ?? 0) - (order.get(Number(b.id)) ?? 0)
++        );
++        console.warn(
++          "llmPruneCatalogRowsByTitleFit: empty course_ids; lexical/title-keyword subset"
++        );
++        coursesFinal = lexicalKeep.slice(0, MAX_COURSE_CATALOG_PIPELINE);
++      } else {
++        console.warn(
++          "llmPruneCatalogRowsByTitleFit: empty course_ids; no safe candidates"
++        );
++        coursesFinal = [];
++      }
+     }
+     let diplomasFinal = skipDiplomaReview ? dIn : diplomasOut;
+     if (!skipDiplomaReview && diplomasFinal.length === 0 && dIn.length > 0) {
+@@ -2673,6 +3095,8 @@ function pruneMatchedLessonsForSearchTerms(
+     }
+     const rawEx = String(l.excerpt || "");
+     if (rawEx && chunkContentHasSearchHit(rawEx, userClean, searchTerms, intent)) {
++      const ls = Number(l.similarity);
++      if (Number.isFinite(ls) && ls < 0.66) return false;
+       return true;
+     }
+     return false;
+@@ -2689,7 +3113,7 @@ function scoreCatalogCourse(
+   intent,
+   conversationSnippet = ""
+ ) {
+-  const { terms, matchTerms } = catalogEvidenceMatchBundle(
++  const { matchTerms, strictSemantic } = catalogEvidenceMatchBundle(
+     userClean,
+     searchTerms,
+     intent
+@@ -2699,7 +3123,8 @@ function scoreCatalogCourse(
+   score += sim * 200;
+   const chMax =
+     typeof course._chunkMaxSim === "number" ? course._chunkMaxSim : 0;
+-  score += chMax * 120;
++  /** ┘à╪╣ ┘å┘è╪⌐ ╪╢┘è┘é╪⌐: ╪º┘ä╪╣┘å┘ê╪º┘å/╪º┘ä┘ü╪▒╪╣┘è ╪ú┘ç┘à ┘à┘å ┬½┘é╪▒╪¿ ╪»┘ä╪º┘ä┘è┬╗ ╪╣╪º┘à ╪╣╪¿╪▒ chunks */
++  score += chMax * (strictSemantic ? 68 : 120);
+ 
+   const title = normalizeArabic((course.title || "").toLowerCase());
+   const titleRaw = String(course.title || "").toLowerCase();
+@@ -2708,9 +3133,11 @@ function scoreCatalogCourse(
+   const keywords = normalizeArabic((course.keywords || "").toLowerCase());
+   const keywordsRaw = String(course.keywords || "").toLowerCase();
+ 
++  const tw = strictSemantic ? 92 : 60;
++  const sw = strictSemantic ? 54 : 45;
+   for (const term of matchTerms) {
+-    if (textFieldMatchesTerm(title, titleRaw, term)) score += 60;
+-    if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += 45;
++    if (textFieldMatchesTerm(title, titleRaw, term)) score += tw;
++    if (textFieldMatchesTerm(subtitle, subtitleRaw, term)) score += sw;
+     if (textFieldMatchesTerm(keywords, keywordsRaw, term)) score += 8;
+   }
+ 
+@@ -2756,7 +3183,7 @@ function rankCatalogCoursesByRelevance(
+   pool.sort((a, b) => b.s - a.s);
+   const best = pool[0].s;
+   if (best < 8) {
+-    return pool.slice(0, MAX_COURSE_CATALOG_CARDS).map((x) => x.c);
++    return pool.slice(0, MAX_COURSE_CATALOG_PIPELINE).map((x) => x.c);
+   }
+   const cutoff = Math.max(5, best * 0.22);
+   let kept = pool.filter((x) => x.s >= cutoff);
+@@ -2774,7 +3201,7 @@ function rankCatalogCoursesByRelevance(
+           conversationSnippet
+         )
+       );
+-    kept = [kept[0], ...rest].slice(0, MAX_COURSE_CATALOG_CARDS);
++    kept = [kept[0], ...rest].slice(0, MAX_COURSE_CATALOG_PIPELINE);
+   }
+ 
+   const gated = kept.filter((x) =>
+@@ -2792,7 +3219,7 @@ function rankCatalogCoursesByRelevance(
+     kept = [kept[0]];
+   }
+ 
+-  return kept.map((x) => x.c).slice(0, MAX_COURSE_CATALOG_CARDS);
++  return kept.map((x) => x.c).slice(0, MAX_COURSE_CATALOG_PIPELINE);
+ }
+ 
+ /**
+@@ -2908,25 +3335,78 @@ async function runCatalogSearch(userClean, intent, options = {}) {
+       broadDiplomaListing
+     );
+ 
++    courses = await mergeTitleKeywordCoursesIntoCatalog(
++      supabase,
++      courses,
++      userClean,
++      searchTerms,
++      intentEff
++    );
++    nCoursesFromSearchLayer = courses.length;
++
+     lessons = [];
+     chunks = [];
+     /**
+      * ╪╖╪¿┘é╪⌐ 2: ╪Ñ┘å ┘ä┘à ╪¬┘ê╪¼╪» ┘â┘ê╪▒╪│╪º╪¬ ┘à┘å match_courses ΓÇö ╪»╪▒┘ê╪│+chunks ┘â╪º┘à┘ä╪⌐.
+      * ╪Ñ┘å ┘ê┘Å╪¼╪»╪¬ ┘â┘ê╪▒╪│╪º╪¬: ╪»╪▒┘ê╪│ (╪¡╪»┘æ ╪ú┘é╪╡┘ë ┘â┘ê╪▒╪│┘è┘å ╪Ñ╪╢╪º┘ü┘è┘è┘å ┘à┘å ╪╣┘å╪º┘ê┘è┘å ╪»╪▒┘ê╪│ ╪¬╪╖╪º╪¿┘é ╪º┘ä╪¿╪¡╪½) + chunks ┘ä╪Ñ╪½╪▒╪º╪í ╪º┘ä╪»╪▒┘ê╪│ ┘ü┘é╪╖ ΓÇö ╪¿╪»┘ê┘å ┘â┘ê╪▒╪│╪º╪¬ ╪¼╪»┘è╪»╪⌐ ┘à┘å chunks ┘ü┘é╪╖.
++     * ╪¼┘ä╪¿ ╪º┘ä╪»╪▒┘ê╪│ ┘à┘å┘ü╪╡┘ä ╪╣┘å chunks ╪¡╪¬┘ë ┘ä╪º ┘è┘Å┘ä╪║┘ë ╪º┘ä┘à╪│╪º╪▒ ┘â┘ä┘ç ╪╣┘å╪» timeout ╪╣┘ä┘ë match_lesson_chunks / chunks lexical.
++     */
++    let skipChunkEnrich = catalogChunkEnrichmentDisabled(
++      intentEff,
++      userClean,
++      searchTerms
++    );
++    /**
++     * ┘ä┘ê ╪¬╪╣╪╖┘æ┘ä╪¬ ╪╖╪¿┘é╪⌐ chunks ╪¬┘ä┘é╪º╪ª┘è╪º┘ï ╪¿╪│╪¿╪¿ "┘à╪╡╪╖┘ä╪¡╪º╪¬ ╪╢┘è┘é╪⌐" ┘ä┘â┘å ╪º┘ä┘à╪▒╪┤┘æ╪¡╪º╪¬ ╪º┘ä╪¡╪º┘ä┘è╪⌐
++     * ┘ä╪º ╪¬╪¡┘à┘ä ╪»┘ä┘è┘ä╪º┘ï ┘à╪╣╪¼┘à┘è╪º┘ï ┘ê╪º╪╢╪¡╪º┘ï (╪╣┘å┘ê╪º┘å/╪╣┘å┘ê╪º┘å ┘ü╪▒╪╣┘è/╪»╪▒╪│)╪î ┘å╪╣┘è╪» ╪¬┘ü╪╣┘è┘ä┘ç╪º ┘â┘Ç fallback
++     * ╪¡╪¬┘ë ┘å┘ä╪¬┘é╪╖ ╪º┘ä╪¡╪º┘ä╪º╪¬ ╪º┘ä╪¬┘è ╪¬╪╕┘ç╪▒ ┘ü┘é╪╖ ╪»╪º╪«┘ä ┘å╪╡┘ê╪╡ ╪º┘ä╪»╪▒┘ê╪│/chunks.
+      */
++    if (skipChunkEnrich && courses.length > 0) {
++      const hasStrongLexicalEvidence = courses.some((c) =>
++        catalogCourseHasLexicalTopicEvidence(
++          c,
++          userClean,
++          searchTerms,
++          intentEff
++        )
++      );
++      if (!hasStrongLexicalEvidence) {
++        skipChunkEnrich = false;
++      }
++    }
+     if (diplomasForCatalog.length === 0 && courses.length === 0) {
+-      [lessons, chunks] = await Promise.all([
+-        searchLessonsLayer(searchTerms),
+-        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
+-      ]);
++      lessons = await searchLessonsLayer(searchTerms);
++      if (!skipChunkEnrich) {
++        try {
++          chunks = await searchChunksLayer(
++            queryForChunks,
++            userClean,
++            searchTerms,
++            intentEff
++          );
++        } catch (e) {
++          console.error("searchChunksLayer (catalog):", e.message);
++          chunks = [];
++        }
++      }
+       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+         searchTerms,
+       });
+     } else if (diplomasForCatalog.length === 0 && courses.length > 0) {
+-      [lessons, chunks] = await Promise.all([
+-        searchLessonsLayer(searchTerms),
+-        searchChunksLayer(queryForChunks, userClean, searchTerms, intentEff),
+-      ]);
++      lessons = await searchLessonsLayer(searchTerms);
++      if (!skipChunkEnrich) {
++        try {
++          chunks = await searchChunksLayer(
++            queryForChunks,
++            userClean,
++            searchTerms,
++            intentEff
++          );
++        } catch (e) {
++          console.error("searchChunksLayer (catalog):", e.message);
++          chunks = [];
++        }
++      }
+       courses = await mergeCoursesFromLessonHits(supabase, courses, lessons, {
+         supplementWhenFew: true,
+         searchTerms,
+@@ -2957,17 +3437,66 @@ async function runCatalogSearch(userClean, intent, options = {}) {
+     intentEff,
+     conversationSnippet
+   );
++  const coursesBeforeTitleFit = coursesForCards.slice();
+   const titleFit = await llmPruneCatalogRowsByTitleFit(
+     diplomasForCatalog,
+     coursesForCards,
+     intentEff,
+     userClean,
+     conversationSnippet,
+-    broadDiplomaListing
++    broadDiplomaListing,
++    searchTerms
+   );
+   diplomasForCatalog = titleFit.diplomas;
+   coursesForCards = titleFit.courses;
++  /**
++   * ╪¡┘à╪º┘è╪⌐ ╪¿╪╣╪» ┘ü┘ä╪¬╪▒╪⌐ LLM: ┘ä╪º ┘å╪╣╪▒╪╢ ┘â╪▒┘ê╪│╪º╪¬ ┘ä╪º ╪¬╪¼╪¬╪º╪▓ gate ╪º┘ä╪╡┘ä╪⌐ ╪º┘ä┘ü╪╣┘ä┘è╪⌐.
++   * (╪º┘ä┘Ç LLM ┘é╪» ┘è╪«╪¬╪º╪▒ ╪╣┘å╪º┘ê┘è┘å ┘é╪▒┘è╪¿╪⌐ ┘ä╪║┘ê┘è╪º┘ï ┘ä┘â┘å┘ç╪º ╪¿╪╣┘è╪»╪⌐ ┘à┘ê╪╢┘ê╪╣┘è╪º┘ï).
++   */
++  const regatedAfterLlm = coursesForCards.filter((c) =>
++    catalogCoursePassesTopicGate(
++      c,
++      userClean,
++      searchTerms,
++      intentEff,
++      conversationSnippet
++    )
++  );
++  if (regatedAfterLlm.length > 0) {
++    coursesForCards = regatedAfterLlm;
++  } else if (coursesBeforeTitleFit.length > 0) {
++    const safeFromPreLlm = coursesBeforeTitleFit.filter((c) =>
++      catalogCoursePassesTopicGate(
++        c,
++        userClean,
++        searchTerms,
++        intentEff,
++        conversationSnippet
++      )
++    );
++    if (safeFromPreLlm.length > 0) {
++      coursesForCards = safeFromPreLlm;
++    } else {
++      coursesForCards = [];
++    }
++  }
+   courses = coursesForCards;
++  if (
++    !broadDiplomaListing &&
++    coursesForCards.length === 0 &&
++    !intentEff.skip_catalog
++  ) {
++    const recovered = await fetchCatalogCoursesTitleKeywordsFallback(
++      supabase,
++      userClean,
++      searchTerms,
++      intentEff
++    );
++    if (recovered.length > 0) {
++      coursesForCards = recovered.slice(0, MAX_COURSE_CATALOG_CARDS);
++      courses = coursesForCards;
++    }
++  }
+   if (coursesForCards.length > MAX_COURSE_CATALOG_CARDS) {
+     coursesForCards.splice(MAX_COURSE_CATALOG_CARDS);
+   }
+diff --git a/src/routes/chat.js b/src/routes/chat.js
+index c82e901..a6c795d 100644
+--- a/src/routes/chat.js
++++ b/src/routes/chat.js
+@@ -155,7 +155,9 @@ app.post("/chat", limiter, async (req, res) => {
+     const cleanMessage = message.trim().slice(0, 500);
+     const sessionId = session_id || "anon_" + Date.now();
+ 
+-    console.log(`\n≡ƒÆ¼ [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
++    console.log(
++      `\n≡ƒÆ¼ [${sessionId.slice(0, 12)}] ${JSON.stringify(cleanMessage)}`
++    );
+     await logChat(sessionId, "user", cleanMessage, null);
+ 
+     if (!openai) {

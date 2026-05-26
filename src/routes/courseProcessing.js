@@ -70,7 +70,13 @@ const jobs = new Map();
  *            = 3 × 300 + 400 + 700 ≈ 2.0 GB → matches Standard cap.
  * If Render cap changes, retune this number — running 4+ on 2 GB OOMs.
  */
-const MAX_CONCURRENT_FFMPEG = 3;
+// Founder rule 2026-05-26 (afternoon): cybersec course's 480-665MB
+// 1080p videos peak at ~1GB per ffmpeg run. 3 concurrent × 1GB +
+// Node 400MB + OS 700MB ≈ 4.1GB → OOM even on Pro 4GB plan, causing
+// Render to bounce the container mid-job and Vercel polls to return
+// chat_status_502. Dropped to 1 — sequential is slower (no I/O
+// overlap across videos) but reliable for large source files.
+const MAX_CONCURRENT_FFMPEG = 1;
 let activeFFmpegCount = 0;
 const ffmpegQueue = [];
 async function withFFmpegSlot(work) {

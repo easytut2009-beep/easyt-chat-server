@@ -155,7 +155,10 @@ app.post("/chat", limiter, async (req, res) => {
     const cleanMessage = message.trim().slice(0, 500);
     const sessionId = session_id || "anon_" + Date.now();
 
-    console.log(`\n💬 [${sessionId.slice(0, 12)}] "${cleanMessage}"`);
+    console.log(
+      `\n💬 [${sessionId.slice(0, 12)}]`,
+      JSON.stringify(cleanMessage)
+    );
     await logChat(sessionId, "user", cleanMessage, null);
 
     if (!openai) {
