@@ -1025,4 +1025,17 @@ module.exports = {
   processLecture,
   makeWorkDir,
   cleanupWorkDir,
+  // Lower-level building blocks reused by the unified "معالجة الفيديو"
+  // pipeline (processLessonVideo.js), which composes trim → denoise → intro
+  // in a different order than processLecture's drive flow and skips the tail.
+  ffmpegPath,
+  ffprobePath,
+  probeDurationSeconds,
+  probeStreamParams,
+  needsFullReencodeFallback,
+  buildMatchedEncodeArgs,
+  detectSilenceBoundaries,
+  trimStreamCopy,
+  smartConcat,
+  fallbackConcat,
 };

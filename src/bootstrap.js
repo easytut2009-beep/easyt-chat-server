@@ -19,6 +19,7 @@ const {
   registerCourseAttachmentRoutes,
 } = require("./routes/courseAttachments");
 const { registerTranscribeRoutes } = require("./routes/transcribe");
+const { registerProcessVideoRoutes } = require("./routes/processVideo");
 const { sweepStaleTmpDirs } = require("./services/transcribeBunnyHls");
 
 async function start() {
@@ -43,6 +44,7 @@ async function start() {
   registerCourseProcessingRoutes(app);
   registerCourseAttachmentRoutes(app);
   registerTranscribeRoutes(app);
+  registerProcessVideoRoutes(app);
 
   app.listen(PORT, () => {
     console.log(`
