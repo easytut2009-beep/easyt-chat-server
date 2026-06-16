@@ -322,6 +322,14 @@ async function runJob(state, body) {
         applyDenoise: body.apply_denoise === true,
         applyWatermark: body.apply_watermark === true,
         watermarkUrl: body.watermark_url ?? null,
+        // Founder rule 2026-06-16: keep the last N sec of silent tail (e.g.
+        // a silent practical-assignment image the trim would otherwise cut).
+        // Clamp 0..120 here too so the server is self-protecting regardless
+        // of caller (the website already clamps before dispatch).
+        keepTailSeconds: Math.min(
+          120,
+          Math.max(0, Number(body.keep_tail_seconds) || 0),
+        ),
         workDir: state.workDir,
       });
     });

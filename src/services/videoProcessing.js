@@ -369,7 +369,7 @@ async function assertConcatCompatible(segments) {
 /** Parse ffmpeg silencedetect log lines + figure out where the
  *  first real audio starts and where the last real audio ends.
  *  Returns { trimStart, trimEnd } in seconds, both inclusive. */
-async function detectSilenceBoundaries(file, durationSeconds) {
+async function detectSilenceBoundaries(file, durationSeconds, keepTailSeconds = 0) {
   // ffmpeg writes silencedetect output on stderr. We don't need a
   // re-encoded file, so we use `-f null -` to discard frames.
   const { stderr } = await runProcess(ffmpegPath, [
@@ -426,7 +426,17 @@ async function detectSilenceBoundaries(file, durationSeconds) {
       const isReasonableLength =
         silenceDuration <= MAX_TRAILING_TRIM_SECONDS;
       if (reachesEof && isReasonableLength) {
-        trimEnd = Math.max(trimStart + 1, candidate);
+        // Cut point = where the speech stopped (candidate). Founder rule
+        // 2026-06-16: keepTailSeconds lets a course KEEP the last N seconds
+        // of silent tail (e.g. a practical-assignment image shown without
+        // narration). We keep min(N, the actual remaining tail) — capped at
+        // the real end of the file, so "keep 10s" when only 5s remain keeps
+        // 5s. keepTailSeconds=0 (default) = trim all trailing silence.
+        const cut = Math.max(trimStart + 1, candidate);
+        trimEnd =
+          keepTailSeconds > 0
+            ? Math.min(durationSeconds, cut + keepTailSeconds)
+            : cut;
       }
       // If the silence is too long, leave trimEnd at full duration
       // — better to keep some trailing dead air than chop off real
@@ -1078,6 +1088,7 @@ async function processLecture({
   applyDenoise, // optional — DeepFilterNet speech denoise on the body
   applyWatermark, // optional — burn the full-frame watermark on the body
   watermarkUrl, // optional — public PNG URL; required when applyWatermark
+  keepTailSeconds, // optional — keep the last N sec of silent tail (assignment)
   workDir,
 }) {
   await fsp.mkdir(workDir, { recursive: true });
@@ -1106,7 +1117,11 @@ async function processLecture({
   let trimStart = 0;
   let trimEnd = rawDuration;
   if (applySilenceTrim !== false) {
-    const detected = await detectSilenceBoundaries(rawPath, rawDuration);
+    const detected = await detectSilenceBoundaries(
+      rawPath,
+      rawDuration,
+      Math.max(0, Number(keepTailSeconds) || 0),
+    );
     trimStart = detected.trimStart;
     trimEnd = detected.trimEnd;
   }
