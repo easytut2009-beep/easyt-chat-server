@@ -65,6 +65,16 @@ const { ensureDeepFilter, denoiseVideoAudio } = require("./audioEnhance");
 const WATERMARK_WIDTH = 1920;
 const WATERMARK_HEIGHT = 1080;
 
+// The Bunny pull zone rejects token-signed requests that arrive with NO
+// Referer header (browsers send one → student playback works; a bare
+// server-side fetch 403s). Send a plausible site referer on every
+// server-side Bunny HLS pull. Any non-empty referer is accepted.
+const BUNNY_FETCH_REFERER =
+  (process.env.EASYT_WEBSITE_URL || "https://easyt.online").replace(
+    /\/+$/,
+    "",
+  ) + "/";
+
 // Silence detection — the previous values (-35 dB, 0.5 s) were too
 // aggressive: lecturer pauses 1-2s mid-sentence at -40 dB got flagged
 // as silence and the trim chopped 80% of the content (test job 8).
@@ -813,49 +823,80 @@ function signBunnyUrl(host, path_, key, ttlSec = 3600) {
   return `https://${host}${path_}?token=${hash}&expires=${expires}`;
 }
 
+/* Bunny Stream "directory" token auth — the EXACT scheme the website's
+ * proven player signer uses (lib/bunny/signedPlayback.ts). The pull zone
+ * validates a token computed over the video DIRECTORY (/{guid}/) plus the
+ * token_path param, NOT the bare file path — so the simple signBunnyUrl
+ * above 403s. token_path=/{guid}/ authorizes any single file directly
+ * under it (play_720p.mp4 etc.). We deliberately download the MP4 (one
+ * file) rather than HLS: ffmpeg does NOT propagate the token query to the
+ * child variant playlists / segments, so an HLS pull 403s on the first
+ * child even though the master m3u8 itself is authorized.
+ *
+ *   tokenPath = "/" + guid + "/"
+ *   hashInput = key + tokenPath + expires + "token_path=" + tokenPath
+ *   token     = base64url(sha256(hashInput))
+ *   url       = .../{guid}/<file>?token=..&token_path=<enc>&expires=..
+ */
+function signBunnyDirUrl(host, guid, file, key, ttlSec = 3600) {
+  const tokenPath = `/${guid}/`;
+  const expires = Math.floor(Date.now() / 1000) + Math.max(60, ttlSec);
+  const paramData = `token_path=${tokenPath}`;
+  const token = crypto
+    .createHash("sha256")
+    .update(key + tokenPath + expires + paramData)
+    .digest("base64")
+    .replace(/=+$/, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+  const u = new URL(`https://${host}/${guid}/${file}`);
+  u.searchParams.set("token", token);
+  u.searchParams.set("token_path", tokenPath);
+  u.searchParams.set("expires", String(expires));
+  return u.toString();
+}
+
 async function downloadBunnyVideo({
   cdnHost,
   bunnyVideoId,
   tokenKey,
   destPath,
 }) {
-  // Fetch the intro over HLS (playlist.m3u8) — the SAME delivery path the
-  // rest of the platform uses (processLessonVideo, transcription, player).
-  // The direct-MP4 fallback path (play_720p.mp4) is NOT enabled on the
-  // Bunny library, so a raw .mp4 request 403s; HLS is the enabled method.
-  // ffmpeg stream-copies the segments into a local mp4 (same as downloadHls
-  // in processLessonVideo) — no re-encode, just a remux.
-  const path_ = `/${bunnyVideoId}/playlist.m3u8`;
+  // Fetch the intro as a single MP4 file (play_720p.mp4). Two things the
+  // pull zone requires, both learned the hard way (2026-06-16):
+  //   1. directory-token signing (signBunnyDirUrl) — the simple path token
+  //      403s; this matches the website's signBunnyPlaybackUrl exactly.
+  //   2. a Referer header — the zone rejects token'd requests that arrive
+  //      with NO referer (browsers send one, so student playback works; a
+  //      bare server fetch 403s). Any plausible referer is accepted.
+  // MP4 (not HLS) because it's ONE authorized file — an HLS pull would 403
+  // on the child variant playlists (ffmpeg doesn't carry the token to them).
+  const file = "play_720p.mp4";
   const url = tokenKey
-    ? signBunnyUrl(cdnHost, path_, tokenKey)
-    : `https://${cdnHost}${path_}`;
-  await runProcess(ffmpegPath, [
-    "-y",
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    // Survive transient Bunny CDN drops on the HLS pull — same flags every
-    // other HLS-over-CDN fetch carries (audioEnhance ffArgsBase /
-    // transcribeBunnyHls). runProcess has no hard timeout, so without these
-    // a stalled segment would hang the intro download.
-    "-rw_timeout",
-    "30000000",
-    "-reconnect",
-    "1",
-    "-reconnect_streamed",
-    "1",
-    "-reconnect_delay_max",
-    "30",
-    "-i",
-    url,
-    "-map",
-    "0",
-    "-c",
-    "copy",
-    "-bsf:a",
-    "aac_adtstoasc",
-    destPath,
-  ]);
+    ? signBunnyDirUrl(cdnHost, bunnyVideoId, file, tokenKey)
+    : `https://${cdnHost}/${bunnyVideoId}/${file}`;
+  const res = await fetch(url, { headers: { Referer: BUNNY_FETCH_REFERER } });
+  if (!res.ok || !res.body) {
+    throw new Error(`Bunny intro download failed: ${res.status}`);
+  }
+  const fileStream = fs.createWriteStream(destPath);
+  await new Promise(async (resolve, reject) => {
+    fileStream.on("error", reject);
+    fileStream.on("finish", resolve);
+    try {
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!fileStream.write(value)) {
+          await new Promise((r) => fileStream.once("drain", r));
+        }
+      }
+      fileStream.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
   return destPath;
 }
 
