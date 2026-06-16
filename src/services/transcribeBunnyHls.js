@@ -2,19 +2,23 @@
  * and send it to Deepgram for transcription.
  *
  * Why this lives in chat-server:
- *   The Vercel side used to download `play_720p.mp4` from Bunny and
- *   POST that URL to Deepgram. We deleted every MP4 fallback file on
- *   2026-05-24 to reclaim ~50% of Stream storage (~$8-16/month). MP4
- *   URLs now 404, so retranscription has to demux audio from the HLS
- *   ladder instead. ffmpeg accepts an m3u8 URL as input and produces
- *   a clean mp3 in one pass.
+ *   Vercel's serverless runtime has no ffmpeg binary, so the website
+ *   delegates audio demux to us. The Vercel side signs the Bunny playlist
+ *   URL with the directory-token scheme and POSTs it; we reuse that token to
+ *   pull a single MP4 rendition (the library has MP4 fallback enabled) and
+ *   demux it with ffmpeg. We do NOT use the HLS ladder: ffmpeg won't carry
+ *   the token to the child playlists/segments, so an HLS pull 403s.
  *
  * Pipeline:
- *   1. Sign the Bunny HLS playlist URL (same key + scheme as the MP4
- *      signer that lives in videoProcessing.signBunnyUrl).
- *   2. ffmpeg -i <signed.m3u8> → 16 kHz mono mp3 64 kbps to /tmp.
- *      Wrapped in a wall-clock timeout that SIGKILLs the spawn on
- *      stall (HLS reconnect loop can otherwise run forever).
+ *   1. The Vercel caller signs the Bunny playlist URL with the DIRECTORY
+ *      token scheme (lib/bunny/signedPlayback), which authorizes the whole
+ *      /<guid>/ directory. We resolve a single playable MP4 rendition under
+ *      that directory (resolvePlayableMp4Url) — NOT the HLS ladder, because
+ *      ffmpeg won't carry the token to HLS child playlists/segments (they
+ *      403). The library has MP4 fallback enabled so play_<res>.mp4 exists.
+ *   2. ffmpeg -referer <ref> -i <signed.mp4> → 16 kHz mono mp3 64 kbps to
+ *      /tmp. -referer is mandatory: the pull zone 403s no-referrer requests.
+ *      Wrapped in a wall-clock timeout that SIGKILLs the spawn on stall.
  *   3. ffprobe the output to verify duration ≈ expected. A silent
  *      truncation (ffmpeg exits 0 after writing 30 s of a 30-min
  *      stream) would otherwise sneak past a byte-size check.
@@ -62,6 +66,22 @@ const { transcribeAudioFile } = require("./deepgram");
 const FFMPEG_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 const TMP_PREFIX = "transcribe-hls-";
 
+// The Bunny pull zone blocks token-signed requests that arrive with NO
+// Referer (browsers send one → playback works; a bare server-side fetch
+// 403s — BlockNoneReferrer is on). Any non-empty referer is accepted; pin
+// the same literal the rest of the pipeline (intro download) uses.
+const BUNNY_FETCH_REFERER = "https://easyt.online/";
+
+// We transcribe from a SINGLE MP4 rendition (the library has MP4 fallback
+// enabled), NOT the HLS ladder. ffmpeg does not propagate the directory
+// token to HLS child playlists / segments, so an HLS pull 403s on the first
+// child even when the master playlist itself is authorized. One MP4 file is
+// one authorized request. SMALLEST-first: the audio track is identical
+// across renditions, so the lowest resolution gives the same transcript with
+// the least download (fastest, least bandwidth, least timeout risk) — and a
+// low rendition is also the one most likely to exist for any source.
+const MP4_RESOLUTION_LADDER = [240, 360, 480, 720, 1080];
+
 /** Strip absolute file paths, signed URLs (token/expires query params)
  *  and tmp dir names from ffmpeg stderr before bubbling it back to the
  *  caller. The full unredacted string still goes to console.error so
@@ -97,15 +117,21 @@ async function ffprobeDurationSeconds(file) {
   });
 }
 
-/** Run ffmpeg with HLS input → mp3 output, with a hard wall-clock
- *  timeout. Throws ffmpeg_timeout on stall, ffmpeg_hls_extract_<code>
- *  on non-zero exit. */
+/** Run ffmpeg with a remote media URL (a single signed Bunny MP4 rendition)
+ *  → mp3 output, with a hard wall-clock timeout. The reconnect / genpts
+ *  flags are belt-and-suspenders for flaky CDN reads and are harmless on a
+ *  single MP4. Throws ffmpeg_timeout on stall, ffmpeg_hls_extract_<code> on
+ *  non-zero exit (tag kept for log/grep continuity). */
 async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
   return new Promise((resolve, reject) => {
     const args = [
       "-y",
       "-hide_banner",
       "-loglevel", "error",
+      // Bunny's pull zone 403s any request with no Referer. -referer applies
+      // to every HTTP(S) request ffmpeg makes for this input, so the MP4
+      // fetch (and any range continuation) all carry it.
+      "-referer", BUNNY_FETCH_REFERER,
       // PTS drift across HLS segment stitches → audio gaps in transcript
       "-fflags", "+genpts",
       // Read-write socket timeout (microseconds): 30 s. ffmpeg gives up on
@@ -180,6 +206,48 @@ async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
   });
 }
 
+/** From a directory-token-signed playlist URL, find a playable single-file
+ *  MP4 rendition under the SAME /<guid>/ directory. The signed URL's query
+ *  (token / token_path / expires) authorizes the whole directory, so we keep
+ *  it verbatim and only swap the filename. Probes the resolution ladder with
+ *  a tiny ranged GET (+Referer, required by the pull zone) and returns the
+ *  first rendition that responds 200/206. Throws if none are reachable. */
+async function resolvePlayableMp4Url(signedPlaylistUrl) {
+  let u;
+  try {
+    u = new URL(signedPlaylistUrl);
+  } catch {
+    throw new Error("bad_signed_url");
+  }
+  const lastSlash = u.pathname.lastIndexOf("/");
+  const dir =
+    lastSlash > 0 ? u.pathname.slice(0, lastSlash + 1) : u.pathname; // "/<guid>/"
+  let lastStatus = 0;
+  for (const res of MP4_RESOLUTION_LADDER) {
+    const candidate = new URL(u.toString());
+    candidate.pathname = `${dir}play_${res}p.mp4`;
+    try {
+      const r = await fetch(candidate.toString(), {
+        method: "GET",
+        headers: { Referer: BUNNY_FETCH_REFERER, Range: "bytes=0-1" },
+      });
+      lastStatus = r.status;
+      // Drain the 1-2 byte body so the socket frees immediately.
+      try {
+        await r.arrayBuffer();
+      } catch {
+        /* noop */
+      }
+      if (r.ok || r.status === 206) {
+        return candidate.toString();
+      }
+    } catch {
+      /* try the next rendition */
+    }
+  }
+  throw new Error(`no_playable_mp4_rendition_last_status_${lastStatus}`);
+}
+
 /** End-to-end. Returns { transcript, utterances, audio_seconds }.
  *  Throws with a tagged, scrubbed message on any failure so the caller
  *  can surface a useful status without leaking signed URLs.
@@ -206,7 +274,11 @@ async function transcribeBunnyHls({
   const audioPath = path.join(tmpDir, "audio.mp3");
 
   try {
-    await extractAudioFromHls(hlsUrl, audioPath, logTag || "");
+    // The caller signs + sends the HLS playlist URL (directory-token), but we
+    // demux audio from a single MP4 rendition under the same directory — see
+    // MP4_RESOLUTION_LADDER for why HLS-via-ffmpeg can't be used here.
+    const mediaUrl = await resolvePlayableMp4Url(hlsUrl);
+    await extractAudioFromHls(mediaUrl, audioPath, logTag || "");
 
     const stat = await fsp.stat(audioPath);
     if (stat.size < 1024) {

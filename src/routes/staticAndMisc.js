@@ -164,7 +164,7 @@ app.get("/", (req, res) => {
     version: "10.9",
     // Deploy marker — lets us confirm a specific build is actually live on
     // Render before relying on its behaviour (e.g. the intro-fetch fix).
-    build: "keep-tail-verify-2026-06-17",
+    build: "transcribe-mp4-referer-2026-06-17",
     status: "running ✅",
     engine: "Guide RAG Overhaul",
     endpoints,

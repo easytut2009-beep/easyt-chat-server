@@ -1,11 +1,11 @@
-/* transcribe.js — internal route for HLS-based retranscription.
+/* transcribe.js — internal route for re-transcription.
  *
- * Replacement for the legacy `play_<res>.mp4` URL path that broke when
- * we deleted MP4 fallback files from Bunny on 2026-05-24. The Vercel
- * cron `/api/cron/process-retranscribe-queue` posts here per lecture;
- * we pull the HLS playlist via ffmpeg, demux audio, ship to Deepgram,
- * return the utterance list. The Vercel side keeps responsibility for
- * embeddings + chunks INSERT.
+ * The Vercel cron `/api/cron/process-retranscribe-queue` posts here per
+ * lecture with a directory-token-signed Bunny playlist URL; we reuse that
+ * token to pull a single MP4 rendition via ffmpeg (see transcribeBunnyHls
+ * for why HLS-via-ffmpeg 403s), demux audio, ship to Deepgram, and return
+ * the utterance list. The Vercel side keeps responsibility for embeddings +
+ * chunks INSERT.
  *
  * Auth: shared bearer in CHATSERVER_INTERNAL_TOKEN (same pattern as
  * /api/v1/process-lecture). Constant-time compare so timing attacks
