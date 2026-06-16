@@ -67,13 +67,10 @@ const WATERMARK_HEIGHT = 1080;
 
 // The Bunny pull zone rejects token-signed requests that arrive with NO
 // Referer header (browsers send one → student playback works; a bare
-// server-side fetch 403s). Send a plausible site referer on every
-// server-side Bunny HLS pull. Any non-empty referer is accepted.
-const BUNNY_FETCH_REFERER =
-  (process.env.EASYT_WEBSITE_URL || "https://easyt.online").replace(
-    /\/+$/,
-    "",
-  ) + "/";
+// server-side fetch 403s). Pinned to the EXACT literal the Vercel intro
+// probe sends so the probe (200) and the real download never disagree —
+// don't derive it from an env var that could drift off the probe's value.
+const BUNNY_FETCH_REFERER = "https://easyt.online/";
 
 // Silence detection — the previous values (-35 dB, 0.5 s) were too
 // aggressive: lecturer pauses 1-2s mid-sentence at -40 dB got flagged

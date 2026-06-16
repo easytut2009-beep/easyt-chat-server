@@ -162,6 +162,9 @@ app.get("/", (req, res) => {
   res.json({
     name: "زيكو — easyT Chatbot",
     version: "10.9",
+    // Deploy marker — lets us confirm a specific build is actually live on
+    // Render before relying on its behaviour (e.g. the intro-fetch fix).
+    build: "wm-intro-fix-2026-06-16",
     status: "running ✅",
     engine: "Guide RAG Overhaul",
     endpoints,
