@@ -52,6 +52,19 @@ const crypto = require("node:crypto");
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const ffprobePath = require("@ffprobe-installer/ffprobe").path;
 
+// DeepFilterNet speech denoise (founder-approved 2026-06-15). Reused here
+// so the new-from-drive pipeline (processLecture) cleans audio with the
+// SAME settings as the standalone reprocess pipeline (processLessonVideo).
+// audioEnhance.js only requires bunnyTus, so there's no load-order cycle.
+const { ensureDeepFilter, denoiseVideoAudio } = require("./audioEnhance");
+
+// The burned-in watermark is a full-frame overlay, so the lecture body is
+// forced to this canonical size before compositing — matches the founder's
+// 1920×1080 transparent PNG and the existing concat standard (stretch, no
+// aspect-ratio preservation). Founder rule 2026-06-16.
+const WATERMARK_WIDTH = 1920;
+const WATERMARK_HEIGHT = 1080;
+
 // Silence detection — the previous values (-35 dB, 0.5 s) were too
 // aggressive: lecturer pauses 1-2s mid-sentence at -40 dB got flagged
 // as silence and the trim chopped 80% of the content (test job 8).
@@ -835,6 +848,169 @@ async function downloadBunnyVideo({
   return destPath;
 }
 
+/* ─── Watermark download + burn ─────────────────────────────── */
+
+/** Stream a public HTTP file (the watermark PNG on Bunny storage) to
+ *  disk. Kept separate from downloadBunnyVideo because the watermark is
+ *  a plain unsigned CDN object, not a token-signed Bunny stream. */
+async function downloadHttpFile(url, destPath) {
+  // Second layer (the website already allowlists before dispatch): only
+  // ever fetch an https Bunny-CDN object, never an arbitrary host. Guards
+  // against SSRF if a bad URL ever reaches here.
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("watermark url invalid");
+  }
+  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".b-cdn.net")) {
+    throw new Error(`watermark url host not allowed: ${parsed.hostname}`);
+  }
+  const res = await fetch(url);
+  if (!res.ok || !res.body) {
+    throw new Error(`watermark download failed: ${res.status}`);
+  }
+  const fileStream = fs.createWriteStream(destPath);
+  await new Promise(async (resolve, reject) => {
+    fileStream.on("error", reject);
+    fileStream.on("finish", resolve);
+    try {
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!fileStream.write(value)) {
+          await new Promise((r) => fileStream.once("drain", r));
+        }
+      }
+      fileStream.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+  return destPath;
+}
+
+/** Burn the full-frame watermark onto the lecture body.
+ *
+ *  The picture is FORCED to 1920×1080 (stretch — same convention as the
+ *  concat normalizer) then the transparent PNG (also scaled to
+ *  1920×1080) is composited on top. This is a full re-encode of the main
+ *  body — unavoidable once we change pixels — so we standardize to an
+ *  8-bit High/yuv420p/AAC output. The tail + intro are later re-encoded
+ *  to MATCH this output's probed params, then stream-copy-concatenated.
+ *
+ *  `copyAudio` is true when the input already carries the clean AAC track
+ *  from the denoise mux (we don't want to re-encode it a second time);
+ *  false re-encodes whatever audio the trimmed source has to AAC. */
+async function burnWatermark({
+  inputVideo,
+  watermarkFile,
+  outputFile,
+  target,
+  copyAudio,
+}) {
+  const audioArgs = copyAudio
+    ? ["-c:a", "copy"]
+    : [
+        "-c:a",
+        "aac",
+        "-profile:a",
+        "aac_low",
+        "-ar",
+        String(target.audioSampleRate),
+        "-ac",
+        String(target.audioChannels),
+        "-af",
+        "aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS",
+      ];
+  await runProcess(ffmpegPath, [
+    "-y",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    inputVideo,
+    "-i",
+    watermarkFile,
+    // Composite in the source pixel format, then convert to 8-bit 4:2:0
+    // ONCE on the final output — alpha-blending the RGBA mark over an
+    // already-subsampled plane would soften its anti-aliased edges.
+    "-filter_complex",
+    `[0:v]scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT},setsar=1[bg];` +
+      `[1:v]scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT}[wm];` +
+      `[bg][wm]overlay=0:0:eof_action=repeat,format=${target.pixFmt}[v]`,
+    "-map",
+    "[v]",
+    // Optional audio (?). It's present in practice — the trimmed/denoised
+    // main always has a track — but `?` keeps a silent clip from failing.
+    "-map",
+    "0:a:0?",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "20",
+    "-profile:v",
+    target.profile,
+    "-level:v",
+    target.level,
+    "-pix_fmt",
+    target.pixFmt,
+    "-r",
+    target.fpsRatio,
+    "-vsync",
+    "cfr",
+    "-video_track_timescale",
+    String(target.timescale),
+    "-x264-params",
+    `keyint=${target.gop}:min-keyint=${target.gop}:scenecut=0:open-gop=0:rc-lookahead=0:ref=1:bframes=0:sync-lookahead=0:sliced-threads=0`,
+    "-me_method",
+    "dia",
+    "-trellis",
+    "0",
+    "-tag:v",
+    "avc1",
+    ...audioArgs,
+    "-movflags",
+    "+faststart",
+    "-threads",
+    "1",
+    outputFile,
+  ]);
+}
+
+/** Mux a cleaned WAV onto a video without touching the picture (stream
+ *  copy). Mirrors the denoise mux in processLessonVideo so the
+ *  new-from-drive flow produces identical results. */
+async function muxCleanAudio(inputVideo, cleanWav, outputFile) {
+  await runProcess(ffmpegPath, [
+    "-y",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    inputVideo,
+    "-i",
+    cleanWav,
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a:0",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-shortest",
+    "-movflags",
+    "+faststart",
+    outputFile,
+  ]);
+}
+
 /* ─── Public: full pipeline ─────────────────────────────────── */
 
 /** Process one lecture end-to-end. Returns the path to the final
@@ -850,11 +1026,17 @@ async function processLecture({
   introBunnyTokenKey, // optional
   applySilenceTrim,
   applyIntroConcat,
+  applyDenoise, // optional — DeepFilterNet speech denoise on the body
+  applyWatermark, // optional — burn the full-frame watermark on the body
+  watermarkUrl, // optional — public PNG URL; required when applyWatermark
   workDir,
 }) {
   await fsp.mkdir(workDir, { recursive: true });
   const rawPath = path.join(workDir, "raw.mp4");
   const trimmedPath = path.join(workDir, "trimmed.mp4");
+  const denoisedPath = path.join(workDir, "denoised.mp4");
+  const watermarkPng = path.join(workDir, "watermark.png");
+  const watermarkedPath = path.join(workDir, "watermarked.mp4");
   const tailPath = path.join(workDir, "tail.mp4");
   const introPath = path.join(workDir, "intro.mp4");
   const finalPath = path.join(workDir, "final.mp4");
@@ -891,11 +1073,64 @@ async function processLecture({
   const trimmedDuration = await probeDurationSeconds(trimmedPath);
   console.log(`[processLecture] trimmed: dur=${trimmedDuration.toFixed(2)}s`);
 
-  // 4. Probe the trimmed main's codec params so smart-concat can
+  // 3b. Denoise + watermark the BODY (founder rule 2026-06-16). Both run
+  //     on the trimmed main BEFORE the intro is concatenated, so the
+  //     intro stays clean — its music must not pass through the speech
+  //     denoiser, and it must carry no watermark. Each step is optional
+  //     and independently gated; when both are off, processedPath stays
+  //     the trimmed file and the flow is byte-for-byte the old behaviour.
+  let processedPath = trimmedPath;
+
+  // Denoise: extract → DeepFilterNet (-D) → highpass+loudnorm → mux back
+  // (picture stream-copied). Identical settings to processLessonVideo.
+  if (applyDenoise) {
+    const dfBin = await ensureDeepFilter();
+    const cleanWav = await denoiseVideoAudio({
+      inputVideo: processedPath,
+      dfBin,
+      dir: workDir,
+      logTag: "[processLecture]",
+    });
+    await muxCleanAudio(processedPath, cleanWav, denoisedPath);
+    await fsp.unlink(cleanWav).catch(() => {});
+    processedPath = denoisedPath;
+    console.log(`[processLecture] denoised audio muxed`);
+  }
+
+  // Watermark: force 1920×1080 + composite the transparent PNG, then
+  // re-encode the body to a standard 8-bit High/yuv420p/AAC output. The
+  // audio out of the denoise mux is already clean AAC → stream-copy it;
+  // otherwise the trimmed source audio is re-encoded to AAC.
+  if (applyWatermark && watermarkUrl) {
+    await downloadHttpFile(watermarkUrl, watermarkPng);
+    const srcParams = await probeStreamParams(processedPath);
+    const wmTarget = {
+      ...buildMatchedEncodeArgs(srcParams),
+      // Standardize to 8-bit High no matter the source profile — we're
+      // re-encoding the whole body anyway, and an exotic source profile
+      // (High 10, etc.) would later break the matched intro/tail encode.
+      profile: "high",
+      level: "4.0",
+      pixFmt: "yuv420p",
+    };
+    await burnWatermark({
+      inputVideo: processedPath,
+      watermarkFile: watermarkPng,
+      outputFile: watermarkedPath,
+      target: wmTarget,
+      copyAudio: applyDenoise === true,
+    });
+    processedPath = watermarkedPath;
+    console.log(`[processLecture] watermark burned`);
+  }
+
+  const processedDuration = await probeDurationSeconds(processedPath);
+
+  // 4. Probe the processed main's codec params so smart-concat can
   //    re-encode the intro + tail to match (then stream-copy the
   //    main untouched). For HEVC/VFR/avc3 sources we fall back to
   //    full re-encode of all segments.
-  const mainParams = await probeStreamParams(trimmedPath);
+  const mainParams = await probeStreamParams(processedPath);
   const fallbackReason = needsFullReencodeFallback(mainParams);
   const useSmartConcat = !fallbackReason;
   if (fallbackReason) {
@@ -912,11 +1147,11 @@ async function processLecture({
   // 5. Build tail clip. On smart path, render it directly to match
   //    target params so we skip the second normalization pass.
   if (useSmartConcat) {
-    await buildTailClip(trimmedPath, tailPath, target);
+    await buildTailClip(processedPath, tailPath, target);
   } else {
     // Fallback path will re-encode everything anyway, so any
     // reasonable tail params will do — pass a default-shaped target.
-    await buildTailClip(trimmedPath, tailPath, {
+    await buildTailClip(processedPath, tailPath, {
       profile: "high",
       level: "4.0",
       pixFmt: "yuv420p",
@@ -947,17 +1182,17 @@ async function processLecture({
   }
 
   // 7. Concat — smart (boundary-only re-encode) or fallback (all)
-  const segmentDescription = `${haveIntro ? "intro+" : ""}${trimmedDuration.toFixed(0)}s+1s`;
+  const segmentDescription = `${haveIntro ? "intro+" : ""}${processedDuration.toFixed(0)}s+1s`;
 
   if (!haveIntro) {
-    // No intro = trimmed + tail only. Smart path still works (just
+    // No intro = main + tail only. Smart path still works (just
     // fewer segments).
     if (useSmartConcat) {
       console.log(`[processLecture] smart concat (no intro): ${segmentDescription}`);
       await smartConcat({
         introFile: null,
         introNeedsReencode: false,
-        mainFile: trimmedPath,
+        mainFile: processedPath,
         tailFile: tailPath,
         tailAlreadyMatched: true,
         outputFile: finalPath,
@@ -966,14 +1201,14 @@ async function processLecture({
       });
     } else {
       console.log(`[processLecture] fallback concat (no intro): ${segmentDescription}`);
-      await fallbackConcat([trimmedPath, tailPath], finalPath, workDir);
+      await fallbackConcat([processedPath, tailPath], finalPath, workDir);
     }
   } else if (useSmartConcat) {
     console.log(`[processLecture] smart concat: ${segmentDescription}`);
     await smartConcat({
       introFile: introPath,
       introNeedsReencode: true,
-      mainFile: trimmedPath,
+      mainFile: processedPath,
       tailFile: tailPath,
       tailAlreadyMatched: true,
       outputFile: finalPath,
@@ -982,7 +1217,7 @@ async function processLecture({
     });
   } else {
     console.log(`[processLecture] fallback concat: ${segmentDescription}`);
-    await fallbackConcat([introPath, trimmedPath, tailPath], finalPath, workDir);
+    await fallbackConcat([introPath, processedPath, tailPath], finalPath, workDir);
   }
 
   const finalDuration = await probeDurationSeconds(finalPath);
@@ -993,9 +1228,15 @@ async function processLecture({
   // final file to the TUS uploader. We keep finalPath; everything
   // else can go now.
   await Promise.all(
-    [rawPath, trimmedPath, tailPath, introPath].map((p) =>
-      fsp.unlink(p).catch(() => {}),
-    ),
+    [
+      rawPath,
+      trimmedPath,
+      denoisedPath,
+      watermarkPng,
+      watermarkedPath,
+      tailPath,
+      introPath,
+    ].map((p) => fsp.unlink(p).catch(() => {})),
   );
 
   return {

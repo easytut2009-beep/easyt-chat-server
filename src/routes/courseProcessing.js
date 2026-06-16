@@ -315,6 +315,13 @@ async function runJob(state, body) {
         introBunnyTokenKey: body.intro_bunny_token_key ?? null,
         applySilenceTrim: body.apply_silence_trim ?? true,
         applyIntroConcat: body.apply_intro_concat ?? true,
+        // Founder rule 2026-06-16: clean the speech + burn the watermark
+        // on the body BEFORE the intro is concatenated. Both default OFF
+        // here so an old/partial payload never silently re-encodes; the
+        // website always sends explicit booleans + the watermark URL.
+        applyDenoise: body.apply_denoise === true,
+        applyWatermark: body.apply_watermark === true,
+        watermarkUrl: body.watermark_url ?? null,
         workDir: state.workDir,
       });
     });
