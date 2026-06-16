@@ -79,12 +79,6 @@ const BUNNY_FETCH_REFERER = "https://easyt.online/";
 // breath-pause-end, not a sentence breath.
 const TRIM_THRESHOLD_DB = -50;
 const TRIM_MIN_DURATION = 2.0;
-// Hard cap on how long "trailing silence" is allowed to be before we
-// treat the detection as suspicious and ignore it. Real outros are
-// usually 1-3 seconds. If silencedetect says the last 600 seconds of
-// the video are silent, it's almost certainly wrong (quiet speech
-// fooled the threshold) and trimming that would destroy the lecture.
-const MAX_TRAILING_TRIM_SECONDS = 15;
 
 const TAIL_HOLD_SECONDS = 0.5; // hold last frame
 const TAIL_FADE_SECONDS = 0.5; // fade to black over
@@ -407,13 +401,18 @@ async function detectSilenceBoundaries(file, durationSeconds, keepTailSeconds = 
     }
   }
 
-  // Trailing silence: only counts if (1) it ends within the last
-  // 0.5s of the file AND (2) the silent stretch is shorter than
-  // MAX_TRAILING_TRIM_SECONDS. Condition 2 protects against the
-  // common failure mode where silencedetect flags a long stretch of
-  // quiet speech as silence (lecturer's voice dipping below the
-  // threshold during normal speech). Real outros are 1-3 seconds.
+  // Trailing silence: trim the silence that runs to the very end of the
+  // file, but KEEP the last `keepTailSeconds` of it.
+  //
+  // Founder rule 2026-06-17: "write N → keep EXACTLY N seconds of the
+  // silent ending; if the trailing silence is shorter than N, keep all of
+  // it; N=0 → trim ALL the trailing silence." There is deliberately NO
+  // upper bound on how long the trailing silence may be — a 60s silent
+  // practical-assignment image with keepTailSeconds=10 keeps 10s and trims
+  // the other 50s. We only act on silence that actually reaches EOF
+  // (reachesEof) so a mid-lecture pause is never mistaken for the ending.
   let trimEnd = durationSeconds;
+  const keep = Math.max(0, Number(keepTailSeconds) || 0);
   for (let i = events.length - 1; i >= 0; i--) {
     if (events[i].kind === "start") {
       const candidate = events[i].t;
@@ -421,26 +420,15 @@ async function detectSilenceBoundaries(file, durationSeconds, keepTailSeconds = 
         .slice(i + 1)
         .find((e) => e.kind === "end");
       const endsAt = matchingEnd?.t ?? durationSeconds;
-      const silenceDuration = endsAt - candidate;
       const reachesEof = endsAt >= durationSeconds - 0.5;
-      const isReasonableLength =
-        silenceDuration <= MAX_TRAILING_TRIM_SECONDS;
-      if (reachesEof && isReasonableLength) {
-        // Cut point = where the speech stopped (candidate). Founder rule
-        // 2026-06-16: keepTailSeconds lets a course KEEP the last N seconds
-        // of silent tail (e.g. a practical-assignment image shown without
-        // narration). We keep min(N, the actual remaining tail) — capped at
-        // the real end of the file, so "keep 10s" when only 5s remain keeps
-        // 5s. keepTailSeconds=0 (default) = trim all trailing silence.
+      if (reachesEof) {
+        // Cut point = where the speech stopped (candidate). Keep exactly
+        // `keep` seconds of the silent tail after it, capped at the real
+        // end of the file so "keep 10s" when only 5s of silence remain
+        // keeps 5s. keep === 0 trims all the trailing silence.
         const cut = Math.max(trimStart + 1, candidate);
-        trimEnd =
-          keepTailSeconds > 0
-            ? Math.min(durationSeconds, cut + keepTailSeconds)
-            : cut;
+        trimEnd = Math.min(durationSeconds, cut + keep);
       }
-      // If the silence is too long, leave trimEnd at full duration
-      // — better to keep some trailing dead air than chop off real
-      // content. Founder rule: trim only TRUE trailing silence.
       break;
     }
   }
