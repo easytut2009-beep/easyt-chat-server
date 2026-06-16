@@ -819,32 +819,43 @@ async function downloadBunnyVideo({
   tokenKey,
   destPath,
 }) {
-  const path_ = `/${bunnyVideoId}/play_720p.mp4`;
+  // Fetch the intro over HLS (playlist.m3u8) — the SAME delivery path the
+  // rest of the platform uses (processLessonVideo, transcription, player).
+  // The direct-MP4 fallback path (play_720p.mp4) is NOT enabled on the
+  // Bunny library, so a raw .mp4 request 403s; HLS is the enabled method.
+  // ffmpeg stream-copies the segments into a local mp4 (same as downloadHls
+  // in processLessonVideo) — no re-encode, just a remux.
+  const path_ = `/${bunnyVideoId}/playlist.m3u8`;
   const url = tokenKey
     ? signBunnyUrl(cdnHost, path_, tokenKey)
     : `https://${cdnHost}${path_}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Bunny download failed: ${res.status}`);
-  }
-  const fileStream = fs.createWriteStream(destPath);
-  await new Promise(async (resolve, reject) => {
-    fileStream.on("error", reject);
-    fileStream.on("finish", resolve);
-    try {
-      const reader = res.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!fileStream.write(value)) {
-          await new Promise((r) => fileStream.once("drain", r));
-        }
-      }
-      fileStream.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
+  await runProcess(ffmpegPath, [
+    "-y",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    // Survive transient Bunny CDN drops on the HLS pull — same flags every
+    // other HLS-over-CDN fetch carries (audioEnhance ffArgsBase /
+    // transcribeBunnyHls). runProcess has no hard timeout, so without these
+    // a stalled segment would hang the intro download.
+    "-rw_timeout",
+    "30000000",
+    "-reconnect",
+    "1",
+    "-reconnect_streamed",
+    "1",
+    "-reconnect_delay_max",
+    "30",
+    "-i",
+    url,
+    "-map",
+    "0",
+    "-c",
+    "copy",
+    "-bsf:a",
+    "aac_adtstoasc",
+    destPath,
+  ]);
   return destPath;
 }
 
