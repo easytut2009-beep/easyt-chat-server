@@ -117,6 +117,46 @@ async function ffprobeDurationSeconds(file) {
   });
 }
 
+/** ffprobe a REMOTE media URL for its container duration (reads the moov
+ *  atom, ~1 request — no full download). Sends the Referer the pull zone
+ *  requires. Resolves 0 on any failure/timeout so the caller can fall back
+ *  to the supplied expected duration (or skip the ratio guard). This is the
+ *  authoritative truncation baseline: comparing the extracted audio against
+ *  the SAME file's real length is immune to stale/mismatched DB durations. */
+async function ffprobeRemoteDurationSeconds(url) {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      FFPROBE_BIN,
+      [
+        "-v", "error",
+        "-referer", BUNNY_FETCH_REFERER,
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        url,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    let out = "";
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => {
+      try { proc.kill("SIGKILL"); } catch { /* noop */ }
+      finish(0);
+    }, 30000);
+    proc.stdout.on("data", (b) => (out += b.toString()));
+    proc.on("error", () => finish(0));
+    proc.on("close", () => {
+      const n = Number(String(out).trim());
+      finish(Number.isFinite(n) && n > 0 ? n : 0);
+    });
+  });
+}
+
 /** Run ffmpeg with a remote media URL (a single signed Bunny MP4 rendition)
  *  → mp3 output, with a hard wall-clock timeout. The reconnect / genpts
  *  flags are belt-and-suspenders for flaky CDN reads and are harmless on a
@@ -278,6 +318,12 @@ async function transcribeBunnyHls({
     // demux audio from a single MP4 rendition under the same directory — see
     // MP4_RESOLUTION_LADDER for why HLS-via-ffmpeg can't be used here.
     const mediaUrl = await resolvePlayableMp4Url(hlsUrl);
+    // Authoritative truncation baseline: the real length of the file we're
+    // about to demux. Probed from the same MP4 (not a caller-supplied DB
+    // value, which can belong to a different/deleted video — the legacy
+    // attachment duration outlives the actual lecture video). 0 if probe
+    // fails → we fall back to the caller's expected duration below.
+    const sourceDuration = await ffprobeRemoteDurationSeconds(mediaUrl);
     await extractAudioFromHls(mediaUrl, audioPath, logTag || "");
 
     const stat = await fsp.stat(audioPath);
@@ -285,24 +331,40 @@ async function transcribeBunnyHls({
       throw new Error(`ffmpeg_audio_too_small: ${stat.size}_bytes`);
     }
 
-    // Silent-truncation guard. Even with reconnect, a stuck segment can
-    // make ffmpeg exit 0 after writing only the first chunk. Compare
-    // probed duration against the caller's expected lecture length when
-    // provided; otherwise just reject obviously broken outputs.
+    // Silent-truncation guard. A dropped connection can make ffmpeg exit 0
+    // after writing only the first chunk. Compare the extracted audio against
+    // the SOURCE file's own length (self-consistent); only if that probe
+    // failed do we fall back to the caller's expected lecture length.
     const audioSeconds = await ffprobeDurationSeconds(audioPath);
     if (audioSeconds < 5) {
       throw new Error(`ffmpeg_audio_too_short: ${audioSeconds.toFixed(1)}s`);
     }
-    if (
-      Number.isFinite(expectedDurationSeconds) &&
-      expectedDurationSeconds > 30
-    ) {
-      const ratio = audioSeconds / expectedDurationSeconds;
+    const truncationBaseline =
+      sourceDuration > 30
+        ? sourceDuration
+        : Number.isFinite(expectedDurationSeconds) &&
+            expectedDurationSeconds > 30
+          ? expectedDurationSeconds
+          : 0;
+    if (truncationBaseline > 30) {
+      const ratio = audioSeconds / truncationBaseline;
       if (ratio < 0.9) {
         throw new Error(
-          `ffmpeg_audio_truncated: got ${audioSeconds.toFixed(1)}s of expected ${expectedDurationSeconds.toFixed(1)}s (ratio=${ratio.toFixed(2)})`,
+          `ffmpeg_audio_truncated: got ${audioSeconds.toFixed(1)}s of source ${truncationBaseline.toFixed(1)}s (ratio=${ratio.toFixed(2)})`,
         );
       }
+    } else {
+      // No reliable baseline (remote probe returned 0 AND no caller duration)
+      // — the ratio guard is skipped and only the absolute >5s / >1KB guards
+      // applied. Log it so a silent skip is visible in Render logs rather than
+      // invisible (e.g. a moov-at-end large file that timed out the probe).
+      console.warn(
+        JSON.stringify({
+          ev: "transcribe-bunny-hls.truncation_guard_skipped",
+          tag: logTag || "",
+          audio_seconds: Number(audioSeconds.toFixed(1)),
+        }),
+      );
     }
 
     const result = await transcribeAudioFile(audioPath, deepgramKey);
