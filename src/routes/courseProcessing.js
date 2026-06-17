@@ -275,6 +275,55 @@ function registerCourseProcessingRoutes(app) {
     },
   );
 
+  // POST /api/v1/process-lecture/refresh-token — swap a fresh Drive
+  // OAuth token onto the jobs of a course that haven't downloaded yet.
+  //
+  // Why: the Drive token minted at dispatch lives ~1 hour. A course
+  // whose SEQUENTIAL processing runs past that hour hits a 401 on its
+  // remaining downloads (founder incident 2026-06-17, job 22: videos
+  // 9-12 all failed "Drive download failed: 401" exactly at minute 62,
+  // when video 4 alone had eaten 25 minutes and pushed the tail past
+  // the token's lifetime).
+  //
+  // The website's tracker re-mints a fresh token from the still-open
+  // tab every ~40 min and pushes it here. We overwrite
+  // body.drive_access_token on every not-yet-finished job in the
+  // collection. runJob reads that field LAZILY inside the ffmpeg-slot
+  // callback (it only runs when the slot frees up), so any job still
+  // queued behind a slow one picks up the fresh token before its own
+  // download starts. Jobs already past the download are unaffected.
+  app.post(
+    "/api/v1/process-lecture/refresh-token",
+    internalAuth,
+    async (req, res) => {
+      const collectionId = req.body?.collection_id;
+      const driveAccessToken = req.body?.drive_access_token;
+      if (!collectionId || !driveAccessToken) {
+        return res.status(400).json({
+          error: "missing_field",
+          need: "collection_id + drive_access_token",
+        });
+      }
+      const touched = [];
+      for (const [, st] of jobs) {
+        if (
+          st?.body?.collection_id === collectionId &&
+          st.status === "running" &&
+          !st.result
+        ) {
+          st.body.drive_access_token = driveAccessToken;
+          touched.push(st);
+        }
+      }
+      // Persist so a Render restart's DB reload also carries the fresh
+      // token. Best-effort — a persistence blip must not fail the swap.
+      await Promise.all(
+        touched.map((st) => persistJobState(st).catch(() => {})),
+      );
+      res.json({ ok: true, updated: touched.length });
+    },
+  );
+
   // Periodic cleanup of stale jobs (and their /tmp dirs).
   setInterval(() => {
     const now = Date.now();
