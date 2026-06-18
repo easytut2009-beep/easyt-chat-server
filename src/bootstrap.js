@@ -21,6 +21,7 @@ const {
 const { registerTranscribeRoutes } = require("./routes/transcribe");
 const { registerProcessVideoRoutes } = require("./routes/processVideo");
 const { sweepStaleTmpDirs } = require("./services/transcribeBunnyHls");
+const { startMarketingPump } = require("./services/marketingPump");
 
 async function start() {
   logMissingEnv();
@@ -45,6 +46,9 @@ async function start() {
   registerCourseAttachmentRoutes(app);
   registerTranscribeRoutes(app);
   registerProcessVideoRoutes(app);
+
+  // Reliable marketing-campaign draining, independent of Vercel's cron.
+  startMarketingPump();
 
   app.listen(PORT, () => {
     console.log(`
