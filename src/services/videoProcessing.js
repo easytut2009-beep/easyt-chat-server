@@ -1319,8 +1319,9 @@ module.exports = {
   makeWorkDir,
   cleanupWorkDir,
   // Lower-level building blocks reused by the unified "معالجة الفيديو"
-  // pipeline (processLessonVideo.js), which composes trim → denoise → intro
-  // in a different order than processLecture's drive flow and skips the tail.
+  // pipeline (processLessonVideo.js), which composes trim → denoise →
+  // watermark → intro in a different order than processLecture's drive flow
+  // and skips the tail.
   ffmpegPath,
   ffprobePath,
   probeDurationSeconds,
@@ -1331,4 +1332,6 @@ module.exports = {
   trimStreamCopy,
   smartConcat,
   fallbackConcat,
+  downloadHttpFile,
+  burnWatermark,
 };

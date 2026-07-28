@@ -1,15 +1,18 @@
 /* ══════════════════════════════════════════════════════════
    processLessonVideo.js — unified lesson video pipeline
 
-   Runs THREE stages IN ORDER on an existing lecture's Bunny video:
-     1. قص الصمت    — trim TRUE leading/trailing silence only.
-     2. تنظيف الصوت  — DeepFilterNet denoise on the speech content.
-     3. لزق المقدمة  — prepend the platform's default intro.
+   Runs FOUR stages IN ORDER on an existing lecture's Bunny video:
+     1. قص الصمت      — trim TRUE leading/trailing silence only.
+     2. تنظيف الصوت    — DeepFilterNet denoise on the speech content.
+     3. العلامة المائية — burn the full-frame watermark on the BODY.
+     4. لزق المقدمة    — prepend the platform's default intro.
 
-   Order is load-bearing: denoise runs BEFORE the intro is concatenated,
-   because the intro has MUSIC that the speech denoiser would damage. So
-   we process the main content (download → trim → denoise) first, THEN
-   concat the untouched intro on top.
+   Order is load-bearing (same founder rule as new-from-drive): denoise
+   and the watermark run on the BODY only, BEFORE the intro is
+   concatenated — the intro has MUSIC the speech denoiser would damage,
+   and it must carry no watermark. So we process the main content
+   (download → trim → denoise → watermark) first, THEN concat the
+   untouched intro on top.
 
    Inputs are signed URLs minted by Vercel (the Bunny token key stays on
    Vercel). The main video + the intro both arrive as signed Bunny HLS.
@@ -46,6 +49,8 @@ const {
   trimStreamCopy,
   smartConcat,
   fallbackConcat,
+  downloadHttpFile,
+  burnWatermark,
 } = require("./videoProcessing");
 const { createBunnyVideo, uploadToBunnyTus } = require("./bunnyTus");
 const {
@@ -88,6 +93,9 @@ async function downloadHls(signedHlsUrl, destPath, logTag) {
  * @param {object} o
  * @param {string} o.signedHlsUrl          signed Bunny HLS for the lecture
  * @param {string|null} o.introSignedHlsUrl signed Bunny HLS for the intro (or null)
+ * @param {string|null} [o.watermarkUrl]   public PNG URL — presence = burn it
+ *                                         (the settings gate lives on the
+ *                                         Vercel /sign side)
  * @param {boolean} o.applySilenceTrim
  * @param {boolean} o.applyIntroConcat
  * @param {number}  [o.expectedDurationSeconds] authoritative source duration
@@ -101,6 +109,7 @@ async function downloadHls(signedHlsUrl, destPath, logTag) {
 async function processLessonVideo({
   signedHlsUrl,
   introSignedHlsUrl,
+  watermarkUrl = null,
   applySilenceTrim,
   applyIntroConcat,
   expectedDurationSeconds,
@@ -118,6 +127,8 @@ async function processLessonVideo({
   const input = path.join(dir, "input.mp4");
   const trimmed = path.join(dir, "trimmed.mp4");
   const denoised = path.join(dir, "denoised.mp4");
+  const watermarkPng = path.join(dir, "watermark.png");
+  const watermarked = path.join(dir, "watermarked.mp4");
   const introPath = path.join(dir, "intro.mp4");
   const output = path.join(dir, "output.mp4");
 
@@ -173,31 +184,61 @@ async function processLessonVideo({
     );
     await fsp.unlink(cleanWav).catch(() => {});
 
+    // 3b) optional watermark burn on the BODY only (the intro must stay
+    //     clean). Mirrors processLecture: force 1920×1080 + composite the
+    //     transparent PNG, re-encode to a standard 8-bit High/yuv420p
+    //     output; the audio out of the denoise mux is already clean AAC →
+    //     stream-copy it. The re-encoded body then drives the matched
+    //     intro encode below exactly like the denoised file did.
+    let body = denoised;
+    if (watermarkUrl) {
+      await downloadHttpFile(watermarkUrl, watermarkPng);
+      const srcParams = await probeStreamParams(denoised);
+      const wmTarget = {
+        ...buildMatchedEncodeArgs(srcParams),
+        // Standardize no matter the source profile — we're re-encoding the
+        // whole body anyway, and an exotic source profile would later break
+        // the matched intro encode (same rule as processLecture).
+        profile: "high",
+        level: "4.0",
+        pixFmt: "yuv420p",
+      };
+      await burnWatermark({
+        inputVideo: denoised,
+        watermarkFile: watermarkPng,
+        outputFile: watermarked,
+        target: wmTarget,
+        copyAudio: true,
+      });
+      body = watermarked;
+      console.log(`[processLessonVideo]${logTag} watermark burned`);
+    }
+
     // 4) optional intro concat. The intro has music, so it's prepended
-    //    AFTER denoise. Reuse the smart-concat path (re-encode only the
-    //    short intro to match the main, bit-copy the main body).
+    //    AFTER denoise + watermark. Reuse the smart-concat path (re-encode
+    //    only the short intro to match the main, bit-copy the main body).
     let introDuration = 0;
-    let denoisedDuration = 0;
+    let bodyDuration = 0;
     const haveIntro = applyIntroConcat !== false && Boolean(introSignedHlsUrl);
     if (haveIntro) {
       await downloadHls(introSignedHlsUrl, introPath, `${logTag} intro`);
       introDuration = await probeDurationSeconds(introPath);
       console.log(`[processLessonVideo]${logTag} intro dur=${introDuration.toFixed(2)}s`);
 
-      // Single probe of the denoised file: it yields BOTH the codec params
+      // Single probe of the body file: it yields BOTH the codec params
       // (for the concat decision) and the duration (for the guard below).
-      const mainParams = await probeStreamParams(denoised);
-      denoisedDuration = Number(mainParams.duration) || (await probeDurationSeconds(denoised));
+      const mainParams = await probeStreamParams(body);
+      bodyDuration = Number(mainParams.duration) || (await probeDurationSeconds(body));
       const fallbackReason = needsFullReencodeFallback(mainParams);
       if (fallbackReason) {
         console.log(`[processLessonVideo]${logTag} fallback concat: ${fallbackReason}`);
-        await fallbackConcat([introPath, denoised], output, dir);
+        await fallbackConcat([introPath, body], output, dir);
       } else {
         const target = buildMatchedEncodeArgs(mainParams);
         await smartConcat({
           introFile: introPath,
           introNeedsReencode: true,
-          mainFile: denoised,
+          mainFile: body,
           tailFile: null,
           tailAlreadyMatched: false,
           outputFile: output,
@@ -206,18 +247,18 @@ async function processLessonVideo({
         });
       }
     } else {
-      // No intro — the denoised file IS the output.
-      denoisedDuration = await probeDurationSeconds(denoised);
-      await fsp.rename(denoised, output);
+      // No intro — the processed body IS the output.
+      bodyDuration = await probeDurationSeconds(body);
+      await fsp.rename(body, output);
     }
 
     const finalDuration = await probeDurationSeconds(output);
     console.log(`[processLessonVideo]${logTag} FINAL dur=${finalDuration.toFixed(2)}s`);
 
-    // Guard: the final must be at least the (trimmed main + intro) content
+    // Guard: the final must be at least the (processed body + intro) content
     // we expect. Catches a botched concat/mux before it overwrites the
     // lecture.
-    const expectedFinal = denoisedDuration + introDuration;
+    const expectedFinal = bodyDuration + introDuration;
     if (expectedFinal > 0 && finalDuration < expectedFinal * MIN_DURATION_RATIO) {
       throw new Error(
         `output_truncated: got ${finalDuration.toFixed(1)}s of expected ${expectedFinal.toFixed(1)}s`,

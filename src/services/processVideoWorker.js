@@ -158,6 +158,7 @@ async function processJob(job) {
   const { guid } = await processLessonVideo({
     signedHlsUrl: sign.signed_hls_url,
     introSignedHlsUrl: sign.intro_signed_url || null,
+    watermarkUrl: sign.watermark_url || null,
     applySilenceTrim: job.apply_silence_trim,
     applyIntroConcat: job.apply_intro_concat,
     expectedDurationSeconds:
