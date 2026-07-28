@@ -48,17 +48,36 @@ const {
   fallbackConcat,
 } = require("./videoProcessing");
 const { createBunnyVideo, uploadToBunnyTus } = require("./bunnyTus");
+const {
+  resolvePlayableMp4Url,
+  BUNNY_FETCH_REFERER,
+} = require("./transcribeBunnyHls");
 
 // Output must retain at least this fraction of the expected content
 // duration before we upload — guards against a silently truncated HLS
 // download publishing a clipped video and orphaning the original.
 const MIN_DURATION_RATIO = 0.9;
 
-/** ffmpeg: download a signed Bunny HLS playlist → local mp4 (stream-copy). */
+// Highest-first: this pipeline republishes the picture, so it must pull the
+// best rendition Bunny encoded (transcription probes smallest-first for the
+// opposite reason — the audio track is identical across renditions).
+const MP4_LADDER_HIGHEST_FIRST = [2160, 1440, 1080, 720, 480, 360, 240];
+
+/** Download the lecture/intro source → local mp4 (stream-copy).
+ *  The signed URL points at playlist.m3u8, but ffmpeg does not propagate the
+ *  directory token to HLS child playlists/segments (the pull 403s on the
+ *  first child even when the master is authorized), so we resolve a single
+ *  MP4 rendition under the same signed /<guid>/ directory and fetch that —
+ *  one file, one authorized request — with the Referer the pull zone
+ *  requires (BlockNoneReferrer is on). */
 async function downloadHls(signedHlsUrl, destPath, logTag) {
+  const mp4Url = await resolvePlayableMp4Url(
+    signedHlsUrl,
+    MP4_LADDER_HIGHEST_FIRST,
+  );
   await run(
     FFMPEG_BIN,
-    [...ffArgsBase, "-i", signedHlsUrl, "-map", "0", "-c", "copy", "-bsf:a", "aac_adtstoasc", destPath],
+    [...ffArgsBase, "-referer", BUNNY_FETCH_REFERER, "-i", mp4Url, "-map", "0", "-c", "copy", destPath],
     { logTag: `${logTag} dl` },
   );
 }

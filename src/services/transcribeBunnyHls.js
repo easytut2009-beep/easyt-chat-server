@@ -251,8 +251,11 @@ async function extractAudioFromHls(hlsUrl, outputPath, logTag = "") {
  *  (token / token_path / expires) authorizes the whole directory, so we keep
  *  it verbatim and only swap the filename. Probes the resolution ladder with
  *  a tiny ranged GET (+Referer, required by the pull zone) and returns the
- *  first rendition that responds 200/206. Throws if none are reachable. */
-async function resolvePlayableMp4Url(signedPlaylistUrl) {
+ *  first rendition that responds 200/206. Throws if none are reachable.
+ *  `ladder` defaults to smallest-first (transcription wants the least
+ *  download); processLessonVideo passes highest-first (it must keep the
+ *  full picture quality). */
+async function resolvePlayableMp4Url(signedPlaylistUrl, ladder = MP4_RESOLUTION_LADDER) {
   let u;
   try {
     u = new URL(signedPlaylistUrl);
@@ -263,7 +266,7 @@ async function resolvePlayableMp4Url(signedPlaylistUrl) {
   const dir =
     lastSlash > 0 ? u.pathname.slice(0, lastSlash + 1) : u.pathname; // "/<guid>/"
   let lastStatus = 0;
-  for (const res of MP4_RESOLUTION_LADDER) {
+  for (const res of ladder) {
     const candidate = new URL(u.toString());
     candidate.pathname = `${dir}play_${res}p.mp4`;
     try {
@@ -429,4 +432,6 @@ module.exports = {
   extractAudioFromHls,
   sweepStaleTmpDirs,
   FFMPEG_HARD_TIMEOUT_MS,
+  resolvePlayableMp4Url,
+  BUNNY_FETCH_REFERER,
 };
