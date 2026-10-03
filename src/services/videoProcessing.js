@@ -774,12 +774,18 @@ async function downloadDriveFile({
   accessToken,
   destPath,
 }) {
-  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+  let url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
     driveFileId,
   )}?alt=media&supportsAllDrives=true`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  // "apikey:<key>" = a folder shared "anyone with the link", read with the
+  // site's Drive API key instead of a picker OAuth token (no browser
+  // consent needed). The key is referrer-restricted, hence the Referer.
+  let headers = { Authorization: `Bearer ${accessToken}` };
+  if (typeof accessToken === "string" && accessToken.startsWith("apikey:")) {
+    url += `&key=${encodeURIComponent(accessToken.slice(7))}`;
+    headers = { Referer: "https://easyt.online/" };
+  }
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     throw new Error(`Drive download failed: ${res.status}`);
   }
