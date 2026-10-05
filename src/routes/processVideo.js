@@ -48,7 +48,12 @@ function registerProcessVideoRoutes(app) {
   startProcessVideoWorker();
 
   app.get("/api/v1/process-video/health", (_req, res) => {
-    res.json({ ok: true, busy: isBusy() });
+    // Deployed commit (set by Render), so a push can be confirmed live.
+    res.json({
+      ok: true,
+      busy: isBusy(),
+      commit: (process.env.RENDER_GIT_COMMIT || "").slice(0, 7) || null,
+    });
   });
 
   app.post("/api/v1/process-video/kick", internalAuth, (_req, res) => {
