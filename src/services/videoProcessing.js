@@ -944,7 +944,149 @@ async function downloadHttpFile(url, destPath) {
   return destPath;
 }
 
-/** Burn the full-frame watermark onto the lecture body.
+/* ─── Warning strip (founder 2026-10-05) ─────────────────────────
+   A news-style bar at the TOP of the picture: a running anti-piracy
+   line, then (first lesson only) the team credits. It is burned in the
+   same encode as the watermark and shows ONCE per lesson at a random
+   second, so a ripped copy can't be cleaned with one fixed cut.
+
+   All text arrives as ready PNGs from the website (ffmpeg's drawtext
+   can't shape Arabic); this side only downloads and animates them. */
+const STRIP_HEIGHT = 72;
+const STRIP_LABEL_WIDTH = 180;
+const STRIP_SPEED = 150; // px/sec the line travels
+const STRIP_SLIDE = 240; // px/sec the bar slides in/out
+const STRIP_MAX_START = 90; // latest second the strip may start at
+const STRIP_CREDITS_SECONDS = 10;
+const STRIP_MAX_CREDITS = 8;
+
+/** Download the strip's PNGs and pick its timing for this lesson.
+ *  `desc` is the website's descriptor ({bar_url, ticker_url,
+ *  ticker_width, label_url, credits_label_url?, credit_urls?});
+ *  null/empty → no strip. A bad descriptor or a failed download THROWS
+ *  (the job fails visibly) instead of silently shipping without it. */
+async function prepareWarningStrip(desc, workDir, bodyDuration) {
+  if (!desc || typeof desc !== "object") return null;
+  if (!desc.bar_url || !desc.ticker_url || !desc.label_url) {
+    throw new Error("warning strip: incomplete descriptor");
+  }
+  const tickerWidth = Number(desc.ticker_width);
+  if (!Number.isFinite(tickerWidth) || tickerWidth <= 0) {
+    throw new Error("warning strip: bad ticker_width");
+  }
+  const fetchPng = (url, name) =>
+    downloadHttpFile(url, path.join(workDir, name));
+  const barFile = await fetchPng(desc.bar_url, "strip-bar.png");
+  const tickerFile = await fetchPng(desc.ticker_url, "strip-ticker.png");
+  const labelFile = await fetchPng(desc.label_url, "strip-label.png");
+
+  const creditUrls =
+    desc.credits_label_url && Array.isArray(desc.credit_urls)
+      ? desc.credit_urls.filter(Boolean).slice(0, STRIP_MAX_CREDITS)
+      : [];
+  let creditsLabelFile = null;
+  const creditFiles = [];
+  if (creditUrls.length > 0) {
+    creditsLabelFile = await fetchPng(
+      desc.credits_label_url,
+      "strip-credits-label.png",
+    );
+    for (let i = 0; i < creditUrls.length; i++) {
+      creditFiles.push(await fetchPng(creditUrls[i], `strip-credit-${i}.png`));
+    }
+  }
+
+  // The line is done once its tail slides under the label box.
+  const tickerSeconds =
+    (tickerWidth + WATERMARK_WIDTH - STRIP_LABEL_WIDTH) / STRIP_SPEED;
+  const total =
+    tickerSeconds + (creditFiles.length > 0 ? STRIP_CREDITS_SECONDS : 0);
+  // Random start, but never so late that the strip runs off the end.
+  const room = Math.max(0, (Number(bodyDuration) || 0) - total - 2);
+  const start = Math.round(Math.random() * Math.min(STRIP_MAX_START, room));
+
+  return {
+    barFile,
+    tickerFile,
+    labelFile,
+    creditsLabelFile,
+    creditFiles,
+    tickerSeconds,
+    start,
+    files: [barFile, tickerFile, labelFile, creditsLabelFile, ...creditFiles].filter(Boolean),
+  };
+}
+
+/** Build the overlay chain for the watermark and/or the warning strip.
+ *  Returns the extra ffmpeg inputs + the filter graph ending in [v]. */
+function buildBurnGraph({ watermarkFile, strip, pixFmt }) {
+  const inputs = [];
+  const parts = [
+    `[0:v]scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT},setsar=1[s0]`,
+  ];
+  let cur = "s0";
+  let n = 0;
+  const add = (file, overlayArgs, pre = "") => {
+    inputs.push("-i", file);
+    const idx = inputs.length / 2;
+    let src = `${idx}:v`;
+    if (pre) {
+      parts.push(`[${src}]${pre}[p${idx}]`);
+      src = `p${idx}`;
+    }
+    n += 1;
+    parts.push(`[${cur}][${src}]overlay=${overlayArgs}[s${n}]`);
+    cur = `s${n}`;
+  };
+
+  if (watermarkFile) {
+    add(
+      watermarkFile,
+      "0:0:eof_action=repeat",
+      `scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT}`,
+    );
+  }
+
+  if (strip) {
+    const S = strip.start;
+    const T = S + strip.tickerSeconds; // the running line is done
+    const hasCredits = strip.creditFiles.length > 0;
+    const E = T + (hasCredits ? STRIP_CREDITS_SECONDS : 0); // bar leaves
+    const f = (x) => x.toFixed(2);
+    // Every layer shares this y so the whole bar slides in and out as one.
+    const y = `'min(0,min(-${STRIP_HEIGHT}+${STRIP_SLIDE}*(t-${f(S)}),-${STRIP_HEIGHT}+${STRIP_SLIDE}*(${f(E)}-t)))'`;
+    const on = (a, b) => `enable='between(t,${f(a)},${f(b)})'`;
+    const labelX = WATERMARK_WIDTH - STRIP_LABEL_WIDTH;
+
+    add(strip.barFile, `x=0:y=${y}:${on(S, E)}`);
+    // Enters from the left edge and travels right (the Arabic line's
+    // first word is at the image's right end, so it reads in order).
+    add(
+      strip.tickerFile,
+      `x='-w+${STRIP_SPEED}*(t-${f(S)})':y=${y}:${on(S, T)}`,
+    );
+    if (hasCredits) {
+      const per = STRIP_CREDITS_SECONDS / strip.creditFiles.length;
+      strip.creditFiles.forEach((file, i) => {
+        add(
+          file,
+          `x='(${labelX}-w)/2':y=${y}:${on(T + i * per, T + (i + 1) * per)}`,
+        );
+      });
+    }
+    // Label boxes go on LAST so the line disappears under them.
+    add(strip.labelFile, `x=${labelX}:y=${y}:${on(S, hasCredits ? T : E)}`);
+    if (hasCredits) {
+      add(strip.creditsLabelFile, `x=${labelX}:y=${y}:${on(T, E)}`);
+    }
+  }
+
+  parts.push(`[${cur}]format=${pixFmt}[v]`);
+  return { inputs, graph: parts.join(";") };
+}
+
+/** Burn the full-frame watermark and/or the warning strip onto the
+ *  lecture body (`watermarkFile` and `strip` are each optional).
  *
  *  The picture is FORCED to 1920×1080 (stretch — same convention as the
  *  concat normalizer) then the transparent PNG (also scaled to
@@ -959,10 +1101,16 @@ async function downloadHttpFile(url, destPath) {
 async function burnWatermark({
   inputVideo,
   watermarkFile,
+  strip = null,
   outputFile,
   target,
   copyAudio,
 }) {
+  const { inputs: overlayInputs, graph } = buildBurnGraph({
+    watermarkFile,
+    strip,
+    pixFmt: target.pixFmt,
+  });
   const audioArgs = copyAudio
     ? ["-c:a", "copy"]
     : [
@@ -984,15 +1132,12 @@ async function burnWatermark({
     "error",
     "-i",
     inputVideo,
-    "-i",
-    watermarkFile,
+    ...overlayInputs,
     // Composite in the source pixel format, then convert to 8-bit 4:2:0
     // ONCE on the final output — alpha-blending the RGBA mark over an
     // already-subsampled plane would soften its anti-aliased edges.
     "-filter_complex",
-    `[0:v]scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT},setsar=1[bg];` +
-      `[1:v]scale=${WATERMARK_WIDTH}:${WATERMARK_HEIGHT}[wm];` +
-      `[bg][wm]overlay=0:0:eof_action=repeat,format=${target.pixFmt}[v]`,
+    graph,
     "-map",
     "[v]",
     // Optional audio (?). It's present in practice — the trimmed/denoised
@@ -1082,6 +1227,7 @@ async function processLecture({
   applyDenoise, // optional — DeepFilterNet speech denoise on the body
   applyWatermark, // optional — burn the full-frame watermark on the body
   watermarkUrl, // optional — public PNG URL; required when applyWatermark
+  warningStrip, // optional — the website's warning-strip descriptor
   keepTailSeconds, // optional — keep the last N sec of silent tail (assignment)
   workDir,
 }) {
@@ -1159,8 +1305,14 @@ async function processLecture({
   // re-encode the body to a standard 8-bit High/yuv420p/AAC output. The
   // audio out of the denoise mux is already clean AAC → stream-copy it;
   // otherwise the trimmed source audio is re-encoded to AAC.
-  if (applyWatermark && watermarkUrl) {
-    await downloadHttpFile(watermarkUrl, watermarkPng);
+  const burnMark = Boolean(applyWatermark && watermarkUrl);
+  const strip = await prepareWarningStrip(
+    warningStrip,
+    workDir,
+    trimmedDuration,
+  );
+  if (burnMark || strip) {
+    if (burnMark) await downloadHttpFile(watermarkUrl, watermarkPng);
     const srcParams = await probeStreamParams(processedPath);
     const wmTarget = {
       ...buildMatchedEncodeArgs(srcParams),
@@ -1173,13 +1325,19 @@ async function processLecture({
     };
     await burnWatermark({
       inputVideo: processedPath,
-      watermarkFile: watermarkPng,
+      watermarkFile: burnMark ? watermarkPng : null,
+      strip,
       outputFile: watermarkedPath,
       target: wmTarget,
       copyAudio: applyDenoise === true,
     });
     processedPath = watermarkedPath;
-    console.log(`[processLecture] watermark burned`);
+    if (strip) {
+      await Promise.all(strip.files.map((p) => fsp.unlink(p).catch(() => {})));
+    }
+    console.log(
+      `[processLecture] burned: watermark=${burnMark} strip=${strip ? `at ${strip.start}s credits=${strip.creditFiles.length}` : "none"}`,
+    );
   }
 
   const processedDuration = await probeDurationSeconds(processedPath);
@@ -1340,4 +1498,5 @@ module.exports = {
   fallbackConcat,
   downloadHttpFile,
   burnWatermark,
+  prepareWarningStrip,
 };

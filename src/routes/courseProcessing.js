@@ -371,6 +371,7 @@ async function runJob(state, body) {
         applyDenoise: body.apply_denoise === true,
         applyWatermark: body.apply_watermark === true,
         watermarkUrl: body.watermark_url ?? null,
+        warningStrip: body.warning_strip ?? null,
         // Founder rule 2026-06-17: keep EXACTLY the last N sec of silent tail
         // (e.g. a silent practical-assignment image the trim would otherwise
         // cut). No upper cap on N — detectSilenceBoundaries naturally bounds

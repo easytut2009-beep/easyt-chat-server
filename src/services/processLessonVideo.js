@@ -51,6 +51,7 @@ const {
   fallbackConcat,
   downloadHttpFile,
   burnWatermark,
+  prepareWarningStrip,
 } = require("./videoProcessing");
 const { createBunnyVideo, uploadToBunnyTus } = require("./bunnyTus");
 const {
@@ -96,6 +97,8 @@ async function downloadHls(signedHlsUrl, destPath, logTag) {
  * @param {string|null} [o.watermarkUrl]   public PNG URL — presence = burn it
  *                                         (the settings gate lives on the
  *                                         Vercel /sign side)
+ * @param {object|null} [o.warningStrip]   the website's warning-strip
+ *                                         descriptor — presence = burn it
  * @param {boolean} o.applySilenceTrim
  * @param {boolean} o.applyIntroConcat
  * @param {number}  [o.expectedDurationSeconds] authoritative source duration
@@ -110,6 +113,7 @@ async function processLessonVideo({
   signedHlsUrl,
   introSignedHlsUrl,
   watermarkUrl = null,
+  warningStrip = null,
   applySilenceTrim,
   applyIntroConcat,
   expectedDurationSeconds,
@@ -191,8 +195,9 @@ async function processLessonVideo({
     //     stream-copy it. The re-encoded body then drives the matched
     //     intro encode below exactly like the denoised file did.
     let body = denoised;
-    if (watermarkUrl) {
-      await downloadHttpFile(watermarkUrl, watermarkPng);
+    const strip = await prepareWarningStrip(warningStrip, dir, trimmedDuration);
+    if (watermarkUrl || strip) {
+      if (watermarkUrl) await downloadHttpFile(watermarkUrl, watermarkPng);
       const srcParams = await probeStreamParams(denoised);
       const wmTarget = {
         ...buildMatchedEncodeArgs(srcParams),
@@ -205,13 +210,16 @@ async function processLessonVideo({
       };
       await burnWatermark({
         inputVideo: denoised,
-        watermarkFile: watermarkPng,
+        watermarkFile: watermarkUrl ? watermarkPng : null,
+        strip,
         outputFile: watermarked,
         target: wmTarget,
         copyAudio: true,
       });
       body = watermarked;
-      console.log(`[processLessonVideo]${logTag} watermark burned`);
+      console.log(
+        `[processLessonVideo]${logTag} burned: watermark=${Boolean(watermarkUrl)} strip=${strip ? `at ${strip.start}s credits=${strip.creditFiles.length}` : "none"}`,
+      );
     }
 
     // 4) optional intro concat. The intro has music, so it's prepended

@@ -159,6 +159,7 @@ async function processJob(job) {
     signedHlsUrl: sign.signed_hls_url,
     introSignedHlsUrl: sign.intro_signed_url || null,
     watermarkUrl: sign.watermark_url || null,
+    warningStrip: sign.warning_strip || null,
     applySilenceTrim: job.apply_silence_trim,
     applyIntroConcat: job.apply_intro_concat,
     expectedDurationSeconds:
