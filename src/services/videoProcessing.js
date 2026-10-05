@@ -482,6 +482,30 @@ async function buildTailClip(sourceFile, outputFile, target) {
     "2",
     tmpPng,
   ]);
+  // The picture can end a little before the sound does, so the seek above
+  // lands past the last frame and writes nothing. Walk the last few seconds
+  // instead and keep whatever frame comes last.
+  const gotFrame = await fsp
+    .stat(tmpPng)
+    .then((s) => s.size > 0)
+    .catch(() => false);
+  if (!gotFrame) {
+    await runProcess(ffmpegPath, [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-sseof",
+      "-10",
+      "-i",
+      sourceFile,
+      "-update",
+      "1",
+      "-q:v",
+      "2",
+      tmpPng,
+    ]);
+  }
 
   // Step 2: render TAIL_HOLD + TAIL_FADE seconds of video from that
   // single frame, with fade-to-black over the second half.
