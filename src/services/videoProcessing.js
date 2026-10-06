@@ -983,6 +983,14 @@ const STRIP_SLIDE = 240; // px/sec the bar slides in/out
 const STRIP_MAX_START = 90; // latest second the strip may start at
 const STRIP_CREDITS_SECONDS = 10;
 const STRIP_MAX_CREDITS = 8;
+// Credit cards (founder 2026-10-06): a small box in the bottom-right
+// corner at the very start of the first lesson, the names taking turns.
+const CARD_START = 1; // second the box comes in
+const CARD_EACH = 2; // seconds per name
+const CARD_FADE = 0.4; // cross-fade between names / box in and out
+const CARD_MARGIN_X = 40;
+const CARD_MARGIN_Y = 48;
+const CARD_RISE = 24; // px the box rises while it comes in
 
 /** Download the strip's PNGs and pick its timing for this lesson.
  *  `desc` is the website's descriptor ({bar_url, ticker_url,
@@ -1020,6 +1028,18 @@ async function prepareWarningStrip(desc, workDir, bodyDuration) {
     }
   }
 
+  const cardUrls = Array.isArray(desc.credit_card_urls)
+    ? desc.credit_card_urls.filter(Boolean).slice(0, STRIP_MAX_CREDITS)
+    : [];
+  const cardFiles = [];
+  let cardBoxFile = null;
+  if (cardUrls.length > 0 && desc.credit_box_url) {
+    cardBoxFile = await fetchPng(desc.credit_box_url, "credit-box.png");
+    for (let i = 0; i < cardUrls.length; i++) {
+      cardFiles.push(await fetchPng(cardUrls[i], `credit-text-${i}.png`));
+    }
+  }
+
   // The line is done once its tail slides under the label box.
   const tickerSeconds =
     (tickerWidth + WATERMARK_WIDTH - STRIP_LABEL_WIDTH) / STRIP_SPEED;
@@ -1035,9 +1055,11 @@ async function prepareWarningStrip(desc, workDir, bodyDuration) {
     labelFile,
     creditsLabelFile,
     creditFiles,
+    cardBoxFile,
+    cardFiles,
     tickerSeconds,
     start,
-    files: [barFile, tickerFile, labelFile, creditsLabelFile, ...creditFiles].filter(Boolean),
+    files: [barFile, tickerFile, labelFile, creditsLabelFile, ...creditFiles, cardBoxFile, ...cardFiles].filter(Boolean),
   };
 }
 
@@ -1102,6 +1124,27 @@ function buildBurnGraph({ watermarkFile, strip, pixFmt }) {
     add(strip.labelFile, `x=${labelX}:y=${y}:${on(S, hasCredits ? T : E)}`);
     if (hasCredits) {
       add(strip.creditsLabelFile, `x=${labelX}:y=${y}:${on(T, E)}`);
+    }
+
+    // Credit box: drawn once, rising into the bottom-right corner; the
+    // names take turns inside it, each fading out as the next fades in.
+    const cards = strip.cardFiles || [];
+    if (strip.cardBoxFile && cards.length > 0) {
+      const a0 = CARD_START;
+      const end = a0 + cards.length * CARD_EACH + CARD_FADE;
+      const rise = `+${CARD_RISE}*max(0,1-(t-${f(a0)})/${CARD_FADE})`;
+      const pos = `x=W-w-${CARD_MARGIN_X}:y='H-h-${CARD_MARGIN_Y}${rise}':eof_action=pass`;
+      const fades = (st, en) =>
+        `loop=loop=-1:size=1,setpts=N/30/TB,format=rgba,` +
+        `fade=t=in:st=${f(st)}:d=${CARD_FADE}:alpha=1,` +
+        `fade=t=out:st=${f(en - CARD_FADE)}:d=${CARD_FADE}:alpha=1,` +
+        `trim=end=${f(en)}`;
+      add(strip.cardBoxFile, `${pos}:${on(a0, end)}`, fades(a0, end));
+      cards.forEach((file, i) => {
+        const st = a0 + i * CARD_EACH;
+        const en = st + CARD_EACH + CARD_FADE;
+        add(file, `${pos}:${on(st, en)}`, fades(st, en));
+      });
     }
   }
 
