@@ -809,7 +809,27 @@ async function downloadDriveFile({
     url += `&key=${encodeURIComponent(accessToken.slice(7))}`;
     headers = { Referer: "https://easyt.online/" };
   }
-  const res = await fetch(url, { headers });
+  let res = await fetch(url, { headers });
+  // Google sometimes 403s the API-key download from Render's IP while the
+  // same file still downloads fine elsewhere (Excel course 2026-10-07: 22
+  // lessons passed, the last 7 got 403 on every retry). A folder shared
+  // "anyone with the link" also serves the plain public download URL, which
+  // is not under the API-key limit — use it as the second way in.
+  if (!res.ok && headers.Referer && (res.status === 403 || res.status === 429)) {
+    const first = res.status;
+    res = await fetch(
+      `https://drive.usercontent.google.com/download?id=${encodeURIComponent(
+        driveFileId,
+      )}&export=download&confirm=t`,
+    );
+    const type = res.headers.get("content-type") || "";
+    if (res.ok && type.startsWith("text/html")) {
+      throw new Error(`Drive download failed: ${first} (public link returned a page, not the file)`);
+    }
+    if (!res.ok) {
+      throw new Error(`Drive download failed: ${first}, public link ${res.status}`);
+    }
+  }
   if (!res.ok) {
     throw new Error(`Drive download failed: ${res.status}`);
   }
