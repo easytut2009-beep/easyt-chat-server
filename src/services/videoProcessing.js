@@ -1060,9 +1060,16 @@ async function prepareWarningStrip(desc, workDir, bodyDuration) {
     }
   }
 
+  // Size + speed ride the descriptor (the thin 40-px strip, 2026-10-20);
+  // a descriptor stored before that is the old 72-px strip.
+  const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+  const height = num(desc.height, STRIP_HEIGHT);
+  const labelWidth = num(desc.label_width, STRIP_LABEL_WIDTH);
+  const speed = num(desc.speed, STRIP_SPEED);
+
   // The line is done once its tail slides under the label box.
   const tickerSeconds =
-    (tickerWidth + WATERMARK_WIDTH - STRIP_LABEL_WIDTH) / STRIP_SPEED;
+    (tickerWidth + WATERMARK_WIDTH - labelWidth) / speed;
   const total =
     tickerSeconds + (creditFiles.length > 0 ? STRIP_CREDITS_SECONDS : 0);
   // Random start, but never so late that the strip runs off the end.
@@ -1079,6 +1086,9 @@ async function prepareWarningStrip(desc, workDir, bodyDuration) {
     cardFiles,
     tickerSeconds,
     start,
+    height,
+    labelWidth,
+    speed,
     files: [barFile, tickerFile, labelFile, creditsLabelFile, ...creditFiles, cardBoxFile, ...cardFiles].filter(Boolean),
   };
 }
@@ -1120,16 +1130,17 @@ function buildBurnGraph({ watermarkFile, strip, pixFmt }) {
     const E = T + (hasCredits ? STRIP_CREDITS_SECONDS : 0); // bar leaves
     const f = (x) => x.toFixed(2);
     // Every layer shares this y so the whole bar slides in and out as one.
-    const y = `'min(0,min(-${STRIP_HEIGHT}+${STRIP_SLIDE}*(t-${f(S)}),-${STRIP_HEIGHT}+${STRIP_SLIDE}*(${f(E)}-t)))'`;
+    const H = strip.height || STRIP_HEIGHT;
+    const y = `'min(0,min(-${H}+${STRIP_SLIDE}*(t-${f(S)}),-${H}+${STRIP_SLIDE}*(${f(E)}-t)))'`;
     const on = (a, b) => `enable='between(t,${f(a)},${f(b)})'`;
-    const labelX = WATERMARK_WIDTH - STRIP_LABEL_WIDTH;
+    const labelX = WATERMARK_WIDTH - (strip.labelWidth || STRIP_LABEL_WIDTH);
 
     add(strip.barFile, `x=0:y=${y}:${on(S, E)}`);
     // Enters from the left edge and travels right (the Arabic line's
     // first word is at the image's right end, so it reads in order).
     add(
       strip.tickerFile,
-      `x='-w+${STRIP_SPEED}*(t-${f(S)})':y=${y}:${on(S, T)}`,
+      `x='-w+${strip.speed || STRIP_SPEED}*(t-${f(S)})':y=${y}:${on(S, T)}`,
     );
     if (hasCredits) {
       const per = STRIP_CREDITS_SECONDS / strip.creditFiles.length;
