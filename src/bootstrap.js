@@ -50,7 +50,9 @@ async function start() {
   // Reliable marketing-campaign draining, independent of Vercel's cron.
   startMarketingPump();
 
-  app.listen(PORT, () => {
+  // HOST=127.0.0.1 on farm-1, where Caddy terminates TLS in front of us.
+  // Unset keeps the old listen-on-all-interfaces behaviour.
+  app.listen(PORT, process.env.HOST, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
 ║  🤖 زيكو Chatbot — v10.9 (modular)                    ║
